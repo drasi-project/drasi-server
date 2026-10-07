@@ -139,6 +139,29 @@ This script:
 
 **Open http://localhost:5273** to see the live trading dashboard.
 
+By default, the script installs compatible signed plugins from GHCR. To test
+changes from a local `drasi-core` checkout, first enable and update the existing
+`[patch.crates-io]` entries in the Drasi Server `Cargo.toml`, then run:
+
+```bash
+./examples/trading/build-local-plugins.sh
+./examples/trading/start-demo.sh --plugin-source local
+```
+
+The build script uses `cargo metadata` to discover the patched checkout. It
+rebuilds Drasi Server and only the five plugins used by this example, validates
+their FFI ABI and target, and installs them into an isolated
+`examples/trading/plugins/local` directory. Local mode never falls back to
+GHCR. If the server, either checkout, or any plugin changes afterward, rerun the
+build script.
+
+To return to published plugins, restore the reviewed registry Cargo graph and
+lockfile, then use the normal command with no options:
+
+```bash
+./examples/trading/start-demo.sh
+```
+
 To stop everything:
 ```bash
 ./stop-demo.sh
@@ -165,13 +188,28 @@ This starts PostgreSQL with:
 ```bash
 # From drasi-server root directory
 bash scripts/prepare-trading.sh
-./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
+./target/release/drasi-server \
+    --config examples/trading/server/trading-sources-only.yaml \
+    --plugins-dir examples/trading/plugins/registry
 ```
+
+The `--plugins-dir` flag points at an example-specific directory that holds
+only the five plugins this demo uses (`source/http`, `source/postgres`,
+`bootstrap/scriptfile`, `bootstrap/postgres`, `reaction/sse`).
+`prepare-trading.sh` installs the reviewed signed, digest-pinned registry set
+before startup. The normal startup
+uses a `registry` subdirectory so plugins built from a sibling `drasi-core`
+checkout cannot be reused accidentally with an ABI-incompatible server.
+`--plugin-source local` instead uses the separately validated `local`
+subdirectory produced by `build-local-plugins.sh` as both its plugin directory
+and local registry. The two modes never share plugin binaries or consult GHCR
+for local-mode plugins. Default mode requires the reviewed registry Cargo graph;
+it will not silently switch to local mode when patches are active.
 
 Preparation installs the SSE plugin but does not create any queries or
 reactions; the app still performs its existing automatic setup. Registry-SDK
-mode verifies signatures. Deliberate matching local-SDK development remains a
-separate unsigned-plugin mode, selected by Cargo's resolved origins rather than
+mode verifies signatures. Deliberate matching local-SDK development requires
+both `--plugin-source local` and matching Cargo-resolved origins, never merely
 the existence of `../drasi-core`.
 
 The server starts with two sources pre-configured:
@@ -698,6 +736,7 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 | `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
+| `build-local-plugins.sh` | Builds and validates a matched local server/plugin set |
 | `../../dev-tools/react/` | Reusable providers, headless hooks, `DataTable` and `QueryTable` — see [`dev-tools/react/README.md`](../../dev-tools/react/README.md) |
 | `app/src/components/TradingQueryTable.tsx` | App-owned normal/fullscreen cards sharing query, sort and animation state |
 | `app/src/components/QueryInspector.tsx` / `CodeViewerDialog.tsx` | On-demand definition reads and tutorial/code presentation |
@@ -739,6 +778,24 @@ lsof -i :8281 # SSE Reaction
 lsof -i :5273  # React app
 lsof -i :5632  # PostgreSQL
 ```
+
+### Local plugins are incompatible
+
+Local plugin mode requires Drasi Server and all five plugins to resolve
+`drasi-core`, `drasi-lib`, `drasi-plugin-sdk`, `drasi-host-sdk`, and
+`drasi-ffi-primitives` from the same local checkout. Cargo patches still obey dependency version requirements;
+an enabled patch is ignored when the local package version does not satisfy the
+requirement in `Cargo.toml`.
+
+After changing either repository or its patch configuration, rebuild:
+
+```bash
+./examples/trading/build-local-plugins.sh
+```
+
+The script reports whether a dependency still resolved from crates.io, whether
+the local packages came from different checkouts, and whether the plugin ABI or
+target differs from the rebuilt server.
 
 ## Key Concepts Demonstrated
 

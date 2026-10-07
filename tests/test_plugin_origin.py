@@ -167,8 +167,8 @@ class PluginOriginTests(unittest.TestCase):
 
     def test_local_mode_requires_the_actual_matching_build_workspace(self):
         metadata = fixture()
-        for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
-            version = "0.9.3" if name == "drasi-lib" else "0.11.3"
+        for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
+            version = plugin_origin.REGISTRY_PACKAGES[name][0]
             replace_package(metadata, package(name, version, None))
         mode, selected = plugin_origin.classify(metadata)
         self.assertEqual(mode, "local")
@@ -185,6 +185,11 @@ class PluginOriginTests(unittest.TestCase):
         wrong_core["packages"][0]["manifest_path"] = "/fixture/unrelated/host-sdk/Cargo.toml"
         with self.assertRaisesRegex(plugin_origin.PluginOriginError, "does not match"):
             plugin_origin.matching_local_workspace(selected, wrong_core)
+
+        registry_core = copy.deepcopy(selected)
+        registry_core["drasi-core"] = package("drasi-core", "0.5.10")
+        with self.assertRaisesRegex(plugin_origin.PluginOriginError, "drasi-core"):
+            plugin_origin.matching_local_workspace(registry_core, core)
 
     def test_local_sdks_with_registry_library_cannot_build_workspace_plugins(self):
         metadata = fixture()

@@ -61,7 +61,7 @@ def cargo_metadata(manifest, *, no_deps=False):
     return json.loads(result.stdout)
 
 
-def selected_packages(metadata, names=(*SDK_PACKAGES, "drasi-lib")):
+def selected_packages(metadata, names=(*SDK_PACKAGES, "drasi-lib", "drasi-core")):
     packages = {package["id"]: package for package in metadata["packages"]}
     servers = [
         package for package in packages.values()

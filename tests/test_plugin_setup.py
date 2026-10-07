@@ -267,7 +267,9 @@ with open(os.environ["POLICY_LOG"], "a") as log:
 if sys.argv[1].endswith("plugin_origin.py"):
     if os.environ.get("FAIL_ORIGIN") == "1":
         sys.exit(17)
-    print(os.environ["POLICY_MODE"])
+    print(os.environ["SELECTED_SDK"] if sys.argv[-1] == "local-workspace" else os.environ["POLICY_MODE"])
+elif sys.argv[1] in ("-", "-c"):
+    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 """)
         executable(self.bin / "make", """
 import json, os, sys
@@ -277,7 +279,8 @@ with open(os.environ["POLICY_LOG"], "a") as log:
 if "build-release" in sys.argv:
     if os.environ.get("FAIL_BUILD") == "1":
         sys.exit(19)
-    output = Path(sys.argv[sys.argv.index("-C") + 1]) / "ui/dist"
+    root = Path(sys.argv[sys.argv.index("-C") + 1]) if "-C" in sys.argv else Path.cwd()
+    output = root / "ui/dist"
     output.mkdir(parents=True, exist_ok=True)
     (output / "index.html").write_text("fixture UI source build")
 """)
@@ -298,9 +301,9 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
             with self.subTest(mode=mode):
                 metadata = fixture()
                 if mode == "local":
-                    for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
+                    for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
                         replace_package(
-                            metadata, package(name, "0.9.3" if name == "drasi-lib" else "0.11.3", None),
+                            metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], None),
                         )
                 _, selected = plugin_origin.classify(metadata)
                 core = {
@@ -351,7 +354,7 @@ if "metadata" in sys.argv:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("consumes registry SDKs", result.stderr)
 
-    def test_clean_trading_startup_keeps_registry_verification_and_local_development(self):
+    def test_default_trading_startup_keeps_registry_verification_and_rejects_local_graph(self):
         for mode in ("registry", "local"):
             with self.subTest(mode=mode):
                 self.log.write_text("")
@@ -379,20 +382,203 @@ sys.exit(42)
                 self.assertNotEqual(result.returncode, 0, "Fixture server deliberately refuses to run")
                 events = self.commands()
                 server_calls = [event for event in events if event[0] == "server"]
-                self.assertEqual(len(server_calls), 1, result.stdout + result.stderr)
                 installs = [event for event in events if any("install_plugins.py" in arg for arg in event)]
                 builds = [event[-1] for event in events if event[0] == "make"]
-                self.assertIn("build-release", builds)
                 if mode == "registry":
+                    self.assertEqual(len(server_calls), 1, result.stdout + result.stderr)
+                    self.assertIn("build-release", builds)
                     self.assertEqual(len(installs), 1)
                     self.assertNotIn("build-local-plugins", builds)
                     self.assertNotIn("--skip-verification", server_calls[0])
+                    self.assertEqual(
+                        Path(server_calls[0][server_calls[0].index("--config") + 1]),
+                        trading / "server/trading-sources-only.yaml",
+                    )
+                    self.assertEqual(
+                        Path(server_calls[0][server_calls[0].index("--plugins-dir") + 1]),
+                        trading / "plugins/registry",
+                    )
+                    self.assertEqual(
+                        Path(installs[0][installs[0].index("--plugins-dir") + 1]).resolve(),
+                        (trading / "plugins/registry").resolve(),
+                    )
                 else:
+                    self.assertIn("Requested registry plugins, but Cargo resolves local", result.stderr)
+                    self.assertEqual(server_calls, [])
                     self.assertEqual(installs, [])
-                    self.assertIn("build-local-plugins", builds)
-                    self.assertIn("--skip-verification", server_calls[0])
-                self.assertIn("examples/trading/server/trading-sources-only.yaml", server_calls[0])
+                    self.assertEqual(builds, [])
                 self.assertFalse((self.root / "target/release/plugins").exists())
+
+    def local_trading_fixture(self):
+        self.source_stubs()
+        trading = self.root / "examples/trading"
+        (trading / "server").mkdir(parents=True)
+        (trading / "database").mkdir()
+        for name in ("start-demo.sh", "build-local-plugins.sh"):
+            shutil.copyfile(ROOT / "examples/trading" / name, trading / name)
+        shutil.copyfile(
+            ROOT / "examples/trading/server/trading-sources-only.yaml",
+            trading / "server/trading-sources-only.yaml",
+        )
+        shutil.copyfile(ROOT / "scripts/plugin_origin.py", self.root / "scripts/plugin_origin.py")
+        core = self.root.parent / "selected-core"
+        core.mkdir()
+        metadata = fixture()
+        for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
+            replace_package(
+                metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], None, str(core)),
+            )
+        selected = plugin_origin.selected_packages(metadata)
+        core_metadata = {
+            "workspace_root": str(core), "target_directory": str(core / "target"),
+            "workspace_members": [entry["id"] for entry in selected.values()],
+            "packages": list(selected.values()),
+        }
+        self.environment.update({
+            "POLICY_MODE": "local", "SELECTED_SDK": str(core),
+            "SERVER_METADATA": json.dumps(metadata), "CORE_METADATA": json.dumps(core_metadata),
+        })
+        executable(self.bin / "cargo", """
+import json, os, sys
+from pathlib import Path
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["cargo", *sys.argv[1:]]) + "\\n")
+if "metadata" in sys.argv:
+    print(os.environ["CORE_METADATA" if "--no-deps" in sys.argv else "SERVER_METADATA"])
+elif "build" in sys.argv:
+    name = sys.argv[sys.argv.index("-p") + 1].replace("-", "_")
+    prefix, extension = ("", "dll") if sys.platform == "win32" else ("lib", "dylib" if sys.platform == "darwin" else "so")
+    output = Path(os.environ["SELECTED_SDK"]) / "target/release"
+    output.mkdir(parents=True, exist_ok=True)
+    (output / f"{prefix}{name}.{extension}").write_bytes(b"fixture-only plugin")
+""")
+        executable(self.root / "target/release/drasi-server", """
+import json, os, sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["server", *sys.argv[1:]]) + "\\n")
+if "--version" in sys.argv:
+    print("fixture server\\nplugin-sdk: 0.11.3\\nplugin ABI: 0.14.0")
+elif "validate" in sys.argv:
+    if os.environ.get("FAIL_VALIDATE") == "1":
+        print("[ERR] plugin ABI mismatch")
+        sys.exit(1)
+    print("Plugins (5 loaded)")
+else:
+    sys.exit(42)
+""")
+        for tool, body in (
+            ("docker", "pass\n"), ("docker-compose", "print('fixture-ready')\n"),
+            ("curl", "print('200')\n"), ("sleep", "import time; time.sleep(0.1)\n"),
+        ):
+            executable(self.bin / tool, body)
+        for repository in (self.root, core):
+            (repository / ".gitignore").write_text(
+                "target/\nplugins/\nlogs/\nbin/\ncommands.jsonl\nui/dist/\n__pycache__/\n"
+            )
+            subprocess.run(["git", "init", "-q", str(repository)], check=True)
+            subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+            subprocess.run([
+                "git", "-C", str(repository), "-c", "user.name=Fixture",
+                "-c", "user.email=fixture@example.invalid", "-c", "core.hooksPath=/dev/null",
+                "commit", "-qm", "fixture",
+            ], check=True)
+        return trading, core
+
+    def build_local_fixture(self, trading):
+        result = subprocess.run(
+            ["bash", str(trading / "build-local-plugins.sh")],
+            cwd=self.root, env=self.environment, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads((trading / "plugins/local/local-build.json").read_text())
+
+    def start_local_fixture(self, trading, **environment):
+        self.log.write_text("")
+        return subprocess.run(
+            ["bash", str(trading / "start-demo.sh"), "--plugin-source", "local"],
+            cwd=self.root, env={**self.environment, **environment}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        )
+
+    def test_explicit_local_build_and_start_use_only_five_matched_plugins(self):
+        trading, _ = self.local_trading_fixture()
+        manifest = self.build_local_fixture(trading)
+        self.assertEqual(len(manifest["plugins"]), 5)
+        self.assertIn("drasi-ffi-primitives", manifest["resolved_versions"])
+        self.assertEqual(manifest["ffi_abi"], "0.14.0")
+        builds = [event for event in self.commands() if event[:2] == ["cargo", "build"]]
+        self.assertEqual(len(builds), 5)
+        self.assertEqual(
+            {event[event.index("-p") + 1] for event in builds},
+            {"drasi-" + kind.replace("/", "-") for kind in installer.VERSIONS},
+        )
+        self.assertTrue(all("--locked" in event for event in builds))
+        result = self.start_local_fixture(trading)
+        self.assertNotEqual(result.returncode, 0, "Fixture server deliberately refuses to run")
+        events = self.commands()
+        launches = [event for event in events if event[0] == "server" and "validate" not in event]
+        self.assertEqual(len(launches), 1, result.stdout + result.stderr)
+        self.assertIn("--skip-verification", launches[0])
+        self.assertIn(str(trading / "plugins/local"), launches[0])
+        self.assertFalse(any(event[0] in ("cargo", "make") for event in events))
+        self.assertFalse(any("install_plugins.py" in arg for event in events for arg in event))
+        config = (trading / "logs/trading-sources-local.yaml").read_text()
+        self.assertIn("autoInstallPlugins: true", config)
+        self.assertIn(f'pluginRegistry: "{(trading / "plugins/local").resolve()}"', config)
+
+    def test_local_start_rejects_stale_or_incomplete_artifacts_without_rebuilding(self):
+        trading, core = self.local_trading_fixture()
+        manifest = self.build_local_fixture(trading)
+        manifest_path = trading / "plugins/local/local-build.json"
+        cases = [
+            (self.root / "target/release/drasi-server", b"\n# changed"),
+            (trading / "plugins/local" / next(iter(manifest["plugins"])), b"changed"),
+            (core / ".gitignore", b"\n# changed"),
+            (self.root / ".gitignore", b"\n# changed"),
+        ]
+        for path, addition in cases:
+            with self.subTest(path=path):
+                original = path.read_bytes()
+                try:
+                    path.write_bytes(original + addition)
+                    result = self.start_local_fixture(trading)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("stale or incomplete", result.stderr)
+                    self.assertFalse(any(event[0] in ("server", "make", "cargo") for event in self.commands()))
+                finally:
+                    path.write_bytes(original)
+        manifest["plugins"].pop(next(iter(manifest["plugins"])))
+        manifest_path.write_text(json.dumps(manifest))
+        result = self.start_local_fixture(trading)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exactly the five", result.stderr)
+
+    def test_local_build_validation_failure_preserves_installed_set(self):
+        trading, _ = self.local_trading_fixture()
+        manifest = self.build_local_fixture(trading)
+        self.environment["FAIL_VALIDATE"] = "1"
+        result = subprocess.run(
+            ["bash", str(trading / "build-local-plugins.sh")],
+            cwd=self.root, env=self.environment, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("rejected the local plugin set", result.stderr)
+        self.assertEqual(json.loads((trading / "plugins/local/local-build.json").read_text()), manifest)
+        self.assertEqual([path.name for path in (trading / "plugins").iterdir()], ["local"])
+
+    def test_explicit_local_request_rejects_registry_graph_before_build_or_install(self):
+        self.source_stubs()
+        result = subprocess.run(
+            ["bash", str(self.root / "scripts/prepare-trading.sh"), "--plugin-source", "local"],
+            cwd=self.root, env={**self.environment, "POLICY_MODE": "registry"}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Requested local plugins, but Cargo resolves registry", result.stderr)
+        self.assertFalse(any(event[0] in ("make", "npm") for event in self.commands()))
+        self.assertFalse(any("install_plugins.py" in arg for event in self.commands() for arg in event))
 
     def test_post_create_uses_source_build_and_shared_locked_plugin_setup(self):
         post_create = self.root / ".devcontainer/trading/post-create.sh"

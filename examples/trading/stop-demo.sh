@@ -163,3 +163,15 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     rm -f /tmp/drasi-server.log /tmp/react-app.log /tmp/price-generator.log
     echo -e "Log files removed ${GREEN}✓${NC}"
 fi
+
+# Optional: Clean up both trading plugin caches. Registry mode will download
+# its plugins again; local mode will require build-local-plugins.sh to be rerun.
+PLUGINS_DIR="$SCRIPT_DIR/plugins"
+if [ -d "$PLUGINS_DIR" ]; then
+    read -p "Do you want to remove the registry and local trading plugin binaries in $PLUGINS_DIR? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$PLUGINS_DIR"
+        echo -e "Trading-example plugin binaries removed ${GREEN}✓${NC}"
+    fi
+fi
