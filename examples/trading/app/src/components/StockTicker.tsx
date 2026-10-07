@@ -13,7 +13,9 @@
 // limitations under the License.
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useDrasiQuery } from '@drasi/react/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
+import type { PriceTickerRow } from '@/types';
 import './StockTicker.css';
 
 interface TickerItem {
@@ -26,7 +28,10 @@ interface TickerItem {
 }
 
 const StockTicker: React.FC = () => {
-  const { data: priceData } = useQuery<any>('price-ticker-query');
+  const { data: priceData } = useDrasiQuery<PriceTickerRow>(
+    'price-ticker-query',
+    tradingQueryOptions('price-ticker-query'),
+  );
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
@@ -47,7 +52,7 @@ const StockTicker: React.FC = () => {
 
     const newItems: TickerItem[] = [];
     
-    priceData.forEach((item: any) => {
+    priceData.forEach((item) => {
       const price = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
       const changePercent = typeof item.changePercent === 'number' ? item.changePercent : parseFloat(item.changePercent) || 0;
       
@@ -124,7 +129,7 @@ const StockTicker: React.FC = () => {
 
   if (tickerItems.length === 0) {
     return (
-      <div className="stock-ticker">
+      <div className="stock-ticker" role="region" aria-label="Live stock ticker">
         <div className="ticker-container">
           <div className="ticker-content-static">
             <span className="ticker-placeholder">Waiting for price updates...</span>
@@ -135,7 +140,7 @@ const StockTicker: React.FC = () => {
   }
 
   return (
-    <div className="stock-ticker">
+    <div className="stock-ticker" role="region" aria-label="Live stock ticker">
       <div className="ticker-container" ref={containerRef}>
         <div className="ticker-content-smooth">
           {tickerItems.map((item) => (

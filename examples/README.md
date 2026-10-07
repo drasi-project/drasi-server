@@ -46,6 +46,19 @@ Comprehensive example demonstrating advanced features and production patterns.
 
 ---
 
+### [react/](react/)
+**Independent React controls** - A small cold-storage workspace using the private,
+built `@drasi/react` package, with no Trading frontend dependency.
+
+- Live tables and a separate hooks-only UI connect to explicitly pre-created resources.
+- A clearly labelled, server-free showcase demonstrates presentation states,
+  controlled sorting, local/portal themes and generic dialogs.
+- Declarative example-owned setup and source-free, three-browser checks.
+
+**Use this for:** Integrating the reusable controls without copying Trading.
+
+---
+
 ### 🐙 [github-webhooks/](github-webhooks/)
 **GitHub Integration** - Receive and process GitHub webhook events in real-time using the HTTP source in webhook mode.
 

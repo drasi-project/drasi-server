@@ -2,8 +2,6 @@ name: Test
 
 on:
   pull_request:
-    branches:
-      - main
 
 jobs:
   test:
@@ -11,3 +9,6 @@ jobs:
     with:
       install-jq: true
       install-protobuf: true
+      test-command: |
+        make test-tooling
+        cargo test --locked

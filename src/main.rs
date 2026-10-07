@@ -37,7 +37,7 @@ fn long_version() -> &'static str {
     LONG_VERSION
         .get_or_init(|| {
             format!(
-                "{}\nrustc: {}\nplugin-sdk crate: {}\nplugin ABI: {}",
+                "{}\nrustc: {}\nplugin-sdk: {}\nplugin ABI: {}",
                 env!("CARGO_PKG_VERSION"),
                 env!("DRASI_RUSTC_VERSION"),
                 env!("DRASI_PLUGIN_SDK_VERSION"),

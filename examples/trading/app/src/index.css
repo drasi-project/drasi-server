@@ -17,6 +17,23 @@ limitations under the License. */
 @tailwind utilities;
 
 body {
+  --drasi-color-surface: #131825;
+  --drasi-color-dialog: #1e2433;
+  --drasi-color-code: #0d1117;
+  --drasi-color-border: #1f2937;
+  --drasi-color-primary: #3b82f6;
+  --drasi-color-success: #10b981;
+  --drasi-color-danger: #ef4444;
+  --drasi-color-text: #e5e7eb;
+  --drasi-color-muted: #9ca3af;
+  --drasi-color-subtle: #6b7280;
+  --drasi-color-row-border: rgb(31 41 55 / 50%);
+  --drasi-color-row-hover: rgb(31 41 55 / 20%);
+  --drasi-color-action-hover: rgb(31 41 55 / 50%);
+  --drasi-color-focus: #93c5fd;
+  --drasi-table-height: 400px;
+  --drasi-radius: 0.5rem;
+  --drasi-line-height: 1.5;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -55,65 +72,15 @@ code {
   background: #6b7280;
 }
 
-/* Price animations */
-.price-up {
-  animation: flash-green 0.5s ease-in-out;
+.trading-expanded-dialog {
+  overflow: hidden;
 }
 
-.price-down {
-  animation: flash-red 0.5s ease-in-out;
+.trading-dialog-overlay {
+  align-items: safe center;
 }
 
-/* Status change animation (neutral, non-directional) */
-.status-change {
-  animation: flash-blue 0.5s ease-in-out;
-}
-
-@keyframes flash-green {
-  0%, 100% { background-color: transparent; }
-  50% { background-color: rgba(16, 185, 129, 0.2); }
-}
-
-@keyframes flash-red {
-  0%, 100% { background-color: transparent; }
-  50% { background-color: rgba(239, 68, 68, 0.2); }
-}
-
-@keyframes flash-blue {
-  0%, 100% { background-color: transparent; }
-  50% { background-color: rgba(59, 130, 246, 0.25); }
-}
-
-/* Dialog animations */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out;
-}
-
-.animate-slide-up {
-  animation: slide-up 0.25s ease-out;
-}
-
-/* Force all text in expanded tables to inherit the container font size */
-.expanded-table-text {
-  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.expanded-table-text * {
-  font-size: inherit !important;
-  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+.trading-dialog {
+  max-height: none;
+  overflow: visible;
 }

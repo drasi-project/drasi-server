@@ -1,0 +1,273 @@
+[
+  {
+    "path": "/api/v1/queries",
+    "recordedAt": "2026-09-18T18:10:42.963Z",
+    "body": {
+      "success": true,
+      "data": [],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/reactions",
+    "recordedAt": "2026-09-18T18:10:42.965Z",
+    "body": {
+      "success": true,
+      "data": [],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-summary-query/results",
+    "recordedAt": "2026-09-18T18:10:43.415Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        },
+        {
+          "positionCount": 1,
+          "totalCost": 800,
+          "totalProfitLoss": 300,
+          "totalProfitLossPercent": 37.5,
+          "totalValue": 1100
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/reactions/sse-stream?view=full",
+    "recordedAt": "2026-09-18T18:10:58.427Z",
+    "body": {
+      "success": true,
+      "data": {
+        "id": "sse-stream",
+        "status": "Running",
+        "links": {
+          "self": "/api/v1/instances/trading-server/reactions/sse-stream",
+          "full": "/api/v1/instances/trading-server/reactions/sse-stream?view=full"
+        },
+        "config": {
+          "heartbeatIntervalMs": 15000,
+          "host": "127.0.0.1",
+          "id": "sse-stream",
+          "kind": "sse",
+          "port": 51275,
+          "queries": [
+            "watchlist-query",
+            "portfolio-query",
+            "top-gainers-query",
+            "top-losers-query",
+            "high-volume-query",
+            "price-ticker-query",
+            "sector-performance-query",
+            "portfolio-summary-query",
+            "active-orders-query",
+            "stale-orders-query",
+            "expiring-orders-query"
+          ],
+          "ssePath": "/events"
+        }
+      },
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/watchlist-query/results",
+    "recordedAt": "2026-09-18T18:10:58.429Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "changePercent": 10,
+          "name": "Apple Inc.",
+          "previousClose": 100,
+          "price": 110,
+          "symbol": "AAPL"
+        },
+        {
+          "changePercent": -10,
+          "name": "Microsoft Corporation",
+          "previousClose": 200,
+          "price": 180,
+          "symbol": "MSFT"
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-query/results",
+    "recordedAt": "2026-09-18T18:10:58.431Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "costBasis": 1000,
+          "currentPrice": 180,
+          "currentValue": 900,
+          "id": 2,
+          "name": "Microsoft Corporation",
+          "profitLoss": -100,
+          "profitLossPercent": -10,
+          "purchasePrice": 200,
+          "quantity": 5,
+          "symbol": "MSFT"
+        },
+        {
+          "costBasis": 800,
+          "currentPrice": 110,
+          "currentValue": 1100,
+          "id": 1,
+          "name": "Apple Inc.",
+          "profitLoss": 300,
+          "profitLossPercent": 37.5,
+          "purchasePrice": 80,
+          "quantity": 10,
+          "symbol": "AAPL"
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-summary-query/results",
+    "recordedAt": "2026-09-18T18:10:58.432Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        },
+        {
+          "positionCount": 1,
+          "totalCost": 800,
+          "totalProfitLoss": 300,
+          "totalProfitLossPercent": 37.5,
+          "totalValue": 1100
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-summary-query/results",
+    "recordedAt": "2026-09-18T18:11:00.135Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 250,
+          "totalProfitLossPercent": 13.88888888888889,
+          "totalValue": 2050
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-summary-query/results",
+    "recordedAt": "2026-09-18T18:11:15.172Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 350,
+          "totalProfitLossPercent": 19.444444444444446,
+          "totalValue": 2150
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/portfolio-summary-query/results",
+    "recordedAt": "2026-09-18T18:11:15.174Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 350,
+          "totalProfitLossPercent": 19.444444444444446,
+          "totalValue": 2150
+        },
+        {
+          "positionCount": 2,
+          "totalCost": 1800,
+          "totalProfitLoss": 200,
+          "totalProfitLossPercent": 11.11111111111111,
+          "totalValue": 2000
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "path": "/api/v1/queries/watchlist-query/results",
+    "recordedAt": "2026-09-18T18:11:17.060Z",
+    "body": {
+      "success": true,
+      "data": [
+        {
+          "changePercent": 25,
+          "name": "Apple Inc.",
+          "previousClose": 100,
+          "price": 125,
+          "symbol": "AAPL"
+        }
+      ],
+      "error": null
+    }
+  }
+]

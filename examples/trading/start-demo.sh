@@ -147,17 +147,8 @@ if ! command_exists python3; then
     exit 1
 fi
 
-if [ ! -f "$DRASI_SERVER_ROOT/target/release/drasi-server" ]; then
-    echo -e "${YELLOW}Drasi Server binary not found. Building (server + Web UI)...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    # Use the Makefile target so the Web UI (ui/dist) is built alongside the binary.
-    # `cargo build --release` alone does NOT build the UI and the /ui route would 404.
-    make build-release
-elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
-    echo -e "${YELLOW}Web UI not built (ui/dist missing). Building UI...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-ui
-fi
+# Shared with the devcontainer: validate the locked graph and prepare the real UI.
+bash "$DRASI_SERVER_ROOT/scripts/prepare-trading.sh" --plugin-source "$PLUGIN_SOURCE"
 
 # Keep registry and local artifacts isolated so they can never be mixed.
 CONFIG_PATH="$BASE_CONFIG"
@@ -178,7 +169,8 @@ else
         exit 1
     fi
 
-    if ! LOCAL_PLUGIN_REGISTRY="$(python3 - "$LOCAL_MANIFEST" "$DRASI_SERVER_ROOT/target/release/drasi-server" "$PLUGINS_DIR" <<'PY'
+    LOCAL_CORE="$(python3 "$DRASI_SERVER_ROOT/scripts/plugin_origin.py" local-workspace)"
+    if ! LOCAL_PLUGIN_REGISTRY="$(python3 - "$LOCAL_MANIFEST" "$DRASI_SERVER_ROOT/target/release/drasi-server" "$PLUGINS_DIR" "$DRASI_SERVER_ROOT" "$LOCAL_CORE" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -188,6 +180,10 @@ import sys
 manifest_path = pathlib.Path(sys.argv[1])
 server_binary = pathlib.Path(sys.argv[2]).resolve()
 plugins_dir = pathlib.Path(sys.argv[3]).resolve()
+source_roots = {
+    "drasi_server": pathlib.Path(sys.argv[4]).resolve(),
+    "drasi_core": pathlib.Path(sys.argv[5]).resolve(),
+}
 
 def sha256(path):
     digest = hashlib.sha256()
@@ -246,7 +242,21 @@ if not server_binary.is_file():
 elif sha256(server_binary) != manifest.get("server_sha256"):
     errors.append("Drasi Server was rebuilt after the local plugins were prepared")
 
-for filename, expected_hash in manifest.get("plugins", {}).items():
+if sys.platform == "darwin":
+    prefix, extension = "lib", "dylib"
+elif sys.platform == "win32":
+    prefix, extension = "", "dll"
+else:
+    prefix, extension = "lib", "so"
+required_plugins = {
+    f"{prefix}drasi_{kind}.{extension}"
+    for kind in ("source_http", "source_postgres", "bootstrap_scriptfile",
+                 "bootstrap_postgres", "reaction_sse")
+}
+if set(manifest.get("plugins", {})) != required_plugins:
+    errors.append("manifest must contain exactly the five required trading plugins")
+for filename in sorted(required_plugins):
+    expected_hash = manifest.get("plugins", {}).get(filename)
     plugin_path = plugins_dir / filename
     if not plugin_path.is_file():
         errors.append(f"local plugin is missing: {filename}")
@@ -258,6 +268,9 @@ for key in ("drasi_server", "drasi_core"):
     root = recorded.get("root")
     if not root:
         errors.append(f"manifest is missing {key} source information")
+        continue
+    if pathlib.Path(root).resolve() != source_roots[key]:
+        errors.append(f"{key} no longer resolves from the recorded checkout")
         continue
     try:
         current = git_state(root)
@@ -295,6 +308,7 @@ import sys
 source = pathlib.Path(sys.argv[1]).read_text()
 destination = pathlib.Path(sys.argv[2])
 registry = json.dumps(str(pathlib.Path(sys.argv[3]).resolve()))
+source = source.replace("autoInstallPlugins: false", "autoInstallPlugins: true", 1)
 
 replacement = f"pluginRegistry: {registry}"
 if re.search(r"(?m)^pluginRegistry:", source):
@@ -422,12 +436,7 @@ sleep 3
 echo ""
 echo "Step 3: Setting up React application..."
 cd "$SCRIPT_DIR/app"
-if [ ! -d "node_modules" ]; then
-    echo "Installing npm dependencies..."
-    npm install
-else
-    echo "Dependencies already installed"
-fi
+echo "Locked package and app dependencies are prepared"
 
 # Step 4: Start React app
 echo "Starting React application..."

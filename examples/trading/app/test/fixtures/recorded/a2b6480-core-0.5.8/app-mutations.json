@@ -1,0 +1,452 @@
+[
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "watchlist-query",
+      "query": "\n    MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "ON_WATCHLIST",
+          "keys": [
+            {
+              "label": "watchlist",
+              "property": "symbol"
+            },
+            {
+              "label": "stocks",
+              "property": "symbol"
+            }
+          ]
+        },
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "portfolio-query",
+      "query": "\n    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    WITH p, \n         s.name AS name, \n         sp.price AS currentPrice,\n         toFloat(p.purchase_price) AS avgCost,\n         (sp.price * p.quantity) AS currentValue,\n         (toFloat(p.purchase_price) * p.quantity) AS costBasis,\n         ((sp.price - toFloat(p.purchase_price)) * p.quantity) AS profitLoss,\n         ((sp.price - toFloat(p.purchase_price)) / toFloat(p.purchase_price) * 100) AS profitLossPercent\n    RETURN p.id AS id,\n           p.symbol AS symbol,\n           p.quantity AS quantity,\n           avgCost AS purchasePrice,\n           name,\n           currentPrice,\n           currentValue,\n           costBasis,\n           profitLoss,\n           profitLossPercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "OWNS_STOCK",
+          "keys": [
+            {
+              "label": "portfolio",
+              "property": "symbol"
+            },
+            {
+              "label": "stocks",
+              "property": "symbol"
+            }
+          ]
+        },
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "top-gainers-query",
+      "query": "\n    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    WHERE sp.price > sp.previous_close\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "top-losers-query",
+      "query": "\n    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    WHERE sp.price < sp.previous_close\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "high-volume-query",
+      "query": "\n    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    WHERE sp.volume > 10000000\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.volume AS volume,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "price-ticker-query",
+      "query": "\n    MATCH (sp:stock_prices)\n    RETURN sp.symbol AS symbol,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "sector-performance-query",
+      "query": "\n    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    RETURN s.sector AS sector,\n           count(s) AS stockCount,\n           avg((sp.price - sp.previous_close) / sp.previous_close * 100) AS avgChangePercent,\n           sum(sp.volume) AS totalVolume,\n           min(sp.price) AS minPrice,\n           max(sp.price) AS maxPrice\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "portfolio-summary-query",
+      "query": "\n    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    WITH sum(sp.price * p.quantity) AS totalValue,\n         sum(toFloat(p.purchase_price) * p.quantity) AS totalCost,\n         count(p) AS positionCount\n    RETURN totalValue,\n           totalCost,\n           (totalValue - totalCost) AS totalProfitLoss,\n           CASE WHEN totalCost > 0 \n                THEN ((totalValue - totalCost) / totalCost * 100) \n                ELSE 0 \n           END AS totalProfitLossPercent,\n           positionCount\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-stocks",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "OWNS_STOCK",
+          "keys": [
+            {
+              "label": "portfolio",
+              "property": "symbol"
+            },
+            {
+              "label": "stocks",
+              "property": "symbol"
+            }
+          ]
+        },
+        {
+          "id": "HAS_PRICE",
+          "keys": [
+            {
+              "label": "stocks",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "active-orders-query",
+      "query": "\n    MATCH (o:limit_orders)-[:ORDER_HAS_PRICE]->(sp:stock_prices)\n    RETURN o.id AS id,\n           o.symbol AS symbol,\n           o.order_type AS orderType,\n           o.target_price AS targetPrice,\n           sp.price AS currentPrice,\n           o.quantity AS quantity,\n           o.status AS status,\n           o.created_at AS createdAt,\n           o.expires_at AS expiresAt,\n           ((toFloat(o.target_price) - sp.price) / sp.price * 100) AS distancePercent\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-broker",
+          "pipeline": []
+        },
+        {
+          "sourceId": "price-feed",
+          "pipeline": []
+        }
+      ],
+      "joins": [
+        {
+          "id": "ORDER_HAS_PRICE",
+          "keys": [
+            {
+              "label": "limit_orders",
+              "property": "symbol"
+            },
+            {
+              "label": "stock_prices",
+              "property": "symbol"
+            }
+          ]
+        }
+      ],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "stale-orders-query",
+      "query": "\n    MATCH (o:limit_orders)\n    WHERE o.status = 'pending'\n      AND o.stale_duration IS NOT NULL\n      AND drasi.trueFor(o.status = 'pending', duration({seconds: o.stale_duration}))\n    RETURN o.id AS id,\n           o.symbol AS symbol,\n           o.order_type AS orderType,\n           o.target_price AS targetPrice,\n           o.quantity AS quantity,\n           o.created_at AS createdAt,\n           o.expires_at AS expiresAt,\n           'STALE' AS alertType,\n           'Order pending past halfway to expiry' AS alertMessage\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-broker",
+          "pipeline": []
+        }
+      ],
+      "joins": [],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/queries",
+    "method": "POST",
+    "body": {
+      "id": "expiring-orders-query",
+      "query": "\n    MATCH (o:limit_orders)\n    WHERE o.status = 'stale'\n      AND o.expire_duration IS NOT NULL\n      AND o.stale_duration IS NOT NULL\n      AND drasi.trueFor(o.status = 'stale', duration({seconds: o.expire_duration - o.stale_duration}))\n    RETURN o.id AS id,\n           o.symbol AS symbol,\n           o.order_type AS orderType,\n           o.target_price AS targetPrice,\n           o.quantity AS quantity,\n           o.expires_at AS expiresAt,\n           'EXPIRED' AS alertType,\n           'Order expired - time limit reached' AS alertMessage\n  ",
+      "queryLanguage": "Cypher",
+      "sources": [
+        {
+          "sourceId": "postgres-broker",
+          "pipeline": []
+        }
+      ],
+      "joins": [],
+      "autoStart": true
+    }
+  },
+  {
+    "url": "/api/v1/reactions",
+    "method": "POST",
+    "body": {
+      "kind": "sse",
+      "id": "sse-stream",
+      "queries": [
+        "watchlist-query",
+        "portfolio-query",
+        "top-gainers-query",
+        "top-losers-query",
+        "high-volume-query",
+        "price-ticker-query",
+        "sector-performance-query",
+        "portfolio-summary-query",
+        "active-orders-query",
+        "stale-orders-query",
+        "expiring-orders-query"
+      ],
+      "autoStart": true,
+      "host": "0.0.0.0",
+      "port": 8281,
+      "ssePath": "/events",
+      "heartbeatIntervalMs": 15000
+    }
+  },
+  {
+    "url": "/api/watchlist",
+    "method": "POST",
+    "body": {
+      "symbol": "NVDA"
+    }
+  },
+  {
+    "url": "/api/watchlist/NVDA",
+    "method": "DELETE",
+    "body": null
+  },
+  {
+    "url": "/api/portfolio",
+    "method": "POST",
+    "body": {
+      "symbol": "NVDA",
+      "quantity": 2,
+      "purchasePrice": 100,
+      "purchaseDate": "2026-09-18"
+    }
+  },
+  {
+    "url": "/api/portfolio/3",
+    "method": "PUT",
+    "body": {
+      "quantity": 3,
+      "purchasePrice": 100,
+      "purchaseDate": "2026-09-18"
+    }
+  },
+  {
+    "url": "/api/portfolio/3",
+    "method": "DELETE",
+    "body": null
+  },
+  {
+    "url": "/api/orders",
+    "method": "POST",
+    "body": {
+      "symbol": "NVDA",
+      "orderType": "sell",
+      "targetPrice": 125,
+      "quantity": 2,
+      "expiresAt": "2026-09-18T19:10:59.587Z",
+      "staleDuration": 1800,
+      "expireDuration": 3600
+    }
+  },
+  {
+    "url": "/api/orders/3",
+    "method": "DELETE",
+    "body": null
+  }
+]

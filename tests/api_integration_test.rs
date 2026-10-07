@@ -66,16 +66,16 @@ async fn create_test_router_with_id(
     let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
     let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
 
-    // Create queries referenced by the reactions (auto_start: false so they don't need to run)
+    // Reaction subscriptions require their queries to be running.
     let reaction_query = Query::cypher("reaction-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("reaction-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     let auto_query = Query::cypher("auto-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("reaction-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
 
     // Create a minimal DrasiLib using the builder with mock instances
@@ -719,7 +719,7 @@ async fn test_query_attach_sse_stream() {
     let query_config = Query::cypher("attach-query")
         .query("MATCH (n) RETURN n")
         .from_source("query-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
 
@@ -774,7 +774,7 @@ async fn test_query_attach_creates_temporary_reaction() {
     let query_config = Query::cypher("attach-reaction-test")
         .query("MATCH (n) RETURN n")
         .from_source("query-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
 

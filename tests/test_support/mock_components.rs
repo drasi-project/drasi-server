@@ -22,6 +22,7 @@ use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
 use drasi_lib::Reaction as ReactionTrait;
 use drasi_lib::Source as SourceTrait;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -29,6 +30,8 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct MockSource {
     inner: Arc<MockSourceInner>,
+    auto_start: bool,
+    start_counter: Arc<AtomicUsize>,
 }
 
 struct MockSourceInner {
@@ -47,7 +50,19 @@ impl MockSource {
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
             }),
+            auto_start: true,
+            start_counter: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    pub fn with_auto_start(mut self, auto_start: bool) -> Self {
+        self.auto_start = auto_start;
+        self
+    }
+
+    pub fn with_start_counter(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.start_counter = counter;
+        self
     }
 
     pub async fn emit_log(&self, message: &str) {
@@ -87,7 +102,12 @@ impl SourceTrait for MockSource {
         HashMap::new()
     }
 
+    fn auto_start(&self) -> bool {
+        self.auto_start
+    }
+
     async fn start(&self) -> anyhow::Result<()> {
+        self.start_counter.fetch_add(1, Ordering::SeqCst);
         *self.inner.status.write().await = ComponentStatus::Running;
         self.report_status(ComponentStatus::Running).await;
         Ok(())
@@ -135,6 +155,8 @@ impl SourceTrait for MockSource {
 #[derive(Clone)]
 pub struct MockReaction {
     inner: Arc<MockReactionInner>,
+    auto_start: bool,
+    start_counter: Arc<AtomicUsize>,
 }
 
 struct MockReactionInner {
@@ -155,7 +177,19 @@ impl MockReaction {
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
             }),
+            auto_start: true,
+            start_counter: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    pub fn with_auto_start(mut self, auto_start: bool) -> Self {
+        self.auto_start = auto_start;
+        self
+    }
+
+    pub fn with_start_counter(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.start_counter = counter;
+        self
     }
 
     pub async fn emit_log(&self, message: &str) {
@@ -199,12 +233,17 @@ impl ReactionTrait for MockReaction {
         self.inner.queries.clone()
     }
 
+    fn auto_start(&self) -> bool {
+        self.auto_start
+    }
+
     async fn initialize(&self, context: ReactionRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
         *self.inner.update_tx.write().await = Some(context.update_tx);
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        self.start_counter.fetch_add(1, Ordering::SeqCst);
         *self.inner.status.write().await = ComponentStatus::Running;
         self.report_status(ComponentStatus::Running).await;
         Ok(())

@@ -246,11 +246,11 @@ pub async fn create_test_router_with_solutions(
     let reaction_source = create_mock_source("reaction-source");
     let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
 
-    // Create query referenced by the reaction (auto_start: false so it doesn't need to run)
+    // Reaction subscriptions require their queries to be running.
     let test_query = Query::cypher("test-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("reaction-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
 
     // Build DrasiLib
@@ -317,11 +317,11 @@ pub async fn create_multi_instance_test_router(
         let reaction_source = create_mock_source(&reaction_source_id);
         let test_reaction = create_mock_reaction(&reaction_id, vec![query_id.clone()]);
 
-        // Create query referenced by the reaction (auto_start: false so it doesn't need to run)
+        // Reaction subscriptions require their queries to be running.
         let reaction_query = Query::cypher(&query_id)
             .query("MATCH (n:Node) RETURN n")
             .from_source(&reaction_source_id)
-            .auto_start(false)
+            .auto_start(true)
             .build();
 
         // Build DrasiLib

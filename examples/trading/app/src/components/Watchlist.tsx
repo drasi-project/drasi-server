@@ -13,7 +13,9 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction } from './QueryTable';
+import type { ColumnDef, RowAction } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator, RemoveIcon, AddIcon, SelectDialog } from './shared';
 import { Stock } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
@@ -21,16 +23,18 @@ import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display
-const CODE_SNIPPET = `<QueryTable<Stock>
+const CODE_SNIPPET = `<TradingQueryTable<Stock>
   queryId="watchlist-query"
+  queryOptions={tradingQueryOptions('watchlist-query')}
   title="Watchlist"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
     { key: 'price', label: 'Price', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.price) },
     { key: 'changePercent', label: 'Change', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => <ChangeIndicator value={row.changePercent} /> },
   ]}
   rowKey={(row) => row.symbol}
   animateOnChange="price"
@@ -95,7 +99,7 @@ export const Watchlist: React.FC = () => {
       key: 'symbol',
       label: 'Symbol',
       className: 'font-medium',
-      width: 'w-20',
+      width: '5rem',
     },
     {
       key: 'name',
@@ -106,17 +110,17 @@ export const Watchlist: React.FC = () => {
       key: 'price',
       label: 'Price',
       align: 'right',
-      format: (value) => formatCurrency(value),
+      format: (_value, row) => formatCurrency(row.price),
       className: 'font-mono',
     },
     {
       key: 'changePercent',
       label: 'Change',
       align: 'right',
-      format: (value) => <ChangeIndicator value={value} />,
-      className: (value) => clsx(
+      format: (_value, row) => <ChangeIndicator value={row.changePercent} />,
+      className: (_value, row) => clsx(
         'font-mono text-sm',
-        value >= 0 ? 'text-trading-green' : 'text-trading-red'
+        row.changePercent >= 0 ? 'text-trading-green' : 'text-trading-red'
       ),
     },
   ];
@@ -137,6 +141,7 @@ export const Watchlist: React.FC = () => {
       onClick={() => setShowAddModal(true)}
       className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
       title="Add to watchlist"
+      aria-label="Add to watchlist"
     >
       <AddIcon />
     </button>
@@ -150,15 +155,17 @@ export const Watchlist: React.FC = () => {
         </div>
       )}
       
-      <QueryTable<Stock>
+      <TradingQueryTable<Stock>
         queryId="watchlist-query"
+        queryOptions={tradingQueryOptions('watchlist-query')}
         title="Watchlist"
+        height={400}
         columns={columns}
         rowKey={(row) => row.symbol}
         animateOnChange="price"
         defaultSort={{ column: 'symbol', direction: 'asc' }}
         actions={actions}
-        actionsWidth="w-10"
+        actionsWidth="2.5rem"
         headerActions={headerActions}
         emptyMessage="No stocks in watchlist. Click + to add."
         codeSnippet={CODE_SNIPPET}

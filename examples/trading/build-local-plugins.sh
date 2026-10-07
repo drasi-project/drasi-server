@@ -15,9 +15,8 @@
 # limitations under the License.
 
 # Builds a matched Drasi Server and the five plugins required by the trading
-# demo. The local drasi-core checkout is discovered from Cargo's resolved
-# dependency graph, so the [patch.crates-io] entries in Cargo.toml remain the
-# source of truth.
+# demo. Shared origin checks require an explicitly selected, coherent local
+# Cargo graph; the presence of a sibling checkout never selects it.
 
 set -euo pipefail
 
@@ -43,6 +42,9 @@ for command_name in cargo make python3 git; do
     command -v "$command_name" >/dev/null 2>&1 ||
         fail "Required command not found: $command_name"
 done
+python3 -c 'import sys; sys.exit("Python 3.11 or later is required" if sys.version_info < (3, 11) else 0)'
+
+DRASI_CORE_ROOT="$(python3 "$DRASI_SERVER_ROOT/scripts/plugin_origin.py" local-workspace)"
 
 mkdir -p "$PLUGINS_ROOT"
 
@@ -67,101 +69,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Resolving Drasi Server dependencies..."
-if ! (cd "$DRASI_SERVER_ROOT" && cargo metadata --format-version 1 > "$METADATA_FILE"); then
+if ! (cd "$DRASI_SERVER_ROOT" && cargo metadata --locked --format-version 1 > "$METADATA_FILE"); then
     fail "Cargo could not resolve the Drasi Server dependency graph."
-fi
-
-if ! DRASI_CORE_ROOT="$(python3 - "$METADATA_FILE" "$DRASI_SERVER_ROOT/Cargo.toml" <<'PY'
-import json
-import os
-import pathlib
-import sys
-
-metadata_path = pathlib.Path(sys.argv[1])
-root_manifest = pathlib.Path(sys.argv[2]).resolve()
-metadata = json.loads(metadata_path.read_text())
-packages = {package["id"]: package for package in metadata["packages"]}
-root_id = metadata.get("resolve", {}).get("root")
-root_node = next(
-    (node for node in metadata.get("resolve", {}).get("nodes", []) if node["id"] == root_id),
-    None,
-)
-
-if root_node is None:
-    print("Unable to identify the drasi-server package in cargo metadata.", file=sys.stderr)
-    sys.exit(1)
-
-wanted = ("drasi-core", "drasi-lib", "drasi-plugin-sdk", "drasi-host-sdk")
-resolved = {}
-for dependency in root_node["deps"]:
-    package = packages[dependency["pkg"]]
-    if package["name"] in wanted:
-        resolved[package["name"]] = package
-
-root_package = packages[root_id]
-requirements = {
-    dependency["name"]: dependency.get("req", "")
-    for dependency in root_package.get("dependencies", [])
-    if dependency["name"] in wanted
-}
-
-problems = []
-for name in wanted:
-    package = resolved.get(name)
-    if package is None:
-        problems.append(f"  {name}: not present in the resolved direct dependencies")
-        continue
-    source = package.get("source")
-    if source is not None:
-        requirement = requirements.get(name, "unknown")
-        problems.append(
-            f"  {name}: {package['version']} from {source}\n"
-            f"    Cargo requirement: {requirement}"
-        )
-
-if problems:
-    print(
-        "\nLocal Drasi patches are not active for all required packages.\n\n"
-        + "\n".join(problems)
-        + "\n\nEnable or update the existing [patch.crates-io] entries in Cargo.toml.\n"
-          "Cargo patches still obey the dependency version requirements, so update those\n"
-          "requirements when the local package versions no longer satisfy them.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-manifest_paths = {
-    name: pathlib.Path(resolved[name]["manifest_path"]).resolve()
-    for name in wanted
-}
-common_root = pathlib.Path(os.path.commonpath([str(path) for path in manifest_paths.values()]))
-if common_root.name == "components":
-    common_root = common_root.parent
-
-expected = {
-    "drasi-core": common_root / "core" / "Cargo.toml",
-    "drasi-lib": common_root / "lib" / "Cargo.toml",
-    "drasi-plugin-sdk": common_root / "components" / "plugin-sdk" / "Cargo.toml",
-    "drasi-host-sdk": common_root / "components" / "host-sdk" / "Cargo.toml",
-}
-
-layout_problems = [
-    f"  {name}: {manifest_paths[name]}"
-    for name in wanted
-    if manifest_paths[name] != expected[name].resolve()
-]
-if layout_problems:
-    print(
-        "\nThe patched Drasi packages do not resolve from one drasi-core checkout:\n"
-        + "\n".join(layout_problems),
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-print(common_root)
-PY
-)"; then
-    exit 1
 fi
 
 echo -e "Using local drasi-core: ${GREEN}$DRASI_CORE_ROOT${NC}"
@@ -173,6 +82,7 @@ echo "Building Drasi Server against the resolved local dependencies..."
 CORE_TARGET_DIR="$(
     cargo metadata \
         --manifest-path "$DRASI_CORE_ROOT/Cargo.toml" \
+        --locked \
         --format-version 1 \
         --no-deps |
         python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])'
@@ -215,6 +125,7 @@ echo "Building the five trading demo plugins..."
 for crate_name in "${REQUIRED_PLUGIN_CRATES[@]}"; do
     cargo build \
         --manifest-path "$DRASI_CORE_ROOT/Cargo.toml" \
+        --locked \
         --release \
         --lib \
         -p "$crate_name" \
@@ -322,35 +233,27 @@ def git_state(root):
     }
 
 metadata = json.loads(pathlib.Path(metadata_path).read_text())
-packages = {package["id"]: package for package in metadata["packages"]}
-root_id = metadata["resolve"]["root"]
-root_node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == root_id)
-resolved_versions = {}
-for dependency in root_node["deps"]:
-    package = packages[dependency["pkg"]]
-    if package["name"] in {
-        "drasi-core",
-        "drasi-lib",
-        "drasi-plugin-sdk",
-        "drasi-host-sdk",
-    }:
-        resolved_versions[package["name"]] = package["version"]
+sys.path.insert(0, str(server_root / "scripts"))
+from plugin_origin import selected_packages
+resolved_versions = {
+    name: package["version"] for name, package in selected_packages(metadata).items()
+}
 
-abi_source = (
-    core_root / "components" / "plugin-sdk" / "src" / "ffi" / "metadata.rs"
-).read_text()
-abi_match = re.search(r'FFI_SDK_VERSION:\s*&str\s*=\s*"([^"]+)"', abi_source)
+version_output = subprocess.check_output([str(server_binary), "--version"], text=True)
+abi_match = re.search(r"^plugin ABI:\s*(.+)$", version_output, re.MULTILINE)
 if not abi_match:
-    raise SystemExit("Unable to read FFI_SDK_VERSION from local drasi-plugin-sdk")
+    raise SystemExit("Unable to read the plugin ABI from the matched server")
 
 rustc_output = subprocess.check_output(["rustc", "-vV"], text=True)
 target_match = re.search(r"^host:\s*(.+)$", rustc_output, re.MULTILINE)
+if not target_match:
+    raise SystemExit("Unable to determine the native Rust target")
 
 manifest = {
     "format_version": 1,
     "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "ffi_abi": abi_match.group(1),
-    "target_triple": target_match.group(1) if target_match else "unknown",
+    "target_triple": target_match.group(1),
     "resolved_versions": resolved_versions,
     "server_binary": str(server_binary),
     "server_sha256": sha256(server_binary),

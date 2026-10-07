@@ -26,7 +26,9 @@ use crate::plugin_lockfile::{
 };
 use crate::plugin_operations::PluginOperations;
 use anyhow::{bail, Context, Result};
-use drasi_host_sdk::loader::{plugin_kind_from_filename, scan_plugin_metadata};
+use drasi_host_sdk::loader::{
+    plugin_kind_from_filename, scan_plugin_metadata, PluginMetadataSummary,
+};
 use drasi_host_sdk::registry::{
     CosignVerifier, DownloadResult, OciRegistryClient, PluginResolver, RegistryConfig,
     ResolvedPlugin, SignatureStatus,
@@ -204,10 +206,17 @@ fn lock_entry_matches_resolution(entry: &LockedPlugin, resolved: &ResolvedPlugin
 fn validate_plugin_binary(path: &Path, expected_version: Option<&str>) -> Result<()> {
     let metadata = scan_plugin_metadata(path)
         .with_context(|| format!("could not read embedded metadata from {}", path.display()))?;
+    validate_plugin_metadata(&metadata, expected_version)
+}
+
+fn validate_plugin_metadata(
+    metadata: &PluginMetadataSummary,
+    expected_version: Option<&str>,
+) -> Result<()> {
     let plugin_abi = major_minor(&metadata.sdk_version).with_context(|| {
         format!(
             "plugin '{}' reports invalid ABI version '{}'",
-            path.display(),
+            metadata.file_path.display(),
             metadata.sdk_version
         )
     })?;
@@ -686,6 +695,61 @@ mod tests {
             build_timestamp: None,
             signature: None,
         }
+    }
+
+    fn plugin_metadata() -> PluginMetadataSummary {
+        PluginMetadataSummary {
+            plugin_id: "source/http".to_string(),
+            version: "0.2.13".to_string(),
+            sdk_version: drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION.to_string(),
+            core_version: "0.5.10".to_string(),
+            target_triple: env!("TARGET_TRIPLE").to_string(),
+            git_commit: String::new(),
+            build_timestamp: String::new(),
+            file_path: PathBuf::from("fixture-plugin"),
+        }
+    }
+
+    #[test]
+    fn validates_actual_abi_target_and_plugin_version() {
+        let valid = plugin_metadata();
+        validate_plugin_metadata(&valid, Some("0.2.13")).unwrap();
+
+        let mut wrong_abi = valid.clone();
+        wrong_abi.sdk_version = "999.0.0".to_string();
+        assert!(validate_plugin_metadata(&wrong_abi, None)
+            .unwrap_err()
+            .to_string()
+            .contains("plugin ABI mismatch"));
+
+        let mut wrong_target = valid.clone();
+        wrong_target.target_triple = "incompatible-target".to_string();
+        assert!(validate_plugin_metadata(&wrong_target, None)
+            .unwrap_err()
+            .to_string()
+            .contains("plugin target mismatch"));
+
+        assert!(validate_plugin_metadata(&valid, Some("999.0.0"))
+            .unwrap_err()
+            .to_string()
+            .contains("plugin version mismatch"));
+    }
+
+    #[test]
+    fn missing_or_mismatched_lock_entry_cannot_reuse_cache() {
+        let path = Path::new("fixture-plugin");
+        assert!(validate_cached_plugin(path, &resolved_plugin(), None)
+            .unwrap_err()
+            .to_string()
+            .contains("no matching plugins.lock entry"));
+        let mut locked = locked_plugin();
+        locked.digest = "sha256:changed".to_string();
+        assert!(
+            validate_cached_plugin(path, &resolved_plugin(), Some(&locked))
+                .unwrap_err()
+                .to_string()
+                .contains("does not match the resolved plugin")
+        );
     }
 
     #[test]

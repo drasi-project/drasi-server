@@ -19,17 +19,13 @@ port: 8280
 logLevel: info
 persistConfig: false
 verifyPlugins: true
-# By default, these plugins are downloaded from the OCI registry
-# (ghcr.io/drasi-project) on first startup. start-demo.sh's explicit local mode
+# start-demo.sh installs exactly the five reviewed, signed, digest-pinned plugins
+# in an isolated registry directory. Its explicit --plugin-source local mode
 # generates a runtime copy of this config whose pluginRegistry points at the
 # isolated, validated local plugin directory.
-#
-# Declaring the exact set under `plugins:` is important: without it, the demo
-# would either fall back to scanning a directory containing ALL ~50 drasi-core
-# plugins (which exhausts macOS's default 256 file-descriptor limit and crashes
-# the server with errno=24 / EMFILE), or autoInstallPlugins would have nothing
-# to download (auto-install only fetches refs that are declared here).
-autoInstallPlugins: true
+# The app still creates its queries/reaction; installing SSE does not create it.
+# Preparation must finish before startup; do not re-resolve unpinned refs here.
+autoInstallPlugins: false
 plugins:
   - ref: source/http
   - ref: source/postgres

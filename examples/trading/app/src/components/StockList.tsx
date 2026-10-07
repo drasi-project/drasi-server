@@ -13,53 +13,61 @@
 // limitations under the License.
 
 import React from 'react';
-import { QueryTable, ColumnDef } from './QueryTable';
+import type { ColumnDef } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
-import { Stock } from '@/types';
+import type { MarketMoverQueryId, MarketMoverRow } from '@/types';
 import { formatCurrency, formatVolume } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippets for presentation display
-const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
+const GAINERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-gainers-query"
+  queryOptions={tradingQueryOptions('top-gainers-query')}
   title="Top Gainers"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
     { key: 'price', label: 'Price', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.price) },
     { key: 'changePercent', label: 'Change', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => <ChangeIndicator value={row.changePercent} /> },
   ]}
   rowKey={(row) => row.symbol}
   animateOnChange="price"
 />`;
 
-const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
+const LOSERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-losers-query"
+  queryOptions={tradingQueryOptions('top-losers-query')}
   title="Top Losers"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
     { key: 'price', label: 'Price', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.price) },
     { key: 'changePercent', label: 'Change', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => <ChangeIndicator value={row.changePercent} /> },
   ]}
   rowKey={(row) => row.symbol}
   animateOnChange="price"
 />`;
 
-const VOLUME_CODE_SNIPPET = `<QueryTable<Stock>
+const VOLUME_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="high-volume-query"
+  queryOptions={tradingQueryOptions('high-volume-query')}
   title="High Volume"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
     { key: 'price', label: 'Price', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.price) },
     { key: 'volume', label: 'Volume', align: 'right',
-      format: (value) => formatVolume(value) },
+      format: (_, row) => formatVolume(row.volume) },
   ]}
   rowKey={(row) => row.symbol}
   animateOnChange="price"
@@ -67,14 +75,14 @@ const VOLUME_CODE_SNIPPET = `<QueryTable<Stock>
 
 interface StockListProps {
   title: string;
-  queryId: string;
+  queryId: MarketMoverQueryId;
 }
 
 export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
   // Different columns for high-volume query (shows volume instead of change)
   const isVolumeQuery = queryId === 'high-volume-query';
 
-  const columns: ColumnDef<Stock>[] = [
+  const columns: ColumnDef<MarketMoverRow>[] = [
     {
       key: 'symbol',
       label: 'Symbol',
@@ -89,7 +97,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
       key: 'price',
       label: 'Price',
       align: 'right',
-      format: (value) => formatCurrency(value),
+      format: (_value, row) => formatCurrency(row.price),
       className: 'font-mono',
     },
     isVolumeQuery
@@ -97,17 +105,17 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
           key: 'volume',
           label: 'Volume',
           align: 'right',
-          format: (value) => formatVolume(value),
+          format: (_value, row) => formatVolume(row.volume),
           className: 'text-sm text-gray-200',
         }
       : {
           key: 'changePercent',
           label: 'Change',
           align: 'right',
-          format: (value) => <ChangeIndicator value={value} />,
-          className: (value) => clsx(
+          format: (_value, row) => <ChangeIndicator value={row.changePercent} />,
+          className: (_value, row) => clsx(
             'font-mono text-sm',
-            value >= 0 ? 'text-trading-green' : 'text-trading-red'
+            row.changePercent >= 0 ? 'text-trading-green' : 'text-trading-red'
           ),
         },
   ];
@@ -120,9 +128,11 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
     : GAINERS_CODE_SNIPPET;
 
   return (
-    <QueryTable<Stock>
+    <TradingQueryTable<MarketMoverRow>
       queryId={queryId}
+      queryOptions={tradingQueryOptions(queryId)}
       title={title}
+      height={400}
       columns={columns}
       rowKey={(row) => row.symbol}
       animateOnChange="price"

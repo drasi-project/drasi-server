@@ -1,0 +1,313 @@
+// Copyright 2026 The Drasi Authors.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+import { createElement, type ReactNode } from 'react';
+import {
+  DrasiClient,
+  sse034ResultAdapter,
+  type DrasiClientOptions,
+  type ConnectionStatus,
+  type DrasiError,
+  type QueryConfig,
+  type ResultRow,
+  type QueryStatus,
+  type QueryErrorScope,
+} from '@drasi/react/client';
+import {
+  DrasiProvider,
+  DrasiClientProvider,
+  useDrasiClient,
+  useDrasiQuery,
+  useDrasiQueryDefinition,
+  useDrasiConnectionStatus,
+  useDrasiServerUiUrl,
+  useTableSort,
+  useRowAnimation,
+  type UseDrasiQueryOptions,
+  type UseDrasiQueryResult,
+  type UseDrasiQueryDefinitionResult,
+  type DrasiProviderProps,
+  type DrasiContextValue,
+  type SortConfig,
+  type UseTableSortOptions,
+  type UseTableSortResult,
+  type AnimationDirection,
+  type UseRowAnimationOptions,
+  type UseRowAnimationResult,
+} from '@drasi/react/react';
+
+interface TemperatureWire {
+  stationId: string;
+  millicelsius: number;
+}
+
+interface Temperature {
+  stationId: string;
+  celsius: number;
+}
+
+interface Delivery {
+  routeId: string;
+  parcels: number;
+}
+
+const clientOptions: DrasiClientOptions = {
+  serverUrl: 'https://drasi.example', instanceId: 'warehouse-west', queryIds: ['temperatures'],
+  reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
+  credentials: 'same-origin', headers: { 'X-Consumer': 'packed-hooks' },
+  resultAdapter: sse034ResultAdapter, reconciliation: { maxPendingChanges: 10000 },
+};
+
+export const temperatureOptions: UseDrasiQueryOptions<Temperature> = {
+  transform(row) {
+    // @ts-expect-error Transform input remains unknown until application validation.
+    const unchecked: TemperatureWire = row;
+    void unchecked;
+    if (typeof row.stationId !== 'string' || typeof row.millicelsius !== 'number') {
+      throw new TypeError('Expected a temperature reading');
+    }
+    const wire: TemperatureWire = { stationId: row.stationId, millicelsius: row.millicelsius };
+    return { stationId: wire.stationId, celsius: wire.millicelsius / 1000 };
+  },
+  getKey(row) {
+    const input: Readonly<ResultRow> = row;
+    // @ts-expect-error Raw keys cannot assume the transformed celsius field is numeric.
+    const degrees: number = row.celsius;
+    // @ts-expect-error Raw identity fields also require validation before use.
+    const unchecked: number = row.millicelsius;
+    if (typeof input.stationId !== 'string' || !input.stationId) throw new Error('Missing station identity');
+    void [degrees, unchecked];
+    return input.stationId;
+  },
+  postProcess(rows) {
+    const output: Temperature[] = rows;
+    // @ts-expect-error Post-processing uses the transformed model, not another domain's rows.
+    const deliveries: Delivery[] = rows;
+    void deliveries;
+    return output.filter(row => row.celsius > 0);
+  },
+};
+
+export const defaultInput: UseDrasiQueryOptions<Delivery> = {
+  transform(raw) {
+    const input: ResultRow = raw;
+    // @ts-expect-error Unspecified wire input properties require narrowing.
+    raw.routeId.toUpperCase();
+    if (typeof input.routeId !== 'string' || typeof input.parcels !== 'number') {
+      throw new TypeError('Expected a delivery');
+    }
+    return { routeId: input.routeId, parcels: input.parcels };
+  },
+  getKey: row => {
+    if (typeof row.routeId !== 'string' || !row.routeId) throw new Error('Missing route identity');
+    return row.routeId;
+  },
+  postProcess: rows => rows.filter(row => row.parcels > 0),
+};
+
+export const defaultOptions: UseDrasiQueryOptions = {
+  getKey(row) {
+    const input: Record<string, unknown> = row;
+    // @ts-expect-error Default row values are unknown, never implicit any.
+    const numeric: number = row.parcels;
+    void numeric;
+    if (typeof input.id !== 'string' || !input.id) throw new Error('Missing identity');
+    return input.id;
+  },
+  transform: row => row,
+};
+
+// @ts-expect-error Transform callbacks must produce the chosen output model.
+export const invalidTransform: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, transform: row => ({ stationId: String(row.stationId), celsius: 'hot' }) };
+// @ts-expect-error getKey must validate raw unknown fields and return a string.
+export const invalidKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: row => row.celsius };
+// @ts-expect-error React options do not accept deployment definitions.
+export const hookDeployment: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n' }] };
+// @ts-expect-error Transforming a model never supplies its raw accumulation identity.
+export const missingKey: UseDrasiQueryOptions<Temperature> = { transform: temperatureOptions.transform };
+// @ts-expect-error A generic alone cannot assert a wire schema; transform is required.
+export const missingTransform: UseDrasiQueryOptions<Temperature> = { getKey: temperatureOptions.getKey };
+// @ts-expect-error Raw reads also require an explicit identity function.
+export const rawMissingKey: UseDrasiQueryOptions = { transform: row => row };
+// @ts-expect-error Raw reads also explicitly select row => row rather than omitting transform.
+export const rawMissingTransform: UseDrasiQueryOptions = { getKey: defaultOptions.getKey };
+// @ts-expect-error Null keys must not silently hide a raw identity.
+export const nullKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => null };
+// @ts-expect-error Numeric keys are not accepted.
+export const numericKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => 42 };
+// @ts-expect-error Undefined is not a valid raw key.
+export const undefinedKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => undefined };
+// @ts-expect-error A transformed-row key cannot be used as the raw identity callback.
+export const transformedKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: (row: Temperature) => row.stationId };
+// @ts-expect-error View generics must be object models, not primitives.
+export type PrimitiveView = UseDrasiQueryOptions<string>;
+// @ts-expect-error Post-processing preserves the selected output model.
+export const invalidPostProcess: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, postProcess: () => [{ routeId: 'north', parcels: 1 }] };
+
+export const nullableOptions: UseDrasiQueryOptions<Temperature> = {
+  ...temperatureOptions,
+  transform: raw => raw.hidden === true ? null : temperatureOptions.transform(raw),
+};
+export const readOnlyOptions: UseDrasiQueryOptions = {
+  ...defaultOptions,
+  transform(raw) {
+    // @ts-expect-error Projection must not mutate retained raw state.
+    raw.id = 'replacement';
+    return raw;
+  },
+};
+
+export const providerProps: DrasiProviderProps = { ...clientOptions, children: null };
+// @ts-expect-error Providers must not discover an implicit default instance.
+export const missingInstance: DrasiProviderProps = { serverUrl: clientOptions.serverUrl, queryIds: clientOptions.queryIds, reaction: clientOptions.reaction, children: null };
+// @ts-expect-error Provider creation never deploys queries.
+export const providerDeployment: DrasiProviderProps = { ...providerProps, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', sources: [] }] };
+// @ts-expect-error Provider credentials are the same typed request contract as the client.
+export const providerCredentials: DrasiProviderProps = { ...providerProps, credentials: true };
+// @ts-expect-error Headers cannot accept arbitrary object values through provider props.
+export const providerHeaders: DrasiProviderProps = { ...providerProps, headers: { Authorization: 7 } };
+// @ts-expect-error Providers do not restore implicit legacy routing.
+export const providerRouting: DrasiProviderProps = { ...providerProps, routeUnidentified() {} };
+
+const client = new DrasiClient(clientOptions);
+export const context: DrasiContextValue = { client, initialized: false, error: null, retry() {} };
+// @ts-expect-error Context errors remain structured.
+export const invalidContext: DrasiContextValue = { ...context, error: 'offline' };
+
+export function Consumer(): ReactNode {
+  const temperatures: UseDrasiQueryResult<Temperature> =
+    useDrasiQuery<Temperature>('temperatures', temperatureOptions);
+  const deliveries: UseDrasiQueryResult<Delivery> = useDrasiQuery<Delivery>('deliveries', defaultInput);
+  const defaultResult: UseDrasiQueryResult = useDrasiQuery('other', defaultOptions);
+  const filtered: UseDrasiQueryResult<Temperature> = useDrasiQuery('temperatures', nullableOptions);
+  // @ts-expect-error Every hook call requires options, even a raw read.
+  useDrasiQuery('other');
+  // @ts-expect-error A typed generic does not waive the required raw key and validating transform.
+  useDrasiQuery<Temperature>('temperatures');
+  const rows: ResultRow[] | null = defaultResult.data;
+  // @ts-expect-error Default hook rows are not a typed domain model.
+  const unknownRows: Temperature[] | null = defaultResult.data;
+  // @ts-expect-error Distinct non-Trading result models must remain distinct.
+  const wrongRows: Delivery[] | null = temperatures.data;
+  const resultError: DrasiError | null = temperatures.error;
+  const lastUpdate: Date | null = deliveries.lastUpdate;
+  const queryStatus: QueryStatus = temperatures.status;
+  const stale: boolean = temperatures.stale;
+  const scope: QueryErrorScope | null = temperatures.errorScope;
+  const retryQuery: () => void = temperatures.retry;
+  const definition: UseDrasiQueryDefinitionResult = useDrasiQueryDefinition('temperatures');
+  const config: QueryConfig | null = definition.config;
+  const definitionError: DrasiError | null = definition.error;
+  const loading: boolean = definition.loading;
+  const status: ConnectionStatus = useDrasiConnectionStatus();
+  const url: string | null = useDrasiServerUiUrl();
+  const owner: DrasiContextValue = useDrasiClient();
+  const retryConnection: () => void = owner.retry;
+  void [rows, unknownRows, wrongRows, resultError, lastUpdate, config, definitionError, loading, status, url, owner,
+    filtered, queryStatus, stale, scope, retryQuery, retryConnection];
+  return createElement('p', null, temperatures.data?.[0]?.celsius ?? 'waiting');
+}
+
+export const owned = createElement(DrasiProvider, providerProps, createElement(Consumer));
+export const supplied = createElement(DrasiClientProvider, { value: context }, createElement(Consumer));
+export const initial: UseDrasiQueryResult<Temperature> = {
+  data: null, status: 'initial-loading', stale: false, loading: true,
+  error: null, errorScope: null, lastUpdate: null, retry() {},
+};
+// @ts-expect-error A socket's connected flag is not a query synchronization status.
+export const invalidQueryStatus: UseDrasiQueryResult<Temperature> = { ...initial, status: 'connected' };
+// @ts-expect-error Query staleness is a boolean, not an inferred truthy value.
+export const invalidStaleness: UseDrasiQueryResult<Temperature> = { ...initial, stale: 'yes' };
+// @ts-expect-error Hook error scope distinguishes query and connection, not arbitrary transport names.
+export const invalidScope: UseDrasiQueryResult<Temperature> = { ...initial, errorScope: 'stream' };
+// @ts-expect-error Hook failures preserve structured error identity.
+export const invalidError: UseDrasiQueryResult<Temperature> = { ...initial, error: 'offline' };
+// @ts-expect-error Hook-only entrypoints must not export the component layer.
+import { QueryTable } from '@drasi/react/react';
+// @ts-expect-error Headless sorting does not expose presentation through the hooks entrypoint.
+import { DataTable } from '@drasi/react/react';
+// @ts-expect-error The query-to-table adapter belongs to the component entrypoint.
+import { queryTableState } from '@drasi/react/react';
+
+export const sortOptions: UseTableSortOptions = {
+  sort: null,
+  defaultSort: { column: 'hidden-priority', direction: 'desc' },
+  onSortChange(next) {
+    const requested: SortConfig | null = next;
+    // @ts-expect-error The headless controller can explicitly clear sorting.
+    const required: SortConfig = next;
+    // @ts-expect-error Direction stays a closed union, even through the hook-only graph.
+    const invalidDirection: 'down' = next?.direction;
+    void [requested, required, invalidDirection];
+  },
+};
+export const uncontrolledSort: UseTableSortOptions = { sort: undefined, defaultSort: null };
+export const controlledSort: UseTableSortOptions = { sort: { column: 'celsius', direction: 'asc' } };
+// @ts-expect-error A headless sort still uses a string column name.
+export const invalidSortColumn: SortConfig = { column: 42, direction: 'asc' };
+// @ts-expect-error Automatic three-state directions are not part of the sort contract.
+export const invalidSortDirection: SortConfig = { column: 'celsius', direction: 'none' };
+// @ts-expect-error Clearing sorting passes null, so listeners cannot require a non-null config.
+export const invalidSortListener: UseTableSortOptions = { onSortChange: (next: SortConfig) => { void next; } };
+// @ts-expect-error Default sorts are configs or null, not a bare field name.
+export const invalidDefaultSort: UseTableSortOptions = { defaultSort: 'celsius' };
+
+export const frozenRows: readonly Temperature[] = Object.freeze([{ stationId: 'cold-room', celsius: 3 }]);
+export const animationOptions: UseRowAnimationOptions<Temperature> = {
+  data: frozenRows, rowKey: row => row.stationId, getValue: row => row.celsius,
+  animationDuration: 500,
+};
+// @ts-expect-error Animation tracking retains the supplied row model.
+export const crossedAnimation: UseRowAnimationOptions<Delivery> = animationOptions;
+
+export function HeadlessConsumer(): ReactNode {
+  const defaultController: UseTableSortResult = useTableSort();
+  const controller: UseTableSortResult = useTableSort(sortOptions);
+  const stored: UseTableSortResult = useTableSort(uncontrolledSort);
+  const explicit: UseTableSortResult = useTableSort(controlledSort);
+  const sort: SortConfig | null = controller.sort;
+  const setSort: (next: SortConfig | null) => void = controller.setSort;
+  const toggleSort: (column: string) => void = controller.toggleSort;
+  const animation: UseRowAnimationResult<Temperature> = useRowAnimation(animationOptions);
+  const states: ReadonlyMap<string, AnimationDirection> = animation.animations;
+  const revisions: ReadonlyMap<string, number> = animation.revisions;
+  const updateData: (rows: readonly Temperature[]) => void = animation.updateData;
+  function update() {
+    setSort(null);
+    setSort({ column: 'celsius', direction: 'desc' });
+    toggleSort('hidden-priority');
+    updateData(frozenRows);
+    // @ts-expect-error Undefined is a control-mode prop value, not a setSort request.
+    controller.setSort(undefined);
+    // @ts-expect-error A sort request cannot use an unsupported direction.
+    controller.setSort({ column: 'celsius', direction: 'down' });
+    // @ts-expect-error Toggle requests require string field names.
+    controller.toggleSort(42);
+    // @ts-expect-error Animation update callbacks retain the chosen row type.
+    animation.updateData([{ routeId: 'north', parcels: 1 }]);
+    // @ts-expect-error Restart tokens are readonly consumer state.
+    animation.revisions.set('cold-room', 1);
+  }
+  void [defaultController, stored, explicit, sort, states, revisions];
+  return createElement('button', { type: 'button', onClick: update }, 'Sort without a provider');
+}
+
+import { useReducedMotion } from '@drasi/react/react';
+
+export function PackedMotionConsumer(): ReactNode {
+  const reduced: boolean = useReducedMotion();
+  // @ts-expect-error The preference is a boolean, not an arbitrary string.
+  const text: string = useReducedMotion();
+  // @ts-expect-error The hook reads the live preference and accepts no override argument.
+  useReducedMotion(true);
+  void text;
+  return createElement('span', null, reduced ? 'Reduced motion' : 'Default motion');
+}
+// @ts-expect-error The hook-only entrypoint does not export modal presentation.
+import { Modal as HookModal } from '@drasi/react/react';
+// @ts-expect-error Modal props stay outside the hook-only declaration graph.
+import type { ModalProps as HookModalProps } from '@drasi/react/react';
+// @ts-expect-error Table size types belong to the component graph.
+import type { TableHeight as HookTableHeight } from '@drasi/react/react';

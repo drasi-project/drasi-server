@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { ResultRow } from '@drasi/react/client';
+
 export interface Stock {
   symbol: string;
   name: string;
@@ -22,6 +24,11 @@ export interface Stock {
   sector?: string;
   high?: number;
   low?: number;
+}
+
+/** The high-volume query projects volume, but not previousClose. */
+export interface HighVolumeStock extends Omit<Stock, 'previousClose'> {
+  volume: number;
 }
 
 export interface PortfolioPosition {
@@ -35,6 +42,31 @@ export interface PortfolioPosition {
   costBasis: number;
   profitLoss: number;
   profitLossPercent: number;
+}
+
+/** Portfolio normalization retains missing fields, nulls, and empty strings. */
+export type PortfolioNumber = number | null | '';
+
+/** Portfolio projections retain sparse fields; deletes are keyed before projection. */
+export interface PortfolioRow {
+  id?: number | string | null;
+  symbol?: string;
+  name?: string;
+  quantity?: PortfolioNumber;
+  purchasePrice?: PortfolioNumber;
+  currentPrice?: PortfolioNumber;
+  currentValue?: PortfolioNumber;
+  costBasis?: PortfolioNumber;
+  profitLoss?: PortfolioNumber;
+  profitLossPercent?: PortfolioNumber;
+  changePercent?: PortfolioNumber;
+  _deleted?: boolean;
+}
+
+export interface PriceTickerRow {
+  symbol: string;
+  price: number | string;
+  changePercent: number | string;
 }
 
 export interface SectorPerformance {
@@ -63,8 +95,8 @@ export interface LimitOrderResult {
   quantity: number;
   status: string;
   createdAt: string;
-  triggeredAt?: string;
-  expiresAt?: string;
+  triggeredAt?: string | null;
+  expiresAt?: string | null;
   distancePercent: number;
 }
 
@@ -74,22 +106,42 @@ export interface OrderAlert {
   orderType: string;
   targetPrice: number;
   quantity: number;
-  triggeredAt?: string;
-  expiresAt?: string;
+  createdAt?: string | null;
+  triggeredAt?: string | null;
+  expiresAt?: string | null;
   alertType: 'STALE' | 'EXPIRED';
   alertMessage: string;
 }
 
-export interface QueryResult {
+/** The application, not the reusable client, owns these query projections. */
+export interface TradingQueryRows {
+  'watchlist-query': Stock;
+  'portfolio-query': PortfolioRow;
+  'top-gainers-query': Stock;
+  'top-losers-query': Stock;
+  'high-volume-query': HighVolumeStock;
+  'price-ticker-query': PriceTickerRow;
+  'sector-performance-query': SectorPerformance;
+  'portfolio-summary-query': PortfolioSummary;
+  'active-orders-query': LimitOrderResult;
+  'stale-orders-query': OrderAlert;
+  'expiring-orders-query': OrderAlert;
+}
+
+export type TradingQueryId = keyof TradingQueryRows;
+export type MarketMoverQueryId = 'top-gainers-query' | 'top-losers-query' | 'high-volume-query';
+export type MarketMoverRow = TradingQueryRows[MarketMoverQueryId];
+
+export interface QueryResult<T = ResultRow> {
   queryId: string;
   timestamp: number;
-  data: any[];
+  data: T[];
   error?: string;
 }
 
-export interface QuerySubscription {
+export interface QuerySubscription<T = ResultRow> {
   queryId: string;
-  callback: (result: QueryResult) => void;
+  callback: (result: QueryResult<T>) => void;
   unsubscribe: () => void;
 }
 
@@ -105,7 +157,7 @@ export interface ScreenerFilters {
 export interface DrasiQuery {
   id: string;
   query: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   source_subscriptions: Array<{ source_id: string; pipeline: string[] }>;
 }
 

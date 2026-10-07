@@ -84,7 +84,7 @@ curl http://localhost:8080/health
 
 **Option B: Using Cargo**
 
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> **Prerequisites:** The Rust toolchain in `rust-toolchain.toml` **and** Node.js / npm (required to build the
 > bundled Web UI).
 
 ```bash
@@ -244,6 +244,12 @@ make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 > `make build-release` (recommended) or run `make build-ui` separately. If
 > `ui/dist` is missing at startup, the server logs a warning and `/ui`
 > returns 404.
+
+Default builds use the reviewed released registry dependencies and need no
+sibling core checkout. The Makefile checks their locked origins before building;
+see [the released runtime and upgrade guidance](docs/main-runtime-integration.md).
+Explicit local SDK development remains separate and requires matching selected
+workspace identities.
 
 ### Option 3: Interactive Setup
 
@@ -1376,6 +1382,27 @@ queries:
 ```
 
 > **Note**: `rocksdb` is the only persistent provider compiled into drasi-server, and it is only registered when `persistIndex: true`. Referencing a named backend that has not been registered will fail query startup.
+
+#### Upgrading Persistent Query State
+
+The registry runtime uses `drasi-core` 0.5.10 and `drasi-lib` 0.9.3, including
+the aggregate-grouping corrections and named MessagePack output writer. When
+upgrading from older versions, plan a controlled reconstruction of affected
+persisted queries from authoritative bootstrap or retained replay data.
+Affected numeric groups include ordinary integer keys and numeric values nested
+in compound keys, not only floating-point keys.
+Grouping keys, lazy aggregate state, indexes, and query results must be rebuilt
+together; clearing only output rows is not a migration. Back up existing state
+and confirm the required source data is available before rebuilding.
+
+Source-order ranks are now included in query configuration hashes, which causes
+a one-time hash mismatch and full re-bootstrap for older persisted queries.
+The named output codec writes correct new records but does not repair malformed
+old positional records; strict decoding can still reject those records.
+
+Reactions require running queries before subscribing. For automatic startup,
+enable `autoStart` on the prerequisite queries; for manual startup, start those
+queries before their reactions.
 
 #### Source Subscriptions
 
@@ -2766,16 +2793,19 @@ docker compose restart drasi-server
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Build (default: all plugins statically linked)
-cargo build --release
+# Build the server and embedded UI using the locked registry dependencies
+make build-release
 
 # Run tests
-cargo test
+cargo test --locked
 
 # Format and lint
 cargo fmt
-cargo clippy
+cargo clippy --locked
 ```
+
+See [the released runtime](docs/main-runtime-integration.md) for provenance,
+plugin selection and persistent-state reconstruction requirements.
 
 ### Feature Flags
 
