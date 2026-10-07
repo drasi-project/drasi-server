@@ -365,8 +365,13 @@ row schema. `receivedAt` and `sourceTimestamp` are display metadata only,
 **never** ordering, identity, deduplication or synchronization cursors.
 The stream supplies configured reaction and instance metadata in the context.
 New malformed/unroutable unidentified failures retain those reaction details;
-identified query failures use query details instead. Existing `DrasiError`
-objects retain their identity rather than being rewrapped.
+identified query failures use query details instead. Existing query-scoped
+`DrasiError` objects retain their identity and query. When an adapter failure
+lacks a query scope, a recognized raw `queryId` or `query_id` supplies it while
+preserving the error code, HTTP status and resource status. This isolates the
+failure without restarting the shared stream or changing accepted wire formats.
+Without a recognized identity, unscoped/reaction-scoped failures still affect
+the connection and retain their existing error details.
 
 The default **`sse034ResultAdapter`** accepts the recorded **untemplated SSE**
 envelope `{ queryId, results, timestamp }`. Its name identifies the original
