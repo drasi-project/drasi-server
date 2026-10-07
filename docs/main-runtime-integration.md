@@ -34,6 +34,13 @@ contains the named MessagePack output writer. These claims are backed by
 checksum-verified published archives and focused registry-only behavior tests,
 not merely release tags or version strings.
 
+Library 0.9.3 owns auto-start when adding sources or reactions to a running
+instance. The REST POST and PUT-create paths must not start them a second time:
+duplicate starts can race plugin listener binding (including SSE) and terminate
+the server during resource recreation. `autoStart: false` still requires an
+explicit start request. The API lifecycle regression counts actual component
+starts across creation and deletion/recreation for both methods and kinds.
+
 ### Build and plugin boundaries
 
 `make prepare-build` remains a locked origin check, not a source downloader.

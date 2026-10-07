@@ -22,6 +22,7 @@ use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
 use drasi_lib::Reaction as ReactionTrait;
 use drasi_lib::Source as SourceTrait;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -30,6 +31,7 @@ use tokio::sync::RwLock;
 pub struct MockSource {
     inner: Arc<MockSourceInner>,
     auto_start: bool,
+    start_counter: Arc<AtomicUsize>,
 }
 
 struct MockSourceInner {
@@ -49,11 +51,17 @@ impl MockSource {
                 update_tx: RwLock::new(None),
             }),
             auto_start: true,
+            start_counter: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub fn with_auto_start(mut self, auto_start: bool) -> Self {
         self.auto_start = auto_start;
+        self
+    }
+
+    pub fn with_start_counter(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.start_counter = counter;
         self
     }
 
@@ -99,6 +107,7 @@ impl SourceTrait for MockSource {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        self.start_counter.fetch_add(1, Ordering::SeqCst);
         *self.inner.status.write().await = ComponentStatus::Running;
         self.report_status(ComponentStatus::Running).await;
         Ok(())
@@ -147,6 +156,7 @@ impl SourceTrait for MockSource {
 pub struct MockReaction {
     inner: Arc<MockReactionInner>,
     auto_start: bool,
+    start_counter: Arc<AtomicUsize>,
 }
 
 struct MockReactionInner {
@@ -168,11 +178,17 @@ impl MockReaction {
                 update_tx: RwLock::new(None),
             }),
             auto_start: true,
+            start_counter: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub fn with_auto_start(mut self, auto_start: bool) -> Self {
         self.auto_start = auto_start;
+        self
+    }
+
+    pub fn with_start_counter(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.start_counter = counter;
         self
     }
 
@@ -227,6 +243,7 @@ impl ReactionTrait for MockReaction {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        self.start_counter.fetch_add(1, Ordering::SeqCst);
         *self.inner.status.write().await = ComponentStatus::Running;
         self.report_status(ComponentStatus::Running).await;
         Ok(())
