@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient } from '../src/client/DrasiClient';
 import { accumulateResult } from '../src/client/accumulation';
-import { DrasiError } from '../src/client/errors';
+import { DrasiError, type DrasiErrorDetails } from '../src/client/errors';
 import { createLegacyResultAdapter, sse034ResultAdapter } from '../src/client/results';
 import type { QueryResult, ResultAdapter, ResultRow } from '../src/client/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
@@ -218,5 +218,135 @@ describe.each(adapters)('$name shared client identity failure isolation', ({ ada
     expect(f.server.fetch).toHaveBeenCalledTimes(reads);
     expect(f.factory.instances).toHaveLength(1);
     expect(f.subscribe).toHaveBeenCalledTimes(2);
+  });
+});
+
+const incompleteQueryScopes: { name: string; details: DrasiErrorDetails }[] = [
+  { name: 'unscoped', details: {} },
+  { name: 'reaction-scoped', details: { resourceKind: 'reaction', resourceId: 'adapter-stream' } },
+  { name: 'query without an ID', details: { resourceKind: 'query' } },
+  { name: 'query with an empty ID', details: { resourceKind: 'query', resourceId: '' } },
+];
+
+describe.each(incompleteQueryScopes)('$name typed adapter failures', ({ details }) => {
+  it.each([
+    { queryId: 'stocks' },
+    { queryId: 'stocks', query_id: 'other' },
+    { query_id: 'stocks' },
+    { queryId: null, query_id: 'stocks' },
+  ])('applies recognized raw query identity %j without interrupting healthy queries', async identity => {
+    const failure = new DrasiError('FORBIDDEN', {
+      instanceId: 'adapter-instance', ...details, status: 403, resourceStatus: 'Denied',
+    });
+    const adapter = vi.fn<ResultAdapter>(sse034ResultAdapter)
+      .mockImplementationOnce(() => { throw failure; });
+    const f = await connectedClient(adapter), reads = f.server.fetch.mock.calls.length;
+    const original = f.first.rows(), status = f.client.getConnectionStatus();
+    f.source.message(wire(identity));
+    const error = f.first.errors.mock.calls[0]?.[0];
+    expect(error).toBeInstanceOf(DrasiError);
+    expect(error).toMatchObject({
+      code: 'FORBIDDEN', instanceId: refs.instanceId, resourceKind: 'query', resourceId: 'stocks',
+      status: 403, resourceStatus: 'Denied', retryable: false,
+    });
+    expect(error).not.toBe(failure);
+    expect(f.first.errors).toHaveBeenCalledExactlyOnceWith(error);
+    expect(f.first.subscription.getState()).toMatchObject({
+      status: 'terminal-error', errorScope: 'query', stale: true, error,
+    });
+    expect(f.first.subscription.getState().error).toBe(error);
+    expect(f.other.errors).not.toHaveBeenCalled();
+    expect(f.other.subscription.getState()).toMatchObject({ status: 'live', error: null, stale: false });
+
+    f.source.message({
+      queryId: 'other', timestamp: 2, results: [{ type: 'ADD', data: { id: 'B', value: 20 } }],
+    });
+    f.source.message({
+      queryId: 'other', timestamp: 3, results: [{ type: 'DELETE', data: { id: 'A' } }],
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.other.rows()).toEqual([{ id: 'B', value: 20 }]);
+    expect(f.other.results).toHaveBeenCalledTimes(3);
+    expect(f.first.rows()).toBe(original);
+    expect(f.first.results).toHaveBeenCalledOnce();
+    expect(f.client.getConnectionStatus()).toEqual(status);
+    expect(f.states).toHaveBeenCalledOnce();
+    expect(f.factory.instances).toHaveLength(1);
+    expect(f.source.closed).toBe(false);
+    expect(f.subscribe).toHaveBeenCalledTimes(2);
+    expect(f.server.fetch).toHaveBeenCalledTimes(reads);
+    expect(failure).toMatchObject({ instanceId: 'adapter-instance', ...details });
+  });
+
+  it.each([
+    {},
+    { queryId: 7, query_id: 'stocks' },
+    { queryId: '', query_id: 'stocks' },
+    { queryId: '..', query_id: 'stocks' },
+    { query_id: 7 },
+  ])('retains connection-scoped failure for an unrecognized raw identity %j', async identity => {
+    const failure = new DrasiError('INVALID_PAYLOAD', {
+      instanceId: 'adapter-instance', ...details, status: 422, resourceStatus: 'Rejected',
+    });
+    const adapter = vi.fn<ResultAdapter>(() => { throw failure; });
+    const f = await connectedClient(adapter), reads = f.server.fetch.mock.calls.length;
+    const original = f.first.rows(), otherRows = f.other.rows();
+    f.source.message(wire(identity));
+    expect(f.client.getConnectionStatus().error).toBe(failure);
+    expect(f.client.getConnectionStatus()).toMatchObject({ connected: false, reconnecting: false });
+    for (const subscriber of [f.first, f.other]) {
+      expect(subscriber.errors).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(subscriber.subscription.getState()).toMatchObject({
+        status: 'terminal-error', errorScope: 'connection', stale: true,
+      });
+      expect(subscriber.subscription.getState().error).toBe(failure);
+      expect(subscriber.results).toHaveBeenCalledOnce();
+    }
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.first.rows()).toBe(original);
+    expect(f.other.rows()).toBe(otherRows);
+    expect(f.source.closed).toBe(true);
+    expect(f.factory.instances).toHaveLength(1);
+    expect(f.server.fetch).toHaveBeenCalledTimes(reads);
+    expect(f.subscribe).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('already query-scoped typed adapter failures', () => {
+  it.each([
+    { queryId: 'other' },
+    { queryId: 'stocks', query_id: 'other' },
+    { query_id: 'stocks' },
+    {},
+    { queryId: 7 },
+  ])('preserves the exact error and its query instead of raw identity %j', async identity => {
+    const failure = new DrasiError('RESOURCE_STOPPED', {
+      instanceId: 'adapter-instance', resourceKind: 'query', resourceId: 'other',
+      status: 409, resourceStatus: 'Stopped',
+    });
+    const adapter = vi.fn<ResultAdapter>(sse034ResultAdapter)
+      .mockImplementationOnce(() => { throw failure; });
+    const f = await connectedClient(adapter), reads = f.server.fetch.mock.calls.length;
+    const original = f.other.rows(), status = f.client.getConnectionStatus();
+    f.source.message(wire(identity));
+    expect(f.other.errors).toHaveBeenCalledExactlyOnceWith(failure);
+    expect(f.other.subscription.getState().error).toBe(failure);
+    expect(f.other.subscription.getState()).toMatchObject({
+      status: 'terminal-error', errorScope: 'query', stale: true,
+    });
+    expect(f.first.errors).not.toHaveBeenCalled();
+    f.source.message(wire({ queryId: 'stocks' }));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.first.rows()).toEqual([{ id: 'A', value: 99 }]);
+    expect(f.first.results).toHaveBeenCalledTimes(2);
+    expect(f.first.subscription.getState()).toMatchObject({ status: 'live', error: null, stale: false });
+    expect(f.other.rows()).toBe(original);
+    expect(f.other.results).toHaveBeenCalledOnce();
+    expect(f.client.getConnectionStatus()).toEqual(status);
+    expect(f.states).toHaveBeenCalledOnce();
+    expect(f.factory.instances).toHaveLength(1);
+    expect(f.source.closed).toBe(false);
+    expect(f.subscribe).toHaveBeenCalledTimes(2);
+    expect(f.server.fetch).toHaveBeenCalledTimes(reads);
   });
 });
