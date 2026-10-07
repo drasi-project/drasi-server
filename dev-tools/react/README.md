@@ -14,13 +14,15 @@ React 19 and untested framework integrations are not claimed.
 **Use the built tarball:** tested on Node **22.20.0 / npm 10.9.3** and
 Node **24.19.0 / npm 11.17.0**. From the repository root:
 
-This package is still on the unmerged staging branch
-`agentofreality-react-independent-examples`, not `main`. For a fresh checkout:
+For a fresh checkout:
 
 ```sh
-git clone --branch agentofreality-react-independent-examples https://github.com/drasi-project/drasi-server.git
+git clone --branch main https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 ```
+
+Before [#210](https://github.com/drasi-project/drasi-server/pull/210) merges,
+run `gh pr checkout 210` here to try these examples and guides.
 
 ```sh
 npm --prefix dev-tools/react ci --ignore-scripts
@@ -90,18 +92,18 @@ export default function Deliveries() {
 ## Run the examples beside the components
 
 The single canonical workspace is **`dev-tools/react/examples`**.
-Its [repository README](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md)
+Its [repository README](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md)
 has the exact commands for four small cold-storage entries:
 `QueryTable`, a hook-plus-`DataTable` composition, hooks-only cards, and a
-clearly labelled [server-free simulated showcase](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md#run-only-the-simulated-showcase).
+clearly labelled [server-free simulated showcase](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md#run-only-the-simulated-showcase).
 
 **Repository-only link:** runnable source, setup scripts and tests are not
 shipped in the tarball. Use the source checkout to run them; the documented
 clean consumer copies that workspace and installs the actual tarball without
 package source aliases or install-time rebuilding. The real pages use actual
 pre-created resources; the simulated page is not protocol/recovery proof.
-Repository links name the staging branch explicitly. They follow that branch;
-retain your checkout commit for reproducible evidence.
+Repository links follow `main`; new targets become available when #210 merges.
+Retain your checkout commit for reproducible evidence.
 
 ## Data flow and ownership
 

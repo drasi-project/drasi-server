@@ -19,9 +19,8 @@ raw key. The validated render model deliberately renames it to `key` and
 projection, including sparse deletes; the view's `rowKey` is separate.
 
 This is the **single canonical repository workspace**, now beside the package.
-Use the unmerged `agentofreality-react-independent-examples` source branch
-identified in the [package checkout instructions](../README.md#installation-and-entrypoints);
-these staging files are not yet on `main`.
+Follow the [package checkout instructions](../README.md#installation-and-entrypoints),
+including the PR checkout step before these files merge into `main`.
 The package tarball ships developer guides, not this runnable source or its
 server setup. The clean-consumer runner below copies this workspace separately
 and installs that tarball. `examples/react` retains only a migration link.
@@ -71,7 +70,7 @@ Signed plugins from release `22125bf1d66062533b832a166fe4a51079a23d6e`
 use SDK **0.11.3** and native ABI **0.14.0**, including SSE **0.3.8**,
 HTTP source **0.2.13** and scriptfile bootstrap **0.2.15**. The Darwin SSE
 signature repair did not change its release binary or trusted publisher.
-See [the repository's approved runtime and immutable pin provenance](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/docs/main-runtime-integration.md).
+See [the repository's approved runtime and immutable pin provenance](https://github.com/drasi-project/drasi-server/blob/main/docs/main-runtime-integration.md).
 Earlier source-pin and ABI evidence is historical, not a startup fallback.
 The [persistent-state upgrade warning](../docs/testing.md#verified-compatibility)
 requires complete authoritative reconstruction of grouped/lazy/index/output
@@ -348,7 +347,7 @@ are different evidence categories. None proves universal WCAG compliance.
 
 **Human AT acceptance remains pending.** P7 development was expressly
 authorized while the predecessor's nine-part
-[repository screen-reader checklist](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#manual-screen-reader-checklist-pending)
+[repository screen-reader checklist](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#manual-screen-reader-checklist-pending)
 remains open. Use that checklist on the examples' table/sort/actions,
 connection and query notices, retry, dialog/focus/scroll, narrow layout,
 themes and reduced motion; mark Trading-specific tabs/fullscreen items not
@@ -359,7 +358,7 @@ No automated result is human approval.
 Trading's separate strict non-regression policy, its preserved pre-existing
 contrast findings and all five original zero-diff images are unchanged.
 The authoritative integrated, source-free Linux gate remains
-[`npm run test:browser:linux`](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#reproducible-visual-and-packed-consumer-gate)
+[`npm run test:browser:linux`](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#reproducible-visual-and-packed-consumer-gate)
 under `examples/trading/app`; it now also runs this showcase and retains its
 independent graph/size/browser evidence. The actual Trading backend gate is
 still mandatory and separate.

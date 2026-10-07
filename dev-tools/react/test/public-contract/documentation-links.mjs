@@ -17,7 +17,7 @@ export function repositoryLinkTarget(target) {
   if (!match) return null;
   const [, kind, ref, path] = match;
   assert.equal(ref, repositorySourceRef,
-    `Repository link declares ref ${ref}, not the staging source ref ${repositorySourceRef}: ${target}`);
+    `Repository link declares ref ${ref}, not the canonical source ref ${repositorySourceRef}: ${target}`);
   return { kind, ref, path };
 }
 
@@ -111,7 +111,7 @@ export async function checkDocumentationLinks(overrides = {}) {
       }
       checked.push({
         source: name, target,
-        verification: repositoryTarget ? 'Declared staging ref plus local checkout path/anchor only; remote availability requires post-push verification' : 'Local repository path/anchor',
+        verification: repositoryTarget ? 'Declared main ref plus local checkout path/anchor only; remote availability requires post-merge verification' : 'Local repository path/anchor',
         ...(repositoryTarget ? { ref: repositoryTarget.ref, repositoryPath: path } : {}),
       });
     }

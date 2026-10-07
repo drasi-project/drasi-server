@@ -181,7 +181,7 @@ Use the client/adapter boundary for wire validation before this raw reducer.
 
 ### Handlebars SSE to QueryTable
 
-For the [cold-storage example](https://github.com/drasi-project/drasi-server/tree/agentofreality-react-independent-examples/dev-tools/react/examples), replace its
+For the [cold-storage example](https://github.com/drasi-project/drasi-server/tree/main/dev-tools/react/examples), replace its
 `cold-chain-events` entry under `instances[].reactions`; keep the `cold-chain`
 instance, two projection queries and HTTP source. Choose an available SSE port
 (here `8081`). This is **operator configuration**, not provider-side provisioning:

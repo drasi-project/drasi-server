@@ -1,7 +1,7 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkDocumentationLinks, checkInstalledDocumentationLinks, markdownAnchors, relativeMarkdownLinks, repositoryLinkTarget } from './documentation-links.mjs';
@@ -67,14 +67,20 @@ test('repository-only example links still target a real canonical path and headi
   }), /Missing documentation anchor/);
 });
 
-test('repository links cannot claim main contains unmerged staging files', async () => {
+test('canonical repository links use main, never a disposable feature branch', async () => {
+  assert.equal(repositorySourceRef, 'main');
   const path = 'dev-tools/react/examples/README.md#run-the-real-example';
-  assert.throws(() => repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/blob/main/${path}`),
-    /declares ref main/);
-  assert.deepEqual(repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/blob/${repositorySourceRef}/${path}`),
-    { kind: 'blob', ref: repositorySourceRef, path });
+  for (const kind of ['blob', 'tree']) {
+    assert.throws(() => repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/${kind}/agentofreality-react-independent-examples/${path}`),
+      /declares ref agentofreality-react-independent-examples/);
+    assert.deepEqual(repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/${kind}/main/${path}`),
+      { kind, ref: 'main', path });
+  }
+  const manifest = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+  assert.deepEqual(repositoryLinkTarget(manifest.homepage),
+    { kind: 'tree', ref: 'main', path: 'dev-tools/react#readme' });
   const proof = await checkDocumentationLinks();
   assert.equal(proof.networkRequests, 0);
-  assert(proof.checked.some(link => link.ref === repositorySourceRef &&
-    link.verification.includes('remote availability requires post-push verification')));
+  assert(proof.checked.some(link => link.ref === 'main' &&
+    link.verification.includes('remote availability requires post-merge verification')));
 });
