@@ -19,12 +19,13 @@
  * - {@link DrasiProvider}: opens a single shared SSE connection to a Drasi
  *   Server's SSE Reaction and multiplexes every Continuous Query over it.
  * - {@link useDrasiQuery} and friends: subscribe to a query's live result set.
- * - {@link QueryTable}: a sortable, animated table bound to a query.
+ * - {@link DataTable}: provider-free presentation, sorting and animation.
+ * - {@link QueryTable}: a small live-query composition of that presentation.
  *
  * The public API is organized into three groups:
  * - `client`     — framework-agnostic core (`DrasiClient`, `DrasiSSEClient`).
  * - `react`      — React bindings (`DrasiProvider`, hooks).
- * - `components` — ready-made UI (`QueryTable`, `CodeViewerDialog`, icons).
+ * - `components` — presentation (`DataTable`, `QueryTable`, icons).
  */
 
 export * from './client';

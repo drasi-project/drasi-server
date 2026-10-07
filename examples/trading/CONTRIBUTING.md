@@ -9,6 +9,45 @@ checks in [Testing and behavior baseline](TESTING.md). The versioned inventory
 distinguishes intended behavior, compatibility assertions and known baseline
 bugs; do not update visual expectations to hide an unexplained regression.
 
+## Table composition boundaries
+
+Trading is the only example consumer in P5 ([#164 Part A](https://github.com/drasi-project/drasi-server/issues/164)).
+Keep domain definitions, transformations, filtering, default sorts and tutorial
+snippets in this app. Do not change the eleven Cypher queries or the known
+market-mover default ordering as part of a presentation refactor.
+
+| Need | Owner |
+| --- | --- |
+| Query rows, status, last-good data and query-local retry | `useDrasiQuery` from `@drasi/react/react`; raw `getKey` and validating `transform` stay explicit. |
+| A live table without tutorials or overlays | `QueryTable` from `@drasi/react/components`; it composes the hook and `DataTable`, not the Trading wrapper. |
+| Provider-free presentation for supplied rows | `DataTable` from `@drasi/react/components`; columns, transformed `rowKey`, state slots, typed cells/actions/rows/header and controlled/uncontrolled sort. |
+| Trading fullscreen, tutorial code and server-UI links | App-owned `TradingQueryTable.tsx`, `QueryInspector.tsx` and `CodeViewerDialog.tsx`. The wrapper reuses `DataTable`, not a second table implementation. |
+
+`TradingQueryTable` shares one headless `useTableSort` controller and one
+animation map across its normal/fullscreen presentations. `sort={null}` clears
+sorting; omitting `sort` uses a mount-time `defaultSort`. Never call an external
+`onSortChange` inside a state updater. The callback receives a sort or `null`
+exactly once per action, including under StrictMode.
+
+Use the package's `queryTableState(query, retryConnection)` adapter when
+composing headless query state with `DataTable`. A query fault refreshes only
+that query; a shared failure delegates to `useDrasiClient().retry`. Retain and
+label last-good rows instead of disguising an error as an empty result.
+
+The inspector is mounted only while its code action is open. Its extra
+definition GET is distinct from required client resource-validation GETs.
+Closing cancels the read; asynchronous results update the open viewer and its
+copy text. A failed definition read can retry without resubscribing a table;
+shared connection failures still use the connection owner's retry. Keep
+displayed tutorial snippets aligned with the app-owned wrapper.
+
+Import client, hooks and presentation through their independent entrypoints,
+and opt into `@drasi/react/styles.css` explicitly. P5 preserves existing CSS,
+markup, animations and all five original visual PNG images. P6 owns the
+remaining focus, shared overlay/scroll-lock, theming/portal, reduced-motion and
+height contracts; do not migrate unrelated forms or claim those checks here.
+No standalone example app or Storybook site is needed before #165.
+
 ## Learning Exercises
 
 These exercises are designed to help you understand Drasi by making small, focused changes to the trading demo.
@@ -177,7 +216,7 @@ These are more substantial features that would improve the demo for everyone.
 - `database/init.sql` - Add transaction history table (optional)
 - New: `app/src/services/TradingService.ts` - API calls
 
-#### 2. Query Inspector / Debug Panel
+#### 2. Result Event Debug Panel
 
 **Impact**: Educational tool showing Drasi internals.
 
@@ -190,7 +229,7 @@ These are more substantial features that would improve the demo for everyone.
 
 **Files to modify**:
 
-- New: `app/src/components/QueryInspector.tsx`
+- New: `app/src/components/ResultDebugPanel.tsx` (the existing `QueryInspector.tsx` is the lazy tutorial definition viewer)
 - `dev-tools/react/src/client/DrasiSSEClient.ts` - Add event hooks
 - `app/src/App.tsx` - Add toggle button
 

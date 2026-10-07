@@ -191,7 +191,7 @@ test('compatible initial sorting, explicit sorting, tutorial tabs/copy/link and 
   await expect(dialog.locator('code')).toContainText('ON_WATCHLIST');
   await expect(dialog.getByRole('link', { name: 'Open in Drasi UI' })).toHaveAttribute('href', 'http://localhost:8280/ui?instance=trading-server');
   await dialog.getByRole('tab', { name: 'React Code' }).click();
-  await expect(dialog.locator('code')).toContainText('<QueryTable<Stock>');
+  await expect(dialog.locator('code')).toContainText('<TradingQueryTable<Stock>');
   // Native clipboard support/permission differs by engine; do not fake successful copying.
   if (browserName === 'chromium') {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);

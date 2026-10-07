@@ -23,11 +23,19 @@ import {
   useDrasiQueryDefinition,
   useDrasiConnectionStatus,
   useDrasiServerUiUrl,
+  useTableSort,
+  useRowAnimation,
   type UseDrasiQueryOptions,
   type UseDrasiQueryResult,
   type UseDrasiQueryDefinitionResult,
   type DrasiProviderProps,
   type DrasiContextValue,
+  type SortConfig,
+  type UseTableSortOptions,
+  type UseTableSortResult,
+  type AnimationDirection,
+  type UseRowAnimationOptions,
+  type UseRowAnimationResult,
 } from '@drasi/react/react';
 
 interface TemperatureWire {
@@ -218,3 +226,67 @@ export const invalidScope: UseDrasiQueryResult<Temperature> = { ...initial, erro
 export const invalidError: UseDrasiQueryResult<Temperature> = { ...initial, error: 'offline' };
 // @ts-expect-error Hook-only entrypoints must not export the component layer.
 import { QueryTable } from '@drasi/react/react';
+// @ts-expect-error Headless sorting does not expose presentation through the hooks entrypoint.
+import { DataTable } from '@drasi/react/react';
+// @ts-expect-error The query-to-table adapter belongs to the component entrypoint.
+import { queryTableState } from '@drasi/react/react';
+
+export const sortOptions: UseTableSortOptions = {
+  sort: null,
+  defaultSort: { column: 'hidden-priority', direction: 'desc' },
+  onSortChange(next) {
+    const requested: SortConfig | null = next;
+    // @ts-expect-error The headless controller can explicitly clear sorting.
+    const required: SortConfig = next;
+    // @ts-expect-error Direction stays a closed union, even through the hook-only graph.
+    const invalidDirection: 'down' = next?.direction;
+    void [requested, required, invalidDirection];
+  },
+};
+export const uncontrolledSort: UseTableSortOptions = { sort: undefined, defaultSort: null };
+export const controlledSort: UseTableSortOptions = { sort: { column: 'celsius', direction: 'asc' } };
+// @ts-expect-error A headless sort still uses a string column name.
+export const invalidSortColumn: SortConfig = { column: 42, direction: 'asc' };
+// @ts-expect-error Automatic three-state directions are not part of the sort contract.
+export const invalidSortDirection: SortConfig = { column: 'celsius', direction: 'none' };
+// @ts-expect-error Clearing sorting passes null, so listeners cannot require a non-null config.
+export const invalidSortListener: UseTableSortOptions = { onSortChange: (next: SortConfig) => { void next; } };
+// @ts-expect-error Default sorts are configs or null, not a bare field name.
+export const invalidDefaultSort: UseTableSortOptions = { defaultSort: 'celsius' };
+
+export const frozenRows: readonly Temperature[] = Object.freeze([{ stationId: 'cold-room', celsius: 3 }]);
+export const animationOptions: UseRowAnimationOptions<Temperature> = {
+  data: frozenRows, rowKey: row => row.stationId, getValue: row => row.celsius,
+  animationDuration: 500,
+};
+// @ts-expect-error Animation tracking retains the supplied row model.
+export const crossedAnimation: UseRowAnimationOptions<Delivery> = animationOptions;
+
+export function HeadlessConsumer(): ReactNode {
+  const defaultController: UseTableSortResult = useTableSort();
+  const controller: UseTableSortResult = useTableSort(sortOptions);
+  const stored: UseTableSortResult = useTableSort(uncontrolledSort);
+  const explicit: UseTableSortResult = useTableSort(controlledSort);
+  const sort: SortConfig | null = controller.sort;
+  const setSort: (next: SortConfig | null) => void = controller.setSort;
+  const toggleSort: (column: string) => void = controller.toggleSort;
+  const animation: UseRowAnimationResult<Temperature> = useRowAnimation(animationOptions);
+  const states: ReadonlyMap<string, AnimationDirection> = animation.animations;
+  const updateData: (rows: readonly Temperature[]) => void = animation.updateData;
+  function update() {
+    setSort(null);
+    setSort({ column: 'celsius', direction: 'desc' });
+    toggleSort('hidden-priority');
+    updateData(frozenRows);
+    // @ts-expect-error Undefined is a control-mode prop value, not a setSort request.
+    controller.setSort(undefined);
+    // @ts-expect-error A sort request cannot use an unsupported direction.
+    controller.setSort({ column: 'celsius', direction: 'down' });
+    // @ts-expect-error Toggle requests require string field names.
+    controller.toggleSort(42);
+    // @ts-expect-error Animation update callbacks retain the chosen row type.
+    animation.updateData([{ routeId: 'north', parcels: 1 }]);
+  }
+  void [defaultController, stored, explicit, sort, states];
+  return createElement('button', { type: 'button', onClick: update }, 'Sort without a provider');
+}

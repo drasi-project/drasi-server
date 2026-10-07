@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React from 'react';
-import { QueryTable, type ColumnDef } from '@drasi/react/components';
+import type { ColumnDef } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
 import type { MarketMoverQueryId, MarketMoverRow } from '@/types';
@@ -21,7 +22,7 @@ import { formatCurrency, formatVolume } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippets for presentation display
-const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
+const GAINERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-gainers-query"
   queryOptions={tradingQueryOptions('top-gainers-query')}
   title="Top Gainers"
@@ -37,7 +38,7 @@ const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
   animateOnChange="price"
 />`;
 
-const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
+const LOSERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-losers-query"
   queryOptions={tradingQueryOptions('top-losers-query')}
   title="Top Losers"
@@ -53,7 +54,7 @@ const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
   animateOnChange="price"
 />`;
 
-const VOLUME_CODE_SNIPPET = `<QueryTable<HighVolumeStock>
+const VOLUME_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="high-volume-query"
   queryOptions={tradingQueryOptions('high-volume-query')}
   title="High Volume"
@@ -124,7 +125,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
     : GAINERS_CODE_SNIPPET;
 
   return (
-    <QueryTable<MarketMoverRow>
+    <TradingQueryTable<MarketMoverRow>
       queryId={queryId}
       queryOptions={tradingQueryOptions(queryId)}
       title={title}

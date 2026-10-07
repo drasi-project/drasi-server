@@ -31,8 +31,12 @@ test('does not extract fences quoted inside an unmarked wider fence with metadat
   assert.equal(extractReadmeExamples(quoted + required).length, requiredReadmeExamples.length);
 });
 
-test('requires all five named runnable examples', () => {
-  assert.throws(() => extractReadmeExamples(fence('client.ts')), /Missing marked README examples:.*quickstart\.tsx/);
+test('requires every named runnable example, including the composition recipes', () => {
+  for (const name of requiredReadmeExamples) {
+    const incomplete = requiredReadmeExamples.filter(example => example !== name).map(example => fence(example)).join('\n');
+    assert.throws(() => extractReadmeExamples(incomplete),
+      error => error.message.includes(`Missing marked README examples: ${name}`));
+  }
 });
 
 test('rejects duplicate names instead of silently overwriting an example', () => {

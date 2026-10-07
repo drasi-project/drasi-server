@@ -29,11 +29,11 @@ import {
   type SortConfig,
 } from '../src/components';
 import { DrasiProvider } from '../src/react/DrasiContext';
-import type { QueryMiddleware, ResultRow } from '../src/client/types';
+import type { ResultRow } from '../src/client/types';
 import type { UseDrasiQueryOptions } from '../src/react/types';
 import type { AnimationDirection } from '../src/react/useRowAnimation';
 import { fakeEventSourceFactory } from './FakeEventSource';
-import { ReadServer, component, json, queryConfig, refs } from './server';
+import { ReadServer, json, refs } from './server';
 
 interface Stock {
   symbol: string;
@@ -125,21 +125,13 @@ describe('QueryTable', () => {
     expect(table.factory.instances).toHaveLength(0);
   });
 
-  it('restores page scrolling when an expanded table enters an error state', async () => {
-    const requestFrame = vi
-      .spyOn(window, 'requestAnimationFrame')
-      .mockReturnValue(1);
-    const cancelFrame = vi
-      .spyOn(window, 'cancelAnimationFrame')
-      .mockImplementation(() => {});
-
+  it('retains rows on a shared failure and routes recovery to the connection owner', async () => {
     const table = renderTable<Stock>({
       queryId: 'stocks', title: 'Stocks', columns,
       rowKey: row => row.symbol, queryOptions: stockOptions,
     }, [{ symbol: 'AAPL', price: 10 }]);
     await table.connect();
-    fireEvent.click(screen.getByRole('button', { name: 'Expand table' }));
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(screen.queryByRole('button', { name: 'Expand table' })).toBeNull();
 
     act(() => table.factory.instances[0].onmessage?.(
       new MessageEvent('message', { data: 'broken JSON' }),
@@ -148,10 +140,11 @@ describe('QueryTable', () => {
     await screen.findByText(/Error: .*malformed/);
     expect(screen.getByRole('table')).not.toBeNull();
     expect(screen.getByText('10')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Retry connection' })).not.toBeNull();
-    await waitFor(() => expect(document.body.style.overflow).toBe(''));
-    requestFrame.mockRestore();
-    cancelFrame.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
+    await waitFor(() => expect(table.factory.instances).toHaveLength(2));
+    expect(table.factory.instances[0].closed).toBe(true);
+    act(() => table.factory.instances[1].open());
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
   it('retains useful rows on a query-only fault and retries without opening another stream', async () => {
@@ -184,7 +177,7 @@ describe('QueryTable', () => {
     expectTypeOf<Parameters<Exclude<ColumnDef<Device>['className'], string | undefined>>>()
       .toEqualTypeOf<[unknown, Device]>();
     const onInspect = vi.fn<(row: Device) => void>();
-    const onSort = vi.fn<(sort: SortConfig) => void>();
+    const onSort = vi.fn<(sort: SortConfig | null) => void>();
     const format = vi.fn((value: unknown, row: Device) => {
       expect(value).toBeUndefined();
       return `${row.identity.code}: ${row.units} units`;
@@ -222,7 +215,7 @@ describe('QueryTable', () => {
       onSortChange: onSort,
       renderRow: (row, renderedColumns, animation, defaultRender) => {
         expectTypeOf(row).toEqualTypeOf<Device>();
-        expectTypeOf(renderedColumns).toEqualTypeOf<ColumnDef<Device>[]>();
+        expectTypeOf(renderedColumns).toEqualTypeOf<readonly ColumnDef<Device>[]>();
         expectTypeOf(animation).toEqualTypeOf<AnimationDirection>();
         return defaultRender();
       },
@@ -252,7 +245,7 @@ describe('QueryTable', () => {
     expect(format).toHaveBeenCalled();
   });
 
-  it('retains string, mixed-value and null ordering without coercing raw cells', async () => {
+  it('orders numbers before text and preserves null ordering without coercing raw cells', async () => {
     interface Row { code: string; value: unknown }
     const table = renderTable<Row>({
       queryId: 'stocks',
@@ -270,70 +263,9 @@ describe('QueryTable', () => {
     await table.connect();
     const codes = () => screen.getAllByRole('row').slice(1)
       .map(row => within(row).getAllByRole('cell')[0].textContent);
-    expect(codes()).toEqual(['ten', 'two', 'numeric', 'null', 'missing']);
+    expect(codes()).toEqual(['numeric', 'ten', 'two', 'null', 'missing']);
     expect(screen.getAllByText('-')).toHaveLength(2);
     fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
-    expect(codes()).toEqual(['null', 'missing', 'numeric', 'two', 'ten']);
-  });
-
-  it.each<{ name: string; middleware: QueryMiddleware[] }>([
-    {
-      name: 'one structured entry',
-      middleware: [{ kind: 'map', name: 'rename', config: { field: 'temperature' } }],
-    },
-    {
-      name: 'multiple entries with nested configuration and quoted values',
-      middleware: [
-        {
-          kind: 'map',
-          name: 'first "quoted"',
-          config: {
-            nested: { path: 'readings["temperature"]', values: [true, false, null, 3.5, 'a,b', 'line\nbreak', '<tag>'] },
-          },
-        },
-        { kind: 'filter', name: 'second', config: { threshold: 20, enabled: false } },
-      ],
-    },
-    { name: 'an empty middleware list', middleware: [] },
-  ])('shows $name accurately in the real query code viewer', async ({ middleware }) => {
-    const server = new ReadServer();
-    const read = server.fetch.getMockImplementation()!;
-    server.fetch.mockImplementation(async (input, init) => {
-      const response = await read(input, init);
-      return String(input).endsWith('/queries/stocks?view=full')
-        ? json(component('queries', 'stocks', queryConfig('stocks', { middleware })))
-        : response;
-    });
-    const table = renderTable<Stock>({
-      queryId: 'stocks', title: 'Stocks', columns, rowKey: row => row.symbol,
-      queryOptions: stockOptions, codeSnippet: '<Stocks />',
-    }, [{ symbol: 'AAPL', price: 10 }], server);
-    await table.connect();
-    expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'View code' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Stocks' });
-    const code = dialog.querySelector('pre code')?.textContent;
-    expect(code).toBeDefined();
-    expect(code).not.toContain('[object Object]');
-    const middlewareLine = code!.split('\n').find(line => line.startsWith('middleware: '));
-    if (middleware.length) {
-      expect(middlewareLine).toBeDefined();
-      expect(JSON.parse(middlewareLine!.slice('middleware: '.length))).toEqual(middleware);
-      expect(dialog.querySelector('tag')).toBeNull();
-    } else {
-      expect(middlewareLine).toBeUndefined();
-      expect(code).toBe([
-        'id: stocks', 'queryLanguage: Cypher', 'autoStart: true', '',
-        'query: |', '  MATCH (n) RETURN n',
-        'enableBootstrap: true', 'bootstrapBufferSize: 10000',
-      ].join('\n'));
-    }
-    expect(within(dialog).getByRole('tab', { name: 'Query Definition' }).getAttribute('aria-selected')).toBe('true');
-    expect(server.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByText('AAPL')).not.toBeNull();
-    table.unmount();
-    expect(table.factory.instances[0].closed).toBe(true);
+    expect(codes()).toEqual(['null', 'missing', 'two', 'ten', 'numeric']);
   });
 });

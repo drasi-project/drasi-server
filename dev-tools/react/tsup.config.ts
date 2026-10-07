@@ -26,6 +26,10 @@ export default defineConfig({
   // Emit TypeScript declarations (.d.ts / .d.cts) alongside the JS.
   dts: true,
   sourcemap: true,
+  // Compact output without changing public/debug names or dropping source maps.
+  minifyWhitespace: true,
+  minifySyntax: false,
+  minifyIdentifiers: false,
   clean: true,
   treeshake: true,
   splitting: true,
