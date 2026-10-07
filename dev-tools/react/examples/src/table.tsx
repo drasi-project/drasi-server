@@ -7,7 +7,7 @@ import { DataTable, queryTableState } from '@drasi/react/components';
 import type { DrasiError } from '@drasi/react/client';
 import '@drasi/react/styles.css';
 import './layout.css';
-import { Connection } from './Connection';
+import { Connection, QueryNotice } from './Connection';
 import { Shell } from './Shell';
 import { columns, rowKey } from './columns';
 import { connectionOptions, readingOptions, rooms, type Reading } from './readings';
@@ -16,7 +16,7 @@ function RoomTable({ queryId, title }: { queryId: string; title: string }) {
   const query = useDrasiQuery(queryId, readingOptions);
   const { retry } = useDrasiClient();
   return <section aria-label={title}>
-    <p role="status">{title} query: {query.status}{query.stale ? ' (last-good data)' : ''}</p>
+    <QueryNotice title={title} query={query} />
     <DataTable<Reading, DrasiError>
       title={title} rows={query.data} columns={columns} rowKey={rowKey}
       state={queryTableState(query, retry)} height="18rem"

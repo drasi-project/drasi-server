@@ -55,6 +55,7 @@ test('retains all ten original recipe names before adding the P6 recipes', () =>
 test('adds focused P7 recipes after all thirteen inherited recipes', () => {
   assert.deepEqual(requiredReadmeExamples.slice(13), [
     'hooks-only.tsx', 'actions-slots.tsx', 'raw-identity.ts',
+    'templated-reaction.tsx',
   ]);
 });
 

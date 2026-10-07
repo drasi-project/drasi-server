@@ -133,6 +133,8 @@ claim about every plugin version, custom template or unobserved variant:
 
 There is no field-shape guessing, lowercase-operation fallback, implicit
 `query_id` alias or custom-template interpretation in this default adapter.
+For JSON-emitting Handlebars templates, use the
+[custom adapter recipe](#handlebars-sse-to-querytable).
 Official `row_signature` values are JSON numbers representing upstream `u64`s:
 unsafe integers can already have lost precision in `JSON.parse`. They are
 ignored, not exposed as stable row identities or used to deduplicate results.
@@ -176,6 +178,124 @@ It returns a new array without changing the input array/rows; key failures
 throw before a partial result is returned. It does not transform rows,
 subscribe, validate arbitrary wire payloads or reconcile snapshot overlap.
 Use the client/adapter boundary for wire validation before this raw reducer.
+
+### Handlebars SSE to QueryTable
+
+For the [cold-storage example](https://github.com/drasi-project/drasi-server/tree/agentofreality-react-independent-examples/dev-tools/react/examples), replace its
+`cold-chain-events` entry under `instances[].reactions`; keep the `cold-chain`
+instance, two projection queries and HTTP source. Choose an available SSE port
+(here `8081`). This is **operator configuration**, not provider-side provisioning:
+
+```yaml
+# @drasi-docs: templated-reaction.yaml
+kind: sse
+id: cold-chain-events
+autoStart: true
+queries: [north-room, south-room]
+host: "127.0.0.1"
+port: 8081
+ssePath: /events
+heartbeatIntervalMs: 1000
+defaultTemplate:
+  added:
+    template: >-
+      {"queryId":{{json query_name}},"op":"upsert","after":{{json after}}}
+  updated:
+    template: >-
+      {"queryId":{{json query_name}},"op":"update","before":{{json before}},"after":{{json after}}}
+  deleted:
+    template: >-
+      {"queryId":{{json query_name}},"op":"delete","before":{"probeId":{{json before.probeId}}}}
+```
+
+SSE **0.3.8** supports `defaultTemplate` or per-query `routes`, with context
+fields `query_name`, `before`, `after`, `operation` and `timestamp`. Its
+[released `json` helper](https://github.com/drasi-project/drasi-core/blob/22125bf1d66062533b832a166fe4a51079a23d6e/components/reactions/sse/src/lib.rs#L42-L70)
+writes JSON directly, including quotes and escapes. Do **not** quote
+`{{json ...}}` or interpolate strings with triple braces: HTML escaping is
+not JSON escaping.
+
+**Output must be JSON**: parsing precedes `resultAdapter`, so it cannot repair
+HTML/plain text. All templates use `/events` (no custom `path`).
+**Multi-query streams need explicit routing**: emit `queryId` from `query_name`,
+then allowlist full IDs, never guess from row shapes. Standard heartbeats remain
+unchanged. This recipe covers projection queries; aggregation events without
+`before` need a separate explicit upsert/update mapping.
+
+Import `@drasi/react/styles.css` in your app entry. Supply absolute REST/SSE URLs
+to this component; it memoizes the adapter and displays raw query fields:
+
+```tsx
+// @drasi-docs: templated-reaction.tsx
+import { useMemo } from 'react';
+import { DrasiError, type ResultAdapter, type ResultChange, type ResultRow, type RowKey } from '@drasi/react/client';
+import { DrasiProvider } from '@drasi/react/react';
+import { QueryTable } from '@drasi/react/components';
+
+const queryIds = ['north-room', 'south-room'];
+const object = (value: unknown): value is ResultRow =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+export const probeKey: RowKey = row => {
+  if (typeof row.probeId !== 'string' || !row.probeId.trim()) {
+    throw new DrasiError('INVALID_ROW_KEY');
+  }
+  return row.probeId;
+};
+
+export function createProbeAdapter(): ResultAdapter {
+  return (payload, context) => {
+    const invalid = () => new DrasiError('INVALID_PAYLOAD', context);
+    if (!object(payload)) throw invalid();
+    if (payload.type === 'heartbeat') {
+      if (typeof payload.ts !== 'number' || !Number.isFinite(payload.ts)) throw invalid();
+      return [];
+    }
+    if (typeof payload.queryId !== 'string' || !queryIds.includes(payload.queryId)) {
+      throw new DrasiError('UNROUTABLE_RESULT', context);
+    }
+    const row = (value: unknown): ResultRow => {
+      if (!object(value)) throw invalid();
+      probeKey(value);
+      return value;
+    };
+    let change: ResultChange;
+    switch (payload.op) {
+      case 'upsert': change = { kind: 'upsert', after: row(payload.after) }; break;
+      case 'update': change = { kind: 'update', before: row(payload.before), after: row(payload.after) }; break;
+      case 'delete': change = { kind: 'delete', before: row(payload.before) }; break;
+      default: throw invalid();
+    }
+    return [{ kind: 'delta', queryId: payload.queryId, changes: [change], receivedAt: context.receivedAt }];
+  };
+}
+
+export const readingOptions = {
+  getKey: probeKey,
+  transform: (raw: Readonly<ResultRow>) => raw,
+};
+
+export function ProbeTables({ serverUrl, eventsUrl }: { serverUrl: string; eventsUrl: string }) {
+  const resultAdapter = useMemo(createProbeAdapter, []);
+  return (
+    <DrasiProvider serverUrl={serverUrl} instanceId="cold-chain" queryIds={queryIds}
+      reaction={{ id: 'cold-chain-events', endpoint: eventsUrl }} resultAdapter={resultAdapter}>
+      {queryIds.map(queryId => (
+        <QueryTable key={queryId} queryId={queryId} title={queryId}
+          queryOptions={readingOptions} rowKey={probeKey}
+          columns={[{ key: 'probeId', label: 'Probe' }, { key: 'temperatureC', label: 'Temperature (C)' }]} />
+      ))}
+    </DrasiProvider>
+  );
+}
+```
+
+Alternatively call `useDrasiQuery(queryId, readingOptions)` under the same
+provider. REST snapshots remain ordinary query rows; only SSE uses the adapter.
+**Deletes and both update sides must retain all `getKey` fields**: this sparse
+delete keeps `before.probeId`; updates carry old/new keys so the reducer can
+remove a changed key. Composite keys need every component. Deletes bypass
+`transform`; add domain validation there when projecting raw rows.
 
 ### Hooks, raw identity and derived views
 

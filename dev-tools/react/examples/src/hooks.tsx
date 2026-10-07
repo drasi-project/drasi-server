@@ -3,7 +3,7 @@
 
 import { createRoot } from 'react-dom/client';
 import { DrasiProvider, useDrasiClient, useDrasiQuery } from '@drasi/react/react';
-import { Connection } from './Connection';
+import { Connection, QueryNotice } from './Connection';
 import { Shell } from './Shell';
 import { connectionOptions, readingOptions, rooms } from './readings';
 
@@ -12,7 +12,7 @@ function RoomCards({ queryId, title }: { queryId: string; title: string }) {
   const { retry: retryConnection } = useDrasiClient();
   return <section aria-label={title}>
     <h2>{title}</h2>
-    <p role="status">{title} query: {query.status}{query.stale ? ' (last-good data)' : ''}</p>
+    <QueryNotice title={title} query={query} />
     {query.error && <div role="alert">
       <p>{query.error.code}: {query.error.message}</p>
       <button type="button" onClick={query.errorScope === 'connection' ? retryConnection : query.retry}>

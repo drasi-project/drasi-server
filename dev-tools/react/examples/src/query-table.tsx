@@ -1,20 +1,14 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DrasiProvider, type UseDrasiQueryOptions, type UseDrasiQueryResult } from '@drasi/react/react';
+import { DrasiProvider, type UseDrasiQueryOptions } from '@drasi/react/react';
 import { QueryTable } from '@drasi/react/components';
 import '@drasi/react/styles.css';
 import './layout.css';
-import { Connection } from './Connection';
+import { Connection, QueryNotice } from './Connection';
 import { Shell } from './Shell';
 import { columns, rowKey } from './columns';
 import { connectionOptions, readingOptions, rooms, type Reading } from './readings';
-
-function QueryNotice({ title, query }: { title: string; query: UseDrasiQueryResult<Reading> }) {
-  return <p role="status">
-    {title} query: {query.status}{query.stale ? ' (last-good data)' : ''}
-  </p>;
-}
 
 function RoomQueryTable({ queryId, title, options = readingOptions }: {
   queryId: string; title: string; options?: UseDrasiQueryOptions<Reading>;

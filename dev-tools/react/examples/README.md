@@ -118,6 +118,20 @@ Resources are created by the explicit **server configuration**, before the
 web listener is exposed. The browser only reads them and never provisions or
 starts resources.
 
+Startup polls both queries' full-view statuses before reading either result
+set. Only `Added`, `Starting` and `Reconfiguring` are pending; stopped, errored,
+unknown or malformed resources and HTTP failures stop immediately with diagnostics.
+Connection-refused/reset/socket failures and request timeouts can retry within
+the existing 60-second limit. Both queries must be `Running`, each with exactly
+one seeded result, before startup proceeds.
+
+`npm test` executes the guide's literal custom adapter on representative JSON,
+including escaped keys and sparse updates/deletes. `npm run test:live` additionally
+creates a temporary SSE reaction from the guide's literal YAML on the owned
+server, verifies actual JSON emission/normalization for both queries, and
+removes that reaction before the original browser scenarios. Unit runs alone
+skip that real-plugin check; they are not template-engine evidence.
+
 `scripts/runtime.mjs` runs the existing immutable, signature-verifying plugin
 installer and validates actual loaded hashes/versions/ABI. It reuses the
 reviewed five-plugin backend pin set; only HTTP source, scriptfile bootstrap

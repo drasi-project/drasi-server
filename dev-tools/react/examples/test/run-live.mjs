@@ -24,6 +24,12 @@ try {
   await new Promise((accept, reject) => { control.once('error', reject); control.listen(0, '127.0.0.1', accept); });
   const address = control.address();
   assert(address && typeof address !== 'string');
+  child = spawn(process.execPath, ['--import', 'tsx', '--test', 'test/template-adapter.test.ts'], {
+    cwd: exampleRoot, stdio: 'inherit',
+    env: { ...process.env, P7_TEMPLATE_ENDPOINTS: JSON.stringify({ rest: runtime.rest, feed: runtime.feed }) },
+  });
+  const templateCode = await new Promise((accept, reject) => { child.once('error', reject); child.once('exit', accept); });
+  assert.equal(templateCode, 0, 'Documented template contract failed against the owned released plugin');
   child = spawn(process.execPath, [
     join(exampleRoot, 'node_modules/@playwright/test/cli.js'), 'test', ...process.argv.slice(2),
   ], {

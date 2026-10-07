@@ -38,6 +38,45 @@ async function get(url) {
   return response.json();
 }
 
+export async function waitForQueries(rest, directory, checkServer) {
+  const snapshots = {};
+  const deadline = Date.now() + 60_000;
+  let ready = false;
+  while (Date.now() < deadline) {
+    checkServer();
+    try {
+      let allRunning = true;
+      for (const query of ['north-room', 'south-room']) {
+        const body = await get(`${rest}/api/v1/instances/cold-chain/queries/${query}?view=full`);
+        assert(body?.success === true && body.data !== null &&
+          typeof body.data === 'object' && !Array.isArray(body.data),
+        `Invalid full-view response for ${query}; see ${directory}/server.log`);
+        if (['Added', 'Starting', 'Reconfiguring'].includes(body.data.status)) {
+          allRunning = false;
+          continue;
+        }
+        assert.equal(body.data.status, 'Running', `Query ${query} is not running; see ${directory}/server.log`);
+      }
+      if (allRunning) {
+        for (const query of ['north-room', 'south-room']) {
+          const body = await get(`${rest}/api/v1/instances/cold-chain/queries/${query}/results`);
+          assert(body?.success === true && Array.isArray(body.data),
+            `Invalid results response for ${query}; see ${directory}/server.log`);
+          snapshots[query] = body;
+        }
+        ready = Object.values(snapshots).every(body => body.data.length === 1);
+        if (ready) break;
+      }
+    } catch (error) {
+      const unavailable = error instanceof TypeError && ['ECONNREFUSED', 'ECONNRESET', 'UND_ERR_SOCKET'].includes(error.cause?.code);
+      if (!unavailable && !(error instanceof DOMException && error.name === 'TimeoutError')) throw error;
+    }
+    await delay(100);
+  }
+  assert(ready, `Pre-created queries did not become ready in 60 seconds; see ${directory}/server.log`);
+  return snapshots;
+}
+
 export async function startExample(env = process.env) {
   const source = resolve(env.P7_SOURCE_ROOT ?? fileURLToPath(new URL('../../../../', import.meta.url)));
   const binary = join(source, 'target/debug/drasi-server');
@@ -113,25 +152,10 @@ export async function startExample(env = process.env) {
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     child.on('error', error => { spawnError = error; });
-    const snapshots = {};
-    const deadline = Date.now() + 60_000;
-    let ready = false;
-    while (Date.now() < deadline) {
+    const snapshots = await waitForQueries(rest, directory, () => {
       if (spawnError) throw spawnError;
       assert(child.exitCode === null && child.signalCode === null, `Owned server exited; see ${directory}/server.log`);
-      try {
-        for (const query of ['north-room', 'south-room']) {
-          snapshots[query] = await get(`${rest}/api/v1/instances/cold-chain/queries/${query}/results`);
-        }
-        ready = Object.values(snapshots).every(body => body.success === true && body.data?.length === 1);
-        if (ready) break;
-      } catch (error) {
-        const unavailable = error instanceof TypeError && ['ECONNREFUSED', 'ECONNRESET', 'UND_ERR_SOCKET'].includes(error.cause?.code);
-        if (!unavailable && !(error instanceof DOMException && error.name === 'TimeoutError')) throw error;
-      }
-      await delay(100);
-    }
-    assert(ready, `Pre-created queries did not become ready in 60 seconds; see ${directory}/server.log`);
+    });
     const validator = new DrasiClient({
       serverUrl: rest, instanceId: 'cold-chain', queryIds: ['north-room', 'south-room'],
       reaction: { id: 'cold-chain-events', endpoint: `${events}/events` },

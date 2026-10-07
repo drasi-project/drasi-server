@@ -9,6 +9,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { probes, sendReading } from '../scripts/feed.mjs';
 import { serveExample } from '../scripts/web.mjs';
+import { waitForQueries } from '../scripts/runtime.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bounded = { timeout: 5000 };
@@ -66,6 +67,134 @@ async function webServer(t, dist, options = {}) {
   t.after(close);
   return { ...web, close };
 }
+
+const queryPath = query => `/api/v1/instances/cold-chain/queries/${query}`;
+const fullView = status => ({ success: true, data: { status } });
+const resultView = data => ({ success: true, data });
+
+test('readiness checks both full views before results, polling only startup states and incomplete snapshots', bounded, async t => {
+  const requests = [];
+  let round = -1;
+  const states = ['Added', 'Starting', 'Reconfiguring', 'Running', 'Running'];
+  const upstream = await localServer(t, (request, response) => {
+    requests.push(request.url);
+    if (request.url === `${queryPath('north-room')}?view=full`) round += 1;
+    const data = request.url.endsWith('?view=full')
+      ? fullView(request.url.includes('north-room') ? 'Running' : states[round])
+      : resultView(round === 3 ? [] : [{ probeId: request.url.includes('north-room') ? 'north' : 'south' }]);
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(data));
+  });
+  let checks = 0;
+  const snapshots = await waitForQueries(upstream.url, '/owned', () => {
+    assert(++checks <= 5, 'Readiness retried an unexpected response');
+  });
+  assert.deepEqual(requests, states.flatMap((_, index) => [
+    `${queryPath('north-room')}?view=full`, `${queryPath('south-room')}?view=full`,
+    ...(index < 3 ? [] : [`${queryPath('north-room')}/results`, `${queryPath('south-room')}/results`]),
+  ]));
+  assert.deepEqual(snapshots, {
+    'north-room': resultView([{ probeId: 'north' }]),
+    'south-room': resultView([{ probeId: 'south' }]),
+  });
+});
+
+for (const [label, body] of [
+  ...['Stopped', 'Stopping', 'Error', 'Failed', 'Unknown', '', null].map(status => [String(status), fullView(status)]),
+  ['missing status', { success: true, data: {} }],
+  ['failed envelope', { success: false, data: { status: 'Running' } }],
+  ['missing success', { data: { status: 'Running' } }],
+  ['null envelope', null], ['null data', { success: true, data: null }],
+  ['array data', { success: true, data: [] }], ['string data', { success: true, data: 'Running' }],
+]) {
+  test(`readiness fails immediately for ${label}, even while another query is starting`, bounded, async t => {
+    const requests = [];
+    const upstream = await localServer(t, (request, response) => {
+      requests.push(request.url);
+      response.end(JSON.stringify(request.url.includes('north-room') ? fullView('Starting') : body));
+    });
+    let checks = 0;
+    await assert.rejects(waitForQueries(upstream.url, '/owned', () => {
+      assert.equal(++checks, 1, 'Must not retry terminal or malformed responses');
+    }), /south-room.*server\.log/);
+    assert.deepEqual(requests, [`${queryPath('north-room')}?view=full`, `${queryPath('south-room')}?view=full`]);
+  });
+}
+
+for (const status of [401, 403, 404, 409, 500, 503]) {
+  test(`readiness never retries HTTP ${status}`, bounded, async t => {
+    let requests = 0;
+    const upstream = await localServer(t, (_request, response) => {
+      requests += 1;
+      response.writeHead(status).end('private error details');
+    });
+    await assert.rejects(waitForQueries(upstream.url, '/owned', () => {}),
+      new RegExp(`readiness request failed \\(${status}\\)`));
+    assert.equal(requests, 1);
+  });
+}
+
+test('readiness rejects malformed JSON and malformed result envelopes without retrying', bounded, async t => {
+  for (const raw of ['not json', 'null', '{"success":false,"data":[]}', '{"success":true,"data":{"length":1}}']) {
+    let checks = 0;
+    const upstream = await localServer(t, (request, response) => {
+      response.end(request.url.endsWith('?view=full') ? JSON.stringify(fullView('Running')) : raw);
+    });
+    await assert.rejects(waitForQueries(upstream.url, '/owned', () => {
+      assert.equal(++checks, 1, 'Must not retry malformed results');
+    }), error => error instanceof SyntaxError || /north-room.*server\.log/.test(error.message));
+    assert.equal(checks, 1);
+  }
+});
+
+for (const failure of [
+  ...['ECONNREFUSED', 'ECONNRESET', 'UND_ERR_SOCKET'].map(code => new TypeError('fetch failed', { cause: { code } })),
+  new DOMException('Timed out', 'TimeoutError'),
+]) {
+  test(`readiness retries transient ${failure.cause?.code ?? failure.name} and rechecks both statuses`, bounded, async t => {
+    const requests = [];
+    let checks = 0;
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      requests.push(url);
+      assert(options.signal instanceof AbortSignal);
+      if (requests.length === 2) throw failure;
+      return Response.json(url.endsWith('?view=full') ? fullView('Running') : resultView([{}]));
+    });
+    await waitForQueries('http://127.0.0.1:12345', '/owned', () => { checks += 1; });
+    assert.equal(checks, 2);
+    assert.deepEqual(requests.map(url => new URL(url).pathname + new URL(url).search), [
+      ...Array.from({ length: 2 }, () => [
+        `${queryPath('north-room')}?view=full`, `${queryPath('south-room')}?view=full`,
+      ]).flat(),
+      `${queryPath('north-room')}/results`, `${queryPath('south-room')}/results`,
+    ]);
+  });
+}
+
+test('readiness propagates other network errors, cancellation and owned-server exit unchanged', bounded, async t => {
+  for (const failure of [
+    new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } }),
+    new TypeError('programming error'), new DOMException('Cancelled', 'AbortError'),
+  ]) {
+    const fetch = t.mock.method(globalThis, 'fetch', async () => { throw failure; });
+    await assert.rejects(waitForQueries('http://127.0.0.1:12345', '/owned', () => {}), error => error === failure);
+    assert.equal(fetch.mock.callCount(), 1);
+    fetch.mock.restore();
+  }
+  const failure = new Error('Owned server exited');
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('Must not fetch'); });
+  await assert.rejects(waitForQueries('http://127.0.0.1:12345', '/owned', () => { throw failure; }), error => error === failure);
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test('readiness retains its 60-second bound for perpetually starting resources', bounded, async t => {
+  let now = 0;
+  t.mock.method(Date, 'now', () => now);
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json(fullView('Starting')));
+  await assert.rejects(waitForQueries('http://127.0.0.1:12345', '/owned', () => { now += 30_000; }),
+    /did not become ready in 60 seconds.*\/owned\/server\.log/);
+  assert.equal(fetch.mock.callCount(), 4);
+});
 
 test('static handler serves every canonical entry and assets with correct MIME and host headers', bounded, async t => {
   const { dist, files } = await assets(t);

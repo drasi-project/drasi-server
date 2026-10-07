@@ -1,9 +1,22 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import test from 'node:test';
 import { accumulateResult } from '@drasi/react/client';
+import { QueryNotice } from '../src/Connection.tsx';
 import { connectionOptions, probeKey, readingOptions } from '../src/readings.ts';
 import { simulatedQuery, simulatedRows, simulatedStates } from '../src/showcaseState.ts';
+
+test('shared query notices preserve each live page status, stale label and accessible role', () => {
+  for (const status of simulatedStates) {
+    for (const stale of [false, true]) {
+      assert.equal(renderToStaticMarkup(createElement(QueryNotice, {
+        title: 'North room', query: { status, stale },
+      })), `<p role="status">North room query: ${status}${stale ? ' (last-good data)' : ''}</p>`);
+    }
+  }
+});
 
 test('explicit references contain no definitions or instance-discovery defaults', () => {
   const options = connectionOptions('http://127.0.0.1:5373');

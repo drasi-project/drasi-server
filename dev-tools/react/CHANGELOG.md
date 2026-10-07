@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Add a tested Handlebars JSON/adapter recipe with explicit routing and raw
+  identity; verify its literal YAML against the released SSE plugin.
+- Check both query statuses before example results, preserving bounded startup
+  polling and immediate terminal failures.
 - Rehome the single runnable cold-storage workspace beside the package at
   `dev-tools/react/examples`; retain built-artifact-only consumption and add a
   real `QueryTable` entry with query-local projection/retry coverage.

@@ -1,7 +1,15 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-import { useDrasiClient, useDrasiConnectionStatus } from '@drasi/react/react';
+import { useDrasiClient, useDrasiConnectionStatus, type UseDrasiQueryResult } from '@drasi/react/react';
+
+export function QueryNotice({ title, query }: {
+  title: string; query: Pick<UseDrasiQueryResult, 'status' | 'stale'>;
+}) {
+  return <p role="status">
+    {title} query: {query.status}{query.stale ? ' (last-good data)' : ''}
+  </p>;
+}
 
 export function Connection() {
   const connection = useDrasiConnectionStatus();
