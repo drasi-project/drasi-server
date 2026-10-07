@@ -13,12 +13,14 @@
 // limitations under the License.
 
 import React from 'react';
+import type { TableHeight } from '@drasi/react/components';
 import clsx from 'clsx';
 
 interface PlaceholderTableProps {
   title: string;
   message?: string;
-  height?: string;
+  /** Pixels or an explicit CSS height, not a utility class. Defaults to 400px. */
+  height?: TableHeight;
   className?: string;
 }
 
@@ -29,15 +31,14 @@ interface PlaceholderTableProps {
 export const PlaceholderTable: React.FC<PlaceholderTableProps> = ({
   title,
   message = 'Coming soon',
-  height = 'h-[400px]',
+  height = 400,
   className,
 }) => {
   return (
     <div className={clsx(
       "bg-trading-card rounded-lg border border-trading-border flex flex-col",
-      height,
       className
-    )}>
+    )} style={{ height }}>
       {/* Header */}
       <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
         <h2 className="text-xl font-bold">{title}</h2>

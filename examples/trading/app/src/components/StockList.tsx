@@ -26,6 +26,7 @@ const GAINERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-gainers-query"
   queryOptions={tradingQueryOptions('top-gainers-query')}
   title="Top Gainers"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
@@ -42,6 +43,7 @@ const LOSERS_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="top-losers-query"
   queryOptions={tradingQueryOptions('top-losers-query')}
   title="Top Losers"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
@@ -58,6 +60,7 @@ const VOLUME_CODE_SNIPPET = `<TradingQueryTable<MarketMoverRow>
   queryId="high-volume-query"
   queryOptions={tradingQueryOptions('high-volume-query')}
   title="High Volume"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
@@ -129,6 +132,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
       queryId={queryId}
       queryOptions={tradingQueryOptions(queryId)}
       title={title}
+      height={400}
       columns={columns}
       rowKey={(row) => row.symbol}
       animateOnChange="price"

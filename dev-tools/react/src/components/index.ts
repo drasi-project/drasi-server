@@ -14,7 +14,7 @@
 
 /**
  * Provider-free presentation and a convenient live-query composition.
- * Styling is an explicit import; tutorial and overlay ownership belong to apps.
+ * Styling is an explicit import; tutorial and overlay composition belong to apps.
  */
 
 export { DataTable } from './DataTable';
@@ -26,3 +26,6 @@ export { QueryTable, queryTableState } from './QueryTable';
 export type { QueryTableProps, QueryTableRenderContext, QueryTableErrorContext } from './QueryTable';
 export type { ColumnDef, RowAction, SortConfig } from './types';
 export { CodeIcon, ExpandIcon, CollapseIcon } from './icons';
+export { Modal } from './Modal';
+export type { ModalProps } from './Modal';
+export type { TableHeight } from './sizing';

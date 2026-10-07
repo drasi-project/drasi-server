@@ -9,6 +9,7 @@ export const requiredReadmeExamples = [
   'quickstart.tsx', 'query-options.ts', 'client.ts', 'auth.ts', 'controlled.tsx',
   'data-table.tsx', 'sort-uncontrolled.tsx', 'sort-controlled.tsx',
   'query-states.tsx', 'composed-table.tsx',
+  'table-sizing.tsx', 'scoped-modal.tsx', 'reduced-motion.tsx',
 ];
 
 /** Only an explicit first-line marker opts a README fence into compilation. */

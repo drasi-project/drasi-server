@@ -1,0 +1,1479 @@
+{
+  "schemaVersion": 1,
+  "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
+  "policy": "Only exact documented Trading fingerprints may be retained. Every raw violation/incomplete item stays in reports. This is a non-regression gate, not zero-contrast or human AT acceptance.",
+  "matrixSha256": "672c8aac765df851609e6c5260ecc650e2503622e5ea8f1ff27db3fd8686cbeb",
+  "strictPairedStates": 47,
+  "rawReports": 98,
+  "fingerprints": [
+    {
+      "id": "p5-contrast-01",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-red\\/20",
+      "identity": {
+        "tag": "span",
+        "text": "sell",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#ef4444",
+        "bgColor": "#3f212b",
+        "contrastRatio": 3.81,
+        "fontSize": "9.0pt (12px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(239, 68, 68)",
+            "background": "rgba(239, 68, 68, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "500",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(239, 68, 68)",
+            "background": "rgba(239, 68, 68, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "500",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(239, 68, 68)",
+            "background": "rgba(239, 68, 68, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "500",
+            "lineHeight": "16px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-02",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "footer p",
+      "identity": {
+        "tag": "p",
+        "text": "This is a demonstration of Drasi Server's continuous query capabilities. All data is simulated for demonstration purposes.",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#6b7280",
+        "bgColor": "#0a0e1a",
+        "contrastRatio": 3.98,
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "20px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "20px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "dashboard",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "20px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-03",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Add",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#3b82f6",
+        "contrastRatio": 2.97,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "add-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "add-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "add-watchlist",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "add-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "add-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "add-watchlist",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "add-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "add-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "add-watchlist",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-04",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button[aria-pressed=\"true\"]",
+      "identity": {
+        "tag": "button",
+        "text": "Buy",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#ffffff",
+        "bgColor": "#10b981",
+        "contrastRatio": 2.53,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-settled",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-ci-sample",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(16, 185, 129)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-05",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "p.text-xs.text-gray-500",
+      "identity": {
+        "tag": "p",
+        "text": "Buy when price drops to target",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#6b7280",
+        "bgColor": "#131825",
+        "contrastRatio": 3.66,
+        "fontSize": "9.0pt (12px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-settled",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-ci-sample",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-06",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Create Order",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#3b82f6",
+        "contrastRatio": 2.97,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-07",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".drasi-code-dialog__external-link",
+      "identity": {
+        "tag": "a",
+        "text": "Open in Drasi UI",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#3b82f6",
+        "bgColor": "#1e2634",
+        "contrastRatio": 4.13,
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "inspector-react-copied",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.3)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-08",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button[role=\"tab\"][aria-selected=\"true\"]",
+      "identity": {
+        "tag": "button",
+        "text": "Query Definition",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#3b82f6",
+        "bgColor": "#1e2534",
+        "contrastRatio": 4.16,
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "inspector-query",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-09",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button[role=\"tab\"][aria-selected=\"true\"]",
+      "identity": {
+        "tag": "button",
+        "text": "React Code",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#3b82f6",
+        "bgColor": "#1e2534",
+        "contrastRatio": 4.16,
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "inspector-react-copied",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "inspector-react",
+          "style": {
+            "foreground": "rgb(59, 130, 246)",
+            "background": "rgba(31, 41, 55, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "500",
+            "lineHeight": "21px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-10",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".drasi-code-dialog__copy-button",
+      "identity": {
+        "tag": "button",
+        "text": "Copied!",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#10b981",
+        "bgColor": "#1b4243",
+        "contrastRatio": 4.34,
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "inspector-react-copied",
+          "style": {
+            "foreground": "rgb(16, 185, 129)",
+            "background": "rgba(16, 185, 129, 0.2)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "21px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-11",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Save",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#3b82f6",
+        "contrastRatio": 2.97,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "edit-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "edit-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "edit-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "edit-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "edit-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "edit-position-validation",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(59, 130, 246)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-12",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button.bg-red-600",
+      "identity": {
+        "tag": "button",
+        "text": "Delete",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#dc2626",
+        "contrastRatio": 3.9,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "confirm-delete-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "confirm-delete-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "confirm-delete-position",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-13",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button[aria-pressed=\"true\"]",
+      "identity": {
+        "tag": "button",
+        "text": "Sell",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#ffffff",
+        "bgColor": "#ef4444",
+        "contrastRatio": 3.76,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(255, 255, 255)",
+            "background": "rgb(239, 68, 68)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "500",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-14",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "p.text-xs.text-gray-500",
+      "identity": {
+        "tag": "p",
+        "text": "Sell when price rises to target",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#6b7280",
+        "bgColor": "#131825",
+        "contrastRatio": 3.66,
+        "fontSize": "9.0pt (12px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "chromium",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-sell-validation",
+          "style": {
+            "foreground": "rgb(107, 114, 128)",
+            "background": "rgba(0, 0, 0, 0)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-15",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": "button.bg-red-600",
+      "identity": {
+        "tag": "button",
+        "text": "Cancel Order",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#dc2626",
+        "contrastRatio": 3.9,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "chromium",
+          "state": "confirm-cancel-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "firefox",
+          "state": "confirm-cancel-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        },
+        {
+          "browser": "webkit",
+          "state": "confirm-cancel-order",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgb(220, 38, 38)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-16",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Add",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#336dcc",
+        "contrastRatio": 4.03,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "webkit",
+          "state": "add-position-hover-settled",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgba(59, 130, 246, 0.8)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-17",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Add",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#336ece",
+        "contrastRatio": 3.97,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "webkit",
+          "state": "add-position-hover-ci-sample",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgba(59, 130, 246, 0.808)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-18",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Create Order",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#336dcc",
+        "contrastRatio": 4.03,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-settled",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgba(59, 130, 246, 0.8)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p5-contrast-19",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "selector": ".bg-trading-blue",
+      "identity": {
+        "tag": "button",
+        "text": "Create Order",
+        "inputType": null,
+        "placeholder": null
+      },
+      "metrics": {
+        "fgColor": "#e5e7eb",
+        "bgColor": "#387be8",
+        "contrastRatio": 3.28,
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null,
+        "expectedContrastRatio": "4.5:1"
+      },
+      "contexts": [
+        {
+          "browser": "webkit",
+          "state": "new-limit-order-hover-ci-sample",
+          "style": {
+            "foreground": "rgb(229, 231, 235)",
+            "background": "rgba(59, 130, 246, 0.933)",
+            "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          }
+        }
+      ]
+    }
+  ]
+}

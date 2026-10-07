@@ -21,11 +21,12 @@
  * - {@link useDrasiQuery} and friends: subscribe to a query's live result set.
  * - {@link DataTable}: provider-free presentation, sorting and animation.
  * - {@link QueryTable}: a small live-query composition of that presentation.
+ * - {@link Modal}: client-mounted accessible overlay ownership and portal theming.
  *
  * The public API is organized into three groups:
  * - `client`     — framework-agnostic core (`DrasiClient`, `DrasiSSEClient`).
  * - `react`      — React bindings (`DrasiProvider`, hooks).
- * - `components` — presentation (`DataTable`, `QueryTable`, icons).
+ * - `components` — presentation (`DataTable`, `QueryTable`, `Modal`, icons).
  */
 
 export * from './client';

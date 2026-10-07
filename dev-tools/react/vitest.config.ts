@@ -29,6 +29,7 @@ export default defineConfig({
       thresholds: {
         'src/client/**': { statements: 90, lines: 90, functions: 90, branches: 85 },
         'src/react/**': { statements: 90, lines: 90, functions: 90, branches: 85 },
+        'src/components/**': { statements: 90, lines: 90, functions: 90, branches: 85 },
       },
     },
   },

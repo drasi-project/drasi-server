@@ -22,7 +22,7 @@ interface IconProps {
 export const ExpandIcon: React.FC<IconProps> = ({
   className = 'drasi-icon',
 }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg aria-hidden="true" focusable="false" className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -36,7 +36,7 @@ export const ExpandIcon: React.FC<IconProps> = ({
 export const CollapseIcon: React.FC<IconProps> = ({
   className = 'drasi-icon',
 }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg aria-hidden="true" focusable="false" className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -50,7 +50,7 @@ export const CollapseIcon: React.FC<IconProps> = ({
 export const CodeIcon: React.FC<IconProps> = ({
   className = 'drasi-icon',
 }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg aria-hidden="true" focusable="false" className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
