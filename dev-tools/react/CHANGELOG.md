@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add task-first navigation, subscriber-state/computation guidance, corrected
   historical evidence links and an explicitly server-free showcase recipe;
   no query-cache, virtualization or new runtime/platform promise is introduced.
+- Scope typed adapter failures to the recognized raw envelope query when they
+  lack a query scope, preserving their code and status fields without closing
+  the shared stream or disrupting healthy queries. Already query-scoped errors
+  retain their exact identity; unidentified failures remain connection-scoped.
 - Preserve opaque restart identity across React-batched expiry/reactivation
   and inactive/active commits before a browser paint. Keep only one per-hook
   scalar and the rendered row's phase; expired/deleted map entries still clear.
@@ -211,7 +215,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `reconciliation.maxPendingChanges` defaults to 10000 and does not cap result
   size. Exhaustion is terminal and can retain useful stale last-good data.
 - Terminal `INVALID_ROW_KEY`, `RESULT_PROCESSING_FAILED` and
-  `UNROUTABLE_RESULT` errors, with existing typed error identity preserved.
+  `UNROUTABLE_RESULT` errors, with existing query-scoped typed error identity preserved.
 - Adapter context includes optional read-only `DrasiErrorDetails` and required
   receipt metadata. New unidentified stream faults retain configured reaction
   details, while keyed faults carry query details; existing context literals
