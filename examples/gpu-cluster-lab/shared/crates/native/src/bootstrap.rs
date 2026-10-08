@@ -76,7 +76,7 @@ impl Write for LimitedBytes {
 pub fn notification_bytes(kind: &str, payload: &Value) -> Result<usize> {
     // Include SDK message framing and the widest generation, beyond Core's kind+JSON budget.
     Ok(serde_json::to_vec(&ControlMessage {
-        from: ComponentId::try_new("input-plan")?,
+        from: ComponentId::try_new(crate::inputs::DATABASE_QUERY)?,
         generation: u64::MAX,
         direction: ControlDirection::Downstream,
         notification: ControlNotification::Custom {

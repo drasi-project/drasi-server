@@ -640,7 +640,7 @@ async fn reset(
             .post(format!("{}/internal/runtime/start", app.drasi))
             .bearer_auth(&app.token)
             .timeout(Duration::from_secs(90))
-            .json(&json!({"scenario":name}))
+            .json(&json!({"scenario":name,"expected_plan":plan.decision_id}))
             .send()
             .await?
             .error_for_status()?;
@@ -703,8 +703,8 @@ async fn proxy(
     let query = parts.first() == Some(&"queries")
         && parts.get(1).is_some_and(|id| UI_QUERIES.contains(id))
         && (parts.len() == 2 || (parts.len() == 3 && parts[2] == "results"));
-    let reaction = path == "reactions/gpu-demo-ui";
-    if !(query || reaction) || uri.query().is_some_and(|q| q != "view=full") {
+    let topology = path == "computation";
+    if !(query || topology) || uri.query().is_some_and(|q| !query || q != "view=full") {
         return Err(ApiError {
             status: StatusCode::NOT_FOUND,
             code: "NOT_FOUND",

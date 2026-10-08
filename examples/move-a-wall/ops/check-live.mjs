@@ -79,8 +79,14 @@ const consume = (async () => {
 try {
   const graph = await get('/computation');
   assert.ok(graph.components.some(c => c.id === 'geometry' && c.role === 'Transformer'),'actual topology must contain the geometry transformer');
+  assert.ok(graph.components.some(c => c.id === 'wall-ui' && c.role === 'Sink' &&
+    c.implementation?.name === 'drasi.network/sse-sink'),'UI delivery must be the native SSE sink');
   for (const [from,to] of [['scene','geometry-context'],['geometry-context','geometry'],['geometry','affected-journeys']]) {
     assert.ok(graph.relationships.some(r => r.from.component === from && r.to.component === to),`missing actual graph edge ${from} -> ${to}`);
+  }
+  for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
+    assert.ok(graph.relationships.some(r => r.from.component === query && r.to.component === 'wall-ui'),
+      `missing direct native SSE edge ${query} -> wall-ui`);
   }
   await command({action:'reset'});
   await until(async () => (await rows('affected-journeys')).length === 0,'clear fixture');

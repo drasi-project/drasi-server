@@ -69,7 +69,7 @@ const components: Component[] = [
     implementation: 'scene-inputs · obstructions · geometry-status',
     detail: 'Three independent queries expose the authoritative scene (including inactive objects), geometric obstruction records, and the last computed revision/counts. The inspector also shows the context and impact queries.',
     input: 'scene-inputs ← scene.out; obstructions and geometry-status ← geometry.out.',
-    output: 'Each out → query-results.in. All five query feeds are available to the UI.',
+    output: 'Each out → query-results.in and wall-ui.in. All five query feeds are available to the UI.',
     note: 'Grouped here for clarity. These are query projections, not transformer cache inspection or a transport event log.',
   },
   {
@@ -78,8 +78,8 @@ const components: Component[] = [
     implementation: 'query-results · drasi/query-results-outlet',
     detail: 'This stock sink is explicitly declared as query-results in the Server computation configuration. All five queries connect to its input. It publishes their results into the shared QueryResultsCatalog resource.',
     input: 'in ← out from all five continuous queries.',
-    output: 'Catalog publication, used by the query API and result subscriptions. This sink has no graph output port.',
-    note: 'The catalog is a graph-owned resource, not another component. The outgoing diagram lines show access through that resource, not additional graph pipes.',
+    output: 'Catalog publication, used by the query snapshot API. This sink has no graph output port.',
+    note: 'The catalog is a graph-owned resource, not another component. SSE receives independent direct query-output edges, not catalog subscriptions.',
   },
   {
     id: 'api', kind: 'delivery', label: 'SERVER API', title: 'REST API',
@@ -91,13 +91,13 @@ const components: Component[] = [
     note: 'This is the host API configured on port 8421, not an additional ComputationGraph component. Snapshots from different queries are not one atomic UI snapshot.',
   },
   {
-    id: 'sse', kind: 'delivery', label: 'CONFIGURED REACTION', title: 'SSE reaction',
+    id: 'sse', kind: 'delivery', label: 'NATIVE SINK', title: 'SSE sink',
     summary: 'wall-ui · live result changes.', x: 670, y: 580,
-    implementation: 'wall-ui · drasi-reaction-sse · port 8422',
-    detail: 'The Server configuration declares wall-ui as a standard SSE reaction subscribed to all five queries. It streams actual result changes to the React SDK, which updates the query-backed views.',
-    input: 'Result subscriptions for all five continuous queries.',
+    implementation: 'wall-ui · drasi.network/sse-sink · port 8422',
+    detail: 'The Server graph connects all five query outputs directly to wall-ui. The native sink emits the existing browser protocol without a legacy reaction or subscription worker.',
+    input: 'in ← out from all five continuous queries through bounded graph pipes.',
     output: 'Server-sent events on /events.',
-    note: 'The five-second heartbeat checks the connection; it does not run geometry. Each query feed is delivered independently.',
+    note: 'The five-second heartbeat checks the connection; it does not run geometry. Delivery is volatile and acceptance-only; reconnect reads fresh query snapshots.',
   },
 ];
 

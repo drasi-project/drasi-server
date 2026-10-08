@@ -22,13 +22,14 @@ INPUTS = {
     "input-workloads": "workload_requirements",
     "input-plan": "gpu_placements",
 }
+DATABASE_QUERY = "input-configuration"
 UI_KEYS = {
     "ui-gpus": "gpu_id", "ui-workloads": "workload_id",
     "ui-placements": "fleet_id", "ui-resilience": "fleet_id",
     "ui-decisions": "decision_id", "ui-status": "fleet_id",
     "ui-timeline": "event_id", "ui-clusters": "cluster_id", "ui-policy": "id",
 }
-QUERIES = [*INPUTS, "simulation-inputs", "scheduling-inputs", "plan-output",
+QUERIES = [DATABASE_QUERY, "simulation-inputs", "scheduling-inputs", "plan-output",
            "runtime-context", *UI_KEYS]
 TABLES = [*INPUTS.values(), "command_receipts", "demo_reset_state"]
 PREFIX = "/api/v1/instances/gpu-demo"
@@ -39,6 +40,10 @@ def same_rows(actual, expected):
     def ordered(rows):
         return sorted(json.dumps(row, sort_keys=True, separators=(",", ":")) for row in rows)
     return ordered(actual) == ordered(expected)
+
+def logged_queries(text):
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    return set(re.findall(r"GPU query result\s+query=([a-z0-9-]+)\s+result=", text))
 
 
 def unique_rows(query, rows):
@@ -61,7 +66,7 @@ def recovery_readiness_regressed(before, after):
     components = {row["component_id"]: row for row in after["components"]}
     return (before["inputs_ready"] is True and after["inputs_ready"] is False
             and all(components.get(name, {}).get("status") == "running"
-                    for name in ("postgres", *INPUTS))
+                    for name in ("postgres", DATABASE_QUERY))
             and components.get("simulator", {}).get("status") == "initialization-error")
 
 
@@ -154,20 +159,24 @@ class Probe:
 
     def mirrored(self):
         expected = self.database()
-        for query, table in INPUTS.items():
-            rows = self.rows(query)
-            actual = [record for row in rows for record in row["records"]]
+        rows = self.rows(DATABASE_QUERY)
+        assert len(rows) == 1, "expected one complete configuration aggregate"
+        tables = {table: [] for table in INPUTS.values()}
+        for record in rows[0]["records"]:
+            assert set(record) == {"table", "value"} and record["table"] in tables, record
+            tables[record["table"]].append(record["value"])
+        for table, actual in tables.items():
             projected = [{key: value for key, value in row.items()
                           if key not in ("updated_at", "committed_at")} for row in expected[table]]
             if not same_rows(actual, projected):
-                self.latest["mirror_mismatch"] = {"query": query, "actual": actual,
+                self.latest["mirror_mismatch"] = {"table": table, "actual": actual,
                                                   "expected": projected}
                 return False
         self.latest.pop("mirror_mismatch", None)
         return True
 
     def mirror(self):
-        self.until("all seven input queries exactly match PostgreSQL rows", self.mirrored)
+        self.until("one committed configuration matches all seven PostgreSQL tables", self.mirrored)
 
     def snapshot(self, label):
         self.event("snapshot", label=label)
@@ -245,13 +254,14 @@ class Probe:
 
         def started():
             try:
-                status, body = self.response(f"{PREFIX}/reactions")
+                status, body = self.response(f"{PREFIX}/computation")
             except URLError as error:
                 self.event("startup-connection", error=str(error))
                 return False
-            return status == 200 and any(row["id"] == "gpu-query-log" and row["status"] == "Running"
-                                        for row in body.get("data") or [])
-        self.until("real gpu-query-log reaction is running", started, timeout=120)
+            return status == 200 and any(row["id"] == "gpu-query-log"
+                                        and row["lifecycle"] == "Running"
+                                        for row in (body.get("data") or {}).get("components", []))
+        self.until("native gpu-query-log sink is running", started, timeout=120)
         self.mirror()
         self.snapshot("restored")
 
@@ -471,11 +481,11 @@ class Probe:
                 for service in ("control", "drasi", "postgres"):
                     self.check_stopped(service, "final")
             text = logs.decode(errors="replace")
-            observed = set(re.findall(r"\[gpu-query-log\] Query '([^']+)'", text))
+            observed = logged_queries(text)
             self.save("logged-queries.json", sorted(observed))
             if self.drasi is not None:
                 assert set(QUERIES) <= observed, f"Missing real query log output: {set(QUERIES) - observed}"
-            assert ROLLBACK_NAME not in text, "Uncommitted SQL update appeared in reaction logs"
+            assert ROLLBACK_NAME not in text, "Uncommitted SQL update appeared in native query logs"
         finally:
             self.run([*self.compose, "down", "--volumes"], timeout=180)
             self.save("presenter-after.json", self.database(source=True))

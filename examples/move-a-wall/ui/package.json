@@ -12,6 +12,7 @@
     "check:about": "npm run build && node ../ops/check-about.mjs"
   },
   "dependencies": {
+    "@drasi/example-native-sse": "file:../../native-sse-client",
     "@drasi/react": "file:vendor/drasi-react.tgz",
     "react": "18.3.1",
     "react-dom": "18.3.1"

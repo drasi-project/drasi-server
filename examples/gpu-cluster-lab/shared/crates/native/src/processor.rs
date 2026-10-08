@@ -218,11 +218,42 @@ impl Processor {
             )?;
         }
         if self.kind == Kind::Policy {
+            self.publish_database(&snapshot, changes)?;
             let mut value = serde_json::to_value(&snapshot)?;
             value["config_fingerprint"] = json!(snapshot.configuration.fingerprint()?);
             self.add(changes, "FleetConfiguration", "demo", &value)?;
         }
         Ok(())
+    }
+    fn publish_database(
+        &mut self,
+        snapshot: &DatabaseSnapshot,
+        changes: &mut Vec<SourceChange>,
+    ) -> Result<()> {
+        let value = serde_json::to_value(snapshot)?;
+        for (label, rows) in [
+            ("regional_clusters", &value["configuration"]["clusters"]),
+            ("placement_policies", &value["configuration"]["policies"]),
+            ("data_profiles", &value["configuration"]["data_profiles"]),
+            ("gpu_inventory", &value["configuration"]["gpus"]),
+            (
+                "workload_requirements",
+                &value["configuration"]["workloads"],
+            ),
+            ("gpu_telemetry", &value["settings"]),
+        ] {
+            let rows = rows
+                .as_object()
+                .context("database projection must be keyed")?;
+            changes.extend(
+                self.emitter
+                    .retain(label, &rows.keys().cloned().collect())?,
+            );
+            for (key, row) in rows {
+                self.add(changes, label, key, row)?;
+            }
+        }
+        self.add(changes, "gpu_placements", "demo", &snapshot.plan)
     }
     fn utc_at(&self, monotonic_ms: u64) -> Result<u64> {
         self.started_utc_ms

@@ -1,0 +1,11 @@
+{
+  "name": "@drasi/example-native-sse",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.tsx",
+  "peerDependencies": {
+    "@drasi/react": "0.1.0",
+    "react": "18.3.1"
+  }
+}

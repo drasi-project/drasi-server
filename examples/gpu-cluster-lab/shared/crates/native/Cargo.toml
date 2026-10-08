@@ -16,9 +16,9 @@ dynamic-plugin = []
 query-isolation = ["dep:drasi-source-application"]
 runtime = [
     "dep:axum", "dep:drasi-server", "dep:drasi-host-sdk",
-    "dep:drasi-source-postgres", "dep:drasi-bootstrap-postgres", "dep:drasi-reaction-sse",
-    "dep:drasi-reaction-log",
-    "dep:sqlx", "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
+    "dep:drasi-source-postgres", "dep:drasi-index-rocksdb",
+    "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
+    "dep:sqlx",
 ]
 
 [[bin]]
@@ -52,16 +52,15 @@ axum = { version = "0.7", optional = true }
 drasi-server = { path = "../../../../..", optional = true }
 drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false, optional = true }
 drasi-source-postgres = { path = "../../../../../../drasi-core/components/sources/postgres", optional = true }
-drasi-bootstrap-postgres = { path = "../../../../../../drasi-core/components/bootstrappers/postgres", optional = true }
-drasi-reaction-sse = { path = "../../../../../../drasi-core/components/reactions/sse", optional = true }
-drasi-reaction-log = { path = "../../../../../../drasi-core/components/reactions/log", optional = true }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"], optional = true }
+drasi-index-rocksdb = { path = "../../../../../../drasi-core/components/indexes/rocksdb", features = ["computation"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 futures-util = { version = "0.3", optional = true }
 drasi-source-application = { path = "../../../../../../drasi-core/components/sources/application", optional = true }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json"], optional = true }
 
 [dev-dependencies]
 drasi-source-application = { path = "../../../../../../drasi-core/components/sources/application" }
 drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false }
 axum = "0.7"
+tempfile = "3"

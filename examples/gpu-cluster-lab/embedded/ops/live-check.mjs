@@ -173,7 +173,7 @@ async function rejectedCommands() {
     [path, { method: 'PATCH', headers, body: JSON.stringify({ ...valid, changes: { background_compute_units: -1 } }) }, 422],
     [`/api/gpus/${randomUUID()}/telemetry`, { method: 'PATCH', headers, body: JSON.stringify(valid) }, 404],
     ['/api/demo/presets/not-a-fixture', { method: 'POST', headers }, 422],
-    ['/api/v1/instances/gpu-demo/queries/input-settings/results', {}, 404],
+    ['/api/v1/instances/gpu-demo/queries/input-configuration/results', {}, 404],
     ['/api/v1/instances/gpu-demo/queries/ui-gpus', { method: 'POST', headers }, 405],
   ]) {
     const response = await fetch(`${demo}${url}`, { signal: AbortSignal.timeout(15_000), ...options });
@@ -380,6 +380,29 @@ const health = await json(demo, '/health/ready');
 assert.equal(health.ready, true);
 const instances = await json(drasi, '/api/v1/instances');
 assert.deepEqual(instances.data.map(instance => instance.id), ['gpu-demo']);
+const { data: graph } = await json(demo, '/api/v1/instances/gpu-demo/computation');
+assert.equal(graph.graph.state, 'Running');
+assert.equal(graph.graph.driverFailed, false);
+for (const [id, role, implementation] of [
+  ['postgres', 'Source', 'drasi/postgres-transactions'],
+  ['input-configuration', 'Query', 'drasi/continuous-query'],
+  ['gpu-demo-ui', 'Sink', 'drasi.network/sse-sink'],
+]) {
+  const node = graph.components.find(node => node.id === id);
+  assert.ok(node, `${id}: missing native node`);
+  assert.equal(node.role, role);
+  assert.equal(node.implementation.name, implementation);
+  assert.equal(node.lifecycle, 'Running');
+  assert.equal(node.failurePhase, null);
+}
+const databaseEdges = graph.relationships.filter(edge => edge.from.component === 'postgres');
+assert.equal(databaseEdges.length, 1, 'PostgreSQL must have exactly one persistent transaction owner');
+assert.equal(databaseEdges[0].to.component, 'input-configuration');
+for (const query of queryIds) {
+  assert.ok(graph.relationships.some(edge => edge.from.component === query &&
+    edge.from.port === 'out' && edge.to.component === 'gpu-demo-ui' && edge.to.port === 'in' &&
+    edge.representation === 'NativeProvider' && edge.binding === 'Bound'), `${query}: missing native SSE edge`);
+}
 for (const query of queryIds) {
   const config = await json(demo, `/api/v1/instances/gpu-demo/queries/${query}?view=full`);
   assert.equal(config.data.id, query);

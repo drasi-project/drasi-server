@@ -197,7 +197,7 @@ maintained HTTP business-state model.
 | Compose service | Responsibility |
 |---|---|
 | `postgres` | PostgreSQL 16 with logical replication. Stores authoritative configuration, the saved plan, durable command receipts, and reset state. |
-| `drasi` | Runs `gpu-runtime`, the instance graph, PostgreSQL source/bootstrapper, native plugin, Server v1 APIs and admin UI, and SSE reaction. Port 8080 is published on loopback; SSE port 8081 remains internal. |
+| `drasi` | Runs `gpu-runtime`, the instance graph, native PostgreSQL source/snapshot, native plugins, Server v1 APIs and admin UI, and native SSE sink. Port 8080 is published on loopback; SSE port 8081 remains internal. |
 | `control` | Runs `gpu-control`, serves the built React UI on port 5400, implements validated commands/plan commits/reset, and proxies the selected query APIs and SSE to the browser. |
 | `migrate` | A one-shot initialization job, not a fourth continuously running service. Runs schema migrations, initializes the first fixture, and configures the reset role. |
 | `checks` | An on-demand Node container for live checks; not required to serve the demo. |
@@ -223,10 +223,10 @@ flowchart LR
 
 ### Components in the graph
 
-The normal application-level topology contains **two explicit sources, twenty
-continuous queries, four transformer nodes, and two reactions**. Drasi also
-creates internal source adapters, query-result outlets, scheduled-work nodes,
-and its built-in `__component_graph__` observability source.
+The normal application-level topology contains **two explicit sources, fourteen
+continuous queries, four transformer nodes, and two sinks**. Drasi also
+creates query-result outlets and its built-in `__component_graph__` observability
+source. Native queries own their future-queue wakeups directly.
 
 There are **three primary domain engines**: the simulator, optimizer, and policy
 engine. The optimizer is used by two independently scheduled transformers:
@@ -235,19 +235,19 @@ analysis. This is why the graph has four transformer nodes rather than three.
 
 | Instance ID | Kind / implementation | Purpose |
 |---|---|---|
-| `postgres` | Source: `PostgresReplicationSource` with PostgreSQL bootstrap provider | Turns the seven published tables into graph changes. |
+| `postgres` | Native source: `drasi/postgres-transactions` with coordinated `PostgresSnapshot` | Delivers complete committed transactions from seven published tables to one persistent query owner. |
 | `runtime-status` | Native source: `gpu.lab/runtime-status` | Publishes observed readiness, component status, write outcomes, and semantic timeline events. |
 | `policy` | Transformer: `gpu.lab/regorus-policy` | Assembles database inputs and evaluates workload/cluster authorization with Regorus. |
 | `simulator` | Transformer: `gpu.lab/telemetry-simulator` | Applies saved plans, enforces policy, and produces actual simulated GPU reports and execution acknowledgements. |
 | `placement` | Transformer: `gpu.lab/placement-solver` | Computes a complete minimum-movement placement and explains the decision. |
 | `resilience` | Transformer: `gpu.lab/resilience-assessor` | Uses the same placement library to assess additional VM/region losses without changing the plan. |
 | `plan-writer` | Native reaction/sink: `gpu.lab/plan-writer` | Submits candidate plans to the control service and reports their write outcome. |
-| `gpu-demo-ui` | Standard SSE reaction | Subscribes to the nine UI queries and streams their result changes. |
-| `gpu-query-log` | Optional standard `LogReaction` | Logs selected existing queries when explicitly enabled; absent from the normal topology. |
+| `gpu-demo-ui` | Native sink: `drasi.network/sse-sink` | Receives nine direct query-output edges and streams their result changes. |
+| `gpu-query-log` | Optional native query-log sink | Logs selected existing query outputs when explicitly enabled; absent from the normal topology. |
 
-The twenty queries are listed individually in
+The fourteen queries are listed individually in
 [sources and continuous queries](#sources-and-continuous-queries).
-This diagram groups the seven database-input queries and nine UI queries for
+This diagram groups the nine UI queries for
 readability. Solid arrows show the main data dependencies; dotted arrows show
 host observation/control or in-process status reporting.
 
@@ -255,7 +255,7 @@ host observation/control or in-process status reporting.
 flowchart TD
     DB[("PostgreSQL")]
     PG["source: postgres"]
-    Inputs["7 input-* queries"]
+    Inputs["atomic query: input-configuration"]
     Policy["transformer: policy"]
     SimulationQuery["query: simulation-inputs"]
     Simulator["transformer: simulator"]
@@ -263,13 +263,13 @@ flowchart TD
     Placement["transformer: placement"]
     Resilience["transformer: resilience"]
     PlanQuery["query: plan-output"]
-    Writer["reaction: plan-writer"]
+    Writer["sink: plan-writer"]
     Control["control: guarded plan commit"]
     ContextQuery["query: runtime-context"]
     Observer["runtime host observer"]
     Status["source: runtime-status"]
     Views["9 ui-* queries"]
-    SSE["reaction: gpu-demo-ui"]
+    SSE["native SSE sink: gpu-demo-ui"]
     Browser["control proxy and React UI"]
 
     DB --> PG
@@ -279,7 +279,6 @@ flowchart TD
     SimulationQuery --> Simulator
     Policy --> SchedulingQuery
     Simulator --> SchedulingQuery
-    PG --> SchedulingQuery
     SchedulingQuery --> Placement
     SchedulingQuery --> Resilience
     Placement --> PlanQuery
@@ -293,7 +292,6 @@ flowchart TD
     Observer -.->|"bootstrap completion"| Policy
     Observer -.->|"runtime observations"| Status
     Writer -.->|"write outcome"| Status
-    PG --> Views
     Policy --> Views
     Simulator --> Views
     Placement --> Views
@@ -304,9 +302,10 @@ flowchart TD
     Views -->|"ordinary result snapshots"| Browser
 ```
 
-The runtime attaches the PostgreSQL source to every registered query. Each query
-matches the labels it needs; the diagram omits source connections that do not
-contribute matching rows to that query. All five native graph producers
+The PostgreSQL source has exactly one immediate owner: the persistent atomic
+`input-configuration` query. Policy projects its complete committed records into
+graph changes for downstream joins, including deletions and empty tables.
+All five native graph producers
 (`policy`, `simulator`, `placement`, `resilience`, and `runtime-status`) also feed
 the UI query group.
 
@@ -315,15 +314,17 @@ the UI query group.
 [gpu-runtime.rs](src/main.rs) is the composition root.
 There is no demo-specific `server.yaml` containing this topology. Startup:
 
-1. Loads the matching `libgpu_native` plugin and registers its six factories,
-   along with the existing PostgreSQL, bootstrap, SSE, and log descriptors.
-2. Builds `DrasiLib` with instance ID `gpu-demo`, the PostgreSQL source, and the
-   SSE reaction.
-3. Builds the twenty-query pipeline with its middleware and synthetic joins,
+1. Loads matching `libgpu_native` and `libdrasi_computation_network` plugins.
+   PostgreSQL uses the existing in-process Rust native factory, not a legacy
+   adapter or a new PostgreSQL cdylib.
+2. Builds `DrasiLib` with instance ID `gpu-demo` and the native component factories.
+3. Builds the fourteen queries with middleware, synthetic joins and one paired
+   RocksDB/source-progress/coordinated-snapshot owner in [database.rs](src/database.rs),
    admitting its component batch with automatic activation disabled.
 4. Adds the native components and bounded relationships, then starts the selected
    graph components through ComputationGraph control.
-5. Observes query bootstrap snapshots and starts publishing lifecycle/readiness
+5. Waits for the input query to match a current read-only database snapshot before
+   bootstrapping the volatile domain engines and publishing lifecycle/readiness
    observations. The listener exposes the normal Server v1 router for the instance.
 
 [The plugin definition](../shared/crates/native/src/lib.rs) wraps the domain libraries in
@@ -631,7 +632,7 @@ passing resilience result.
 [the Rego module](../shared/policies/placement.rego).
 
 The policy node has two related jobs. First, it reconstructs the current domain
-input from the seven `input-*` query streams and explicit bootstrap snapshots.
+input from `input-configuration` and its explicit keyed bootstrap snapshot.
 It publishes `FleetConfiguration`, including generation settings and the saved
 plan. Second, it evaluates processing authorization with the actual Regorus Rego
 engine and publishes `PolicyAssessment` plus per-pair `PlacementEligibility`.
@@ -701,8 +702,8 @@ The shared policy library and Rego bundle keep those checks consistent.
 
 ### PostgreSQL source and bootstrap
 
-The runtime constructs the existing PostgreSQL replication source and bootstrap
-provider with:
+The runtime constructs the native transactional PostgreSQL source and its paired
+coordinated snapshot provider with:
 
 | Setting | Value |
 |---|---|
@@ -710,14 +711,16 @@ provider with:
 | Database / host | `gpu_demo` / Compose service `postgres` |
 | Reader | `gpu_reader`, using `REPLICATION_PASSWORD` |
 | Publication | `gpu_demo_publication` |
-| Replication slot | `gpu_demo_runtime` |
+| Replication slot | Query-owned `gpu_native_<uuid>`; retained with the query state |
 | Tables | The seven published domain tables listed above, with explicit primary-key mappings |
 | Connection mode | SSL disabled inside this local demo network |
 
-The bootstrap loads existing rows before live CDC supplies changes. The runtime
-owns the example's replication slot and refuses concurrent ownership of an
-active slot. This is a dedicated local-demo configuration, not a production
-PostgreSQL security/deployment recipe.
+The source imports an exported snapshot and resumes from its exact WAL boundary.
+It emits one bounded envelope per committed transaction (1,024 changes, 8 MiB,
+30 seconds). The query persists both its state and committed source cursor before
+WAL acknowledgement. Concurrent slot ownership and missing/changed history fail
+explicitly. PostgreSQL must retain slot WAL without a size cap; monitor disk use.
+This is a dedicated local-demo configuration, not a production deployment recipe.
 
 The connector represents JSON/JSONB columns as strings. Before query evaluation,
 [postgres.rs](../shared/crates/native/src/postgres.rs) applies table-specific strict JSON
@@ -725,15 +728,18 @@ parsing using the existing `parse_json` middleware. It decodes policy sets,
 workload GPU-model sets, and saved-plan assignments/decision details, preserving
 other values and record identities.
 
-The host observes keyed QueryManager snapshots and their output-sequence
-watermarks for all seven input queries, including explicitly empty results.
-That lets the assembler distinguish "an empty table was observed" from "its
-bootstrap has not arrived." It is not inferred from a quiet interval.
+The host observes a keyed snapshot and output watermark for `input-configuration`.
+Its tagged `records` collection includes all seven tables; an absent table means
+an explicitly empty table, not a missing independent feed. The query exposes only
+the final configuration of a committed transaction. On restart the host compares
+this query snapshot with a current repeatable-read, read-only database snapshot;
+stale recovered rows cannot alone open readiness. Reset also requires the expected
+saved-plan decision identity.
 
-**Bootstrap completion is not transaction completion.** The source waits for
-PostgreSQL commit, then delivers committed rows individually. It does not promise
-that every derived policy context sees all rows of a multi-row SQL transaction
-at once; the stronger guarantee remains deferred.
+**Atomic input is not atomic downstream effects.** Domain workers, different UI
+queries, HTTP plan commits and browsers still complete independently. The health
+contract retains `transaction_completion: "not-supported"` for that stronger
+whole-application guarantee.
 
 ### Runtime-status source
 
@@ -759,29 +765,29 @@ applied, the status is `application-rejected` with the error retained; that does
 not itself close the corrective-input gate. Actual source/bootstrap failures
 still do.
 
-### All twenty registered queries
+### All fourteen registered queries
 
 The registration sources are
 [inputs.rs](../shared/crates/native/src/inputs.rs) and
 [projections.rs](../shared/crates/native/src/projections.rs). Query IDs below are the actual
 IDs in instance `gpu-demo`.
 
-#### Seven database-input queries
+#### One transactional database-input query
 
-These are generated from the table contracts rather than read from seven
-separate Cypher files. Each maintains at most one aggregate result row with a
-`records` list. The policy node consumes their deltas and bootstrap watermarks to
-assemble the current input.
+`input-configuration` is generated from the table contracts. It maintains one
+aggregate row containing `{table, value}` records from every published table.
+The policy node consumes whole-configuration deltas and the keyed bootstrap
+watermark. It never assembles seven independent query feeds.
 
-| Query | Reads | Downstream use |
-|---|---|---|
-| `input-clusters` | `regional_clusters` | Destination membership, names, and policy regions. |
-| `input-policies` | `placement_policies` | Runtime policy parameters and revisions. |
-| `input-data` | `data_profiles` | Customer/classification/policy relationships. |
-| `input-gpus` | `gpu_inventory` | Hardware, membership, capacity limits, and scheduling permission. |
-| `input-settings` | `gpu_telemetry` | Simulator power/reporting/background-generation settings. |
-| `input-workloads` | `workload_requirements` | Desired replicas and their complete requirements. |
-| `input-plan` | `gpu_placements` | The complete saved plan, version, and decision evidence; closes the plan-write feedback loop. |
+| Table | Downstream use |
+|---|---|
+| `regional_clusters` | Destination membership, names, and policy regions. |
+| `placement_policies` | Runtime policy parameters and revisions. |
+| `data_profiles` | Customer/classification/policy relationships. |
+| `gpu_inventory` | Hardware, membership, capacity limits, and scheduling permission. |
+| `gpu_telemetry` | Simulator power/reporting/background-generation settings. |
+| `workload_requirements` | Desired replicas and their complete requirements. |
+| `gpu_placements` | Complete saved plan, version, and decision evidence; closes the plan-write feedback loop. |
 
 #### Four processing queries
 
@@ -875,7 +881,7 @@ Consider increasing background demand on the GPU hosting an assistant:
 
 1. The UI issues a revision-checked settings command; control commits
    `gpu_telemetry` and acknowledges the write.
-2. PostgreSQL CDC updates the relevant queries. `input-settings` reaches the
+2. PostgreSQL CDC commits the complete `input-configuration` update to the
    policy/input assembler, whose `FleetConfiguration` updates
    `simulation-inputs`.
 3. The simulator produces its next real report with the new background demand.
@@ -883,12 +889,12 @@ Consider increasing background demand on the GPU hosting an assistant:
 4. The optimizer emits a candidate and explanation. `plan-output` delivers the
    candidate to the plan writer.
 5. Control validates and commits the plan. CDC carries the saved row back through
-   `input-plan` and the input assembly path; an HTTP receipt alone does not do this.
+   `input-configuration` and the input assembly path; an HTTP receipt alone does not do this.
 6. The simulator observes that saved plan, applies valid assignments, and emits
    application/execution acknowledgements.
 7. Fresh GPU samples reflect the applied version. `ui-workloads` and
    `ui-placements` then promote matching replicas/the whole plan to confirmed.
-8. The SSE reaction delivers these query changes to React; the resilience node
+8. The native SSE sink delivers these query changes to React; the resilience node
    publishes its separate analysis for the new scheduling signature.
 
 Whole-plan confirmation requires matching versions, observation epochs,
@@ -924,9 +930,20 @@ generations are closed, and the UI reconnects its existing subscriptions.
 Reset retains command/plan receipts. Retrying an old successful creation returns
 its historical receipt without resurrecting deleted work in the new fixture.
 Stopping and starting normally preserves the full database; it does not seed a
-new fixture. Query indexes and native computation state are in memory, with no
-RocksDB query store or query WAL configured. A runtime restart rebuilds them and
-requires fresh confirmation under a new epoch.
+new fixture. The transactional input query persists in the `native-state` volume
+at `GPU_STATE_DIR=/var/lib/gpu-runtime`, paired with its PostgreSQL slot. Reset uses
+transactional deletes/inserts, not TRUNCATE, and preserves both that slot and state.
+Other queries and domain engines remain volatile and require fresh confirmation
+under a new epoch.
+
+Back up and restore the PostgreSQL database/WAL and `native-state` together.
+Do not delete either side independently, drop slots by prefix, or run two
+runtimes against one state directory. Interrupted initialization, missing WAL,
+or a changed binding requires explicit recovery rather than automatic reseeding.
+`demo destroy --confirm gpu-demo` removes both owned volumes; for a separately
+managed database, an operator must identify and retire the exact inactive slot
+only after permanently retiring its query owner. The example does not guess
+ownership or offer automatic slot retirement.
 
 ## The React UI
 
@@ -934,15 +951,18 @@ The UI is a React 18/Vite application using the pinned `@drasi/react` SDK. Its
 entry point is [main.tsx](../shared/ui/src/main.tsx); [App.tsx](../shared/ui/src/App.tsx) hoists exactly
 one subscription to each of the nine UI queries above the display components.
 
-The provider uses the current page origin, instance `gpu-demo`, reaction
+The provider uses the current page origin, instance `gpu-demo`, native sink
 `gpu-demo-ui`, the proxied `/events/gpu-demo` endpoint, and the SDK's
 `sse034ResultAdapter`. The control proxy exposes only the named UI query
-configuration/results routes and SSE reaction, not arbitrary Server management
-writes.
+configuration/results routes, the read-only computation graph, and SSE, not
+arbitrary Server management writes. The shared
+[native browser binding](../../native-sse-client/index.tsx) validates the actual
+running native sink and its direct edges instead of fabricating a legacy
+Reaction DTO for the pinned SDK.
 
 Initial result snapshots and subsequent SSE changes come from the same actual
 queries. The SDK maintains rows by the stable keys above and handles reconnects.
-If an SSE subscriber falls behind, the reaction logs and closes that subscription
+If an SSE subscriber falls behind, the sink logs and closes that subscription
 so the SDK can reconnect and fetch fresh snapshots.
 
 [rows.ts](../shared/ui/src/rows.ts) validates the real row contracts. Revisions and plan
@@ -1207,16 +1227,17 @@ checkout-specific Compose project, not every Drasi environment on the machine.
 | `./demo check --writer-recovery` | Isolated real plan-writer fault/retry/idempotency checks. |
 | `./demo check --acceptance` | Isolated writer faults, restart, commands, and scenarios; retains the final unsupported transaction-completion assertion. |
 | `./demo check --functional` | Isolated writer faults, restart and runbook scenarios using the current built images, without resetting the live deployment. Qualifies existing functionality, not the deferred whole-transaction policy guarantee. |
+| `./demo check --native-input` | Fresh isolated database: concurrent cold-start writes, multi-table input commits, stopped/crashed runtime recovery, slot-preserving reset, and explicit failure on missing retained history. |
 | `./demo check --postgres-mutations` | Isolated copy of current PostgreSQL data, real query logging, SQL mutations, snapshots, and recovery findings. |
 | `./demo check --query-drain` | Isolated diagnostic report pause/drain; convergence after pausing is not an acceptance or performance pass. |
-| `./demo destroy --confirm gpu-demo` | **Delete this demo's database volume.** Distinct from an ordinary stop or reset. |
+| `./demo destroy --confirm gpu-demo` | **Delete this demo's database and native-state volumes.** Distinct from an ordinary stop or reset. |
 
 Isolated checks reuse already-built image IDs, create unique temporary projects,
 and remove their own services/volumes afterward. They preserve failure evidence
 under `.build/`. Build images with `./demo up` or `./demo build control drasi`
 before using them.
 
-Current-source requalification on 2026-10-07 rebuilt the matching embedded host
+Historical pre-migration requalification on 2026-10-07 rebuilt the matching embedded host
 and native plugin from Core `e46f6130b29d9268603585a5912e92d6839fa01f` and Server
 `a7b564a8fbbfaf141cd078994275e09f13a798d9`, including their uncommitted reliability
 changes. The image manifest's hashes matched the current query, transaction-group,
@@ -1228,18 +1249,36 @@ saved scenario were not changed. This does not upgrade
 `transaction_completion: "not-supported"` or make `check --acceptance` pass its
 deliberately retained whole-transaction assertion.
 
+Native migration qualification on 2026-10-08 rebuilt current sources at Core
+`953479729465b412a16764b29c9e56c55a1531e1` and Server
+`de32b37a956563bda8266f57b7de3a2b5e976e81`, including the uncommitted migration.
+The native-input check passed concurrent cold-start writes, committed multi-table
+updates, catch-up after stopped writes, abrupt process loss, slot-preserving reset
+and refusal of missing retained history. `check --functional` passed native input,
+writer retry/exhaustion, full stack restart, five-second non-events, fragmentation,
+worker failure, regional policy and reset scenarios. Chromium loaded all nine
+native feeds and passed offline/reconnect, reload and desktop/mobile checks.
+The SQL mutation suite passed all nine cases, seven-table aggregate parity and
+all fourteen native query logs against a separate disposable baseline fixture.
+The admin UI check passed bundled assets, live component details and native graph
+inspection; it also runs as part of the native-input qualification.
+All temporary projects were removed; the running deployment was not changed.
+This does not claim atomic downstream effects or change the retained acceptance
+assertion. The image contains `/app/native-network.Cargo.lock` for its native
+network-library dependency resolution.
+
 ### Query logging and reproducible SQL checks
 
 To log two queries in the live runtime, explicitly opt in when starting it:
 
 ```sh
-GPU_LAB_LOG_QUERIES=input-settings,ui-gpus ./demo up
+GPU_LAB_LOG_QUERIES=input-configuration,ui-gpus ./demo up
 ./demo logs drasi
 ```
 
-Use `GPU_LAB_LOG_QUERIES='*'` for all twenty, or unset the variable and run
-`./demo up` to remove the optional reaction. Unknown/duplicate IDs fail startup.
-The standard log reaction prints actual ADD/UPDATE/DELETE values, including
+Use `GPU_LAB_LOG_QUERIES='*'` for all fourteen, or unset the variable and run
+`./demo up` to remove the optional sink. Unknown/duplicate IDs fail startup.
+The native log sink prints actual ADD/UPDATE/DELETE values, including
 before/after images; it does not run another evaluator. Full-result logging adds
 overhead and can produce large files.
 
@@ -1249,8 +1288,8 @@ For experiments that preserve the running presenter:
 ./demo check --postgres-mutations
 ```
 
-The checker copies the database, logs all twenty queries, compares all seven
-database-input results with actual PostgreSQL rows, and exercises nine groups:
+The checker copies the database, logs all fourteen queries, partitions the single
+input aggregate and compares all seven tables with actual PostgreSQL rows, exercising nine groups:
 current-state power recovery, no-op/rollback, workload lifecycle, metadata edits,
 report expiry, background load, power cycles, infeasible-plan restart, and policy
 reauthorization. It checks identities, multiplicities, revisions, exact replica
@@ -1289,11 +1328,14 @@ queue-depth measurement.
 
 [check-query-isolation.mjs](ops/check-query-isolation.mjs) and
 [query-isolation.Dockerfile](ops/query-isolation.Dockerfile) replay the exact
-twenty-query corpus individually and together against a captured recording,
+fourteen-query corpus individually and together against a new native recording,
 comparing bare memory with the real pipeline default. An optional paced mode
 preserves input intervals and checks final timer expiry. Run performance
 diagnostics after compilation has finished; a replay is not the live feedback
-loop or a cross-platform throughput guarantee.
+loop or a cross-platform throughput guarantee. Its synthesized graph input measures
+the configuration query's evaluation cost, not native transaction/persistence cost.
+Pre-migration recordings do not contain policy's authoritative table projections
+and cannot qualify the current topology.
 
 ### Host-side development
 

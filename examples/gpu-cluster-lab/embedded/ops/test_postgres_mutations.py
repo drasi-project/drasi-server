@@ -9,6 +9,31 @@ spec.loader.exec_module(probe)
 
 
 class PostgresMutationChecks(unittest.TestCase):
+    def test_native_query_logger_fields_ignore_ansi_and_unrelated_messages(self):
+        text = ("INFO GPU query result \x1b[3mquery\x1b[0m=input-configuration result={}\n"
+                "INFO GPU query result query=ui-gpus result={}\n"
+                "query=not-a-result result={}\n")
+        self.assertEqual(probe.logged_queries(text), {"input-configuration", "ui-gpus"})
+
+    def test_mirror_reads_one_aggregate_and_compares_every_table(self):
+        instance = probe.Probe.__new__(probe.Probe)
+        instance.latest = {}
+        expected = {table: [{"id": table}] for table in probe.INPUTS.values()}
+        records = [{"table": table, "value": rows[0]} for table, rows in expected.items()]
+        instance.database = lambda: expected
+        calls = []
+        def rows(query):
+            calls.append(query)
+            return [{"records": records}]
+        instance.rows = rows
+        self.assertTrue(instance.mirrored())
+        self.assertEqual(calls, [probe.DATABASE_QUERY])
+        records.pop()
+        self.assertFalse(instance.mirrored())
+        records.append({"table": "unknown", "value": {}})
+        with self.assertRaises(AssertionError):
+            instance.mirrored()
+
     def test_row_comparison_preserves_multiplicity_and_types(self):
         self.assertTrue(probe.same_rows([{"x": 1}, {"x": 2}], [{"x": 2}, {"x": 1}]))
         self.assertFalse(probe.same_rows([{"x": 1}, {"x": 1}], [{"x": 1}]))
@@ -36,9 +61,9 @@ class PostgresMutationChecks(unittest.TestCase):
         self.assertEqual(calls[0][1]["data"], b"SELECT :'value';")
         self.assertIn("value=" + value, calls[0][0])
 
-    def test_inventory_covers_all_twenty_queries(self):
-        self.assertEqual(len(probe.QUERIES), 20)
-        self.assertEqual(len(set(probe.QUERIES)), 20)
+    def test_inventory_covers_all_fourteen_queries(self):
+        self.assertEqual(len(probe.QUERIES), 14)
+        self.assertEqual(len(set(probe.QUERIES)), 14)
         self.assertEqual(len(probe.INPUTS), 7)
         self.assertEqual(len(probe.UI_KEYS), 9)
 
@@ -60,7 +85,7 @@ class PostgresMutationChecks(unittest.TestCase):
         after = {
             "inputs_ready": False,
             "components": [{"component_id": name, "status": "running"}
-                           for name in ("postgres", *probe.INPUTS)]
+                           for name in ("postgres", probe.DATABASE_QUERY)]
                           + [{"component_id": "simulator", "status": "initialization-error"}],
         }
         self.assertTrue(probe.recovery_readiness_regressed(before, after))

@@ -82,16 +82,40 @@ impl SourceMiddleware for PostgresJson {
                 .find_map(|label| self.parsers.get(label.as_ref())),
             SourceChange::Delete { .. } | SourceChange::Future { .. } => None,
         };
-        let Some(parsers) = parsers else {
-            return Ok(vec![source_change]);
-        };
         let mut changes = vec![source_change];
-        for parser in parsers {
+        for parser in parsers.into_iter().flatten() {
             let mut decoded = Vec::new();
             for change in changes {
                 decoded.extend(parser.process(change, index).await?);
             }
             changes = decoded;
+        }
+        for change in &mut changes {
+            if let SourceChange::Insert { element } | SourceChange::Update { element } = change {
+                let label = element
+                    .get_metadata()
+                    .labels
+                    .iter()
+                    .find(|label| {
+                        crate::inputs::TABLE_INPUTS
+                            .iter()
+                            .any(|(_, table)| label.as_ref() == *table)
+                    })
+                    .ok_or_else(|| {
+                        MiddlewareError::SourceChangeError("unknown GPU database table".into())
+                    })?;
+                let label = drasi_core::models::ElementValue::String(label.clone());
+                match element {
+                    drasi_core::models::Element::Node { properties, .. } => {
+                        properties.insert("__gpu_table", label);
+                    }
+                    _ => {
+                        return Err(MiddlewareError::SourceChangeError(
+                            "GPU database input must be a node".into(),
+                        ))
+                    }
+                }
+            }
         }
         Ok(changes)
     }
@@ -232,9 +256,17 @@ mod tests {
                 properties: json!({"gpu_id":"gpu-1"}).into(),
             },
         };
+        let decoded = middleware.process(unrelated, &index).await?;
+        let SourceChange::Insert { element } = &decoded[0] else {
+            panic!("insert changed kind")
+        };
         assert_eq!(
-            middleware.process(unrelated.clone(), &index).await?,
-            vec![unrelated]
+            element.get_properties().get("__gpu_table"),
+            Some(&ElementValue::String("gpu_inventory".into()))
+        );
+        assert_eq!(
+            element.get_properties().get("gpu_id"),
+            Some(&ElementValue::String("gpu-1".into()))
         );
         Ok(())
     }

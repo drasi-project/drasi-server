@@ -34,7 +34,12 @@ RUN --mount=type=cache,id=gpu-lab-registry,target=/usr/local/cargo/registry \
     cargo build --locked --release --features dynamic-plugin --lib && \
     cp "$CARGO_TARGET_DIR/release/libgpu_native.so" /workspace/libgpu_native.so && \
     cargo build --locked --release --features runtime --bin gpu-runtime && \
-    cp "$CARGO_TARGET_DIR/release/gpu-runtime" /workspace/gpu-runtime
+    cp "$CARGO_TARGET_DIR/release/gpu-runtime" /workspace/gpu-runtime && \
+    if [ -f /workspace/drasi-core/Cargo.lock ]; then set -- --locked; \
+    else echo 'Resolving the native network library workspace; retaining its generated lockfile in the image.'; set --; fi && \
+    cargo build "$@" --release --manifest-path /workspace/drasi-core/Cargo.toml \
+      -p drasi-computation-network --features dynamic-plugin && \
+    cp "$CARGO_TARGET_DIR/release/libdrasi_computation_network.so" /workspace/libdrasi_computation_network.so
 
 FROM debian:bookworm-slim
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
@@ -43,8 +48,12 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=build /workspace/gpu-runtime /app/gpu-runtime
 COPY --from=build /workspace/libgpu_native.so /app/libgpu_native.so
+COPY --from=build /workspace/libdrasi_computation_network.so /app/libdrasi_computation_network.so
+COPY --from=build /workspace/drasi-core/Cargo.lock /app/native-network.Cargo.lock
 COPY --from=build /workspace/source-manifest.json /app/source-manifest.json
 COPY --from=build /workspace/licenses/ /app/licenses/
 ENV GPU_NATIVE_PLUGIN=/app/libgpu_native.so
+ENV GPU_NETWORK_PLUGIN=/app/libdrasi_computation_network.so GPU_STATE_DIR=/var/lib/gpu-runtime
+RUN mkdir -p /var/lib/gpu-runtime && chown 65532:65532 /var/lib/gpu-runtime
 USER 65532:65532
 CMD ["/app/gpu-runtime"]

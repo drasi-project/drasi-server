@@ -32,7 +32,7 @@ def copy_file(source, target, manifest, staging):
     data = source.read_bytes()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
-    target.chmod(source.stat().st_mode & 0o777)
+    shutil.copystat(source, target, follow_symlinks=False)
     manifest[str(target.relative_to(staging))] = hashlib.sha256(data).hexdigest()
 
 
@@ -61,6 +61,11 @@ def main():
                 if not source.exists() or not is_source_file(source):
                     continue
                 copy_file(source, staging / name / relative, hashes, staging)
+            # Core is a library workspace and ignores its generated lockfile.
+            # Preserve it when present so native plugin builds use the same resolution.
+            lock = repository / "Cargo.lock"
+            if name == "drasi-core" and lock.is_file():
+                copy_file(lock, staging / name / "Cargo.lock", hashes, staging)
         example_target = staging / "drasi-server" / "examples" / "gpu-cluster-lab"
         for directory in ("shared/crates", "shared/queries", "shared/policies",
                           "shared/migrations", "embedded/src", "embedded/control"):

@@ -20,7 +20,7 @@ const manifest = { image, corpus, corpus_sha256: createHash('sha256').update(awa
 await writeFile(`${directory}/manifest.json`, JSON.stringify(manifest, null, 2));
 const queries = paced ? ['all'] : ['ui-workloads', 'ui-placements', 'scheduling-inputs', 'simulation-inputs',
   ...queryIds.filter(id => !['ui-workloads', 'ui-placements'].includes(id)), 'plan-output', 'runtime-context',
-  'input-clusters', 'input-policies', 'input-data', 'input-gpus', 'input-settings', 'input-workloads', 'input-plan', 'all'];
+  'input-configuration', 'all'];
 const results = new Map();
 const failures = [];
 const canonical = value => Array.isArray(value)

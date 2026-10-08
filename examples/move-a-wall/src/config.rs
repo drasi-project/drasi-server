@@ -10,10 +10,16 @@ use serde_json::json;
 use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc};
 
 fn main() -> Result<()> {
-    let path = std::env::args()
-        .nth(1)
-        .context("usage: wall-config <native-plugin-path>")?;
+    let mut args = std::env::args().skip(1);
+    let path = args
+        .next()
+        .context("usage: wall-config <scene-plugin-path> <network-plugin-path>")?;
+    let network_path = args
+        .next()
+        .context("usage: wall-config <scene-plugin-path> <network-plugin-path>")?;
+    anyhow::ensure!(args.next().is_none(), "unexpected wall-config argument");
     let plugin = drasi_host_sdk::computation::load(path)?;
+    let network = drasi_host_sdk::computation::load(network_path)?;
     let mut batch = ComponentBatch::builder();
     for id in ["scene", "geometry"] {
         let name = format!("move-a-wall/{id}");
@@ -106,6 +112,26 @@ fn main() -> Result<()> {
             ]),
         },query_factory.clone()).bind_stream(endpoint(id,"out")?,stream);
     }
+    let ui_factory = network
+        .factories()
+        .iter()
+        .find(|factory| factory.metadata().implementation.name.as_ref() == "drasi.network/sse-sink")
+        .context("missing native SSE factory; rebuild the network plugin")?
+        .clone();
+    let query_streams: BTreeMap<_, _> = QUERIES
+        .iter()
+        .map(|query| (*query, format!("{query}/out")))
+        .collect();
+    batch = batch.component(
+        ui_factory.specification(
+            ComponentId::try_new("wall-ui")?,
+            json!({
+                "queryStreams": query_streams, "host": "127.0.0.1", "port": 8422,
+                "ssePath": "/events", "heartbeatIntervalMs": 5000,
+            }),
+        )?,
+        ui_factory,
+    );
     let mut definition = batch.build()?.definition;
     definition
         .resource_configurations
@@ -132,7 +158,14 @@ fn main() -> Result<()> {
             pipe: DesiredPipe::Bounded { capacity: 32 },
         });
     }
-    let mut config = DrasiServerConfig {
+    for query in QUERIES {
+        definition.relationships.push(DesiredRelationship {
+            definition: EdgeDefinition::new(endpoint(query, "out")?, endpoint("wall-ui", "in")?),
+            policy: RelationshipPolicy::default(),
+            pipe: DesiredPipe::Bounded { capacity: 32 },
+        });
+    }
+    let config = DrasiServerConfig {
         id: ConfigValue::Static(INSTANCE.into()),
         host: ConfigValue::Static("127.0.0.1".into()),
         port: ConfigValue::Static(8421),
@@ -143,10 +176,6 @@ fn main() -> Result<()> {
         computation: Some(ComputationConfig { definition }),
         ..Default::default()
     };
-    config.reactions = serde_json::from_value(json!([{
-        "id":"wall-ui","kind":"sse","queries":QUERIES,"host":"127.0.0.1","port":8422,
-        "ssePath":"/events","heartbeatIntervalMs":5000,"autoStart":true
-    }]))?;
     config.validate()?;
     print!("{}", serde_yaml::to_string(&config)?);
     Ok(())

@@ -51,14 +51,18 @@ fn snapshot_changes(source: &mut Emitter, snapshot: &Value) -> Result<Vec<Source
         let keys = object.keys().cloned().collect();
         changes.extend(source.retain(label, &keys)?);
         for (key, value) in object {
-            changes.extend(source.record(label, key, value)?);
+            let mut value = value.clone();
+            value["__gpu_table"] = json!(label);
+            changes.extend(source.record(label, key, &value)?);
         }
     }
     ensure!(
         snapshot["plan"].is_object(),
         "missing authoritative saved plan"
     );
-    changes.extend(source.record("gpu_placements", "demo", &snapshot["plan"])?);
+    let mut plan = snapshot["plan"].clone();
+    plan["__gpu_table"] = json!("gpu_placements");
+    changes.extend(source.record("gpu_placements", "demo", &plan)?);
     Ok(changes)
 }
 
@@ -468,52 +472,54 @@ fn validate(id: &str, rows: &[Value], corpus: &Corpus, expired: bool) -> Result<
             let records = rows[0]["records"]
                 .as_array()
                 .context("database records missing")?;
-            let (key, expected) = match id {
-                "input-clusters" => (
-                    "cluster_id",
-                    corpus.configuration["clusters"]
-                        .as_object()
-                        .context("clusters missing")?
-                        .keys()
-                        .cloned()
-                        .collect::<BTreeSet<_>>(),
-                ),
-                "input-policies" => (
-                    "policy_id",
-                    corpus.configuration["policies"]
-                        .as_object()
-                        .context("policies missing")?
-                        .keys()
-                        .cloned()
-                        .collect(),
-                ),
-                "input-data" => (
-                    "data_profile_id",
-                    corpus.configuration["data_profiles"]
-                        .as_object()
-                        .context("data profiles missing")?
-                        .keys()
-                        .cloned()
-                        .collect(),
-                ),
-                "input-gpus" | "input-settings" => ("gpu_id", gpus.keys().cloned().collect()),
-                "input-workloads" => ("workload_id", workloads.keys().cloned().collect()),
-                "input-plan" => ("fleet_id", BTreeSet::from(["demo".to_owned()])),
-                _ => unreachable!(),
-            };
-            let actual = records
-                .iter()
-                .map(|r| {
-                    r[key]
-                        .as_str()
-                        .map(str::to_owned)
-                        .context("missing database identity")
-                })
-                .collect::<Result<BTreeSet<_>>>()?;
-            ensure!(
-                actual == expected && records.len() == expected.len(),
-                "{id}: incorrect database identities/counts"
-            );
+            for (table_id, records) in inputs::partition_records(records)? {
+                let (key, expected) = match table_id {
+                    "input-clusters" => (
+                        "cluster_id",
+                        corpus.configuration["clusters"]
+                            .as_object()
+                            .context("clusters missing")?
+                            .keys()
+                            .cloned()
+                            .collect::<BTreeSet<_>>(),
+                    ),
+                    "input-policies" => (
+                        "policy_id",
+                        corpus.configuration["policies"]
+                            .as_object()
+                            .context("policies missing")?
+                            .keys()
+                            .cloned()
+                            .collect(),
+                    ),
+                    "input-data" => (
+                        "data_profile_id",
+                        corpus.configuration["data_profiles"]
+                            .as_object()
+                            .context("data profiles missing")?
+                            .keys()
+                            .cloned()
+                            .collect(),
+                    ),
+                    "input-gpus" | "input-settings" => ("gpu_id", gpus.keys().cloned().collect()),
+                    "input-workloads" => ("workload_id", workloads.keys().cloned().collect()),
+                    "input-plan" => ("fleet_id", BTreeSet::from(["demo".to_owned()])),
+                    _ => unreachable!(),
+                };
+                let actual = records
+                    .iter()
+                    .map(|r| {
+                        r[key]
+                            .as_str()
+                            .map(str::to_owned)
+                            .context("missing database identity")
+                    })
+                    .collect::<Result<BTreeSet<_>>>()?;
+                ensure!(
+                    actual == expected && records.len() == expected.len(),
+                    "{id}: incorrect database identities/counts"
+                );
+            }
         }
         _ => anyhow::bail!("unknown query {id}"),
     }
@@ -532,10 +538,7 @@ struct Measured {
 fn accepts(id: &str, frame: &Frame) -> bool {
     let stream = frame.envelope.system().stream().as_str();
     if stream == "isolation/database" {
-        return matches!(
-            id,
-            "ui-gpus" | "ui-clusters" | "ui-workloads" | "ui-placements" | "scheduling-inputs"
-        ) || inputs::DATABASE_QUERIES.contains(&id);
+        return inputs::DATABASE_QUERIES.contains(&id);
     }
     if inputs::DATABASE_QUERIES.contains(&id) {
         return false;

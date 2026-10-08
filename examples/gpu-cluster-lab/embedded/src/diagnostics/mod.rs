@@ -51,21 +51,51 @@ fn log_queries(value: Option<&str>) -> Result<Vec<String>> {
     Ok(queries.into_iter().map(str::to_owned).collect())
 }
 
-pub fn log_reaction() -> Result<Option<drasi_reaction_log::LogReaction>> {
+pub fn configured_log_queries() -> Result<Vec<String>> {
     let value = match std::env::var("GPU_LAB_LOG_QUERIES") {
         Ok(value) => Some(value),
         Err(std::env::VarError::NotPresent) => None,
         Err(error) => return Err(error).context("invalid GPU_LAB_LOG_QUERIES"),
     };
-    let queries = log_queries(value.as_deref())?;
-    if queries.is_empty() {
-        return Ok(None);
+    log_queries(value.as_deref())
+}
+
+pub struct QueryLog(ComponentDescriptor);
+impl QueryLog {
+    pub fn new() -> Result<Self> {
+        Ok(Self(ComponentDescriptor::try_new(
+            super::id("gpu-query-log")?,
+            vec![PortDescriptor::new(
+                PortId::try_new("in")?,
+                PortDirection::Input,
+                QueryChangeCodec::schema().descriptor().clone(),
+                PipeRequirements::default(),
+            )],
+        )?))
     }
-    Ok(Some(
-        drasi_reaction_log::LogReaction::builder("gpu-query-log")
-            .with_queries(queries)
-            .build()?,
-    ))
+}
+#[async_trait]
+impl ComputationComponent for QueryLog {
+    fn descriptor(&self) -> &ComponentDescriptor {
+        &self.0
+    }
+    async fn start(&mut self) -> Result<()> {
+        Ok(())
+    }
+    async fn stop(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+#[async_trait]
+impl EnvelopeSink for QueryLog {
+    fn completion(&self) -> SinkCompletion {
+        SinkCompletion::Handled
+    }
+    async fn handle(&mut self, input: InputEnvelope) -> Result<()> {
+        let result = QueryChangeCodec::to_legacy_result(&input.envelope)?;
+        tracing::info!(query=%result.query_id, result=%serde_json::to_string(&result)?, "GPU query result");
+        Ok(())
+    }
 }
 
 pub fn enabled() -> Result<bool> {
@@ -250,12 +280,19 @@ mod tests {
     #[test]
     fn query_logging_is_opt_in_and_uses_the_real_query_inventory() -> Result<()> {
         assert!(log_queries(None)?.is_empty());
-        assert_eq!(log_queries(Some("*"))?.len(), 20);
+        assert_eq!(log_queries(Some("*"))?.len(), 14);
         assert_eq!(
-            log_queries(Some("input-settings, ui-gpus"))?,
-            ["input-settings", "ui-gpus"]
+            log_queries(Some("input-configuration, ui-gpus"))?,
+            ["input-configuration", "ui-gpus"]
         );
-        for invalid in ["", "missing", "ui-gpus,", "ui-gpus,ui-gpus", "*,ui-gpus"] {
+        for invalid in [
+            "",
+            "missing",
+            "input-settings",
+            "ui-gpus,",
+            "ui-gpus,ui-gpus",
+            "*,ui-gpus",
+        ] {
             assert!(log_queries(Some(invalid)).is_err(), "{invalid:?}");
         }
         Ok(())

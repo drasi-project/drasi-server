@@ -142,10 +142,15 @@ many minutes, especially while compiling `librocksdb-sys`. A clean example build
 took about 23 minutes on the validation Mac; incremental builds are much faster.
 `setup` defaults to one Cargo job (override with `CARGO_BUILD_JOBS`) and uses this
 example's own `target/`. The native scene and
-geometry plugin and the standard SSE plugin are built from the same local code
+geometry plugin and the native network SSE plugin are built from the same local code
 and toolchain as the Server. Symbols are not stripped. `wall-config` generates
 `.build/server.yaml` from the actual native factory descriptors and built-in
 continuous-query factory contracts; it does not run an embedded runtime.
+All example execution components, including `wall-ui`, are native graph
+components. Query outputs connect directly to `drasi.network/sse-sink`; there is
+no legacy reaction subscription/processing queue. The existing browser event
+format and Server query snapshot API are unchanged. SSE remains a volatile UI
+notification channel, not acknowledged or durable browser delivery.
 
 `start` checks that its ports are free, launches the **actual**
 `target/debug/drasi-server --config .build/server.yaml --plugins-dir
@@ -178,7 +183,7 @@ The example UI is on **5421**; the separate stock Server administration UI is on
 | --- | --- |
 | 5421 | Vite: React assets and same-origin proxy only |
 | 8421 | Stock Drasi Server REST API and Server Web UI |
-| 8422 | Standard `drasi-reaction-sse`, inside Server |
+| 8422 | Native `drasi.network/sse-sink`, inside Server |
 | 8423 | Example native scene source's input command endpoint, inside Server |
 
 ### Stop, rebuild, or clean up
@@ -225,7 +230,7 @@ result delivery. Its expanded introduction explains the Euclidean-distance
 calculation and why cart radius plus clearance matters even when a path misses
 an obstacle. The three inspection queries are grouped for readability.
 The configured `query-results` sink, host REST API and configured `wall-ui`
-SSE reaction have separate cards; the catalog is explained as a shared resource,
+native SSE sink have separate cards; the catalog is explained as a shared resource,
 not an extra component. This is not live graph inspection. On small screens
 it becomes a component list with input connections.
 
@@ -297,7 +302,7 @@ native Geometry Transformer                               |
     v                                                     |
 affected-journeys CQ (cart + journey + destination + cause) |
     |                                                     |
-    +----------> real SSE reaction + real query snapshots --+
+    +----------> native SSE sink + real query snapshots ----+
                                   |
                                   v
                      @drasi/react headless hooks / React
@@ -326,11 +331,15 @@ each query's `out` port also connects to the outlet's `in` port. The example's
 | `affected-journeys` | `in`: geometry graph changes | `out`: query rows; synthetic joins `CART_TASK`, `TO_DESTINATION`, `BLOCKS`, `CAUSED_BY` enrich each obstruction |
 | `geometry-status` | `in`: geometry graph changes | `out`: query rows; last computed input revision and result count |
 | `query-results` | `in`: query-change envelopes from all five CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
-| `wall-ui` | Actual result subscriptions to all five CQs | Standard SSE on `/events`; `@drasi/react` loads real snapshots and applies real deltas |
+| `wall-ui` | `in`: direct query-change envelopes from all five CQs | Native SSE on `/events`; `@drasi/react` loads real snapshots and applies real deltas |
 
-The standard SSE reaction explicitly configures `heartbeatIntervalMs: 5000`,
-including it in the full reaction metadata consumed by `@drasi/react`. This is
+The native SSE sink explicitly configures `heartbeatIntervalMs: 5000`. This is
 only a connection heartbeat; it never triggers geometry computation.
+The pinned React SDK remains unchanged. Its public `DrasiClientProvider` binds
+an application-owned client that validates the real native graph, query lifecycle
+and bound query-to-SSE edges instead of requiring a legacy Reaction DTO. It does
+not fabricate a legacy resource, bypass readiness checks or replace the SDK's
+snapshot/reconnection and result-reconciliation behavior.
 
 The obstruction is a stable graph record representing the relationship
 `(journey_id, obstacle_id)`, not a newly minted event ID on each drag. One journey
@@ -476,13 +485,20 @@ these committed revisions:
 | `drasi-core` | `5f48406bfce641d83d7f881877a4a8cac663eeac` |
 | `@drasi/react` source in the Server Git object store | `2a36f857526baa08304a698131854f222b40b108` |
 
-Requalified on 2026-10-07 with the current local reliability changes: Core
+Historical pre-migration qualification on 2026-10-07 used Core
 `e46f6130b29d9268603585a5912e92d6839fa01f` and Server
 `a7b564a8fbbfaf141cd078994275e09f13a798d9`, **both including uncommitted changes**.
 The example lockfile now includes their current dependencies. The native scene
 plugin, standard SSE plugin and stock Server were rebuilt together; ten Rust
 tests, five UI tests, live query/SSE checks and the full Chromium interaction
 check passed. The fresh verification instance shut down cleanly.
+
+Native SSE requalification on 2026-10-08 used Core
+`953479729465b412a16764b29c9e56c55a1531e1` and Server
+`de32b37a956563bda8266f57b7de3a2b5e976e81`, including the uncommitted example
+migration. The native network sink, direct graph edges and shared browser
+validator passed live checks and the full Chromium interaction/reconnect run.
+The shared-package JSX regression is covered alongside the graph validator.
 
 Server support constructs a graph-scoped `QueryResultsCatalog` and validates
 query/outlet catalog agreement. It does not replace query evaluation, the Server
@@ -514,12 +530,12 @@ Verified locally on macOS (Apple Silicon); the Linux prerequisites above are
 provided for Linux source builds, not a claim of a Linux validation run:
 
 - Ten Rust geometry/transformer tests using actual Cypher queries, including
-  active filtering, scene-only records and task/destination enrichment; five UI
-  record tests; formatting, Clippy, TypeScript and production UI build.
+  active filtering, scene-only records and task/destination enrichment; ten UI
+  record/native-topology tests; formatting, Clippy, TypeScript and production UI build.
 - Actual stock Server bootstrap: `geometry-status` returns revision 1,
   nine objects and zero obstructions.
 - Real source commands through the native geometry transformer into query
-  snapshots and standard SSE, including exact enriched `ADD`, same-key rename
+  snapshots and native SSE, including exact enriched `ADD`, same-key rename
   `UPDATE`, and `DELETE` records.
 - Chromium drag-to-impact and retraction, path-only edits, CRUD for all four
   entity kinds, reload, offline/reconnect, keyboard movement, visible

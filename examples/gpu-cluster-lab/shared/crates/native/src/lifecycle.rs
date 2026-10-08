@@ -58,12 +58,14 @@ impl NativeControlHandler for Handler {
                     .context("component has no database inputs")?
                     .lock()
                     .map_err(|_| anyhow::anyhow!("lifecycle signal lock poisoned"))?;
-                let result = if message.from.as_str() == "input-plan" {
+                let result = if message.from.as_str() == crate::inputs::DATABASE_QUERY {
                     signals
                         .transfer
                         .receive(&kind, payload, message.generation, Instant::now())
                 } else {
-                    Err(anyhow::anyhow!("GPU bootstrap sender must be input-plan"))
+                    Err(anyhow::anyhow!(
+                        "GPU bootstrap sender must be input-configuration"
+                    ))
                 };
                 match result {
                     Ok(Some(boundary)) => {

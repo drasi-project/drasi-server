@@ -9,7 +9,8 @@ RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
     if [ -f "$1" ]; then npm cache add --offline --ignore-scripts "$@"; fi; \
     npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm pack --ignore-scripts --pack-destination /tmp
 WORKDIR /ui
-COPY shared/ui/package.json shared/ui/package-lock.json ./
+COPY embedded/.build/runtime-src/drasi-server/examples/native-sse-client/ /native-sse-client/
+COPY shared/ui/package.json shared/ui/package-lock.json shared/ui/.npmrc ./
 RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
     mkdir vendor && cp /tmp/drasi-react-0.1.0.tgz vendor/drasi-react.tgz && npm ci --no-audit --no-fund
 COPY shared/ui/ ./

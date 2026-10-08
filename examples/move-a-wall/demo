@@ -30,11 +30,12 @@ case "${1:-help}" in
     mv ui/vendor/drasi-react-0.1.0.tgz ui/vendor/drasi-react.tgz
     (cd ui && if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi && npm run build)
     cargo build --locked --features dynamic-plugin --lib --bin wall-config
-    cargo build --locked --manifest-path ../../../drasi-core/Cargo.toml -p drasi-reaction-sse --features dynamic-plugin
+    cargo build --locked --manifest-path ../../../drasi-core/Cargo.toml -p drasi-computation-network --features dynamic-plugin
     cargo build --locked --manifest-path ../../Cargo.toml --bin drasi-server
     cp "target/debug/libmove_a_wall.$extension" ".build/plugins/libdrasi_move_a_wall.$extension"
-    cp "target/debug/libdrasi_reaction_sse.$extension" ".build/plugins/libdrasi_reaction_sse.$extension"
-    target/debug/wall-config "$PWD/.build/plugins/libdrasi_move_a_wall.$extension" > .build/server.next.yaml
+    cp "target/debug/libdrasi_computation_network.$extension" ".build/plugins/libdrasi_computation_network.$extension"
+    rm -f ".build/plugins/libdrasi_reaction_sse.$extension"
+    target/debug/wall-config "$PWD/.build/plugins/libdrasi_move_a_wall.$extension" "$PWD/.build/plugins/libdrasi_computation_network.$extension" > .build/server.next.yaml
     target/debug/drasi-server --config .build/server.next.yaml --plugins-dir .build/plugins validate
     mv .build/server.next.yaml .build/server.yaml
     echo "Ready: ./demo start"

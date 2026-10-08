@@ -5,7 +5,7 @@ use crate::{
     },
     inputs::{
         BootstrapBoundary, DatabaseInputs, QueryBootstrapRow, QueryBootstrapWatermark,
-        DATABASE_QUERIES,
+        DATABASE_QUERIES, DATABASE_QUERY,
     },
     lifecycle::{Signals, BOOTSTRAP_COMPLETE},
 };
@@ -16,8 +16,13 @@ fn boundary(padding: usize) -> Result<BootstrapBoundary> {
     let fixture = fixtures::load("regional-boundary")?;
     let epoch = Uuid::new_v4();
     let mut rows = super::inputs::fixture_rows(&fixture, epoch)?;
-    rows.get_mut("input-plan").unwrap()[0]["decision_details"]["transport_test"] =
-        json!("x".repeat(padding));
+    rows.get_mut(DATABASE_QUERY)
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["table"] == "gpu_placements")
+        .unwrap()["value"]["decision_details"]["transport_test"] = json!("x".repeat(padding));
     Ok(BootstrapBoundary {
         epoch,
         queries: rows
@@ -147,8 +152,8 @@ fn bootstrap_transport_small_empty_and_wire_boundary() -> Result<()> {
     roundtrip(&empty)?;
     for size in [15_000, 16_000, 16_384, 17_000] {
         let mut value = empty.clone();
-        value.queries.get_mut("input-plan").unwrap().row_count = 1;
-        value.queries.get_mut("input-plan").unwrap().rows = Some(vec![QueryBootstrapRow {
+        value.queries.get_mut(DATABASE_QUERY).unwrap().row_count = 1;
+        value.queries.get_mut(DATABASE_QUERY).unwrap().rows = Some(vec![QueryBootstrapRow {
             signature: u64::MAX,
             records: vec![json!("x".repeat(size))],
         }]);
@@ -167,7 +172,7 @@ fn bootstrap_transport_escaping_unicode_integer_fidelity_and_size_limit() -> Res
     let mut value = boundary(0)?;
     let row = &mut value
         .queries
-        .get_mut("input-plan")
+        .get_mut(DATABASE_QUERY)
         .unwrap()
         .rows
         .as_mut()

@@ -10,6 +10,7 @@
     "dev:mock": "vite --mode mock --host 127.0.0.1 --port 5173 --strictPort"
   },
   "dependencies": {
+    "@drasi/example-native-sse": "file:../../../native-sse-client",
     "@drasi/react": "file:vendor/drasi-react.tgz",
     "react": "18.3.1",
     "react-dom": "18.3.1"

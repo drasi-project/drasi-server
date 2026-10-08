@@ -43,6 +43,7 @@ class ExportTests(unittest.TestCase):
             manifest = {}
             EXPORT["copy_file"](source, target, manifest, staging)
             self.assertEqual(target.read_bytes(), source.read_bytes())
+            self.assertEqual(target.stat().st_mtime_ns, source.stat().st_mtime_ns)
             self.assertEqual(manifest, {relative: hashlib.sha256(source.read_bytes()).hexdigest()})
 
 

@@ -197,19 +197,12 @@ ${status}`,
     note: 'The query-results sink publishes changes; it does not create another copy of business state. HTTP snapshot JSON is shown on the REST API → React UI arrow.',
   },
   {
-    id: 'catalog-sse', kind: 'rows', path: 'M670 490 V522',
-    title: 'Shared result catalog → SSE reaction',
-    implementation: 'wall-query-catalog subscriptions → wall-ui',
-    detail: 'Shared-resource subscription, not a graph pipe. Native query-row envelopes are adapted to the reaction’s QueryResult contract.',
-    schema: `QueryResult {
-  query_id: string; sequence: u64
-  timestamp: UTC timestamp
-  results: ResultDiff[]
-  metadata: Map<string, JSON>
-  profiling?: ProfilingMetadata
-}
-${diffs}`,
-    note: 'Row is the selected query’s result shape, shown on its incoming arrow. This internal contract includes sequence; the default browser SSE payload does not.',
+    id: 'catalog-sse', kind: 'rows', path: 'M670 463 V522',
+    title: 'Continuous queries → native SSE sink',
+    implementation: 'All five query out ports → wall-ui.in · drasi.query-row v1',
+    detail: 'Five independent bounded graph pipes, grouped in this arrow. The native sink serializes query envelopes directly at the browser transport boundary, without catalog subscriptions or a reaction queue.',
+    schema: queryDetail,
+    note: 'Row is the selected query’s result shape, shown on its incoming arrow. Native envelopes include sequence; the unchanged browser SSE payload does not.',
   },
   {
     id: 'api-browser', kind: 'transport', path: 'M307 580 H115 V463',
@@ -226,7 +219,7 @@ ${rows}`,
   },
   {
     id: 'sse-browser', kind: 'transport', path: 'M670 638 V660 H75 V463',
-    title: 'SSE reaction → React UI',
+    title: 'Native SSE sink → React UI',
     implementation: 'GET /events · text/event-stream',
     detail: 'Each SSE data frame contains the standard, untemplated JSON payload below. The SDK applies its result differences to the selected query.',
     schema: `Result message {

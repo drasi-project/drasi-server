@@ -136,6 +136,10 @@ acceptance() (
     wait_ready 120
     if [ "$mode" = "--restart" ] || [ "$mode" = "--acceptance" ]; then
         snapshot=$(compose run --rm --no-deps checks --restart-snapshot)
+        slot_sql="SELECT slot_name FROM pg_replication_slots WHERE database='gpu_demo' AND plugin='pgoutput' ORDER BY slot_name"
+        slot=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$slot_sql")
+        printf '%s\n' "$slot" | grep -Eq '^gpu_native_[0-9a-f]{32}$'
+        test "$(printf '%s\n' "$slot" | wc -l | tr -d ' ')" = 1
         receipts_sql="SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY operation_kind,request_key),'[]') FROM command_receipts r"
         receipts=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$receipts_sql")
         test "$receipts" != "[]"
@@ -148,6 +152,8 @@ acceptance() (
         compose up --no-build -d control
         wait_ready 120
         compose run --rm --no-deps -e RESTART_SNAPSHOT="$snapshot" checks --restart-verify
+        restored_slot=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$slot_sql")
+        test "$restored_slot" = "$slot"
         restored_receipts=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$receipts_sql")
         if [ "$restored_receipts" != "$receipts" ]; then
             printf '%s\n' 'Full stack restart changed durable command/plan receipts.' >&2
@@ -222,7 +228,7 @@ case "${1:-help}" in
         ;;
     destroy)
         if [ "${2:-}" != "--confirm" ] || [ "${3:-}" != "gpu-demo" ]; then
-            printf '%s\n' 'Destructive: use ./demo destroy --confirm gpu-demo to delete only this demo database.' >&2
+            printf '%s\n' 'Destructive: use ./demo destroy --confirm gpu-demo to delete this demo database and native query state.' >&2
             exit 1
         fi
         if [ -f .env ]; then compose down --volumes; fi
@@ -232,7 +238,8 @@ case "${1:-help}" in
         compose config --quiet
         case "${2:-unit}" in
             --acceptance) acceptance --writer-recovery; acceptance --acceptance ;;
-            --functional) acceptance --writer-recovery; acceptance --restart; acceptance --runbook ;;
+            --functional) python3 ops/check-native-input.py; acceptance --writer-recovery; acceptance --restart; acceptance --runbook ;;
+            --native-input) shift 2; python3 ops/check-native-input.py "$@" ;;
             --writer-recovery) acceptance --writer-recovery ;;
             --restart) acceptance --restart ;;
             --query-drain) acceptance --query-drain ;;
@@ -245,7 +252,7 @@ case "${1:-help}" in
                     -e CARGO_TARGET_DIR="/app/embedded/.build/check-target-linux-$architecture" \
                     -e CARGO_BUILD_JOBS=1 rust:1.95-bookworm cargo test --locked --workspace
                 ;;
-            *) printf '%s\n' 'Unknown check mode; use check, check --admin-ui, check --smoke, check --errors, check --concurrency, check --commands, check --runbook, check --restart, check --writer-recovery, check --query-drain, check --postgres-mutations, check --functional, or check --acceptance.' >&2; exit 2 ;;
+            *) printf '%s\n' 'Unknown check mode; use check, check --admin-ui, check --smoke, check --errors, check --concurrency, check --commands, check --runbook, check --restart, check --writer-recovery, check --query-drain, check --postgres-mutations, check --native-input, check --functional, or check --acceptance.' >&2; exit 2 ;;
         esac
         ;;
     *) printf '%s\n' 'GPU Cluster Lab' \
@@ -256,8 +263,9 @@ case "${1:-help}" in
         '  ./demo status | logs | sql | build | check | check --smoke | check --errors | check --concurrency | check --commands | check --runbook | check --restart | check --writer-recovery | check --acceptance' \
         '  ./demo check --query-drain  Isolated diagnostic report pause; never acceptance evidence' \
         '  ./demo check --functional  Isolated writer recovery, restart and scenarios; no transaction-completion claim' \
+        '  ./demo check --native-input  Isolated atomic input, restart, crash, reset and missing-history checks' \
         '  ./demo check --postgres-mutations  Isolated SQL mutation checks with real query logging' \
         '  ./demo check --admin-ui  Read-only checks of the Drasi admin UI, assets and component APIs' \
-        '  ./demo destroy --confirm gpu-demo  Delete this demo database'
+        '  ./demo destroy --confirm gpu-demo  Delete this demo database and native query state'
         ;;
 esac

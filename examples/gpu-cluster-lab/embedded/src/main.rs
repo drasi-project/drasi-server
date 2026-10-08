@@ -11,7 +11,7 @@ use drasi_host_sdk::{
     computation::{NativeFactory, NativePlugin},
     PluginRegistry,
 };
-use drasi_lib::{computation::v1::*, config::QueryConfig, ComponentStatus, DrasiLib};
+use drasi_lib::{computation::v1::*, ComponentStatus, DrasiLib};
 use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
 use gpu_native::{
@@ -23,9 +23,9 @@ use gpu_native::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{postgres::PgConnectOptions, Connection, PgConnection};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    num::NonZeroUsize,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -35,11 +35,10 @@ use std::{
 use tokio::sync::{watch, Mutex, RwLock};
 use uuid::Uuid;
 
+mod database;
 mod diagnostics;
 
 const INSTANCE: &str = "gpu-demo";
-const SLOT: &str = "gpu_demo_runtime";
-const PUBLICATION: &str = "gpu_demo_publication";
 const NATIVE: [(&str, &str); 6] = [
     ("policy", "gpu.lab/regorus-policy"),
     ("simulator", "gpu.lab/telemetry-simulator"),
@@ -96,6 +95,7 @@ struct Runtime {
     registry: InstanceRegistry,
     plugins: Arc<RwLock<PluginRegistry>>,
     native: Arc<NativePlugin>,
+    network: Arc<NativePlugin>,
     active: Mutex<Option<Active>>,
     view: RwLock<Value>,
     sequence: AtomicU64,
@@ -106,33 +106,6 @@ struct Runtime {
 }
 
 impl Runtime {
-    async fn cleanup_slot(&self) -> Result<()> {
-        let options = PgConnectOptions::new()
-            .host(&self.host)
-            .database("gpu_demo")
-            .username("gpu_reader")
-            .password(&self.password)
-            .ssl_mode(sqlx::postgres::PgSslMode::Disable);
-        let mut connection = PgConnection::connect_with(&options).await?;
-        let active: Option<bool> =
-            sqlx::query_scalar("SELECT active FROM pg_replication_slots WHERE slot_name=$1")
-                .bind(SLOT)
-                .fetch_optional(&mut connection)
-                .await?;
-        if let Some(active) = active {
-            ensure!(
-                !active,
-                "the example replication slot is still active; refusing concurrent ownership"
-            );
-            sqlx::query("SELECT pg_drop_replication_slot($1)")
-                .bind(SLOT)
-                .execute(&mut connection)
-                .await?;
-        }
-        connection.close().await?;
-        Ok(())
-    }
-
     fn factory(&self, name: &str) -> Result<Arc<NativeFactory>> {
         self.native
             .factories()
@@ -143,72 +116,9 @@ impl Runtime {
     }
 
     async fn construct(&self) -> Result<Arc<DrasiLib>> {
-        self.cleanup_slot().await?;
-        let tables = [
-            ("regional_clusters", "cluster_id"),
-            ("placement_policies", "policy_id"),
-            ("data_profiles", "data_profile_id"),
-            ("gpu_inventory", "gpu_id"),
-            ("gpu_telemetry", "gpu_id"),
-            ("workload_requirements", "workload_id"),
-            ("gpu_placements", "fleet_id"),
-        ];
-        let mut bootstrap = drasi_bootstrap_postgres::PostgresBootstrapProvider::builder()
-            .with_host(&self.host)
-            .with_database("gpu_demo")
-            .with_user("gpu_reader")
-            .with_password(&self.password)
-            .with_slot_name(SLOT)
-            .with_publication_name(PUBLICATION)
-            .with_ssl_mode(drasi_bootstrap_postgres::SslMode::Disable);
-        for (table, key) in tables {
-            bootstrap = bootstrap.with_table_key(table, vec![key.into()]);
-        }
-        let source = drasi_source_postgres::PostgresReplicationSource::builder("postgres")
-            .with_host(&self.host)
-            .with_database("gpu_demo")
-            .with_user("gpu_reader")
-            .with_password(&self.password)
-            .with_slot_name(SLOT)
-            .with_publication_name(PUBLICATION)
-            .with_tables(tables.iter().map(|(table, _)| table.to_string()).collect())
-            .with_table_keys(
-                tables
-                    .iter()
-                    .map(
-                        |(table, key)| drasi_source_postgres::config::TableKeyConfig {
-                            table: table.to_string(),
-                            key_columns: vec![key.to_string()],
-                        },
-                    )
-                    .collect(),
-            )
-            .with_ssl_mode(drasi_source_postgres::config::SslMode::Disable)
-            .with_bootstrap_provider(
-                bootstrap
-                    .with_tables(tables.iter().map(|(table, _)| table.to_string()).collect())
-                    .build(),
-            )
-            .build()?;
-        let reaction = drasi_reaction_sse::SseReaction::builder("gpu-demo-ui")
-            .with_queries(
-                gpu_contracts::UI_QUERIES
-                    .iter()
-                    .map(|id| id.to_string())
-                    .collect(),
-            )
-            .with_host("0.0.0.0")
-            .with_port(8081)
-            .with_sse_path("/events")
-            .build()?;
-        let mut builder = DrasiLib::builder()
+        let builder = DrasiLib::builder()
             .with_id(INSTANCE)
-            .with_component_factories(self.plugins.read().await.computation_factory_registry()?)
-            .with_source(source)
-            .with_reaction(reaction);
-        if let Some(reaction) = diagnostics::log_reaction()? {
-            builder = builder.with_reaction(reaction);
-        }
+            .with_component_factories(self.plugins.read().await.computation_factory_registry()?);
         let core = Arc::new(builder.build().await?);
         if let Err(error) = self.wire(&core).await {
             core.shutdown()
@@ -223,38 +133,30 @@ impl Runtime {
         let diagnostics_enabled = diagnostics::enabled()?;
         let mut middleware = drasi_core::middleware::MiddlewareTypeRegistry::new();
         middleware.register(Arc::new(gpu_native::postgres::PostgresJsonFactory));
-        let mut pipeline = core
-            .computation_pipeline()?
-            .source(
-                core.borrow_computation_source("postgres").await?,
-                SourceSubscriptionOptions {
-                    borrowed_recovery: true,
-                    ..Default::default()
-                },
-            )?
-            .middleware_registry(Arc::new(middleware));
-        for (id, text) in inputs::database_queries() {
-            pipeline = pipeline.query(query(id, &text, QueryExecutionSettings::default())?);
-        }
-        for (id, text, settings) in projections::definitions() {
-            pipeline = pipeline.query(query(id, text, settings)?);
-        }
-        if diagnostics_enabled {
-            for (id, text, settings) in diagnostics::definitions()? {
-                pipeline = pipeline.query(query(id, &text, settings)?);
-            }
-        }
-        for (id, text, settings) in inputs::processing_queries() {
-            pipeline = pipeline.query(query(id, text, settings)?);
-        }
-        let pipeline = pipeline.build()?.auto_start(false);
-        let mut start = pipeline
+        let catalog = QueryResultsCatalog::new("__drasi_lib_runtime__")?;
+        let queries = queries(catalog.clone(), diagnostics_enabled)?.auto_start(false);
+        let mut start = queries
             .definition
             .components
             .iter()
             .map(|component| component.descriptor.id().clone())
             .collect::<Vec<_>>();
-        core.add_components(pipeline).await?;
+        core.add_components(queries).await?;
+        let database = database::components(
+            &self.host,
+            &self.password,
+            &env("GPU_STATE_DIR")?,
+            catalog,
+            Arc::new(middleware),
+        )?;
+        start.extend(
+            database
+                .definition
+                .components
+                .iter()
+                .map(|node| node.descriptor.id().clone()),
+        );
+        core.add_components(database.auto_start(false)).await?;
 
         let secret = ResourceId::try_new("gpu-runtime-secrets")?;
         let mut components = ComponentBatch::builder()
@@ -299,7 +201,30 @@ impl Runtime {
                 );
             }
         }
-        let mut relationships = Vec::new();
+        let sse = self
+            .network
+            .factories()
+            .iter()
+            .find(|factory| {
+                factory.metadata().implementation.name.as_ref() == "drasi.network/sse-sink"
+            })
+            .context("native SSE factory is missing")?
+            .clone();
+        components = components.component(sse.specification(id("gpu-demo-ui")?, json!({
+            "queryStreams":gpu_contracts::UI_QUERIES.iter().map(|id| (*id,format!("{id}/out"))).collect::<BTreeMap<_,_>>(),
+            "host":"0.0.0.0","port":8081,"ssePath":"/events",
+        }))?, sse);
+        let mut relationships = gpu_contracts::UI_QUERIES
+            .iter()
+            .map(|query| relationship(query, "gpu-demo-ui", 64))
+            .collect::<Result<Vec<_>>>()?;
+        let logged = diagnostics::configured_log_queries()?;
+        if !logged.is_empty() {
+            components = components.sink(Box::new(diagnostics::QueryLog::new()?));
+            for query in logged {
+                relationships.push(relationship(&query, "gpu-query-log", 64)?);
+            }
+        }
         if diagnostics_enabled {
             components = components.sink(Box::new(diagnostics::Recorder::new()?));
             for producer in [
@@ -375,7 +300,7 @@ impl Runtime {
         core.add_components(components.auto_start(false)).await?;
         let control = core.computation_control()?;
         control
-            .set_control_connections(vec![(id("input-plan")?, id("runtime-status")?)])
+            .set_control_connections(vec![(id(inputs::DATABASE_QUERY)?, id("runtime-status")?)])
             .await?;
         let report = control
             .start_requested(
@@ -399,7 +324,11 @@ impl Runtime {
         Ok(())
     }
 
-    async fn start(self: &Arc<Self>, scenario: Option<String>) -> Result<()> {
+    async fn start(
+        self: &Arc<Self>,
+        scenario: Option<String>,
+        expected_plan: Option<Uuid>,
+    ) -> Result<()> {
         ensure!(
             scenario
                 .as_ref()
@@ -419,7 +348,9 @@ impl Runtime {
         let runtime = self.clone();
         let owned = core.clone();
         let observer = tokio::spawn(async move {
-            let result = runtime.observe(owned, epoch, scenario, stopped).await;
+            let result = runtime
+                .observe(owned, epoch, scenario, expected_plan, stopped)
+                .await;
             if let Err(error) = &result {
                 tracing::error!("GPU runtime failed: {error:#}");
                 *runtime.view.write().await =
@@ -440,6 +371,7 @@ impl Runtime {
         core: Arc<DrasiLib>,
         epoch: Uuid,
         requested_scenario: Option<String>,
+        expected_plan: Option<Uuid>,
         mut stop: watch::Receiver<bool>,
     ) -> Result<()> {
         core.start().await?;
@@ -451,14 +383,33 @@ impl Runtime {
                 core.computation_component(query)?.wait_started(),
             )
             .await??;
-            let snapshot = core
+            let reader = core
                 .query_manager()
                 .get_query_instance(query)
                 .await
-                .map_err(anyhow::Error::msg)?
-                .fetch_snapshot()
-                .await?;
-            if query == "input-plan" {
+                .map_err(anyhow::Error::msg)?;
+            let snapshot = tokio::time::timeout(Duration::from_secs(120), async {
+                loop {
+                    let current = database::current_snapshot(&self.host, &self.password, epoch).await?;
+                    let snapshot = reader.fetch_snapshot().await?;
+                    let rows = snapshot.to_vec();
+                    ensure!(rows.len() == 1, "transactional configuration query must have one row");
+                    let records = rows[0]["records"].as_array().context("configuration records missing")?;
+                    let tables = inputs::partition_records(records)?;
+                    let plans = &tables["input-plan"];
+                    ensure!(plans.len() == 1, "configuration requires exactly one fleet plan");
+                    let observed = inputs::DatabaseSnapshot::from_records(epoch, records)?;
+                    if serde_json::to_value(&current)? == serde_json::to_value(&observed)?
+                        && expected_plan.is_none_or(|expected| plans[0]["decision_id"] == expected.to_string()) {
+                        break Ok::<_, anyhow::Error>(snapshot);
+                    }
+                    tokio::select! {
+                        changed = stop.changed() => { changed?; ensure!(!*stop.borrow(), "GPU bootstrap cancelled"); }
+                        _ = tokio::time::sleep(Duration::from_millis(25)) => {}
+                    }
+                }
+            }).await.context("configuration query did not catch up to the current database snapshot")??;
+            {
                 let rows = snapshot.to_vec();
                 ensure!(
                     rows.len() == 1,
@@ -467,10 +418,8 @@ impl Runtime {
                 let records = rows[0]["records"]
                     .as_array()
                     .context("plan query records missing")?;
-                ensure!(
-                    records.len() == 1,
-                    "starting scenario requires exactly one saved fleet plan"
-                );
+                let tables = inputs::partition_records(records)?;
+                let records = &tables["input-plan"];
                 scenario = Some(
                     records[0]["decision_details"]["scenario"]
                         .as_str()
@@ -528,7 +477,9 @@ impl Runtime {
                 .is_none_or(|expected| expected == &scenario),
             "saved and requested starting scenarios differ"
         );
-        let control = core.computation_component("input-plan")?.control()?;
+        let control = core
+            .computation_component(inputs::DATABASE_QUERY)?
+            .control()?;
         let notifications =
             gpu_native::bootstrap::notifications(&BootstrapBoundary { epoch, queries })?;
         let max_wire_bytes = notifications
@@ -645,7 +596,6 @@ impl Runtime {
             Err(error) => return Err(error.into()),
         }
         self.registry.remove(INSTANCE).await;
-        self.cleanup_slot().await?;
         *self.view.write().await = json!({"ready":false,"state":"stopped"});
         Ok(())
     }
@@ -656,13 +606,138 @@ async fn core_shutdown(core: &DrasiLib) -> Result<()> {
     Ok(())
 }
 
-fn query(id: &str, text: &str, settings: QueryExecutionSettings) -> Result<QueryConfig> {
-    Ok(serde_json::from_value(json!({
-        "id":id, "query":text,
-        "sources":[{"source_id":"postgres","pipeline":[gpu_native::postgres::POSTGRES_JSON]}],
-        "middleware":[{"name":gpu_native::postgres::POSTGRES_JSON,"kind":gpu_native::postgres::POSTGRES_JSON,"config":{}}],
-        "joins":settings.joins, "enableBootstrap":true, "auto_start":true,
-    }))?)
+fn queries(catalog: QueryResultsCatalog, diagnostic: bool) -> Result<ComponentBatch> {
+    let indexes = ResourceId::try_new("gpu-memory-indexes")?;
+    let catalog_id = ResourceId::try_new("gpu-query-catalog")?;
+    let mut batch = ComponentBatch::builder();
+    for (id, role, handle) in [
+        (
+            indexes.clone(),
+            ResourceRole::IndexBackend,
+            ResourceHandle::new(
+                ResourceRole::IndexBackend,
+                Arc::new(QueryIndexProviderResource(Arc::new(
+                    drasi_core::computation::InMemoryComputationProvider,
+                ))),
+            ),
+        ),
+        (
+            catalog_id.clone(),
+            ResourceRole::QueryCatalog,
+            ResourceHandle::new(ResourceRole::QueryCatalog, Arc::new(catalog.clone())),
+        ),
+    ] {
+        batch = batch
+            .declare_resource(ResourceSpecification {
+                id: id.clone(),
+                role,
+                ownership: ResourceOwnership::Graph,
+                binding: id.as_str().into(),
+            })?
+            .provide_resource(id, handle)?;
+    }
+    let mut definitions = projections::definitions()
+        .into_iter()
+        .chain(inputs::processing_queries())
+        .map(|(id, text, settings)| (id, text.to_owned(), settings))
+        .collect::<Vec<_>>();
+    if diagnostic {
+        definitions.extend(diagnostics::definitions()?);
+    }
+    let factory = FactoryRegistry::standard()
+        .get(
+            &ContinuousQueryFactory::default()
+                .descriptor()
+                .implementation,
+        )
+        .context("built-in continuous query factory is missing")?
+        .clone();
+    let mut relationships = Vec::new();
+    for (name, text, settings) in definitions {
+        let definition = ContinuousQueryDefinition {
+            graph_id: catalog.graph_id().into(),
+            id: id(name)?,
+            query: text.clone(),
+            language: ComputationQueryLanguage::Cypher,
+            output_stream: StreamId::try_new(format!("{name}/out"))?,
+            outbox_capacity: NonZeroUsize::new(128).unwrap(),
+        };
+        batch = batch
+            .component(
+                ComponentSpecification {
+                    descriptor: definition.descriptor_with_execution(&settings),
+                    role: ComponentRole::Query,
+                    completion: None,
+                    implementation: factory.descriptor().implementation.clone(),
+                    configuration_version: 1,
+                    configuration: BTreeMap::from([
+                        ("query".into(), ConfigurationValue::Literal(json!(text))),
+                        (
+                            "stream".into(),
+                            ConfigurationValue::Literal(json!(definition.output_stream)),
+                        ),
+                        (
+                            "outbox_capacity".into(),
+                            ConfigurationValue::Literal(json!(128)),
+                        ),
+                        (
+                            "execution".into(),
+                            ConfigurationValue::Literal(serde_json::to_value(settings)?),
+                        ),
+                    ]),
+                    dependencies: BTreeMap::from([
+                        ("indexes".into(), vec![indexes.clone()]),
+                        ("catalog".into(), vec![catalog_id.clone()]),
+                    ]),
+                },
+                factory.clone(),
+            )
+            .bind_stream(endpoint(name, "out")?, definition.output_stream);
+        relationships.push(relationship(name, "query-results", 64)?);
+    }
+    let mut batch = batch
+        .sink(Box::new(QueryResultsOutlet::new(
+            id("query-results")?,
+            catalog,
+        )))
+        .build()?;
+    batch.definition.relationships.extend(relationships);
+    Ok(batch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn downstream_queries_are_native_without_legacy_subscriptions() -> Result<()> {
+        let core = DrasiLib::builder().with_id(INSTANCE).build().await?;
+        let catalog = QueryResultsCatalog::new("__drasi_lib_runtime__")?;
+        let batch = queries(catalog.clone(), false)?;
+        assert_eq!(batch.definition.components.len(), 14);
+        assert!(batch
+            .definition
+            .components
+            .iter()
+            .all(|component| matches!(component.role, ComponentRole::Query | ComponentRole::Sink)));
+        core.add_components(batch.auto_start(false)).await?;
+        let directory = tempfile::tempdir()?;
+        let mut middleware = drasi_core::middleware::MiddlewareTypeRegistry::new();
+        middleware.register(Arc::new(gpu_native::postgres::PostgresJsonFactory));
+        core.add_components(
+            database::components(
+                "127.0.0.1",
+                "test-only",
+                directory.path().to_str().context("test path")?,
+                catalog,
+                Arc::new(middleware),
+            )?
+            .auto_start(false),
+        )
+        .await?;
+        core.shutdown().await?;
+        Ok(())
+    }
 }
 
 fn authorized(runtime: &Runtime, headers: &HeaderMap) -> Result<()> {
@@ -734,6 +809,8 @@ async fn stop(State(runtime): State<Arc<Runtime>>, headers: HeaderMap) -> Respon
 #[serde(deny_unknown_fields)]
 struct Start {
     scenario: String,
+    #[serde(default)]
+    expected_plan: Option<Uuid>,
 }
 async fn start(
     State(runtime): State<Arc<Runtime>>,
@@ -743,7 +820,10 @@ async fn start(
     if let Err(error) = authorized(&runtime, &headers) {
         return (StatusCode::UNAUTHORIZED, error.to_string()).into_response();
     }
-    match runtime.start(Some(input.scenario)).await {
+    match runtime
+        .start(Some(input.scenario), input.expected_plan)
+        .await
+    {
         Ok(()) => Json(json!({"state":"starting"})).into_response(),
         Err(error) => failure(error),
     }
@@ -759,25 +839,16 @@ async fn main() -> Result<()> {
         "Drasi Server UI assets are missing. Build drasi-server/ui before compiling gpu-runtime, or use ./demo build drasi."
     );
     let native = drasi_host_sdk::computation::load(env("GPU_NATIVE_PLUGIN")?)?;
+    let network = drasi_host_sdk::computation::load(env("GPU_NETWORK_PLUGIN")?)?;
     let mut plugins = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugins);
     plugins.register_computation_plugin(native.clone())?;
-    plugins.register_source(Arc::new(
-        drasi_source_postgres::descriptor::PostgresSourceDescriptor,
-    ));
-    plugins.register_bootstrapper(Arc::new(
-        drasi_bootstrap_postgres::descriptor::PostgresBootstrapDescriptor,
-    ));
-    plugins.register_reaction(Arc::new(
-        drasi_reaction_sse::descriptor::SseReactionDescriptor,
-    ));
-    plugins.register_reaction(Arc::new(
-        drasi_reaction_log::descriptor::LogReactionDescriptor,
-    ));
+    plugins.register_computation_plugin(network.clone())?;
     let runtime = Arc::new(Runtime {
         registry: InstanceRegistry::new(),
         plugins: Arc::new(RwLock::new(plugins)),
         native,
+        network,
         active: Mutex::new(None),
         view: RwLock::new(json!({"ready":false,"state":"starting"})),
         sequence: AtomicU64::new(0),
@@ -810,7 +881,7 @@ async fn main() -> Result<()> {
         );
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     tracing::info!("Drasi Server admin UI enabled at /ui/?instance=gpu-demo");
-    runtime.start(None).await?;
+    runtime.start(None, None).await?;
     let stopping = runtime.clone();
     let served = axum::serve(listener, app)
         .with_graceful_shutdown(async move {

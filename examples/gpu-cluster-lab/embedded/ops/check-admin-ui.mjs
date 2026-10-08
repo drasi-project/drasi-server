@@ -37,7 +37,7 @@ assert.equal(missing.status, 404, 'Missing assets must not return HTML');
 const instances = await json('/api/v1/instances');
 assert.deepEqual(instances.map(instance => instance.id), ['gpu-demo']);
 const base = '/api/v1/instances/gpu-demo';
-for (const kind of ['sources', 'queries', 'reactions']) {
+for (const kind of ['sources', 'queries']) {
   const components = await json(`${base}/${kind}`);
   assert.ok(components.length > 0, `No ${kind} found`);
   for (const component of components.filter(component => !component.id.startsWith('__'))) {
@@ -50,4 +50,6 @@ const results = await json(`${base}/queries/ui-status/results`);
 assert.ok(results.length > 0, 'No live status query results');
 const computation = await json(`${base}/computation`);
 assert.ok(computation.components.some(component => component.id === 'simulator'));
+assert.ok(computation.components.some(component => component.id === 'gpu-demo-ui'
+  && component.role === 'Sink' && component.implementation.name === 'drasi.network/sse-sink'));
 console.log('Drasi admin UI passed: HTML, bundled JS/CSS, live component details, query results and computation inspection; no state mutation.');

@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4"]
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4", "-c", "max_slot_wal_keep_size=-1"]
     environment:
       POSTGRES_USER: gpu_owner
       POSTGRES_DB: gpu_demo
@@ -45,8 +45,10 @@ services:
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       PLAN_ENDPOINT: http://control:5400/internal/placement-plans
-      RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_reaction_sse=warn
+      RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_computation_network=warn
       GPU_LAB_LOG_QUERIES:
+    volumes:
+      - native-state:/var/lib/gpu-runtime
     ports:
       - "127.0.0.1:${DRASI_PORT:-8080}:8080"
     depends_on:
@@ -92,3 +94,4 @@ services:
       - ../shared/ui/src/rows.ts:/app/shared/ui/src/rows.ts:ro
 volumes:
   postgres-data:
+  native-state:

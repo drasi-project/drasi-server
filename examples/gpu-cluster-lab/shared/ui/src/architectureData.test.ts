@@ -36,18 +36,18 @@ describe('embedded architecture inventory and contracts', () => {
     }
   });
 
-  it('covers all twenty real queries once and the nine existing UI subscriptions', () => {
+  it('covers all fourteen real queries once and the nine UI subscriptions', () => {
     const inputs = source('../../crates/native/src/inputs.rs');
     const declared = nodes.flatMap(n => n.queryIds ?? []);
-    const expected = [...databaseInputs.map(([id]) => id), ...queryIds,
+    const expected = ['input-configuration', ...queryIds,
       'simulation-inputs', 'scheduling-inputs', 'plan-output', 'runtime-context'];
-    expect(declared).toHaveLength(20);
-    expect(new Set(declared).size).toBe(20);
+    expect(declared).toHaveLength(14);
+    expect(new Set(declared).size).toBe(14);
     expect([...declared].sort()).toEqual(expected.sort());
     expect(node('views').queryIds).toEqual(queryIds);
     for (const [id, table] of databaseInputs) {
       expect(inputs).toContain(`"${id}"`);
-      expect(source('../../../embedded/src/main.rs')).toContain(`("${table}",`);
+      expect(source('../../../embedded/src/database.rs')).toContain(`"${table}"`);
     }
     for (const id of ['simulation-inputs', 'scheduling-inputs']) {
       const detail = nodes.find(n => n.queryIds?.includes(id));
@@ -90,8 +90,8 @@ describe('embedded architecture inventory and contracts', () => {
     const control = source('../../../embedded/control/main.rs');
     expect(control).toContain('.route("/internal/placement-plans", post(write_plan))');
     expect(control).toContain('.route("/events/gpu-demo", get(events))');
-    expect(source('./main.tsx')).toContain('resultAdapter={sse034ResultAdapter}');
+    expect(source('./main.tsx')).toContain('NativeSseProvider');
     expect(node('delivery').output).toContain('/events/gpu-demo');
-    expect(node('postgres').note).toContain('NOT transaction-completion guarantees');
+    expect(node('postgres').note).toContain('WAL acknowledgement follows the atomic query commit');
   });
 });

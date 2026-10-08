@@ -43,14 +43,16 @@ pub fn processing_queries() -> Vec<(
     ]
 }
 
-pub const DATABASE_QUERIES: [&str; 7] = [
-    "input-clusters",
-    "input-policies",
-    "input-data",
-    "input-gpus",
-    "input-settings",
-    "input-workloads",
-    "input-plan",
+pub const DATABASE_QUERY: &str = "input-configuration";
+pub const DATABASE_QUERIES: [&str; 1] = [DATABASE_QUERY];
+pub const TABLE_INPUTS: [(&str, &str); 7] = [
+    ("input-clusters", "regional_clusters"),
+    ("input-policies", "placement_policies"),
+    ("input-data", "data_profiles"),
+    ("input-gpus", "gpu_inventory"),
+    ("input-settings", "gpu_telemetry"),
+    ("input-workloads", "workload_requirements"),
+    ("input-plan", "gpu_placements"),
 ];
 
 pub fn database_queries() -> Vec<(&'static str, String)> {
@@ -62,10 +64,9 @@ pub fn database_queries() -> Vec<(&'static str, String)> {
         Table::Settings,
         Table::Workloads,
     ];
-    let mut queries: Vec<_> = tables
+    let mut cases: Vec<_> = tables
         .into_iter()
-        .enumerate()
-        .map(|(index, table)| {
+        .map(|table| {
             let fields = table
                 .columns()
                 .iter()
@@ -74,23 +75,17 @@ pub fn database_queries() -> Vec<(&'static str, String)> {
                 .map(|column| format!("{column}: n.{column}"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            (
-                DATABASE_QUERIES[index],
-                format!(
-                    "MATCH (n:{}) RETURN collect({{{fields}}}) AS records",
-                    table.name()
-                ),
-            )
+            format!("WHEN '{}' THEN {{{fields}}}", table.name())
         })
         .collect();
-    queries.push((
-        "input-plan",
-        "MATCH (n:gpu_placements) RETURN collect({fleet_id:n.fleet_id, plan_version:n.plan_version, decision_id:n.decision_id, config_fingerprint:n.config_fingerprint, policy_signature:n.policy_signature, policy_bundle_hash:n.policy_bundle_hash, assignments:n.assignments, decision_details:n.decision_details}) AS records".into(),
-    ));
-    queries
+    cases.push("WHEN 'gpu_placements' THEN {fleet_id:n.fleet_id, plan_version:n.plan_version, decision_id:n.decision_id, config_fingerprint:n.config_fingerprint, policy_signature:n.policy_signature, policy_bundle_hash:n.policy_bundle_hash, assignments:n.assignments, decision_details:n.decision_details}".into());
+    vec![(DATABASE_QUERY, format!(
+        "MATCH (n) RETURN collect({{table: n.`__gpu_table`, value: CASE n.`__gpu_table` {} END}}) AS records",
+        cases.join(" ")
+    ))]
 }
 
-/// Query bootstrap watermarks, not PostgreSQL transaction boundaries.
+/// Snapshot of the single transactional input query, including its output watermark.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapBoundary {
@@ -222,6 +217,31 @@ impl SchedulingRow {
     }
 }
 
+pub fn partition_records(records: &[Value]) -> Result<BTreeMap<&'static str, Vec<Value>>> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Record {
+        table: String,
+        value: Value,
+    }
+    let mut tables: BTreeMap<_, Vec<Value>> = TABLE_INPUTS
+        .iter()
+        .map(|(id, _)| (*id, Vec::new()))
+        .collect();
+    for value in records {
+        let record: Record = serde_json::from_value(value.clone())?;
+        let (id, _) = TABLE_INPUTS
+            .iter()
+            .find(|(_, table)| *table == record.table)
+            .context("unknown database input table")?;
+        let rows = tables.get_mut(id).context("missing input table")?;
+        ensure!(record.value.is_object(), "database input must be an object");
+        ensure!(rows.len() < 64, "database table row bound exceeded");
+        rows.push(record.value);
+    }
+    Ok(tables)
+}
+
 #[derive(Default)]
 pub(crate) struct DatabaseInputs {
     rows: BTreeMap<String, Vec<Value>>,
@@ -247,7 +267,10 @@ impl DatabaseInputs {
             if let Some(rows) = &watermark.rows {
                 let mut aggregates = HashMap::new();
                 for row in rows {
-                    ensure!(row.records.len() <= 64, "database input row bound exceeded");
+                    ensure!(
+                        row.records.len() <= 448,
+                        "database input row bound exceeded"
+                    );
                     let record = QueryChangeCodec::encode_row(
                         query,
                         row.signature,
@@ -331,7 +354,7 @@ impl DatabaseInputs {
                             .get("records")
                             .context("database query requires records")?,
                     )?)?;
-                    ensure!(records.len() <= 64, "database input row bound exceeded");
+                    ensure!(records.len() <= 448, "database input row bound exceeded");
                     aggregates.insert(operation.identity().clone(), records);
                 }
                 ChangeOperation::Deleted { .. } => {
@@ -379,8 +402,20 @@ impl DatabaseInputs {
             return Ok(None);
         }
         self.dirty = false;
-        let rows =
-            |id: &str| -> Value { Value::Array(self.rows.get(id).cloned().unwrap_or_default()) };
+        Ok(Some(DatabaseSnapshot::from_records(
+            boundary.epoch,
+            self.rows
+                .get(DATABASE_QUERY)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        )?))
+    }
+}
+
+impl DatabaseSnapshot {
+    pub fn from_records(epoch: Uuid, records: &[Value]) -> Result<Self> {
+        let tables = partition_records(records)?;
+        let rows = |id: &str| -> Value { Value::Array(tables[id].clone()) };
         let configuration = Configuration {
             clusters: serde_json::from_value::<Vec<gpu_contracts::Cluster>>(rows(
                 "input-clusters",
@@ -422,10 +457,11 @@ impl DatabaseInputs {
             ("input-workloads", configuration.workloads.len()),
         ] {
             ensure!(
-                self.rows.get(query).map_or(0, Vec::len) == count,
+                tables[query].len() == count,
                 "duplicate database record identity in {query}"
             );
         }
+
         let mut plans: Vec<Plan> = serde_json::from_value(rows("input-plan"))?;
         ensure!(
             plans.len() == 1,
@@ -435,11 +471,11 @@ impl DatabaseInputs {
         ensure!(plan.fleet_id == "demo", "unexpected fleet plan");
         configuration.validate()?;
         gpu_contracts::validate_settings(&configuration, &settings)?;
-        Ok(Some(DatabaseSnapshot {
-            epoch: boundary.epoch,
+        Ok(Self {
+            epoch,
             configuration,
             settings,
             plan,
-        }))
+        })
     }
 }

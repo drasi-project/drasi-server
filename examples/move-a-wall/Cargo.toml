@@ -28,7 +28,6 @@ drasi-lib = { path = "../../../drasi-core/lib" }
 drasi-server = { path = "../.." }
 drasi-host-sdk = { path = "../../../drasi-core/components/host-sdk" }
 drasi-computation-plugin-sdk = { path = "../../../drasi-core/components/computation-plugin-sdk" }
-drasi-reaction-sse = { path = "../../../drasi-core/components/reactions/sse" }
 geo = "0.31"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
