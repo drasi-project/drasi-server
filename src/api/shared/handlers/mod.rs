@@ -52,6 +52,16 @@ use drasi_lib::DrasiLib;
 #[derive(Debug, Clone)]
 pub struct ApiPrefix(pub String);
 
+pub(crate) fn require_imperative_configuration(core: &DrasiLib) -> Result<(), ErrorResponse> {
+    if core.configuration_is_persistent() {
+        return Err(ErrorResponse::new(
+            error_codes::MANAGED_CONFIGURATION_REQUIRED,
+            "This instance uses durable desired state; submit a revisioned request to computation/desired",
+        ));
+    }
+    Ok(())
+}
+
 /// Path parameters for instance-specific routes
 #[derive(Debug, Deserialize)]
 pub struct InstancePath {
@@ -178,18 +188,19 @@ pub(crate) async fn wait_for_computation_creation(
             format!("Node was added, but {reason}"),
         )
     };
-    let handle = core
-        .computation_component(id)
-        .map_err(|e| health_error(format!("creation health could not be inspected: {e}")))?;
+    let handle = core.computation_component(id).map_err(|e| {
+        health_error(format!("creation health could not be inspected: {e}")).with_cause(e)
+    })?;
     tokio::time::timeout(COMPUTATION_CREATION_TIMEOUT, handle.wait_created())
         .await
-        .map_err(|_| {
+        .map_err(|error| {
             health_error(format!(
                 "creation was not confirmed within {} seconds; it may still be pending or blocked",
                 COMPUTATION_CREATION_TIMEOUT.as_secs()
             ))
+            .with_cause(error)
         })?
-        .map_err(|e| health_error(format!("creation was not confirmed: {e}")))?;
+        .map_err(|e| health_error(format!("creation was not confirmed: {e}")).with_cause(e))?;
     Ok(handle)
 }
 
@@ -333,6 +344,24 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn computation_creation_health_inspection_keeps_its_graph_cause() {
+        let core = DrasiLib::builder().build().await.unwrap();
+        let error = wait_for_computation_creation(&core, "source", "removed")
+            .await
+            .unwrap_err();
+        assert!(error
+            .downcast_ref::<drasi_lib::computation::v1::GraphError>()
+            .is_some());
+        assert!(matches!(
+            error.classification(),
+            DrasiError::OperationFailed { operation, component_id, reason, .. }
+                if operation == "wait_created" && component_id == "removed"
+                    && reason.contains("could not be inspected")
+        ));
+        core.shutdown().await.unwrap();
+    }
+
     #[tokio::test(start_paused = true)]
     async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
         let core = DrasiLib::builder()
@@ -387,7 +416,7 @@ mod tests {
         assert_eq!(started.elapsed(), Duration::from_secs(30));
         assert!(
             matches!(
-                &error,
+                error.classification(),
                 DrasiError::OperationFailed {
                     component_type,
                     component_id,
@@ -401,6 +430,9 @@ mod tests {
             ),
             "{error}"
         );
+        assert!(error
+            .downcast_ref::<tokio::time::error::Elapsed>()
+            .is_some());
         let observed = handle.observed().unwrap();
         assert_eq!(observed.realization, RealizationState::Blocked);
         assert!(observed.failure.is_none(), "{observed:?}");

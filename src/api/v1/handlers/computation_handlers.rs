@@ -106,7 +106,7 @@ pub struct ComponentRemoval {
     pub resources: Vec<String>,
 }
 
-fn require_writable(read_only: bool) -> Result<(), ErrorResponse> {
+pub(super) fn require_writable(read_only: bool) -> Result<(), ErrorResponse> {
     if read_only {
         Err(ErrorResponse::new(
             error_codes::CONFIG_READ_ONLY,
@@ -169,6 +169,7 @@ pub async fn create_computation_components(
 ) -> Result<Json<ApiResponse<ComputationGraphInfo>>, ErrorResponse> {
     require_writable(*read_only)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
+    crate::api::shared::handlers::require_imperative_configuration(&core)?;
     let snapshot = core.computation_control()?.desired_snapshot();
     for component in &config.definition.components {
         if snapshot
@@ -183,28 +184,19 @@ pub async fn create_computation_components(
         }
     }
     let plugins = plugins.read().await;
-    let components = crate::computation::build_components(
-        &config,
-        &core,
-        plugins
-            .computation_factory_registry()
-            .map_err(|error| operation_error(&instance_id, "read factories for", error))?,
-        plugins
-            .transactional_transformer_registry(core.middleware_registry())
-            .map_err(|error| operation_error(&instance_id, "read transformers for", error))?,
-    )
-    .await
-    .map_err(|error| {
-        ErrorResponse::new(
-            error_codes::INVALID_REQUEST,
-            "Invalid computation component configuration",
-        )
-        .with_details(ErrorDetail {
-            component_type: Some("computation".to_string()),
-            component_id: Some(instance_id.clone()),
-            technical_details: Some(format!("{error:#}")),
-        })
-    })?;
+    let components = crate::computation::build_components_with_registry(&config, &core, &plugins)
+        .await
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Invalid computation component configuration",
+            )
+            .with_details(ErrorDetail {
+                component_type: Some("computation".to_string()),
+                component_id: Some(instance_id.clone()),
+                technical_details: Some(format!("{error:#}")),
+            })
+        })?;
     drop(plugins);
     core.add_components(components).await?;
     persist_after_operation(&persistence, "creating computation components").await?;

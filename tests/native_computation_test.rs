@@ -1,7 +1,7 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Requires separately built ABI 1.0 standard and ABI 0.15 mock/log/bootstrap libraries.
+//! Requires separately built ABI 1.0 standard and ABI 0.16/0.17 mock/log/bootstrap libraries.
 //! See tests/README.md. Missing binaries are a failed prerequisite, never a skip.
 
 #![allow(clippy::unwrap_used)]
@@ -54,6 +54,23 @@ const COUNTER: &str = "drasi.standard/volatile-counter";
 const MIDDLEWARE: &str = "drasi.standard/middleware";
 const ARITHMETIC: &str = "drasi.standard/arithmetic";
 const CAPTURE: &str = "drasi.standard/capture";
+
+#[path = "native_computation_test/managed.rs"]
+mod managed;
+#[path = "native_computation_test/managed_faults.rs"]
+mod managed_faults;
+#[path = "native_computation_test/managed_qos.rs"]
+mod managed_qos;
+#[path = "native_computation_test/native_services.rs"]
+mod native_services;
+#[path = "native_computation_test/shared_storage.rs"]
+mod shared_storage;
+
+fn expected_legacy_abi() -> String {
+    std::env::var_os("DRASI_SERVER_TEST_EXPECTED_LEGACY_ABI")
+        .map(|value| value.into_string().expect("expected ABI must be UTF-8"))
+        .unwrap_or_else(|| drasi_plugin_sdk::ffi::FFI_SDK_VERSION.to_owned())
+}
 
 fn artifact(name: &str) -> PathBuf {
     let directory = std::env::var_os("DRASI_SERVER_TEST_PLUGINS_DIR")
@@ -459,14 +476,11 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
         "1.0.0"
     );
     for record in &stats.loaded_plugins {
-        assert_eq!(
-            record.sdk_version,
-            if record.plugin_id.starts_with("computation:") {
-                "1.0.0"
-            } else {
-                "0.15.0"
-            }
-        );
+        if record.plugin_id.starts_with("computation:") {
+            assert_eq!(record.sdk_version, "1.0.0");
+        } else {
+            assert_eq!(record.sdk_version, expected_legacy_abi());
+        }
     }
     let orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
         Arc::new(PluginLifecycleManager::new(Arc::new(RwLock::new(registry)))),
@@ -1413,7 +1427,7 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
     assert_eq!(resolved[1].filename, legacy_filename);
     assert_eq!(resolved[1].abi_family, None);
     assert_eq!(resolved[1].abi_version, None);
-    assert_eq!(resolved[1].sdk_version, "0.15.0");
+    assert_eq!(resolved[1].sdk_version, expected_legacy_abi());
     Ok(())
 }
 

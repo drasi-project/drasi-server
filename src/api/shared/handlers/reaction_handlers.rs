@@ -88,6 +88,7 @@ pub async fn create_reaction_handler(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse reaction config: {e}");
         ErrorResponse::new(
@@ -162,6 +163,7 @@ pub async fn upsert_reaction_handler(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse reaction config: {e}");
         ErrorResponse::new(
@@ -423,6 +425,7 @@ pub async fn delete_reaction(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {

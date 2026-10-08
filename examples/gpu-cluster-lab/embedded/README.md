@@ -1153,8 +1153,9 @@ export. The image retains required license notices under `/app/licenses/`.
 The runtime image also builds the parent Server's `ui/` and embeds its assets in
 `gpu-runtime`. For a host build, build `drasi-server/ui` before compiling the
 runtime; startup fails explicitly if these assets are missing.
-Rust builds use one-job, architecture-specific Linux caches; use a separate host
-target directory for host native development.
+Rust builds default to one job with architecture-specific Linux caches; override
+it with `./demo build --build-arg CARGO_BUILD_JOBS=3`. Use a separate host target
+directory for host native development.
 
 The React SDK source is exported from Server commit
 `2a36f857526baa08304a698131854f222b40b108`, built, and packed as the local
@@ -1205,6 +1206,7 @@ checkout-specific Compose project, not every Drasi environment on the machine.
 | `./demo check --restart` | Isolated database-preserving stack restart and fresh-confirmation checks, including clean service exit codes. |
 | `./demo check --writer-recovery` | Isolated real plan-writer fault/retry/idempotency checks. |
 | `./demo check --acceptance` | Isolated writer faults, restart, commands, and scenarios; retains the final unsupported transaction-completion assertion. |
+| `./demo check --functional` | Isolated writer faults, restart and runbook scenarios using the current built images, without resetting the live deployment. Qualifies existing functionality, not the deferred whole-transaction policy guarantee. |
 | `./demo check --postgres-mutations` | Isolated copy of current PostgreSQL data, real query logging, SQL mutations, snapshots, and recovery findings. |
 | `./demo check --query-drain` | Isolated diagnostic report pause/drain; convergence after pausing is not an acceptance or performance pass. |
 | `./demo destroy --confirm gpu-demo` | **Delete this demo's database volume.** Distinct from an ordinary stop or reset. |
@@ -1213,6 +1215,18 @@ Isolated checks reuse already-built image IDs, create unique temporary projects,
 and remove their own services/volumes afterward. They preserve failure evidence
 under `.build/`. Build images with `./demo up` or `./demo build control drasi`
 before using them.
+
+Current-source requalification on 2026-10-07 rebuilt the matching embedded host
+and native plugin from Core `e46f6130b29d9268603585a5912e92d6839fa01f` and Server
+`a7b564a8fbbfaf141cd078994275e09f13a798d9`, including their uncommitted reliability
+changes. The image manifest's hashes matched the current query, transaction-group,
+Server and native lockfile sources. `check --functional` passed writer failure/
+retry/exhaustion cases, a full database-preserving stack restart, and the
+fragmentation, device-loss, regional-policy, revocation and reset scenarios.
+The temporary projects were removed; the previously running deployment and its
+saved scenario were not changed. This does not upgrade
+`transaction_completion: "not-supported"` or make `check --acceptance` pass its
+deliberately retained whole-transaction assertion.
 
 ### Query logging and reproducible SQL checks
 

@@ -87,6 +87,7 @@ pub async fn create_query(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     let query_id = config_dto.id.clone();
 
     // Convert QueryConfigDto to drasi-lib's QueryConfig
@@ -326,6 +327,7 @@ pub async fn delete_query(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     match core.remove_query(&id).await {
         Ok(_) => {
             persist_after_operation(&config_persistence, "deleting query").await?;

@@ -119,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     // Save configuration to file

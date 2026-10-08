@@ -159,7 +159,7 @@ acceptance() (
     elif [ "$mode" = "--query-drain" ]; then
         compose run --rm --no-deps --entrypoint node checks --experimental-strip-types ops/check-query-drain.mjs
     elif [ "$mode" != "--restart" ]; then
-        compose run --rm --no-deps checks --acceptance
+        compose run --rm --no-deps checks "$mode"
     fi
 )
 case "${1:-help}" in
@@ -232,6 +232,7 @@ case "${1:-help}" in
         compose config --quiet
         case "${2:-unit}" in
             --acceptance) acceptance --writer-recovery; acceptance --acceptance ;;
+            --functional) acceptance --writer-recovery; acceptance --restart; acceptance --runbook ;;
             --writer-recovery) acceptance --writer-recovery ;;
             --restart) acceptance --restart ;;
             --query-drain) acceptance --query-drain ;;
@@ -244,7 +245,7 @@ case "${1:-help}" in
                     -e CARGO_TARGET_DIR="/app/embedded/.build/check-target-linux-$architecture" \
                     -e CARGO_BUILD_JOBS=1 rust:1.95-bookworm cargo test --locked --workspace
                 ;;
-            *) printf '%s\n' 'Unknown check mode; use check, check --admin-ui, check --smoke, check --errors, check --concurrency, check --commands, check --runbook, check --restart, check --writer-recovery, check --query-drain, check --postgres-mutations, or check --acceptance.' >&2; exit 2 ;;
+            *) printf '%s\n' 'Unknown check mode; use check, check --admin-ui, check --smoke, check --errors, check --concurrency, check --commands, check --runbook, check --restart, check --writer-recovery, check --query-drain, check --postgres-mutations, check --functional, or check --acceptance.' >&2; exit 2 ;;
         esac
         ;;
     *) printf '%s\n' 'GPU Cluster Lab' \
@@ -254,6 +255,7 @@ case "${1:-help}" in
         '  ./demo wait --timeout 120 | reset baseline | reset fragmentation | reset regional' \
         '  ./demo status | logs | sql | build | check | check --smoke | check --errors | check --concurrency | check --commands | check --runbook | check --restart | check --writer-recovery | check --acceptance' \
         '  ./demo check --query-drain  Isolated diagnostic report pause; never acceptance evidence' \
+        '  ./demo check --functional  Isolated writer recovery, restart and scenarios; no transaction-completion claim' \
         '  ./demo check --postgres-mutations  Isolated SQL mutation checks with real query logging' \
         '  ./demo check --admin-ui  Read-only checks of the Drasi admin UI, assets and component APIs' \
         '  ./demo destroy --confirm gpu-demo  Delete this demo database'

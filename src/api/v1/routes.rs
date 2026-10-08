@@ -89,6 +89,22 @@ fn build_dynamic_instance_router() -> Router {
         )
         .route("/computation", get(handlers::inspect_computation_graph))
         .route(
+            "/computation/desired",
+            get(handlers::get_computation_desired).put(handlers::apply_computation_desired),
+        )
+        .route(
+            "/computation/management",
+            get(handlers::get_computation_management),
+        )
+        .route(
+            "/computation/reconcile",
+            post(handlers::reconcile_computation_desired),
+        )
+        .route(
+            "/computation/receipts/:requestId",
+            get(handlers::get_computation_receipt),
+        )
+        .route(
             "/computation/components",
             post(handlers::create_computation_components)
                 .delete(handlers::delete_computation_components),

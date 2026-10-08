@@ -13,6 +13,8 @@ RUN npm run build
 
 FROM rust:1.95-bookworm AS build
 ARG TARGETARCH
+ARG CARGO_BUILD_JOBS=1
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} CARGO_INCREMENTAL=0
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev libpq-dev libjq-dev libonig-dev protobuf-compiler \
     libprotobuf-dev cmake clang libclang-dev \
@@ -27,8 +29,7 @@ RUN mkdir -p /workspace/licenses && \
 WORKDIR /workspace/drasi-server/examples/gpu-cluster-lab/shared/crates/native
 RUN --mount=type=cache,id=gpu-lab-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=gpu-lab-native-linux-${TARGETARCH},target=/workspace/drasi-server/examples/gpu-cluster-lab/shared/target/linux \
-    export CARGO_BUILD_JOBS=1 \
-      CARGO_TARGET_DIR=/workspace/drasi-server/examples/gpu-cluster-lab/shared/target/linux \
+    export CARGO_TARGET_DIR=/workspace/drasi-server/examples/gpu-cluster-lab/shared/target/linux \
       JQ_LIB_DIR=/usr/lib/$(gcc -dumpmachine) && \
     cargo build --locked --release --features dynamic-plugin --lib && \
     cp "$CARGO_TARGET_DIR/release/libgpu_native.so" /workspace/libgpu_native.so && \

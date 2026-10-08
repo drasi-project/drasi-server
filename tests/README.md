@@ -5,6 +5,12 @@ This directory contains the comprehensive test suite for Drasi Server, including
 ## Quick Start
 
 The native ABI integration suite requires real, separately built plugin libraries.
+Legacy mock/log/bootstrap fixtures may use ABI 0.16 or 0.17; rebuild ABI 0.15
+binaries before running. Native ComputationGraph ABI remains independently at 1.0.
+Run against separately preserved 0.16 binaries as well as freshly built 0.17
+binaries when qualifying compatibility; relabeling current binaries is not evidence.
+For an older-fixture run, also set `DRASI_SERVER_TEST_EXPECTED_LEGACY_ABI=0.16.0`;
+otherwise the metadata assertions require the current SDK version exactly.
 Build these once before the full suite (no `--all-features` or bundled jq):
 
 ```bash
@@ -38,7 +44,59 @@ The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, an
 batch counters. Counter reconstruction deliberately starts a new volatile run;
 these roundtrips do not claim durable source recovery or capture-file fsync.
 
+The `managed` cases in the same binary additionally exercise encrypted desired
+configuration through the actual Router: JSON/YAML acceptance, lost responses,
+idempotent retries, conflicts, read-only and imperative-mutation rejection,
+secret-safe status, provider-only YAML saves and separate instance namespaces.
+A reconstructed provider restores the accepted native pipeline instead of a stale
+YAML seed. `managed_faults` gates a real redb commit to cancel an HTTP caller and
+withhold both commit and read confirmation; receipts and reconciliation recover
+the result without a false success or empty-state fallback. This is injected
+control-plane interruption evidence, not a Server process-crash claim.
+
+`server::managed_tests` uses actual `DrasiServer::new` preparation and the startup
+path to check failed-but-inspectable deployments, obsolete seed suppression,
+stable-ID requirements and missing/wrong-key refusal. Core's existing management,
+resource-handover and factory-lifecycle crash parents provide separate
+process-restart evidence; do not count their ignored child workers as ordinary
+passes or infer whole-path processing recovery from these Server checks.
+
+`managed_qos` checks the packaged admission/replay recipe shape, YAML roundtrip,
+actual journal/session reconstruction, instance separation and refusal to omit a
+previously persisted mode. Core's `computation_qos::configured` cases check actual
+data/receipts and byte-for-byte metadata preservation after rejected changes.
+`shared_storage` checks packaged shared-group/journal settings, actual group
+identity and deferred imperative construction. A managed source/query/sink path
+leaves one output unhandled, shuts down, and reconstructs solely from accepted
+configuration. With no new source event it replays the same changes and persistent
+query identity, keeps the same journal UUID and advances the sink cursor without
+appending another output. Five unsafe changes return definite 409 refusals both
+while running and after stop, preserving the old configuration, receipts and
+pending output. A drained stopped path rebuilds actual owners on the same path,
+redirects to fresh storage and restores an accepted removal on reopen.
+Six gated acceptance/rejection schedules cover lost caller responses and
+unavailable read confirmation, blocking direct graph restart and queued storage
+transactions until authoritative resolution, plus shutdown/reopen before
+confirmation becomes available. Recipes remain present after retries.
+These are in-process control-plane/reconstruction cases, not Server process-crash,
+data migration or explicit loss-authorized retirement qualification.
+
+`shared_server_resources_recover_after_process_exit` additionally requires three
+abrupt child-process exits: with unhandled output, before configuration replacement
+commit, and after commit but before confirmation. A new process's state is reopened
+through the Server resource resolver and redb configuration store, with no new
+source input. Exact output identity/content, journal UUID/cursors, accepted
+definition/revision and receipt presence must match the committed boundary.
+The ignored `shared_server_crash_worker` is invoked by this required parent.
+This qualifies those Server resource recipes, not a packaged-server network crash
+or external-destination exactly-once guarantee.
+
 ## Runtime and creation-path coverage
+
+Shared API unit tests check that typed DrasiLib causes preserve existing HTTP
+statuses, error codes and messages across every public classification. The creation
+health-wait test checks the exact 30-second deadline, retains its typed timeout,
+and verifies that timing out does not remove or cancel the accepted node.
 
 All Server suites use ComputationGraph through the current `drasi-lib`; there
 is no alternative runtime to select. Existing ordinary API fixtures primarily
@@ -64,6 +122,11 @@ shared result outlet into the existing reaction interface. ADD/UPDATE/DELETE
 images and query snapshots must agree, and a second instance with identical
 query/resource IDs must remain isolated. Native-only query dataflow without an
 ordinary subscription outlet remains permitted.
+The same queries now use declarative `sourceProgress` resources. Their recipes
+survive configuration snapshots and YAML roundtrips, cannot supply live
+checkpoints/readiness/durability, and must name their actual consumer. A
+lookalike progress owner is rejected during construction. These checks do not
+claim durable source replay for the fixture's volatile application input.
 
 ```bash
 cargo test --locked --test native_query_catalog_test --test query_creation_path_test

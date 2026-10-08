@@ -124,6 +124,7 @@ pub async fn create_source_handler(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse source config: {e}");
         ErrorResponse::new(
@@ -217,6 +218,7 @@ pub async fn upsert_source_handler(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse source config: {e}");
         ErrorResponse::new(
@@ -486,6 +488,7 @@ pub async fn delete_source(
         ));
     }
 
+    super::require_imperative_configuration(&core)?;
     match core.remove_source(&id, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {

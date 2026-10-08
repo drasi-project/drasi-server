@@ -19,12 +19,14 @@
 //! is implemented in the shared handlers module.
 
 mod computation_handlers;
+mod management_handlers;
 mod query_handlers;
 mod reaction_handlers;
 mod solution_handlers;
 mod source_handlers;
 
 pub use computation_handlers::*;
+pub use management_handlers::*;
 pub use query_handlers::*;
 pub use reaction_handlers::*;
 pub use solution_handlers::*;
@@ -133,12 +135,14 @@ pub async fn create_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
     ConfigBody(request): ConfigBody<shared::CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, crate::api::shared::error::ErrorResponse> {
     shared::create_instance(
         Extension(registry),
         Extension(read_only),
         Extension(config_persistence),
+        Extension(plugins),
         ConfigBody(request),
     )
     .await

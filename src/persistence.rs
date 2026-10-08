@@ -35,6 +35,7 @@ use tokio::sync::RwLock;
 /// configuration on the first persist operation.
 #[derive(Clone)]
 struct PreservedServerSettings {
+    managed_instances: IndexMap<String, DrasiLibInstanceConfig>,
     enable_ui: bool,
     memory_budget_mib_by_instance: IndexMap<String, ConfigValue<usize>>,
     plugin_registry: Option<String>,
@@ -209,6 +210,25 @@ impl ConfigPersistence {
             archive_settings,
             solutions_dir,
             preserved: PreservedServerSettings {
+                managed_instances: original_config
+                    .instance_configurations()
+                    .into_iter()
+                    .filter(|instance| instance.configuration_store.is_some())
+                    .filter_map(|mut instance| {
+                        let id = match &instance.id {
+                            ConfigValue::Static(id) => Some(id.clone()),
+                            ConfigValue::EnvironmentVariable { name, default } => {
+                                std::env::var(name).ok().or_else(|| default.clone())
+                            }
+                            ConfigValue::Secret { .. } => None,
+                        }?;
+                        instance.computation = None;
+                        instance.sources.clear();
+                        instance.queries.clear();
+                        instance.reactions.clear();
+                        Some((id, instance))
+                    })
+                    .collect(),
                 enable_ui: original_config.enable_ui,
                 memory_budget_mib_by_instance: {
                     let mut by_instance: IndexMap<String, ConfigValue<usize>> = original_config
@@ -462,6 +482,24 @@ impl ConfigPersistence {
         let mut instance_configs = Vec::new();
 
         for (id, core) in self.registry.list().await {
+            if core.configuration_is_persistent() {
+                let mut settings = dynamic_instance_configs.get(&id)
+                    .or_else(|| self.preserved.managed_instances.get(&id))
+                    .cloned().ok_or_else(|| anyhow::anyhow!(
+                        "Cannot persist managed instance '{id}': configurationStore settings are unavailable"
+                    ))?;
+                anyhow::ensure!(
+                    settings.configuration_store.is_some(),
+                    "Cannot persist managed instance '{id}' without its configurationStore"
+                );
+                settings.id = ConfigValue::Static(id);
+                settings.computation = None;
+                settings.sources.clear();
+                settings.queries.clear();
+                settings.reactions.clear();
+                instance_configs.push(settings);
+                continue;
+            }
             let snapshot = core
                 .snapshot_computation_configuration()
                 .await
@@ -568,6 +606,7 @@ impl ConfigPersistence {
                     reactions,
                     queries,
                     computation,
+                    configuration_store: None,
                     // Identity providers are config-only and never appear in
                     // `snapshot_configuration()`. Prefer the dynamic config's
                     // list (set when the instance was registered via the API),
@@ -611,6 +650,7 @@ impl ConfigPersistence {
                     reactions,
                     queries,
                     computation,
+                    configuration_store: None,
                     identity_providers: self
                         .preserved
                         .identity_providers_by_instance
@@ -676,6 +716,7 @@ impl ConfigPersistence {
                 identity_providers,
                 bootstrap_providers,
                 computation: instance.computation,
+                configuration_store: instance.configuration_store,
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -725,6 +766,7 @@ impl ConfigPersistence {
                 // in multi-instance format.
                 bootstrap_providers: Vec::new(),
                 computation: None,
+                configuration_store: None,
                 instances: instance_configs,
             }
         };

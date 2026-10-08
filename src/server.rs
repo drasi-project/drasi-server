@@ -60,6 +60,7 @@ pub struct DrasiServer {
     plugin_orchestrator: Arc<PluginOrchestrator>,
     cors_allowed_origins: Vec<String>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
+    configuration_stores: crate::managed_configuration::ConfigurationStores,
 }
 
 struct PreparedInstance {
@@ -384,13 +385,14 @@ impl DrasiServer {
             warn!("Config file is not writable. API in READ-ONLY mode.");
             warn!("Cannot create or delete components via API.");
         } else if !persistence_enabled {
-            info!("Persistence disabled by configuration (persist_config: false).");
-            warn!("API modifications will not persist across restarts.");
+            info!("YAML persistence disabled by configuration (persist_config: false).");
+            warn!("Instance provisioning and ordinary API modifications will not persist to YAML. Configured managed stores still persist accepted desired-state requests.");
         } else {
             info!("Persistence ENABLED. API modifications will be saved to config file.");
         }
 
         let mut instances = Vec::new();
+        let configuration_stores = crate::managed_configuration::ConfigurationStores::default();
 
         // Check upfront that all required plugins are available before creating
         // any components. This reports ALL missing plugins at once rather than
@@ -587,6 +589,20 @@ impl DrasiServer {
                 }
 
                 // Build and initialize the core
+                if let Some(store) = &instance.configuration_store {
+                    builder = configuration_stores
+                        .configure(
+                            builder,
+                            &instance.id,
+                            store,
+                            instance.computation.as_ref(),
+                            plugin_registry.clone(),
+                            process_secret_store
+                                .clone()
+                                .filter(|_| instance.secret_store.is_some()),
+                        )
+                        .await?;
+                }
                 let core = builder.build().await.context("Failed to create DrasiLib")?;
 
                 instances.push(PreparedInstance {
@@ -596,7 +612,11 @@ impl DrasiServer {
                     core: core.clone(),
                     bootstrap_providers,
                 });
-                if let Some(computation) = &instance.computation {
+                if let Some(computation) = instance
+                    .computation
+                    .as_ref()
+                    .filter(|_| instance.configuration_store.is_none())
+                {
                     let registry = plugin_registry.read().await;
                     crate::computation::register_components(computation, &core, &registry)
                         .await
@@ -630,6 +650,7 @@ impl DrasiServer {
             plugin_orchestrator,
             cors_allowed_origins: config.cors_allowed_origins.clone(),
             watcher_handle,
+            configuration_stores,
         })
     }
 
@@ -665,6 +686,7 @@ impl DrasiServer {
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
+            configuration_stores: Default::default(),
         }
     }
 
@@ -705,6 +727,7 @@ impl DrasiServer {
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
+            configuration_stores: Default::default(),
         }
     }
 
@@ -770,7 +793,7 @@ impl DrasiServer {
             let core = Arc::new(core);
             info!("Starting ComputationGraph instance '{id}'");
             println!("  Instance '{id}': ComputationGraph");
-            core.start().await?;
+            crate::managed_configuration::start_instance(&core).await?;
             persist_settings.insert(id.clone(), instance.persist_index);
             archive_settings.insert(id.clone(), instance.enable_archive);
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
@@ -787,7 +810,8 @@ impl DrasiServer {
         let instances = Arc::new(instance_map);
 
         // Create the instance registry from the map
-        let registry = InstanceRegistry::from_map((*instances).clone());
+        let registry = InstanceRegistry::from_map((*instances).clone())
+            .with_configuration_stores(self.configuration_stores.clone());
 
         // Record each instance's top-level bootstrap provider configs so the
         // source create/upsert handlers can resolve `bootstrapProvider: <id>`
@@ -844,6 +868,7 @@ impl DrasiServer {
                                 identity_providers: config.identity_providers.clone(),
                                 bootstrap_providers: config.bootstrap_providers.clone(),
                                 computation: config.computation.clone(),
+                                configuration_store: config.configuration_store.clone(),
                             }]
                         } else {
                             config.instances.clone()
@@ -1069,6 +1094,10 @@ pub fn register_core_plugins(registry: &mut PluginRegistry) {
     info!("  [static/core] reaction: {}", desc.kind());
     registry.register_reaction(Arc::new(desc));
 }
+
+#[cfg(test)]
+#[path = "server/managed_tests.rs"]
+mod managed_tests;
 
 #[cfg(test)]
 mod single_runtime_tests {

@@ -61,6 +61,8 @@ pub struct CreateInstanceRequest {
     /// Default capacity for dispatch buffers (cascades to queries/reactions)
     #[serde(default)]
     pub default_dispatch_buffer_capacity: Option<usize>,
+    #[serde(default)]
+    pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
 
 fn invalid_memory_budget_error(instance_id: &str, error: impl std::fmt::Display) -> ErrorResponse {
@@ -80,6 +82,7 @@ pub async fn create_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugins): Extension<Arc<RwLock<PluginRegistry>>>,
     ConfigBody(request): ConfigBody<CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -145,6 +148,21 @@ pub async fn create_instance(
         builder = builder.with_wal_provider(wal_provider);
     }
 
+    if let Some(store) = &request.configuration_store {
+        builder = registry
+            .configuration_stores()
+            .configure(builder, &instance_id, store, None, plugins, None)
+            .await
+            .map_err(|error| {
+                log::error!(
+                    "Configuration store preparation failed for '{instance_id}': {error:#}"
+                );
+                ErrorResponse::new(
+                    error_codes::INSTANCE_CREATE_FAILED,
+                    "Configuration store preparation failed",
+                )
+            })?;
+    }
     let core = builder.build().await.map_err(|e| {
         log::error!("Failed to create instance: {e}");
         ErrorResponse::new(
@@ -156,7 +174,9 @@ pub async fn create_instance(
     let core = Arc::new(core);
 
     // Start the instance
-    if let Err(e) = core.start().await {
+    if let Err(e) = crate::managed_configuration::start_instance(&core).await {
+        let e =
+            crate::computation::cleanup_failed_preparation(vec![core.as_ref().clone()], e).await;
         log::error!("Failed to start instance '{instance_id}': {e}");
         return Err(ErrorResponse::new(
             error_codes::INSTANCE_CREATE_FAILED,
@@ -165,9 +185,17 @@ pub async fn create_instance(
     }
 
     // Add to registry
-    if let Err(e) = registry.add(instance_id.clone(), core).await {
+    if let Err(e) = registry.add(instance_id.clone(), core.clone()).await {
+        let e = crate::computation::cleanup_failed_preparation(
+            vec![core.as_ref().clone()],
+            anyhow::anyhow!(e),
+        )
+        .await;
         log::error!("Failed to register instance: {e}");
-        return Err(ErrorResponse::new(error_codes::INSTANCE_CREATE_FAILED, e));
+        return Err(ErrorResponse::new(
+            error_codes::INSTANCE_CREATE_FAILED,
+            e.to_string(),
+        ));
     }
 
     log::info!("Instance '{instance_id}' created successfully");
@@ -193,6 +221,7 @@ pub async fn create_instance(
             identity_providers: Vec::new(),
             bootstrap_providers: Vec::new(),
             computation: None,
+            configuration_store: request.configuration_store,
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -305,6 +334,7 @@ pub async fn clone_instance(
             format!("Target instance '{target_instance_id}' not found"),
         )
     })?;
+    super::require_imperative_configuration(&target_core)?;
 
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();

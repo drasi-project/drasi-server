@@ -39,6 +39,7 @@ pub struct InstanceRegistry {
     /// a top-level bootstrap provider (`bootstrapProvider: <id>`) can be
     /// resolved and wired live.
     bootstrap_providers: Arc<RwLock<IndexMap<String, HashMap<String, BootstrapProviderConfig>>>>,
+    configuration_stores: crate::managed_configuration::ConfigurationStores,
 }
 
 impl InstanceRegistry {
@@ -47,6 +48,7 @@ impl InstanceRegistry {
         Self {
             instances: Arc::new(RwLock::new(IndexMap::new())),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
+            configuration_stores: Default::default(),
         }
     }
 
@@ -55,7 +57,22 @@ impl InstanceRegistry {
         Self {
             instances: Arc::new(RwLock::new(instances)),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
+            configuration_stores: Default::default(),
         }
+    }
+
+    pub(crate) fn with_configuration_stores(
+        mut self,
+        stores: crate::managed_configuration::ConfigurationStores,
+    ) -> Self {
+        self.configuration_stores = stores;
+        self
+    }
+
+    pub(crate) fn configuration_stores(
+        &self,
+    ) -> &crate::managed_configuration::ConfigurationStores {
+        &self.configuration_stores
     }
 
     /// Get an instance by ID.

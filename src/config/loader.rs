@@ -153,6 +153,29 @@ pub fn load_config_file<P: AsRef<Path>>(path: P) -> Result<DrasiServerConfig, Co
     // This catches typos and snake_case fields before they get silently ignored
     if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
         super::validation::validate_config(&value)?;
+        validate_managed_instance_ids(&value)?;
+    }
+
+    fn validate_managed_instance_ids(value: &serde_yaml::Value) -> anyhow::Result<()> {
+        let instances: Vec<_> = match value
+            .get("instances")
+            .and_then(serde_yaml::Value::as_sequence)
+        {
+            Some(instances) if !instances.is_empty() => instances.iter().collect(),
+            _ => vec![value],
+        };
+        for instance in instances {
+            if instance
+                .get("configurationStore")
+                .is_some_and(|store| !store.is_null())
+            {
+                anyhow::ensure!(
+                    instance.get("id").is_some_and(|id| !id.is_null()),
+                    "configurationStore requires an explicit stable instance id; generated IDs cannot restore accepted state"
+                );
+            }
+        }
+        Ok(())
     }
 
     // Try YAML first, then JSON

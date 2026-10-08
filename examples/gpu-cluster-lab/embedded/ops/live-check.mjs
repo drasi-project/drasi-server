@@ -527,7 +527,7 @@ if (mode === '--runbook' || mode === '--acceptance') {
   await healthyReports(recovery.map(g => g.gpu_id), false);
   await infeasible(northPlan.desired_plan_version);
   await until('capacity-only analysis proves spare capacity without authorizing a plan', async () =>
-    (await rows('ui-resilience'))[0].capacity_only_feasible === true);
+    (await rows('ui-resilience'))[0]?.capacity_only_feasible === true);
   assert.equal((await rows('ui-placements'))[0].desired_plan_version, northPlan.desired_plan_version);
   await addHost('recovery-c', 'eu-recovery');
   await onlyRegion('northeurope');

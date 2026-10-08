@@ -163,6 +163,9 @@ pub struct DrasiServerConfig {
     /// Native component declarations in the instance's ComputationGraph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub computation: Option<crate::computation::ComputationConfig>,
+    /// Optional encrypted, authoritative desired-state storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -200,6 +203,7 @@ impl Default for DrasiServerConfig {
             identity_providers: Vec::new(),
             bootstrap_providers: Vec::new(),
             computation: None,
+            configuration_store: None,
             instances: Vec::new(),
         }
     }
@@ -343,6 +347,8 @@ pub struct DrasiLibInstanceConfig {
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub computation: Option<crate::computation::ComputationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -362,6 +368,7 @@ pub struct ResolvedInstanceConfig {
     pub identity_providers: Vec<IdentityProviderConfig>,
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     pub computation: Option<crate::computation::ComputationConfig>,
+    pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -402,9 +409,8 @@ fn is_valid_hostname(hostname: &str) -> bool {
 }
 
 impl DrasiServerConfig {
-    /// Resolve configured DrasiLib instances, supporting single-instance and multi-instance layout.
-    pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
-        let raw_instances: Vec<DrasiLibInstanceConfig> = if self.instances.is_empty() {
+    pub fn instance_configurations(&self) -> Vec<DrasiLibInstanceConfig> {
+        if self.instances.is_empty() {
             vec![DrasiLibInstanceConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
@@ -420,11 +426,16 @@ impl DrasiServerConfig {
                 identity_providers: self.identity_providers.clone(),
                 bootstrap_providers: self.bootstrap_providers.clone(),
                 computation: self.computation.clone(),
+                configuration_store: self.configuration_store.clone(),
             }]
         } else {
             self.instances.clone()
-        };
+        }
+    }
 
+    /// Resolve configured DrasiLib instances, supporting single-instance and multi-instance layout.
+    pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
+        let raw_instances = self.instance_configurations();
         let mut seen = HashSet::new();
         let mut resolved = Vec::with_capacity(raw_instances.len());
 
@@ -436,7 +447,18 @@ impl DrasiServerConfig {
                 ));
             }
             seen.insert(id.clone());
-            if let Some(computation) = &instance.computation {
+            if let Some(store) = &instance.configuration_store {
+                store.validate()?;
+                anyhow::ensure!(
+                    instance.sources.is_empty() && instance.queries.is_empty() && instance.reactions.is_empty(),
+                    "Instance '{id}': configurationStore requires reconstructible computation definitions; ordinary sources/queries/reactions cannot be adopted automatically"
+                );
+            }
+            if let Some(computation) = instance
+                .computation
+                .as_ref()
+                .filter(|_| instance.configuration_store.is_none())
+            {
                 anyhow::ensure!(
                     computation.definition.version == 1,
                     "Instance '{id}': unsupported computation graph configuration version",
@@ -518,6 +540,7 @@ impl DrasiServerConfig {
                 identity_providers: instance.identity_providers.clone(),
                 bootstrap_providers: instance.bootstrap_providers.clone(),
                 computation: instance.computation.clone(),
+                configuration_store: instance.configuration_store.clone(),
             });
         }
 

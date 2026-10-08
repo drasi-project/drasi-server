@@ -11,7 +11,7 @@ server build selector. Two independent dynamic ABI families share one host:
 
 | Family | ABI | Entry points |
 |--------|-----|--------------|
-| Source / Reaction / Bootstrap (and existing provider descriptors) | `0.15` | `drasi_plugin_metadata`, `drasi_plugin_init` |
+| Source / Reaction / Bootstrap (and existing provider descriptors) | `0.17`, also accepts `0.16` fast-mode plugins | `drasi_plugin_metadata`, `drasi_plugin_init` |
 | Native ComputationGraph factories | `1.0` | `drasi_computation_plugin_metadata`, `drasi_computation_plugin_entry` |
 
 Each producer enables its own `dynamic-plugin` feature. Legacy `export_plugin!`
@@ -29,7 +29,7 @@ ComputationGraph runtime, with no fallback engine or runtime selector.
 │  Uses DrasiLib for query processing                              │
 │                                                                  │
 │  Plugin families:                                                │
-│  • Legacy Source/Reaction/Bootstrap ABI 0.15                       │
+│  • Legacy Source/Reaction/Bootstrap ABI 0.16 / 0.17                │
 │  • Independent native ComputationGraph ABI 1.0                    │
 ├──────────────────────────────────────────────────────────────────┤
 │                      drasi-host-sdk (library crate)              │
@@ -106,10 +106,244 @@ registry. Each instance's optional `computation` configuration supplies
 factory-only component declarations and explicit resource construction recipes
 for its ComputationGraph.
 
+The `sourceProgress` resource recipe uses `{"kind":"sourceProgress","component":"query"}`
+and the `checkpoint` resource role. Bind the same resource ID to the named
+consumer and its replayable source under their `source_progress` dependencies.
+Only the actual consumer publishes recovered progress; configuration cannot
+restore checkpoints or assert readiness/durability. Each instance constructs
+its own owner, and the graph verifies actual shared ownership rather than
+matching names. Native sources must independently negotiate recovery-v1.
+This recipe does not turn a volatile source or an old ABI 1.0 plugin into a
+replayable source, and it does not provide a database bootstrap implementation.
+
+Native bootstrap-v1 factories use a graph-owned `Bootstrap` resource with a
+`nativeBootstrap` recipe. The fields are `component` (the owning query),
+`implementation`, `configurationVersion`, `configuration` (unresolved
+`ConfigurationValue` entries) and optional `sourceProgress`. The latter is
+required exactly when negotiated by the factory and must name the same actual
+checkpoint owner as the query's `source_progress` dependency. The bootstrap
+resource declares that `Checkpoint` dependency and every referenced `SecretStore`
+in `resource_dependencies`. The query binds it in its `bootstrap` slot.
+Providers cannot be shared across queries or instances. Cleanup joins work and
+revokes retired progress readers before releasing prerequisite resources.
+
+Native consumer-v1 factories bind a `consumer` dependency to a graph-owned
+`IndexBackend` resource with this recipe:
+
+```yaml
+kind: nativeConsumer
+failureScope: processRestart
+maxStreams: 16
+receiptsPerStream: 64
+```
+
+Declare exactly one `IndexBackend` dependency for this resource, normally a
+`rocksdbIndexes` recipe. It uses that actual provider, not a second open inferred
+from a path, and isolates progress by instance, graph and consumer. Optional
+`retry` uses the shared delivery retry policy. The plugin's negotiated external
+or transactional mode is validated against persisted progress; no mode is
+inferred from configuration. A producer's shared storage group is not a
+consumer transaction. External effects still require destination idempotence;
+transactional completion covers one operation, not an entire source transaction.
+
+Both recipes work through managed reconstruction and imperative component
+configuration. Rust callers needing all native services should use
+`build_components_with_registry` (or `register_components`); the older
+factory-only `build_components` cannot discover bootstrap factories.
+Configuration snapshots retain secret references, never their resolved values.
+Current qualification uses separately built test-only libraries, real RocksDB
+and persisted desired definitions; production plugin migration is deferred.
+
+QoS resources can opt into bounded admission or output replay using `recovery`:
+
+```yaml
+recovery:
+  kind: admission
+  component: source
+  failureScope: processRestart
+  maxProducers: 16
+  receiptsPerProducer: 64
+```
+
+Alternatively use `kind: replay`, `failureScope: processRestart` and
+`receiptCapacity: 64` for a persistent producer's outgoing journal. These are
+mutually exclusive. Both require `definition.durable: true`, backpressure
+retention, a storage `path`, and actual provider survival evidence. Admission
+bounds are at most 1024 producers, 1024 receipts per producer and 16384 receipts
+in total; replay allows at most 1024 receipts. Instance/graph identity is supplied
+by the owner, not by these settings. The component must actually support the
+corresponding service; configuration alone does not upgrade its contract.
+Omitting recovery keeps a new channel untracked, but cannot silently disable a
+previously tracked journal. Reopen must match persisted settings; arbitrary
+changes require a separate migration. Enabling tracking on an existing channel
+is supported only before its first accepted event.
+
+Shared producer/output transactions use two graph-owned resources:
+`{"kind":"sharedStorage","path":"./data/processing","component":"query"}` as
+`IndexBackend`, and a `sharedQos` recipe containing `definition` and replay
+`recovery` as `StateStore`. The journal declares exactly one `IndexBackend`
+in the topology's `resource_dependencies`; the graph supplies that actual
+group, rather than independently opening the same path. The producer's indexes
+and its outgoing pipe's `shared_storage` both name the group resource.
+
+Dependency-bearing imperative batches defer resource acquisition to the same
+graph lifecycle used by managed definitions. Construction follows dependencies;
+cleanup releases dependents before providers, retaining parents on failed or
+cancelled cleanup. Empty dependency maps leave ordinary construction unchanged.
+This supports shared ownership and reconstruction, not arbitrary storage
+migration or permission to forget pending messages. Source recovery and external
+effect completion still need their own supported contracts.
+
+Managed changes protect persistent recovery domains before accepting a new
+definition. A refused path, membership, producer, downgrade or removal change
+returns HTTP 409 `CONFIGURATION_TRANSITION_REQUIRED` without a new receipt or
+revision. Shared-storage domains support verified drain after successful instance
+stop: the graph freezes restart and holds actual transaction gates through the
+producer/journal/timer checks and authoritative configuration commit. Confirmed
+rejection resumes old owners; acceptance fences and reconstructs them. Unknown
+commit confirmation keeps them frozen until reconciliation resolves it.
+Standalone persistent QoS journals also hold their actual transaction owner
+through acceptance, after proving every nonretired subscriber reached the accepted
+head. Proof takes journal state before its transaction gate; queued writers cannot
+change the inspected state. Terminal shutdown revokes the lease without reopening
+the old owner, including when commit confirmation is unavailable.
+Initialized built-in continuous queries and native linear transaction sequences
+can also retire a standalone provider: the output contract weakly identifies the actual provider and transaction,
+then holds that transaction while checking output and scheduled work. A matching
+path or an unused provider is not evidence. Quiesce the graph before stopping it
+for lossless retirement; ordinary stop can interrupt an active handoff and will
+then require recovery rather than authorizing a change.
+Unrelated and lifecycle-only changes retain their ordinary path. Unsupported
+providers or missing initialization remain refused even if apparently stopped.
+Native consumers use positive completed-ledger evidence from their actual
+successfully closed delivery owner, without changing stop's awaited cleanup.
+Their lifecycle stays held until configuration resolution. Partial, uncertain or
+uninitialized completion cannot prove lossless drain; a stopped consumer is not assumed empty.
+Scoped consumer bindings identify their actual prerequisite provider.
+Native bootstrap resources hold their own positively stopped call gate, including
+against retained handles. Terminal cleanup revokes a held lease permanently.
+Source-progress resources must match the actual processing owner's publication;
+known query-catalog, configuration and factory-registry resources provide no
+independent storage proof. Unknown concrete services remain refused.
+Explicit loss-authorized **complete domain removal** is supported as described
+below. In-place reset/reuse and automatic data migration are not provided.
+
 `GET /api/v1/plugins/computation` exposes native manifests without instance secrets.
+Its `bootstrapFactories` and `consumerFactories` arrays report independently
+negotiated bootstrap metadata and consumer handling modes; the base ABI/wire
+metadata in `plugins` remains unchanged.
 Native runtime IDs are family/version-qualified: `computation:<id>@<version>`.
 The same plugin may supply several factories; its own package version is not the
 ABI version or a factory's configuration version.
+
+### Durable desired configuration
+
+Configuration persistence is optional and separate from message/state recovery.
+Omitting `configurationStore` preserves the ordinary fast configuration and
+existing YAML-backed APIs. Selecting it does not add a journal, acknowledgements
+or exactly-once processing to an otherwise volatile pipeline.
+
+```yaml
+id: analytics
+configurationStore:
+  kind: redb
+  path: ./data/configuration.redb
+  keyFile: ./secrets/configuration.key
+```
+
+For multiple instances, put these settings on each `instances` entry. IDs must
+be explicit and stable; different IDs may share one physical database and key.
+The key file must already contain exactly 32 raw bytes, not a hexadecimal or
+base64 string. Provision it securely, restrict its file permissions, and back it
+up separately from the database. Missing, wrong or malformed keys fail startup;
+there is no empty-state or memory fallback. Definitions and receipts are
+encrypted; instance, request and snapshot names are not.
+
+YAML's `computation` definition initializes an instance **only once**. Thereafter
+the stored desired definition is authoritative, even if the YAML seed is changed,
+omitted or semantically obsolete. YAML must still parse and supply valid Server
+settings, a stable instance ID and the storage/key locations. An explicitly
+accepted empty definition is initialized state too. Ordinary `sources`,
+`queries` and `reactions` cannot be automatically adopted into this mode: use
+reconstructible `computation` declarations.
+
+The revisioned API is rooted at
+`/api/v1/instances/{instanceId}/computation`:
+
+| Method and suffix | Meaning |
+|---|---|
+| `GET /desired` | Privileged committed revision and desired definition; may contain literal secrets. |
+| `PUT /desired` | JSON or YAML body with `expectedRevision`, a stable `requestId`, and `desired` (`version: 1`, `topology`, and optional `retirement`). Returns HTTP 202 and a receipt after durable acceptance, before construction or readiness. |
+| `GET /receipts/{requestId}` | Resolve a lost response using the original request ID. A 404 is not proof of rejection while a request is still in flight. |
+| `GET /management` | Secret-safe status: accepted, initializing, ready, failed or cleanupPending; no raw constructor/store errors or configuration. |
+| `POST /reconcile` | Retry realization of the accepted definition; inspect the returned status rather than assuming success means ready. |
+
+Use the revision and `data.desired` returned by `GET /desired` to prepare a new
+request. Repeating the same request ID and definition returns the original receipt
+without creating another owner; changing its content or using a stale revision
+returns 409. Request IDs must be nonempty, at most 1024 bytes, and outside the
+reserved `drasi-server/` prefix. On 503 or a lost connection, look up the receipt
+and status before retrying. Unconfirmed state is not reported as authoritative.
+Successful management responses use `Cache-Control: no-store`; protect the
+privileged desired endpoint with the deployment's access controls.
+
+To explicitly abandon pending obligations, first stop the instance and prepare a
+topology that removes every component and resource in the affected recovery
+domains. Include this field in `desired` (example IDs only):
+
+```yaml
+retirement:
+  from_revision: 7
+  allow_data_loss: true
+  resources: [delivery, indexes, journal]
+  components: [input, consumer]
+```
+
+`from_revision` must equal the current configuration revision and the request's
+`expectedRevision`. Membership must exactly cover the changed domains, including
+connected producers/consumers and resource dependencies; omitted live unmanaged
+users, extra members, or retained/replacement members are refused. Malformed
+authorization is HTTP 400; stale or incomplete permission and unqualified
+transitions are HTTP 409 without acceptance. A durable configuration store is
+required. Permission is part of the existing persisted definition and idempotency
+receipt, not a separate best-effort action. Retry the identical request after an
+uncertain response; carrying a previously accepted authorization forward cannot
+authorize a new retirement.
+
+Authorization bypasses pending journal/output/scheduled-work checks, not actual
+ownership, successful stop/cleanup, initialized producer evidence or healthy
+transaction gates. A consumer may retire partial or unknown progress only after
+its actual delivery storage has successfully closed. A prior processing failure
+may remain recorded on a stopped component; stop/removal failures still refuse.
+Bootstrap resources still need their own positively stopped, held lifecycle.
+Confirmed rejection resumes old owners; unknown confirmation keeps them frozen.
+Accepted retirement removes the desired domain and fences its old owners.
+**No stored input, output, checkpoint, ledger or business state is deleted,
+reset, or marked handled.** External effects already performed are not undone.
+Restart restores the accepted removed topology. Explicitly restoring the original
+definition later may replay its intact pending work; retirement is not a storage
+tombstone or an in-place reset.
+
+Persistent managed instances reject imperative create/update/delete, clone-target
+and solution-deployment mutations; use the desired-state API instead. Runtime
+start/stop and the existing read-only gate retain their meanings. Unavailable
+factories and failed processing resources remain accepted, inspectable
+declarations rather than disappearing or becoming a replacement empty graph.
+Factories available to management are captured when the instance is built:
+install a missing plugin and restart Server to make its factories available.
+Resource reconstruction reads the current provider registry on each attempt.
+
+`persistConfig` still controls YAML updates, including recording newly provisioned
+instances. It does not disable durable desired-state acceptance. YAML saves retain
+managed instance/store settings but do not export accepted definitions or their
+literal secrets into plaintext. The original seed file is not automatically
+scrubbed; remove literal credentials from it after initialization if necessary.
+
+This control-plane support does not qualify arbitrary durability downgrades,
+in-place reuse or storage migration with pending processing work. Such changes
+require verified lossless drain; explicit loss permission only covers complete
+domain removal. Configuration durability alone is not evidence of safe processing
+transitions.
 
 ## How Dynamic Plugin Loading Works
 
@@ -124,8 +358,9 @@ ABI version or a factory's configuration version.
    a. Only an allowed candidate may reach dlopen()
    b. Explicit family dispatch: native symbols use ABI 1.0; invalid/partial native
       declarations fail without invoking a legacy initializer
-   c. For legacy plugins, continue with the existing ABI 0.15 flow:
+   c. For legacy plugins, use the ABI 0.16 / 0.17 flow:
       Resolve drasi_plugin_metadata() → PluginMetadata
+      Reject missing or null metadata before initialization
       Validate SDK version (major.minor must match host) and target triple
       Resolve drasi_plugin_init() → FfiPluginRegistration
       Call init → plugin initializes its tokio runtime, installs FfiLogger
@@ -172,7 +407,14 @@ For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
 The native manifest also exposes its wire version. Current native plugins use
 wire version 2 (binary computation envelopes and bulk MessagePack buffers).
 Rebuild native plugins from the matching SDK; the unreleased wire-version-1
-prototype is rejected. Legacy ABI 0.15 and persisted JSON formats are unchanged.
+prototype is rejected. Legacy ABI 0.17 adds versioned storage durability evidence
+and releases transferred state-store ownership. Existing ABI 0.16 plugins remain
+supported for fast-mode behavior, retaining their original state-store pointer
+lifetime and without new recovery services. ABI 0.15, unknown future contracts,
+malformed/missing metadata and wrong targets are rejected before initialization.
+Provider key-list errors remain explicit, and bootstrap subscription settings and
+context properties are forwarded. Existing data-envelope formats are unchanged.
+Loading compatibility and storage durability do not establish end-to-end recovery.
 Header/ABI/wire compatibility
 is checked independently of the legacy SDK; absent legacy-only version fields
 remain empty, never synthesized.

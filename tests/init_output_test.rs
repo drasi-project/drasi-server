@@ -159,6 +159,7 @@ fn test_empty_config_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -204,6 +205,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -261,6 +263,7 @@ fn test_mock_source_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -314,6 +317,7 @@ fn test_http_source_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -366,6 +370,7 @@ fn test_grpc_source_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -442,6 +447,7 @@ fn test_postgres_source_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -528,6 +534,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -598,6 +605,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -661,6 +669,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -719,6 +728,7 @@ fn test_log_reaction_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -771,6 +781,7 @@ fn test_http_reaction_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -824,6 +835,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -880,6 +892,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -955,6 +968,7 @@ fn test_query_generates_valid_yaml() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -1057,6 +1071,7 @@ fn test_full_config_roundtrip() {
         identity_providers: vec![],
         bootstrap_providers: vec![],
         computation: None,
+        configuration_store: None,
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");

@@ -22,7 +22,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Check compilation: `cargo check`
 
 ### Plugin Loading
-Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Legacy Source/Reaction/Bootstrap ABI 0.15 and independent native ComputationGraph ABI 1.0 coexist in the same host. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
+Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Legacy Source/Reaction/Bootstrap ABI 0.17 (also accepting 0.16 fast-mode plugins) and independent native ComputationGraph ABI 1.0 coexist in the same host. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
 
 **Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. When developing with local drasi-core changes, use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 

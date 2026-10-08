@@ -15,9 +15,19 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use drasi_core::computation::ComputationIndexProvider;
-use drasi_host_sdk::management::HostConfigurationResolver;
-use drasi_lib::{computation::v1::*, DrasiLib};
+use drasi_host_sdk::{
+    computation::NativeBootstrapFactories,
+    management::{
+        HostConfigurationResolver, NativeBootstrapConfig, NativeConsumerConfig, QosRecoveryConfig,
+        SharedQosConfig,
+    },
+};
+use drasi_lib::{
+    computation::v1::*, management::ManagementResourceResolver, secret_store::SecretStoreProvider,
+    DrasiLib,
+};
 use serde::{Deserialize, Serialize};
 
 /// Native components, connections and resource recipes for a DrasiLib instance.
@@ -34,9 +44,21 @@ pub struct ComputationConfig {
 pub enum ComputationResourceConfig {
     MemoryIndexes,
     QueryCatalog {},
+    SourceProgress {
+        #[schema(value_type = String)]
+        component: ComponentId,
+    },
     RocksdbIndexes {
         path: PathBuf,
     },
+    SharedStorage {
+        path: PathBuf,
+        #[schema(value_type = String)]
+        component: ComponentId,
+    },
+    SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
+    NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
+    NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
     Middleware,
     QueryMiddleware,
     TransactionalTransformers,
@@ -45,18 +67,26 @@ pub enum ComputationResourceConfig {
         #[schema(value_type = serde_json::Value)]
         definition: QosChannelDefinition,
         path: Option<PathBuf>,
+        #[schema(value_type = Option<serde_json::Value>)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovery: Option<QosRecoveryConfig>,
     },
 }
 
 impl ComputationResourceConfig {
     fn role(&self) -> ResourceRole {
         match self {
-            Self::MemoryIndexes | Self::RocksdbIndexes { .. } => ResourceRole::IndexBackend,
+            Self::MemoryIndexes
+            | Self::RocksdbIndexes { .. }
+            | Self::SharedStorage { .. }
+            | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
             Self::QueryCatalog {} => ResourceRole::QueryCatalog,
+            Self::NativeBootstrap(_) => ResourceRole::Bootstrap,
+            Self::SourceProgress { .. } => ResourceRole::Checkpoint,
             Self::Middleware | Self::QueryMiddleware => ResourceRole::Middleware,
             Self::TransactionalTransformers => ResourceRole::Component,
             Self::Configuration => ResourceRole::SecretStore,
-            Self::Qos { .. } => ResourceRole::StateStore,
+            Self::Qos { .. } | Self::SharedQos(_) => ResourceRole::StateStore,
         }
     }
 }
@@ -116,8 +146,43 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             "resource {} role differs from its recipe",
             resource.id
         );
-        if let ComputationResourceConfig::Qos { definition, path } = &recipe {
+        let dependencies = definition
+            .resource_dependencies
+            .get(&resource.id)
+            .cloned()
+            .unwrap_or_default();
+        if let ComputationResourceConfig::SharedQos(config) = &recipe {
+            config.validate(resource)?;
+            anyhow::ensure!(
+                dependencies.len() == 1
+                    && dependencies
+                        .values()
+                        .all(|role| *role == ResourceRole::IndexBackend),
+                "shared QoS must declare exactly its storage-group dependency"
+            );
+        } else if let ComputationResourceConfig::NativeConsumer(config) = &recipe {
+            config.validate_dependencies(resource, &dependencies)?;
+        } else if let ComputationResourceConfig::NativeBootstrap(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+            config.validate_owner(&resource.id, definition)?;
+        } else {
+            anyhow::ensure!(
+                dependencies.is_empty(),
+                "this server resource recipe does not accept dependencies"
+            );
+        }
+        if let ComputationResourceConfig::Qos {
+            definition,
+            path,
+            recovery,
+        } = &recipe
+        {
             definition.validate()?;
+            recovery
+                .as_ref()
+                .map(|recovery| recovery.options("validation", &config.definition.graph_id))
+                .unwrap_or_default()
+                .validate(definition)?;
             anyhow::ensure!(
                 definition.durable == path.is_some()
                     && path
@@ -130,7 +195,9 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
                 "server QoS requires graph ownership"
             );
         }
-        if let ComputationResourceConfig::RocksdbIndexes { path } = recipe {
+        if let ComputationResourceConfig::RocksdbIndexes { path }
+        | ComputationResourceConfig::SharedStorage { path, .. } = recipe
+        {
             anyhow::ensure!(
                 !path.as_os_str().is_empty(),
                 "RocksDB path must not be empty"
@@ -241,6 +308,39 @@ pub async fn build_components(
     factories: FactoryRegistry,
     transactional: Arc<TransactionalTransformerRegistry>,
 ) -> Result<ComponentBatch> {
+    build_components_with_resources(
+        config,
+        core,
+        factories,
+        transactional,
+        NativeBootstrapFactories::new(),
+    )
+    .await
+}
+
+/// Include all independently negotiated native services from the loaded registry.
+pub async fn build_components_with_registry(
+    config: &ComputationConfig,
+    core: &DrasiLib,
+    registry: &crate::plugin_registry::PluginRegistry,
+) -> Result<ComponentBatch> {
+    build_components_with_resources(
+        config,
+        core,
+        registry.computation_factory_registry()?,
+        registry.transactional_transformer_registry(core.middleware_registry())?,
+        registry.computation_bootstrap_factories()?,
+    )
+    .await
+}
+
+async fn build_components_with_resources(
+    config: &ComputationConfig,
+    core: &DrasiLib,
+    factories: FactoryRegistry,
+    transactional: Arc<TransactionalTransformerRegistry>,
+    bootstraps: NativeBootstrapFactories,
+) -> Result<ComponentBatch> {
     validate_definition(config)?;
     for component in &config.definition.components {
         if let ComponentConstruction::Factory(specification) = &component.construction {
@@ -259,22 +359,187 @@ pub async fn build_components(
         }
     }
     let services = core.computation_plugin_services()?;
+    let resolver = Arc::new(ServerManagementResources {
+        factories: factories.clone(),
+        middleware: core.middleware_registry(),
+        transactional,
+        bootstraps,
+        secrets: services.secrets,
+    });
+    resolver.validate_transition(
+        &drasi_lib::management::DesiredInstance::default().topology,
+        &config.definition,
+    )?;
     let mut bindings = TopologyBindings {
         factories,
         ..Default::default()
     };
+    if !config.definition.resource_dependencies.is_empty() {
+        for resource in &config.definition.resources {
+            let recipe = config
+                .definition
+                .resource_configurations
+                .get(&resource.id)
+                .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
+            bindings.resource_constructors.insert(
+                resource.id.clone(),
+                drasi_lib::management::resource_constructor(
+                    resolver.clone(),
+                    services.scope.as_ref(),
+                    &config.definition.graph_id,
+                    resource.clone(),
+                    recipe.clone(),
+                ),
+            );
+        }
+        return Ok(ComponentBatch {
+            definition: config.definition.clone(),
+            bindings,
+        });
+    }
     for resource in &config.definition.resources {
         let recipe = config
             .definition
             .resource_configurations
             .get(&resource.id)
             .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
-        let recipe: ComputationResourceConfig = serde_json::from_value(recipe.clone())
+        let handle = resolver
+            .resolve(
+                &services.scope,
+                &config.definition.graph_id,
+                resource,
+                recipe,
+            )
+            .await?;
+        bindings.resources.insert(resource.id.clone(), handle);
+    }
+    Ok(config.definition.build_components(bindings)?)
+}
+
+/// The same recipes serve imperative construction and durable reconciliation.
+pub struct ServerManagementResources {
+    factories: FactoryRegistry,
+    bootstraps: NativeBootstrapFactories,
+    middleware: Arc<drasi_core::middleware::MiddlewareTypeRegistry>,
+    transactional: Arc<TransactionalTransformerRegistry>,
+    secrets: Option<Arc<dyn SecretStoreProvider>>,
+}
+
+impl ServerManagementResources {
+    pub fn new(
+        registry: &crate::plugin_registry::PluginRegistry,
+        secrets: Option<Arc<dyn SecretStoreProvider>>,
+    ) -> Result<Self> {
+        let middleware = DrasiLib::default_middleware_registry();
+        Ok(Self {
+            factories: registry.computation_factory_registry()?,
+            bootstraps: registry.computation_bootstrap_factories()?,
+            transactional: registry.transactional_transformer_registry(middleware.clone())?,
+            middleware,
+            secrets,
+        })
+    }
+}
+
+#[async_trait]
+impl ManagementResourceResolver for ServerManagementResources {
+    fn validate_transition(
+        &self,
+        previous: &DesiredTopology,
+        desired: &DesiredTopology,
+    ) -> Result<()> {
+        for resource in &desired.resources {
+            let configuration = desired
+                .resource_configurations
+                .get(&resource.id)
+                .context("managed resource recipe is unavailable")?;
+            let dependencies = desired
+                .resource_dependencies
+                .get(&resource.id)
+                .cloned()
+                .unwrap_or_default();
+            match serde_json::from_value(configuration.clone())? {
+                ComputationResourceConfig::NativeBootstrap(config) => {
+                    config.validate(resource, &dependencies)?;
+                    config.validate_owner(&resource.id, desired)?;
+                    config.validate_configuration(
+                        &self.bootstraps,
+                        &dependencies,
+                        &BTreeMap::new(),
+                    )?;
+                }
+                ComputationResourceConfig::NativeConsumer(config) => {
+                    config.validate_dependencies(resource, &dependencies)?
+                }
+                _ => {}
+            }
+        }
+        let mut protected = Vec::new();
+        for resource in &previous.resources {
+            let configuration = previous
+                .resource_configurations
+                .get(&resource.id)
+                .context("managed resource recipe is unavailable")?;
+            let recipe: ComputationResourceConfig = serde_json::from_value(configuration.clone())?;
+            let persistent = match recipe {
+                ComputationResourceConfig::RocksdbIndexes { .. }
+                | ComputationResourceConfig::SharedStorage { .. }
+                | ComputationResourceConfig::SharedQos(_)
+                | ComputationResourceConfig::NativeConsumer(_) => true,
+                ComputationResourceConfig::Qos { path, recovery, .. } => {
+                    path.is_some() || recovery.is_some()
+                }
+                _ => false,
+            };
+            if persistent {
+                protected.push(resource.id.clone());
+            }
+        }
+        drasi_lib::management::validate_recovery_resource_changes(previous, desired, protected)
+    }
+
+    async fn resolve(
+        &self,
+        instance: &str,
+        graph: &str,
+        resource: &ResourceSpecification,
+        configuration: &serde_json::Value,
+    ) -> Result<ResourceHandle> {
+        self.resolve_with_dependencies(instance, graph, resource, configuration, &BTreeMap::new())
+            .await
+    }
+
+    async fn resolve_with_dependencies(
+        &self,
+        instance: &str,
+        graph: &str,
+        resource: &ResourceSpecification,
+        configuration: &serde_json::Value,
+        dependencies: &BTreeMap<ResourceId, ResourceHandle>,
+    ) -> Result<ResourceHandle> {
+        let recipe: ComputationResourceConfig = serde_json::from_value(configuration.clone())
             .with_context(|| format!("invalid configuration for resource {}", resource.id))?;
         anyhow::ensure!(
             recipe.role() == resource.role,
             "resource {} role differs from its recipe",
             resource.id
+        );
+        if let ComputationResourceConfig::SharedQos(config) = recipe {
+            return config
+                .resolve(resource, dependencies, &self.factories)
+                .await;
+        }
+        if let ComputationResourceConfig::NativeConsumer(config) = recipe {
+            return config.resolve(instance, graph, resource, dependencies);
+        }
+        if let ComputationResourceConfig::NativeBootstrap(config) = recipe {
+            return config
+                .resolve(instance, graph, resource, dependencies, &self.bootstraps)
+                .await;
+        }
+        anyhow::ensure!(
+            dependencies.is_empty(),
+            "this server recipe does not accept resource dependencies"
         );
         let handle = match recipe {
             ComputationResourceConfig::MemoryIndexes => ResourceHandle::new(
@@ -285,9 +550,13 @@ pub async fn build_components(
             ),
             ComputationResourceConfig::QueryCatalog {} => ResourceHandle::new(
                 ResourceRole::QueryCatalog,
-                Arc::new(QueryResultsCatalog::new(
-                    config.definition.graph_id.as_str(),
-                )?),
+                Arc::new(QueryResultsCatalog::new(graph)?),
+            ),
+            ComputationResourceConfig::SourceProgress { component } => ResourceHandle::new(
+                ResourceRole::Checkpoint,
+                Arc::new(QuerySourceProgressResource(Arc::new(
+                    QuerySourceProgress::new(graph, component)?,
+                ))),
             ),
             ComputationResourceConfig::RocksdbIndexes { path } => {
                 anyhow::ensure!(
@@ -302,48 +571,94 @@ pub async fn build_components(
                     Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
                         path, false, false,
                     )),
-                    services.scope.clone(),
+                    instance,
                 )?
                 .resource()
             }
+            ComputationResourceConfig::SharedStorage { path, component } => {
+                anyhow::ensure!(
+                    !path.as_os_str().is_empty(),
+                    "shared storage path must not be empty"
+                );
+                anyhow::ensure!(
+                    resource.ownership == ResourceOwnership::Graph,
+                    "shared storage requires graph ownership"
+                );
+                let provider = LegacyIndexProviderAdapter::scoped(
+                    Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
+                        path, false, false,
+                    )),
+                    instance,
+                )?;
+                let indexes = provider.create_indexes(graph, resource.id.as_str()).await?;
+                SharedStorageGroup::new(graph, component, indexes)?.resource()
+            }
+            ComputationResourceConfig::SharedQos(_) => {
+                unreachable!("shared QoS resolved with dependencies")
+            }
+            ComputationResourceConfig::NativeConsumer(_) => {
+                unreachable!("native consumer resolved with dependencies")
+            }
+            ComputationResourceConfig::NativeBootstrap(_) => {
+                unreachable!("native bootstrap resolved with dependencies")
+            }
             ComputationResourceConfig::Middleware => ResourceHandle::new(
                 ResourceRole::Middleware,
-                Arc::new(MiddlewareRegistryResource(core.middleware_registry())),
+                Arc::new(MiddlewareRegistryResource(self.middleware.clone())),
             ),
             ComputationResourceConfig::QueryMiddleware => ResourceHandle::new(
                 ResourceRole::Middleware,
-                Arc::new(QueryMiddlewareResource(core.middleware_registry())),
+                Arc::new(QueryMiddlewareResource(self.middleware.clone())),
             ),
             ComputationResourceConfig::TransactionalTransformers => ResourceHandle::new(
                 ResourceRole::Component,
                 Arc::new(TransactionalTransformerRegistryResource(
-                    transactional.clone(),
+                    self.transactional.clone(),
                 )),
             ),
             ComputationResourceConfig::Configuration => ResourceHandle::new(
                 ResourceRole::SecretStore,
                 Arc::new(ConfigurationResolverResource(Arc::new(
-                    HostConfigurationResolver::new(services.secrets.clone()),
+                    HostConfigurationResolver::new(self.secrets.clone()),
                 ))),
             ),
-            ComputationResourceConfig::Qos { definition, path } => {
+            ComputationResourceConfig::Qos {
+                definition,
+                path,
+                recovery,
+            } => {
+                definition.validate()?;
+                let recovery = recovery
+                    .map(|recovery| recovery.options(instance, graph))
+                    .unwrap_or_default();
+                recovery.validate(&definition)?;
+                anyhow::ensure!(
+                    definition.durable == path.is_some()
+                        && path
+                            .as_ref()
+                            .is_none_or(|path| !path.as_os_str().is_empty()),
+                    "durable QoS requires a nonempty storage path; volatile QoS must omit it"
+                );
+                anyhow::ensure!(
+                    resource.ownership == ResourceOwnership::Graph,
+                    "server QoS requires graph ownership"
+                );
                 let channel = if let Some(path) = path {
                     let provider = LegacyIndexProviderAdapter::scoped(
                         Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
                             path, false, false,
                         )),
-                        services.scope.clone(),
+                        instance,
                     )?;
-                    let indexes = provider
-                        .create_indexes(&config.definition.graph_id, resource.id.as_str())
-                        .await?;
-                    QosChannel::persistent(
+                    let indexes = provider.create_indexes(graph, resource.id.as_str()).await?;
+                    QosChannel::persistent_with_recovery(
                         definition,
                         indexes,
-                        bindings.factories.envelope_codec(
+                        self.factories.envelope_codec(
                             std::num::NonZeroUsize::new(64 * 1024 * 1024).expect("constant size"),
                         )?,
                         resource.id.as_str(),
+                        recovery,
                     )
                     .await?
                 } else {
@@ -352,9 +667,8 @@ pub async fn build_components(
                 channel.resource()
             }
         };
-        bindings.resources.insert(resource.id.clone(), handle);
+        Ok(handle)
     }
-    Ok(config.definition.build_components(bindings)?)
 }
 
 pub fn configuration_from_snapshot(
@@ -380,13 +694,7 @@ pub async fn register_components(
     core: &DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
 ) -> Result<ReconciliationReport> {
-    let components = build_components(
-        config,
-        core,
-        registry.computation_factory_registry()?,
-        registry.transactional_transformer_registry(core.middleware_registry())?,
-    )
-    .await?;
+    let components = build_components_with_registry(config, core, registry).await?;
     Ok(core.add_components(components).await?)
 }
 

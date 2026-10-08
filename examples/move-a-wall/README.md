@@ -140,7 +140,8 @@ the source's development command endpoint checks the browser origin.
 The first build compiles the stock Server and native dependencies and can take
 many minutes, especially while compiling `librocksdb-sys`. A clean example build
 took about 23 minutes on the validation Mac; incremental builds are much faster.
-`setup` uses one Cargo job and this example's own `target/`. The native scene and
+`setup` defaults to one Cargo job (override with `CARGO_BUILD_JOBS`) and uses this
+example's own `target/`. The native scene and
 geometry plugin and the standard SSE plugin are built from the same local code
 and toolchain as the Server. Symbols are not stripped. `wall-config` generates
 `.build/server.yaml` from the actual native factory descriptors and built-in
@@ -466,8 +467,8 @@ volatile; process restart intentionally starts fresh.
 
 ## Compatibility and verified evidence
 
-The current example and native query-catalog integration are committed, not
-an extra working-tree patch. The latest validated source revisions are:
+The example and native query-catalog integration were originally qualified at
+these committed revisions:
 
 | Repository | Commit |
 | --- | --- |
@@ -475,11 +476,20 @@ an extra working-tree patch. The latest validated source revisions are:
 | `drasi-core` | `5f48406bfce641d83d7f881877a4a8cac663eeac` |
 | `@drasi/react` source in the Server Git object store | `2a36f857526baa08304a698131854f222b40b108` |
 
+Requalified on 2026-10-07 with the current local reliability changes: Core
+`e46f6130b29d9268603585a5912e92d6839fa01f` and Server
+`a7b564a8fbbfaf141cd078994275e09f13a798d9`, **both including uncommitted changes**.
+The example lockfile now includes their current dependencies. The native scene
+plugin, standard SSE plugin and stock Server were rebuilt together; ten Rust
+tests, five UI tests, live query/SSE checks and the full Chromium interaction
+check passed. The fresh verification instance shut down cleanly.
+
 Server support constructs a graph-scoped `QueryResultsCatalog` and validates
 query/outlet catalog agreement. It does not replace query evaluation, the Server
 API, or SSE, and requires no example-specific Core modification. An older stock
 binary may reject the resource recipe; build from the compatible checkouts with
-`./demo setup`. This does not require an uncommitted production-code edit.
+`./demo setup`. Rebuild all three artifacts after a Core/SDK update; an older
+plugin left in `target/` is not evidence that the current source works.
 
 The generator declares this resource alongside `memoryIndexes`:
 

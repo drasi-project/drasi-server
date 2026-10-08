@@ -62,7 +62,7 @@ drasi-reaction-application = { path = "../drasi-core/components/reactions/applic
 drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
 
 # State store plugins
-drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb", features = ["configuration"] }
 
 # WAL plugins
 drasi-wal-redb = { path = "../drasi-core/components/wals/redb" }

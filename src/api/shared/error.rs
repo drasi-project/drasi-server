@@ -70,6 +70,10 @@ pub mod error_codes {
     pub const INSTANCE_CREATE_FAILED: &str = "INSTANCE_CREATE_FAILED";
     pub const COMPUTATION_NOT_FOUND: &str = "COMPUTATION_NOT_FOUND";
     pub const COMPUTATION_OPERATION_FAILED: &str = "COMPUTATION_OPERATION_FAILED";
+    pub const MANAGED_CONFIGURATION_REQUIRED: &str = "MANAGED_CONFIGURATION_REQUIRED";
+    pub const CONFIGURATION_CONFLICT: &str = "CONFIGURATION_CONFLICT";
+    pub const CONFIGURATION_TRANSITION_REQUIRED: &str = "CONFIGURATION_TRANSITION_REQUIRED";
+    pub const CONFIGURATION_UNCONFIRMED: &str = "CONFIGURATION_UNCONFIRMED";
 
     pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
     pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
@@ -220,7 +224,12 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::PLUGIN_FILE_NOT_FOUND
         | error_codes::PLUGIN_KIND_NOT_FOUND => StatusCode::NOT_FOUND,
 
-        error_codes::CONFIG_READ_ONLY | error_codes::DUPLICATE_RESOURCE => StatusCode::CONFLICT,
+        error_codes::CONFIG_READ_ONLY
+        | error_codes::DUPLICATE_RESOURCE
+        | error_codes::MANAGED_CONFIGURATION_REQUIRED
+        | error_codes::CONFIGURATION_CONFLICT
+        | error_codes::CONFIGURATION_TRANSITION_REQUIRED => StatusCode::CONFLICT,
+        error_codes::CONFIGURATION_UNCONFIRMED => StatusCode::SERVICE_UNAVAILABLE,
 
         error_codes::INVALID_REQUEST
         | error_codes::PLUGIN_INVALID_PATH
@@ -248,7 +257,7 @@ impl From<DrasiError> for ErrorResponse {
     fn from(err: DrasiError) -> Self {
         use DrasiError::*;
 
-        match &err {
+        match err.classification() {
             ComponentNotFound {
                 component_type,
                 component_id,
@@ -297,7 +306,7 @@ impl From<DrasiError> for ErrorResponse {
 pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
     use DrasiError::*;
 
-    match err {
+    match err.classification() {
         ComponentNotFound { .. } => StatusCode::NOT_FOUND,
         AlreadyExists { .. } => StatusCode::CONFLICT,
         InvalidConfig { .. } | InvalidState { .. } | Validation { .. } => StatusCode::BAD_REQUEST,
@@ -680,6 +689,34 @@ mod tests {
             drasi_error_to_status(&err2),
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn typed_causes_preserve_public_http_status_codes_and_messages() {
+        let constructors: [fn() -> DrasiError; 7] = [
+            || DrasiError::component_not_found("source", "input"),
+            || DrasiError::already_exists("query", "query"),
+            || DrasiError::invalid_config("missing provider"),
+            || DrasiError::invalid_state("not ready"),
+            || DrasiError::validation("incompatible pipe"),
+            || DrasiError::operation_failed("source", "input", "stop", "cleanup incomplete"),
+            || DrasiError::Internal(anyhow::anyhow!("unclassified")),
+        ];
+        for constructor in constructors {
+            let expected_status = drasi_error_to_status(&constructor());
+            let expected = ErrorResponse::from(constructor());
+            let error = constructor().with_cause(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "provider write denied",
+            ));
+            let error = DrasiError::from(anyhow::Error::new(error).context("request context"));
+            assert!(error.downcast_ref::<std::io::Error>().is_some());
+            assert_eq!(drasi_error_to_status(&error), expected_status);
+            let actual = ErrorResponse::from(error);
+            assert_eq!(actual.code, expected.code);
+            assert_eq!(actual.message, expected.message);
+            assert!(actual.details.is_none());
+        }
     }
 
     // ==========================================================================

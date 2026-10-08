@@ -17,6 +17,8 @@ RUN npm run build
 
 FROM rust:1.95-bookworm AS rust
 ARG TARGETARCH
+ARG CARGO_BUILD_JOBS=1
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} CARGO_INCREMENTAL=0
 WORKDIR /app
 COPY rust-toolchain.toml ./
 COPY shared/Cargo.toml shared/Cargo.lock shared/
@@ -27,7 +29,7 @@ COPY embedded/control/ embedded/control/
 WORKDIR /app/shared
 RUN --mount=type=cache,id=gpu-lab-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=gpu-lab-control-linux-${TARGETARCH},target=/app/target \
-    cargo build --locked --release --jobs 1 --target-dir /app/target -p gpu-control && cp /app/target/release/gpu-control /app/gpu-control
+    cargo build --locked --release --target-dir /app/target -p gpu-control && cp /app/target/release/gpu-control /app/gpu-control
 
 FROM debian:bookworm-slim
 RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates curl \

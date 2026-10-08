@@ -79,10 +79,16 @@ pub struct ComputationFactoryInfo {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ComputationPluginMetadataResponse {
     /// Independent ABI/wire versions, plugin identities, factory interfaces and schemas.
     #[schema(value_type = Vec<serde_json::Value>)]
     pub plugins: Vec<drasi_host_sdk::computation::PluginMetadata>,
+    /// Independently negotiated bootstrap-v1 metadata, not base-ABI factory claims.
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub bootstrap_factories: Vec<drasi_host_sdk::computation::BootstrapFactoryMetadata>,
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub consumer_factories: Vec<drasi_host_sdk::computation::NativeConsumerFactoryMetadata>,
 }
 
 /// Information about a specific plugin kind.
@@ -244,12 +250,12 @@ pub async fn list_kinds(
 pub async fn computation_plugin_metadata(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
 ) -> Json<ComputationPluginMetadataResponse> {
+    let registry = orchestrator.registry();
+    let registry = registry.read().await;
     Json(ComputationPluginMetadataResponse {
-        plugins: orchestrator
-            .registry()
-            .read()
-            .await
-            .computation_plugin_metadata(),
+        plugins: registry.computation_plugin_metadata(),
+        bootstrap_factories: registry.computation_bootstrap_metadata(),
+        consumer_factories: registry.computation_consumer_metadata(),
     })
 }
 

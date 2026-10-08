@@ -113,6 +113,10 @@ fn configuration() -> Result<ComputationConfig> {
             dependencies: BTreeMap::from([
                 ("indexes".into(), vec![indexes.clone()]),
                 ("catalog".into(), vec![catalog.clone()]),
+                (
+                    "source_progress".into(),
+                    vec![resource(&format!("{name}-progress"))],
+                ),
             ]),
         }));
     }
@@ -146,6 +150,8 @@ fn configuration() -> Result<ComputationConfig> {
     let resources = [
         (indexes.clone(), ResourceRole::IndexBackend),
         (catalog.clone(), ResourceRole::QueryCatalog),
+        (resource("one-progress"), ResourceRole::Checkpoint),
+        (resource("two-progress"), ResourceRole::Checkpoint),
     ]
     .into_iter()
     .map(|(id, role)| ResourceSpecification {
@@ -159,7 +165,12 @@ fn configuration() -> Result<ComputationConfig> {
         definition: serde_json::from_value(json!({
             "version":1, "graph_id":GRAPH, "revision":0,
             "components":components, "relationships":relationships, "resources":resources,
-            "resource_configurations":{"memory":{"kind":"memoryIndexes"},"results":{"kind":"queryCatalog"}},
+            "resource_configurations":{
+                "memory":{"kind":"memoryIndexes"},
+                "results":{"kind":"queryCatalog"},
+                "one-progress":{"kind":"sourceProgress","component":"one"},
+                "two-progress":{"kind":"sourceProgress","component":"two"}
+            },
             "requirements":PipeRequirements::default(), "boundary_relationships":[],
         }))?,
     })
@@ -187,9 +198,38 @@ fn query_catalog_recipe_roundtrips_with_a_shared_outlet() -> Result<()> {
     validate_definition(&config)?;
     let yaml = serde_yaml::to_string(&config)?;
     assert!(yaml.contains("kind: queryCatalog"));
+    assert!(yaml.contains("kind: sourceProgress"));
     let restored: ComputationConfig = serde_yaml::from_str(&yaml)?;
     validate_definition(&restored)?;
     assert_eq!(restored.definition, config.definition);
+    Ok(())
+}
+
+#[test]
+fn progress_recipes_reject_wrong_roles_and_cannot_restore_live_state() -> Result<()> {
+    for recipe in [
+        json!({"kind":"sourceProgress","component":""}),
+        json!({"kind":"sourceProgress","component":"one","persistent":true}),
+        json!({"kind":"sourceProgress","component":"one","ready":true}),
+        json!({"kind":"sourceProgress","component":"one","graph":"other"}),
+        json!({"kind":"sourceProgress","component":"one","checkpoints":{}}),
+    ] {
+        let mut config = configuration()?;
+        config
+            .definition
+            .resource_configurations
+            .insert(resource("one-progress"), recipe);
+        assert!(validate_definition(&config).is_err());
+    }
+    let mut config = configuration()?;
+    config
+        .definition
+        .resources
+        .iter_mut()
+        .find(|value| value.id == resource("one-progress"))
+        .unwrap()
+        .role = ResourceRole::StateStore;
+    assert!(validate_definition(&config).is_err());
     Ok(())
 }
 
@@ -277,6 +317,43 @@ fn direct_native_queries_do_not_require_a_subscription_catalog() -> Result<()> {
             .remove("catalog");
     }
     validate_definition(&config)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
+    let mut config = configuration()?;
+    config.definition.allow_incomplete = true;
+    config
+        .definition
+        .components
+        .retain(|component| component.descriptor.id() == &id("one"));
+    config.definition.relationships.clear();
+    config.definition.resource_configurations.insert(
+        resource("one-progress"),
+        json!({"kind":"sourceProgress","component":"two"}),
+    );
+    let core = DrasiLib::builder()
+        .with_id("invalid-progress-owner")
+        .build()
+        .await?;
+    let mut plugins = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugins);
+    let result = build_components(
+        &config,
+        &core,
+        plugins.computation_factory_registry()?,
+        plugins.transactional_transformer_registry(core.middleware_registry())?,
+    )
+    .await;
+    core.shutdown().await?;
+    let error = result
+        .err()
+        .context("foreign progress owner was accepted")?;
+    assert!(
+        format!("{error:#}").contains("source progress belongs to another graph/query"),
+        "{error:#}"
+    );
+    Ok(())
 }
 
 struct InputSource {
@@ -376,6 +453,12 @@ async fn instance(
         restored.definition.resource_configurations[&resource("results")],
         json!({"kind":"queryCatalog"})
     );
+    for query in ["one", "two"] {
+        assert_eq!(
+            restored.definition.resource_configurations[&resource(&format!("{query}-progress"))],
+            json!({"kind":"sourceProgress","component":query})
+        );
+    }
     let control = core.computation_control()?;
     let started = control
         .start_requested(
