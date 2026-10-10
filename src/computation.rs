@@ -270,7 +270,9 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             DesiredPipe::Retained(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Qos(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Ranked(pipe) => PipeProvider::resource_dependencies(pipe),
-            DesiredPipe::Bounded { .. } | DesiredPipe::Broadcast { .. } => continue,
+            DesiredPipe::Bounded { .. }
+            | DesiredPipe::ByteBounded(_)
+            | DesiredPipe::Broadcast { .. } => continue,
             DesiredPipe::External { .. } => {
                 anyhow::bail!("external pipe binding cannot be reconstructed")
             }
