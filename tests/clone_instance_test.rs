@@ -292,6 +292,19 @@ async fn test_clone_creates_all_components() {
         reaction_ids.contains(&"clone-rx"),
         "Target reactions should contain clone-rx: {reaction_ids:?}"
     );
+    for (components, id) in [
+        (&sources, "clone-src"),
+        (&queries, "clone-query"),
+        (&reactions, "clone-rx"),
+    ] {
+        let component = components["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|component| component["id"] == id)
+            .unwrap();
+        assert_eq!(component["status"], "Added");
+    }
 }
 
 /// Clone from a nonexistent source instance returns an error response.

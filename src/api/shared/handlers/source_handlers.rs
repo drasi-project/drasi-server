@@ -151,6 +151,7 @@ pub async fn create_source_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
@@ -300,6 +301,7 @@ pub async fn upsert_source_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");

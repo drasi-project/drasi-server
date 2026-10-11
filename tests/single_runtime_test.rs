@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},

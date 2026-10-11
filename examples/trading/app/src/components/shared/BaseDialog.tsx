@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useEffect, useCallback } from 'react';
+import React from 'react';
+import { Modal } from '@drasi/react/components';
 import clsx from 'clsx';
 
 /**
@@ -77,65 +78,34 @@ export const BaseDialog: React.FC<BaseDialogProps> = ({
   closeOnOverlayClick = true,
   closeOnEscape = true,
 }) => {
-  // Handle escape key
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (closeOnEscape && event.key === 'Escape') {
-        onClose();
-      }
-    },
-    [closeOnEscape, onClose]
-  );
-
-  useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      // Prevent body scroll when dialog is open
-      document.body.style.overflow = 'hidden';
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, handleKeyDown]);
-
-  // Handle overlay click
-  const handleOverlayClick = (event: React.MouseEvent) => {
-    if (closeOnOverlayClick && event.target === event.currentTarget) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]"
-      onClick={handleOverlayClick}
+    <Modal
+      open={isOpen}
+      title={title}
+      onClose={onClose}
+      closeOnEscape={closeOnEscape}
+      closeOnOutsideClick={closeOnOverlayClick}
+      overlayClassName="trading-dialog-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-[100]"
+      className={clsx(
+        'trading-dialog bg-trading-card border border-trading-border rounded-lg p-6 max-w-[90vw]',
+        width
+      )}
     >
-      <div
-        className={clsx(
-          'bg-trading-card border border-trading-border rounded-lg p-6 max-w-[90vw]',
-          width
-        )}
-      >
-        {/* Title */}
-        <h3 className={clsx('text-lg font-bold mb-4', titleClassName)}>
-          {title}
-        </h3>
+      {/* Title */}
+      <h3 className={clsx('text-lg font-bold mb-4', titleClassName)}>
+        {title}
+      </h3>
 
-        {/* Content */}
-        <div>{children}</div>
+      {/* Content */}
+      <div>{children}</div>
 
-        {/* Footer */}
-        {footer && (
-          <div className="flex gap-3 justify-end mt-4">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
+      {/* Footer */}
+      {footer && (
+        <div className="flex gap-3 justify-end mt-4">
+          {footer}
+        </div>
+      )}
+    </Modal>
   );
 };
 
@@ -158,6 +128,7 @@ export const DialogButton: React.FC<{
 
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={clsx(baseClasses, variantClasses[variant])}

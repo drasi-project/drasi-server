@@ -49,6 +49,65 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 // Helper Functions
 // =============================================================================
 
+fn http_result_after<'a>(payload: &'a serde_json::Value, query_id: &str) -> &'a serde_json::Value {
+    assert_eq!(
+        payload.get("queryId").and_then(|value| value.as_str()),
+        Some(query_id),
+        "Unexpected query identity in HTTP result: {payload:?}"
+    );
+    assert!(
+        matches!(
+            payload.get("operation").and_then(|value| value.as_str()),
+            Some("ADD" | "UPDATE")
+        ),
+        "Expected an ADD or UPDATE HTTP result: {payload:?}"
+    );
+    let after = payload
+        .get("after")
+        .expect("HTTP reaction result must contain an 'after' row");
+    assert!(
+        after.is_object(),
+        "Expected an object in the HTTP result's 'after' field: {payload:?}"
+    );
+    after
+}
+
+#[test]
+fn test_http_result_envelope_preserves_the_returned_row() {
+    let row = json!({"sensorId": "sensor_1", "temp": 25.0});
+    for operation in ["ADD", "UPDATE"] {
+        let payload = json!({"queryId": "sensors", "operation": operation, "after": row});
+        assert_eq!(http_result_after(&payload, "sensors"), &row);
+    }
+}
+
+#[test]
+#[should_panic(expected = "must contain an 'after' row")]
+fn test_http_result_envelope_rejects_missing_row() {
+    http_result_after(
+        &json!({"queryId": "sensors", "operation": "ADD"}),
+        "sensors",
+    );
+}
+
+#[test]
+#[should_panic(expected = "Unexpected query identity")]
+fn test_http_result_envelope_rejects_another_query() {
+    http_result_after(
+        &json!({"queryId": "other", "operation": "ADD", "after": {"temp": 25.0}}),
+        "sensors",
+    );
+}
+
+#[test]
+#[should_panic(expected = "Expected an object")]
+fn test_http_result_envelope_rejects_malformed_row() {
+    http_result_after(
+        &json!({"queryId": "sensors", "operation": "ADD", "after": null}),
+        "sensors",
+    );
+}
+
 /// Create bootstrap JSONL with sensor data that has known values
 #[allow(dead_code)]
 fn sensor_bootstrap_entries() -> Vec<&'static str> {

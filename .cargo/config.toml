@@ -5,7 +5,7 @@
 xtask = "run --package xtask --"
 
 # Drasi dependencies are declared as sibling paths in Cargo.toml.
-# No registry patch is needed to compile changes from ../drasi-core.
+# Run `make prepare-build` to verify the locked dependency origin; sibling SDKs select local plugins.
 
 # Cross-compilation target flags (used by `cross` tool)
 [target.x86_64-unknown-linux-musl]

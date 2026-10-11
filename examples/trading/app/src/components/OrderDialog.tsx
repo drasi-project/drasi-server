@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { Stock } from '@/services/TradingApi';
 import { BaseDialog, DialogButton } from './shared';
 
@@ -55,6 +55,7 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
   const [expiresIn, setExpiresIn] = useState('60'); // Default 60 seconds
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const formId = useId();
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -202,8 +203,11 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
         <>
           {/* Stock selector */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Stock</label>
+            <label htmlFor={`${formId}-symbol`} className="block text-sm text-gray-400 mb-2">Stock</label>
             <select
+              id={`${formId}-symbol`}
+              aria-invalid={Boolean(errors.symbol)}
+              aria-describedby={errors.symbol ? `${formId}-symbol-error` : undefined}
               value={symbol}
               onChange={(e) => handleSymbolChange(e.target.value)}
               className={`w-full bg-trading-bg border rounded p-2 text-white ${
@@ -217,16 +221,22 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
               ))}
             </select>
             {errors.symbol && (
-              <p className="text-red-400 text-sm mt-1">{errors.symbol}</p>
+              <p id={`${formId}-symbol-error`} className="text-red-400 text-sm mt-1">{errors.symbol}</p>
             )}
           </div>
 
           {/* Order Type */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Order Type</label>
-            <div className="flex gap-2">
+            <div id={`${formId}-order-type-label`} className="block text-sm text-gray-400 mb-2">Order Type</div>
+            <div
+              role="group"
+              aria-labelledby={`${formId}-order-type-label`}
+              aria-describedby={`${formId}-order-type-hint`}
+              className="flex gap-2"
+            >
               <button
                 type="button"
+                aria-pressed={orderType === 'buy'}
                 onClick={() => setOrderType('buy')}
                 className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
                   orderType === 'buy'
@@ -238,6 +248,7 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
               </button>
               <button
                 type="button"
+                aria-pressed={orderType === 'sell'}
                 onClick={() => setOrderType('sell')}
                 className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
                   orderType === 'sell'
@@ -248,7 +259,7 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
                 Sell
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p id={`${formId}-order-type-hint`} className="text-xs text-gray-500 mt-1">
               {orderType === 'buy' 
                 ? 'Buy when price drops to target' 
                 : 'Sell when price rises to target'}
@@ -257,8 +268,11 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
 
           {/* Target Price */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Target Price ($)</label>
+            <label htmlFor={`${formId}-target-price`} className="block text-sm text-gray-400 mb-2">Target Price ($)</label>
             <input
+              id={`${formId}-target-price`}
+              aria-invalid={Boolean(errors.targetPrice)}
+              aria-describedby={errors.targetPrice ? `${formId}-target-price-error` : undefined}
               type="number"
               step="0.01"
               value={targetPrice}
@@ -269,14 +283,17 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
               }`}
             />
             {errors.targetPrice && (
-              <p className="text-red-400 text-sm mt-1">{errors.targetPrice}</p>
+              <p id={`${formId}-target-price-error`} className="text-red-400 text-sm mt-1">{errors.targetPrice}</p>
             )}
           </div>
 
           {/* Quantity */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+            <label htmlFor={`${formId}-quantity`} className="block text-sm text-gray-400 mb-2">Quantity</label>
             <input
+              id={`${formId}-quantity`}
+              aria-invalid={Boolean(errors.quantity)}
+              aria-describedby={errors.quantity ? `${formId}-quantity-error` : undefined}
               type="number"
               value={quantity}
               onChange={(e) => handleQuantityChange(e.target.value)}
@@ -286,14 +303,19 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
               }`}
             />
             {errors.quantity && (
-              <p className="text-red-400 text-sm mt-1">{errors.quantity}</p>
+              <p id={`${formId}-quantity-error`} className="text-red-400 text-sm mt-1">{errors.quantity}</p>
             )}
           </div>
 
           {/* Expires In (seconds) */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Expires In (seconds)</label>
+            <label htmlFor={`${formId}-expires-in`} className="block text-sm text-gray-400 mb-2">Expires In (seconds)</label>
             <input
+              id={`${formId}-expires-in`}
+              aria-invalid={Boolean(errors.expiresIn)}
+              aria-describedby={errors.expiresIn
+                ? `${formId}-expires-in-error ${formId}-expires-in-hint`
+                : `${formId}-expires-in-hint`}
               type="number"
               value={expiresIn}
               onChange={(e) => handleExpiresInChange(e.target.value)}
@@ -305,9 +327,9 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
               }`}
             />
             {errors.expiresIn && (
-              <p className="text-red-400 text-sm mt-1">{errors.expiresIn}</p>
+              <p id={`${formId}-expires-in-error`} className="text-red-400 text-sm mt-1">{errors.expiresIn}</p>
             )}
-            <p className="text-xs text-gray-500 mt-1">
+            <p id={`${formId}-expires-in-hint`} className="text-xs text-gray-500 mt-1">
               Order will expire after this many seconds (demonstrates drasi.trueLater)
             </p>
           </div>
@@ -316,7 +338,7 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
 
       {/* Submit error */}
       {submitError && (
-        <div className="p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
+        <div role="alert" className="p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
           {submitError}
         </div>
       )}

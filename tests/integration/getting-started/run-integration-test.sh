@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/config.yaml}"
 SERVER_BINARY="${SERVER_BINARY:-$PROJECT_ROOT/target/release/drasi-server}"
+PLUGINS_DIR="${PLUGINS_DIR:-$(dirname "$SERVER_BINARY")/plugins}"
 SERVER_LOG="${SERVER_LOG:-$SCRIPT_DIR/server.log}"
 SERVER_PORT="${SERVER_PORT:-8080}"
 DB_HOST="${DB_HOST:-localhost}"
@@ -79,8 +80,11 @@ start_server() {
     exit 1
   fi
 
+  python3 "$PROJECT_ROOT/scripts/install_plugins.py" --group getting-started \
+    --server-bin "$SERVER_BINARY" --plugins-dir "$PLUGINS_DIR"
+
   # Start server in background
-  $SERVER_BINARY --config "$CONFIG_FILE" > "$SERVER_LOG" 2>&1 &
+  "$SERVER_BINARY" --config "$CONFIG_FILE" --plugins-dir "$PLUGINS_DIR" > "$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   log_info "Server started with PID: $SERVER_PID"
 

@@ -14,11 +14,15 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { TradingProvider } from '@/drasi/TradingProvider';
 import App from './App';
+import '@drasi/react/styles.css';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <TradingProvider>
+      <App />
+    </TradingProvider>
   </React.StrictMode>,
 );

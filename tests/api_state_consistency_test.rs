@@ -181,6 +181,14 @@ async fn test_components_without_auto_start() {
 
     // Server should still be running
     assert!(core.is_running().await);
+    assert_eq!(
+        core.get_query_status("test-query").await.unwrap(),
+        ComponentStatus::Added
+    );
+    assert_eq!(
+        core.get_reaction_status("test-reaction").await.unwrap(),
+        ComponentStatus::Added
+    );
 
     core.stop().await.ok();
 }

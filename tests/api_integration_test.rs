@@ -738,10 +738,17 @@ async fn test_query_attach_sse_stream() {
     let query_config = Query::cypher("attach-query")
         .query("MATCH (n) RETURN n")
         .from_source("query-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
-    core.start_query("attach-query").await.unwrap();
+    drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "attach-query",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("attach-query should auto-start");
 
     // Start an attach stream request
     let response = router
@@ -794,10 +801,17 @@ async fn test_query_attach_creates_temporary_reaction() {
     let query_config = Query::cypher("attach-reaction-test")
         .query("MATCH (n) RETURN n")
         .from_source("query-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
-    core.start_query("attach-reaction-test").await.unwrap();
+    drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "attach-reaction-test",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("attach-reaction-test should auto-start");
 
     // Count reactions before attach
     let reactions_before = core.list_reactions().await.unwrap_or_default().len();

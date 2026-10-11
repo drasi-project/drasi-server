@@ -38,8 +38,14 @@ logs/
 # Vendored native libraries (downloaded from OCI registry)
 vendor/
 
+# Per-example plugin binaries downloaded/built by example start scripts
+examples/*/plugins/
+
 # UI build artifacts
 ui/node_modules/
 ui/dist/
+
+# Dependency/plugin preparation helpers
+scripts/__pycache__/
 
 .vscode

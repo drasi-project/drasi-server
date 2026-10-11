@@ -1,0 +1,43 @@
+{
+  "issue": 165,
+  "layer": "P7 consumer documentation and canonical examples",
+  "previousHead": "914ba88b642fd98b7db13325ddd756a22d95e969",
+  "authorization": {
+    "decision": "Approve these scoped documentation/example baselines (Recommended)",
+    "scope": "Actual user approved only the measured package archive baseline and the new query-table.html entry. All runtime/type/style/Trading, existing example-entry and example-total baselines, coverage floors and the ordinary 2% future-growth policy remain unchanged."
+  },
+  "packageArchive": {
+    "previousBaseline": "baseline-metrics-p7-pre-guides-v3.json",
+    "previousBaselineSha256": "3a9db73a1a0dacc2614858f2bb0df9f73657fc45c109407e1d890a4f8b239b24",
+    "originalBaselineBytes": 217782,
+    "previousArtifactBytes": 222072,
+    "previousArtifactSha256": "f127849a6344bbe61120703089470f58bad721ca18471bf8fdce7040dde1c207",
+    "previousCapBytes": 222137.64,
+    "measuredBytes": 225320,
+    "measuredSha256": "28a3231f8f46a273fa76391a9371c5c76f6a29709867473a2233ff686adc78d9",
+    "initialResult": "Rejected by the original 222137.64-byte cap before approval; 3182.36 bytes above the cap.",
+    "baselineBytes": 225320,
+    "futureGrowthPercent": 2,
+    "capBytes": 229826.4,
+    "archiveEntries": 65,
+    "addedFiles": [
+      "docs/getting-started.md",
+      "docs/reference.md",
+      "docs/connection.md",
+      "docs/migration.md",
+      "docs/testing.md"
+    ],
+    "reason": "Short first-use README plus five complete shipped guides, a testing map and preserved legacy links. All original recipe code, reference, history, declarations, maps, styles and license notices remain. Runnable example source is repository-owned, not shipped."
+  },
+  "exampleEntry": {
+    "path": "dev-tools/react/examples/query-table.html",
+    "previousBaseline": "dev-tools/react/examples/test/baseline-metrics-original.json",
+    "previousBaselineSha256": "affe56d1808dfb2d60d7e6e5a9c79d8ac9ad54381416c4ef2a8d7944bb017fdd",
+    "completeReachableClosure": { "js": 230748, "jsGzip": 75560, "css": 7462, "cssGzip": 1981 },
+    "futureGrowthPercent": 2,
+    "measuredWorkspaceTotal": { "js": 236706, "jsGzip": 78449, "css": 7462, "cssGzip": 1981 },
+    "initialResult": "Rejected by the unchanged entry-inventory guard before explicit approval; all old entry and whole-workspace caps already passed.",
+    "reason": "A fourth real QueryTable entry, including every reachable entry/shared/lazy chunk and stylesheet. Existing entry and workspace-total baselines are not advanced; headless CSS remains zero."
+  },
+  "notAnAllowance": "This is a one-time scoped feature baseline, not an additive exception or a reset on each build. The historical P5 110-byte allowance is not available to P7."
+}

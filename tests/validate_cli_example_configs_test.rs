@@ -160,6 +160,55 @@ fn test_validate_output_format() {
     assert!(stdout.contains("Summary:"), "Output should contain Summary");
 }
 
+#[test]
+fn test_validate_rejects_unreadable_plugin_metadata() {
+    let directory = tempfile::tempdir().expect("plugin directory");
+    let filename = format!(
+        "{}drasi_source_invalid.{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_EXTENSION
+    );
+    std::fs::write(directory.path().join(filename), b"not a plugin").expect("invalid plugin");
+    let output = Command::new(get_binary_path())
+        .args([
+            "validate",
+            "--config",
+            "examples/trading/server/trading-sources-only.yaml",
+            "--plugins-dir",
+        ])
+        .arg(directory.path())
+        .output()
+        .expect("validate command");
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[ERR]"), "{stdout}");
+    assert!(
+        stdout.contains("could not read embedded metadata"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn test_version_distinguishes_sdk_crate_and_native_abi() {
+    let output = Command::new(get_binary_path())
+        .arg("--version")
+        .output()
+        .expect("version command");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!("plugin-sdk: {}", env!("DRASI_PLUGIN_SDK_VERSION"))),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "plugin ABI: {}",
+            drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION
+        )),
+        "{stdout}"
+    );
+}
+
 // =============================================================================
 // Negative Tests — configs that should FAIL validation
 // =============================================================================

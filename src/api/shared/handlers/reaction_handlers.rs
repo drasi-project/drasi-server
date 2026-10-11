@@ -109,6 +109,7 @@ pub async fn create_reaction_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
@@ -234,6 +235,7 @@ pub async fn upsert_reaction_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
