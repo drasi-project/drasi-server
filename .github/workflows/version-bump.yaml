@@ -22,7 +22,10 @@
 #      Defaults to a patch bump when nothing is selected.
 #   2. Bumps every drasi-* dependency in Cargo.toml to its latest published
 #      version (allowing incompatible/major bumps).
-#   3. Sets the package version and opens a pull request with the changes.
+#   3. Sets only drasi-server's package version and refreshes Cargo.lock without
+#      upgrading unrelated dependencies or changing other workspace versions.
+#   4. Checks the final dependency origins and locked build before opening a PR
+#      containing the root Cargo.toml and Cargo.lock.
 #
 # Part 2: once the PR is reviewed and merged, run the "Build and Release"
 # workflow (release.yaml), which reads the new version from Cargo.toml.
@@ -96,6 +99,9 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
         run: cargo install cargo-edit --locked
+
+      - name: Test version bump workflow
+        run: python3 -m unittest discover -s tests -p 'test_version_bump.py'
 
       - name: Determine version strategy
         id: version
@@ -187,13 +193,6 @@ jobs:
           sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
           echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
-      - name: Validate upgraded dependencies compile
-        # cargo upgrade --incompatible can pull in API-breaking minor bumps
-        # (e.g. 0.8.x -> 0.9.0). Compile with the project's pinned toolchain to
-        # catch breakage here — opening a PR that fails to build is worse than
-        # opening no PR at all.
-        run: cargo check --workspace --locked
-
       - name: Set package version
         id: setversion
         env:
@@ -204,15 +203,27 @@ jobs:
           set -euo pipefail
 
           if [ "$MODE" = "override" ]; then
-            cargo set-version "$OVERRIDE"
+            cargo set-version --package drasi-server "$OVERRIDE"
           else
-            cargo set-version --bump "$BUMP"
+            cargo set-version --package drasi-server --bump "$BUMP"
           fi
+
+          # Reconcile cargo-edit's lockfile changes with the pinned Cargo resolver
+          # while retaining unrelated dependency versions.
+          cargo update --workspace
 
           NEW_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           [ -n "$NEW_VERSION" ] || { echo "::error::Could not read new version from Cargo.toml"; exit 1; }
           echo "New drasi-server version: ${NEW_VERSION}"
           echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate final version and dependencies
+        # Validate after every manifest/lockfile mutation, on the pinned toolchain.
+        # New Drasi releases must also match the reviewed plugin-origin policy.
+        run: |
+          set -euo pipefail
+          python3 scripts/plugin_origin.py mode
+          cargo check --workspace --locked
 
       - name: Detect changes and build summary
         id: changes
