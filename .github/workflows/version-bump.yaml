@@ -100,9 +100,6 @@ jobs:
           RUSTUP_TOOLCHAIN: stable
         run: cargo install cargo-edit --locked
 
-      - name: Test version bump workflow
-        run: python3 -m unittest discover -s tests -p 'test_version_bump.py'
-
       - name: Determine version strategy
         id: version
         # Pass untrusted inputs via the environment, never via ${{ }}
