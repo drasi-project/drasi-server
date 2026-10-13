@@ -1,0 +1,179 @@
+/*
+ * Copyright 2026 The Drasi Authors.
+ * Licensed under the Apache License, Version 2.0.
+ */
+
+html {
+  font-size: 16px;
+  color-scheme: light;
+}
+
+body {
+  color: #172033;
+  background: #fff;
+  font-family: Arial, sans-serif;
+}
+
+.fixture-main {
+  min-height: 140vh;
+  padding: 12px;
+}
+
+.fixture-scrolled-host {
+  padding-top: 320px;
+}
+
+.fixture-main > h1 {
+  margin: 0 0 16px;
+  font-size: 24px;
+}
+
+.fixture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.fixture-output {
+  display: block;
+  margin: 8px 0;
+}
+
+.fixture-section {
+  margin: 20px 0;
+}
+
+.fixture-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.fixture-modal-body p {
+  margin: 0;
+}
+
+.fixture-modal-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fixture-long-content p {
+  margin: 12px 0;
+}
+
+.fixture-host {
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.fixture-host button {
+  color: #33205b;
+  background: #ede9fe;
+  border: 3px solid #5341a5;
+  border-radius: 0;
+  font: 700 19px Georgia, serif;
+  padding: 5px;
+}
+
+.fixture-host h2 {
+  color: #33205b;
+  font: 700 23px Georgia, serif;
+  margin: 7px;
+}
+
+.fixture-host table {
+  color: #33205b;
+  background: #ede9fe;
+  border-collapse: separate;
+  border-spacing: 7px;
+  font: 19px Georgia, serif;
+}
+
+.fixture-sibling-control {
+  color: #0f172a;
+  background: #e2e8f0;
+  border: 2px solid #475569;
+  border-radius: 0;
+  font: 17px Arial, sans-serif;
+  padding: 6px;
+}
+
+.fixture-theme {
+  padding: 8px;
+}
+
+.fixture-typography-probe {
+  font-size: 30px;
+}
+
+.fixture-theme[data-palette="violet"] {
+  --drasi-color-text: #28113e;
+  --drasi-color-muted: #55396b;
+  --drasi-color-subtle: #55396b;
+  --drasi-color-surface: #f5ecff;
+  --drasi-color-dialog: #f5ecff;
+  --drasi-color-border: #846799;
+  --drasi-color-focus: #492079;
+  --drasi-test-token: fixture-violet;
+  --drasi-line-height: 1.6;
+  font-family: Georgia, serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: var(--drasi-line-height);
+  direction: rtl;
+}
+
+.fixture-theme[data-palette="ocean"] {
+  --drasi-color-text: #0c3442;
+  --drasi-color-muted: #21566a;
+  --drasi-color-subtle: #21566a;
+  --drasi-color-surface: #e6f6fa;
+  --drasi-color-dialog: #e6f6fa;
+  --drasi-color-border: #467487;
+  --drasi-color-focus: #07485e;
+  --drasi-test-token: fixture-ocean;
+  --drasi-line-height: 1.5;
+  font-family: "Courier New", monospace;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: var(--drasi-line-height);
+  direction: ltr;
+}
+
+.fixture-theme.fixture-environment-theme {
+  --drasi-color-dialog: #fff4d6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .fixture-theme.fixture-environment-theme {
+    --drasi-color-dialog: #f3e8ff;
+  }
+}
+
+@media (max-width: 600px) {
+  .fixture-theme.fixture-environment-theme {
+    --drasi-color-dialog: #dcfce7;
+  }
+}
+
+.fixture-size-case {
+  margin-bottom: 20px;
+}
+
+.fixture-percent-parent {
+  height: 360px;
+}
+
+.fixture-static-table {
+  width: 320px;
+  max-width: 100%;
+}
+
+.fixture-static-table .drasi-query-table__table {
+  min-width: 640px;
+}

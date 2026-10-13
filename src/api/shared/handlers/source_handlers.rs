@@ -133,7 +133,6 @@ pub async fn create_source_handler(
     })?;
 
     let source_id = config.id().to_string();
-    let auto_start = config.auto_start();
 
     // Resolve any top-level `bootstrapProvider: <id>` reference against this
     // instance's declared providers so the source is wired (and bootstraps)
@@ -151,15 +150,10 @@ pub async fn create_source_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
-
-            if auto_start {
-                if let Err(e) = core.start_source(&source_id).await {
-                    log::warn!("Failed to auto-start source '{source_id}': {e}");
-                }
-            }
 
             // Track any `identityProvider` reference so persistence can
             // round-trip it (snapshot_configuration() doesn't carry it).
@@ -243,7 +237,6 @@ pub async fn upsert_source_handler(
     }
 
     let source_id = config.id().to_string();
-    let auto_start = config.auto_start();
 
     // Resolve any top-level `bootstrapProvider: <id>` reference so the source
     // is wired live; `config` keeps the reference for persistence.
@@ -306,15 +299,10 @@ pub async fn upsert_source_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
-
-            if auto_start {
-                if let Err(e) = core.start_source(&source_id).await {
-                    log::warn!("Failed to auto-start source '{source_id}': {e}");
-                }
-            }
 
             if let Some(p) = &config_persistence {
                 p.register_source_identity_provider(

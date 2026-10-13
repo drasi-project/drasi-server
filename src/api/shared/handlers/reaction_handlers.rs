@@ -97,7 +97,6 @@ pub async fn create_reaction_handler(
     })?;
 
     let reaction_id = config.id().to_string();
-    let auto_start = config.auto_start();
 
     let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
         .await
@@ -109,15 +108,10 @@ pub async fn create_reaction_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
-
-            if auto_start {
-                if let Err(e) = core.start_reaction(&reaction_id).await {
-                    log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
-                }
-            }
 
             if let Some(p) = &config_persistence {
                 p.register_reaction_identity_provider(
@@ -188,7 +182,6 @@ pub async fn upsert_reaction_handler(
     }
 
     let reaction_id = config.id().to_string();
-    let auto_start = config.auto_start();
 
     // Check if reaction already exists
     let exists = core.get_reaction_info(&reaction_id).await.is_ok();
@@ -240,15 +233,10 @@ pub async fn upsert_reaction_handler(
             )
         })?;
 
+    // DrasiLib owns auto-start when adding to a running instance.
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
-
-            if auto_start {
-                if let Err(e) = core.start_reaction(&reaction_id).await {
-                    log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
-                }
-            }
 
             if let Some(p) = &config_persistence {
                 p.register_reaction_identity_provider(

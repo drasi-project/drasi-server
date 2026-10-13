@@ -58,7 +58,6 @@ WORKDIR /app
 # Copy Cargo files first for dependency caching
 COPY Cargo.toml Cargo.lock build.rs ./
 
-
 # Copy source code
 COPY src ./src
 COPY config ./config
@@ -70,7 +69,7 @@ COPY --from=ui-builder /app/ui/dist ./ui/dist
 # Build release binary
 # Set JQ_LIB_DIR dynamically for multiarch support (no pkg-config file in Debian's libjq-dev)
 RUN JQ_LIB_DIR=$(dirname $(find /usr/lib -name 'libjq.so' | head -1)) \
-    cargo build --release --bin drasi-server
+    cargo build --locked --release --bin drasi-server
 
 # =============================================================================
 # Stage 3: Runtime Environment

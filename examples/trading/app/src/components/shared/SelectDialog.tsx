@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { BaseDialog, DialogButton } from './BaseDialog';
 
 /**
@@ -86,6 +86,7 @@ export const SelectDialog: React.FC<SelectDialogProps> = ({
   loadingText = 'Adding...',
 }) => {
   const [selectedValue, setSelectedValue] = useState('');
+  const selectId = useId();
 
   // Reset selection when dialog opens or options change
   useEffect(() => {
@@ -128,8 +129,9 @@ export const SelectDialog: React.FC<SelectDialogProps> = ({
         <p className="text-gray-400">{emptyMessage}</p>
       ) : (
         <>
-          <label className="block text-sm text-gray-400 mb-2">{selectLabel}</label>
+          <label htmlFor={selectId} className="block text-sm text-gray-400 mb-2">{selectLabel}</label>
           <select
+            id={selectId}
             value={selectedValue}
             onChange={(e) => setSelectedValue(e.target.value)}
             className="w-full bg-trading-bg border border-trading-border rounded p-2 text-white"

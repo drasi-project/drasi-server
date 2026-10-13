@@ -79,7 +79,7 @@ async fn test_snapshot_returns_all_components() {
     let query = Query::cypher("snap-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("snap-src")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     let reaction = create_mock_reaction("snap-reaction", vec!["snap-query".to_string()]);
 
@@ -179,7 +179,7 @@ async fn test_snapshot_includes_dependency_edges() {
     let query = Query::cypher("edge-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("edge-src")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     let reaction = create_mock_reaction("edge-reaction", vec!["edge-query".to_string()]);
 

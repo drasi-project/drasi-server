@@ -1,0 +1,17 @@
+{
+  "issue": 165,
+  "layer": "P7",
+  "environment": "Node 22.20.0 pinned Linux and Node 24.19.0, React 18.3.1, Vite 5.4.19",
+  "policy": "Every emitted JS/CSS entry/shared/lazy file is counted. Per-entry totals overlap. The same 2% future-growth ceiling applies independently to every metric; no package or Trading baseline is replaced by these example-only measurements.",
+  "total": {
+    "js": 233119,
+    "jsGzip": 76994,
+    "css": 7392,
+    "cssGzip": 1954
+  },
+  "entries": {
+    "index.html": { "js": 228276, "jsGzip": 74752, "css": 7392, "cssGzip": 1954 },
+    "hooks.html": { "js": 178883, "jsGzip": 57086, "css": 0, "cssGzip": 0 },
+    "showcase.html": { "js": 229129, "jsGzip": 74888, "css": 7392, "cssGzip": 1954 }
+  }
+}
