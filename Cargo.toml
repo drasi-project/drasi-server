@@ -72,6 +72,8 @@ drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
 
 # Host SDK for dynamic plugin loading
 drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["registry", "fetcher", "watcher"] }
+drasi-computation-bridge = { path = "../drasi-core/components/computation-plugins/bridge" }
+drasi-instance-host = { path = "../drasi-core/components/instance-host" }
 oci-client = "0.16"
 
 # Server-specific dependencies

@@ -441,7 +441,7 @@ pub fn validate_with_plugins(
             graph
                 .definition
                 .build(drasi_lib::computation::v1::TopologyBindings {
-                    factories: registry.computation_factory_registry()?,
+                    factories: crate::computation::native_factory_registry(&registry)?,
                     ..Default::default()
                 })
                 .map(|_| ())

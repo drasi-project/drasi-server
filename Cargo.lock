@@ -1146,6 +1146,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-bridge"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "drasi-core",
+ "drasi-lib",
+ "futures-util",
+ "rmp-serde",
+ "rustls",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-computation-plugin-abi"
 version = "0.11.3"
 
@@ -1285,6 +1308,27 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "drasi-instance-host"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-bridge",
+ "drasi-core",
+ "drasi-host-sdk",
+ "drasi-index-rocksdb",
+ "drasi-lib",
+ "drasi-middleware",
+ "drasi-state-store-redb",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1433,9 +1477,11 @@ dependencies = [
  "dotenvy",
  "drasi-bootstrap-application",
  "drasi-bootstrap-noop",
+ "drasi-computation-bridge",
  "drasi-core",
  "drasi-host-sdk",
  "drasi-index-rocksdb",
+ "drasi-instance-host",
  "drasi-lib",
  "drasi-plugin-sdk",
  "drasi-reaction-application",
@@ -5311,6 +5357,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

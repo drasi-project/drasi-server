@@ -580,7 +580,8 @@ async fn managed_server_shared_pipeline_replays_unhandled_output_after_reconstru
             assert!(receive.try_recv().is_err());
         } else {
             assert_unsafe_changes_rejected(&core, directory.path()).await?;
-            core.stop().await?;
+            force_unhandled_pipeline(&core).await?;
+            assert_eq!(journal.progress().await?.processed["sink"], 0);
             assert_unsafe_changes_rejected(&core, directory.path()).await?;
         }
         core.shutdown().await?;
@@ -635,6 +636,33 @@ async fn quiesce_and_stop(core: &DrasiLib) -> Result<()> {
     Ok(())
 }
 
+async fn force_unhandled_pipeline(core: &DrasiLib) -> Result<()> {
+    // A deliberately held Handled sink needs explicit interruption, not graceful drain.
+    let control = core.computation_control()?;
+    let report = tokio::time::timeout(
+        DEADLINE,
+        control.force_cancel_components(
+            control.desired_snapshot().revision,
+            GraphSelection::Exact(vec![
+                ComponentId::try_new("source")?,
+                ComponentId::try_new("query")?,
+                ComponentId::try_new("sink")?,
+            ]),
+        ),
+    )
+    .await
+    .with_context(|| format!("pending pipeline force deadline: {:?}", control.observed()))??;
+    assert!(
+        report
+            .interrupted
+            .contains_key(&ComponentId::try_new("sink")?),
+        "the deliberately unhandled sink was not reported as interrupted"
+    );
+    assert_eq!(report.cleanup.summary, OperationSummary::Completed);
+    core.stop().await?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn loss_authorized_shared_query_retirement_preserves_pending_output() -> Result<()> {
     loss_authorized_query_retirement(true).await
@@ -669,7 +697,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
     )?);
     let core = DrasiLib::builder()
         .with_id("retired-query")
-        .with_component_factories(factories)
+        .with_component_factories(factories.clone())
         .with_configuration_store(store.clone())
         .with_management_resources(resolver.clone())
         .build()
@@ -724,7 +752,72 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
             ]),
         )
         .await?;
-    core.stop().await?;
+    force_unhandled_pipeline(&core).await?;
+    assert_eq!(journal.progress().await?.processed["sink"], 0);
+    assert!(core
+        .apply_desired_state(created.revision, "damaged-retirement", removed.clone())
+        .await
+        .is_err());
+    assert!(core
+        .configuration_receipt("damaged-retirement")
+        .await?
+        .is_none());
+    let accepted = core.desired_configuration()?.desired;
+    core.shutdown().await?;
+    assert!(journal.progress().await.is_err());
+    drop((control, core, journal));
+
+    let core = DrasiLib::builder()
+        .with_id("retired-query")
+        .with_component_factories(factories)
+        .with_configuration_store(store.clone())
+        .with_management_resources(resolver.clone())
+        .build()
+        .await?;
+    assert_eq!(core.desired_configuration()?.desired, accepted);
+    assert!(core.reconcile_desired_state().await?.converged());
+    assert!(core
+        .computation_control()?
+        .observed()
+        .components
+        .values()
+        .all(|component| component.lifecycle == ComponentLifecycle::Stopped));
+    let control = core.computation_control()?;
+    let producers = GraphSelection::Exact(vec![
+        ComponentId::try_new("source")?,
+        ComponentId::try_new("query")?,
+    ]);
+    let revision = control.desired_snapshot().revision;
+    assert_eq!(
+        tokio::time::timeout(
+            DEADLINE,
+            control.start_components(revision, producers.clone())
+        )
+        .await??
+        .summary,
+        OperationSummary::Completed
+    );
+    tokio::time::timeout(
+        DEADLINE,
+        control.quiesce_components(revision, producers.clone()),
+    )
+    .await??;
+    assert_eq!(
+        tokio::time::timeout(DEADLINE, control.stop_components(revision, producers))
+            .await??
+            .summary,
+        OperationSummary::Completed
+    );
+    let journal = resolver
+        .journal
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(Weak::upgrade)
+        .context("reconstructed unhandled journal")?;
+    assert_eq!(journal.output_journal_identity(), identity);
+    assert_eq!(journal.progress().await?.accepted, 1);
+    assert_eq!(journal.progress().await?.processed["sink"], 0);
     assert!(core
         .apply_desired_state(created.revision, "lossless", DesiredInstance::default())
         .await

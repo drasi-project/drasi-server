@@ -138,7 +138,7 @@ impl ConfigurationStores {
                     .unwrap_or_default())
             })
             .await?;
-        let factories = plugins.read().await.computation_factory_registry()?;
+        let factories = crate::computation::native_factory_registry(&*plugins.read().await)?;
         Ok(builder
             .with_id(instance)
             .with_component_factories(factories)

@@ -38,6 +38,20 @@ pub struct ComputationConfig {
     pub definition: DesiredTopology,
 }
 
+/// Use the same native implementations for validation, construction and restoration.
+pub fn native_factory_registry(
+    plugins: &crate::plugin_registry::PluginRegistry,
+) -> Result<FactoryRegistry> {
+    let mut factories = plugins.computation_factory_registry()?;
+    for factory in drasi_computation_bridge::factories()
+        .into_iter()
+        .chain(drasi_instance_host::factories())
+    {
+        factories.register(factory)?;
+    }
+    Ok(factories)
+}
+
 /// Provider recipes stored in DesiredTopology::resource_configurations.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
@@ -62,6 +76,24 @@ pub enum ComputationResourceConfig {
     Middleware,
     QueryMiddleware,
     TransactionalTransformers,
+    BridgeIngressControl,
+    BridgeEgressControl,
+    BridgeTls {
+        version: u32,
+        #[schema(value_type = String)]
+        role: drasi_computation_bridge::TlsRole,
+        trust_roots: Vec<PathBuf>,
+        certificate_chain: Vec<PathBuf>,
+        private_key: PathBuf,
+        peer_certificate_sha256: String,
+    },
+    ChildSupervisor {
+        executable: PathBuf,
+        state_path: PathBuf,
+        #[schema(value_type = serde_json::Value)]
+        #[serde(default)]
+        runtime: drasi_instance_host::RuntimeBudget,
+    },
     Configuration,
     Qos {
         #[schema(value_type = serde_json::Value)]
@@ -84,7 +116,11 @@ impl ComputationResourceConfig {
             Self::NativeBootstrap(_) => ResourceRole::Bootstrap,
             Self::SourceProgress { .. } => ResourceRole::Checkpoint,
             Self::Middleware | Self::QueryMiddleware => ResourceRole::Middleware,
-            Self::TransactionalTransformers => ResourceRole::Component,
+            Self::TransactionalTransformers
+            | Self::BridgeIngressControl
+            | Self::BridgeEgressControl
+            | Self::ChildSupervisor { .. } => ResourceRole::Component,
+            Self::BridgeTls { .. } => ResourceRole::Identity,
             Self::Configuration => ResourceRole::SecretStore,
             Self::Qos { .. } | Self::SharedQos(_) => ResourceRole::StateStore,
         }
@@ -141,6 +177,7 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             .with_context(|| format!("resource {} has no construction recipe; external bindings cannot be persisted or cloned", resource.id))?;
         let recipe: ComputationResourceConfig = serde_json::from_value(recipe.clone())
             .with_context(|| format!("invalid configuration for resource {}", resource.id))?;
+        validate_host_recipe(&recipe, resource)?;
         anyhow::ensure!(
             recipe.role() == resource.role,
             "resource {} role differs from its recipe",
@@ -288,6 +325,59 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
     Ok(())
 }
 
+fn validate_host_recipe(
+    recipe: &ComputationResourceConfig,
+    resource: &ResourceSpecification,
+) -> Result<()> {
+    match recipe {
+        ComputationResourceConfig::BridgeTls { .. } => {
+            let tls: drasi_computation_bridge::TlsResourceRecipe =
+                serde_json::from_value(serde_json::to_value(recipe)?)?;
+            tls.validate()?;
+            anyhow::ensure!(
+                tls.trust_roots
+                    .iter()
+                    .chain(&tls.certificate_chain)
+                    .chain(std::iter::once(&tls.private_key))
+                    .all(|path| path.is_absolute()),
+                "server bridge TLS paths must be absolute for reproducible restoration"
+            );
+        }
+        ComputationResourceConfig::ChildSupervisor {
+            executable,
+            state_path,
+            runtime,
+        } => {
+            runtime.validate()?;
+            anyhow::ensure!(
+                resource.ownership == ResourceOwnership::Graph,
+                "child supervision requires graph cleanup ownership"
+            );
+            for path in [executable, state_path] {
+                anyhow::ensure!(
+                    path.is_absolute()
+                        && !path.components().any(|part| matches!(
+                            part,
+                            std::path::Component::ParentDir | std::path::Component::CurDir
+                        )),
+                    "child host executable and state paths must be absolute and normalized"
+                );
+            }
+            #[cfg(not(unix))]
+            anyhow::bail!("owned child instance supervision is not supported on this platform");
+        }
+        ComputationResourceConfig::BridgeIngressControl
+        | ComputationResourceConfig::BridgeEgressControl => {
+            anyhow::ensure!(
+                resource.ownership == ResourceOwnership::Graph,
+                "bridge control requires graph cleanup ownership"
+            );
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn result_catalog_dependency(specification: &ComponentSpecification) -> Result<&ResourceId> {
     specification
         .dependencies
@@ -329,7 +419,7 @@ pub async fn build_components_with_registry(
     build_components_with_resources(
         config,
         core,
-        registry.computation_factory_registry()?,
+        native_factory_registry(registry)?,
         registry.transactional_transformer_registry(core.middleware_registry())?,
         registry.computation_bootstrap_factories()?,
     )
@@ -434,7 +524,7 @@ impl ServerManagementResources {
     ) -> Result<Self> {
         let middleware = DrasiLib::default_middleware_registry();
         Ok(Self {
-            factories: registry.computation_factory_registry()?,
+            factories: native_factory_registry(registry)?,
             bootstraps: registry.computation_bootstrap_factories()?,
             transactional: registry.transactional_transformer_registry(middleware.clone())?,
             middleware,
@@ -521,6 +611,7 @@ impl ManagementResourceResolver for ServerManagementResources {
     ) -> Result<ResourceHandle> {
         let recipe: ComputationResourceConfig = serde_json::from_value(configuration.clone())
             .with_context(|| format!("invalid configuration for resource {}", resource.id))?;
+        validate_host_recipe(&recipe, resource)?;
         anyhow::ensure!(
             recipe.role() == resource.role,
             "resource {} role differs from its recipe",
@@ -618,6 +709,44 @@ impl ManagementResourceResolver for ServerManagementResources {
                     self.transactional.clone(),
                 )),
             ),
+            ComputationResourceConfig::BridgeIngressControl => {
+                Arc::new(drasi_computation_bridge::BridgeIngressControl::new()).resource()
+            }
+            ComputationResourceConfig::BridgeEgressControl => {
+                Arc::new(drasi_computation_bridge::BridgeEgressControl::new()).resource()
+            }
+            ComputationResourceConfig::BridgeTls { .. } => {
+                let tls: drasi_computation_bridge::TlsResourceRecipe =
+                    serde_json::from_value(configuration.clone())?;
+                ResourceHandle::new(
+                    ResourceRole::Identity,
+                    tls.resolve(std::path::Path::new("/"))?,
+                )
+            }
+            ComputationResourceConfig::ChildSupervisor {
+                executable,
+                state_path,
+                runtime,
+            } => {
+                #[cfg(unix)]
+                {
+                    drasi_instance_host::ChildSupervisorResource::handle(
+                        drasi_instance_host::ChildSupervisor::new(
+                            executable,
+                            state_path,
+                            instance.to_owned(),
+                            runtime,
+                        )?,
+                    )
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = (executable, state_path, runtime);
+                    anyhow::bail!(
+                        "owned child instance supervision is not supported on this platform"
+                    );
+                }
+            }
             ComputationResourceConfig::Configuration => ResourceHandle::new(
                 ResourceRole::SecretStore,
                 Arc::new(ConfigurationResolverResource(Arc::new(
@@ -793,6 +922,89 @@ pub(crate) async fn cleanup_failed_preparation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_and_bridge_factories_are_available_without_loading_child_plugins() {
+        let plugins = crate::plugin_registry::PluginRegistry::new();
+        let registry = native_factory_registry(&plugins).unwrap();
+        let bridge = drasi_computation_bridge::factories();
+        let host = drasi_instance_host::factories();
+        assert_eq!(bridge.len(), 2);
+        assert!(!host.is_empty());
+        for factory in bridge.into_iter().chain(host) {
+            assert!(registry.get(&factory.descriptor().implementation).is_some());
+        }
+    }
+
+    fn hosting_resource(ownership: ResourceOwnership) -> ResourceSpecification {
+        ResourceSpecification {
+            id: ResourceId::try_new("hosting").unwrap(),
+            role: ResourceRole::Component,
+            ownership,
+            binding: "hosting".into(),
+        }
+    }
+
+    #[test]
+    fn bridge_control_resources_require_explicit_graph_cleanup_ownership() {
+        for recipe in [
+            ComputationResourceConfig::BridgeIngressControl,
+            ComputationResourceConfig::BridgeEgressControl,
+        ] {
+            assert_eq!(recipe.role(), ResourceRole::Component);
+            validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).unwrap();
+            assert!(
+                validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Borrowed))
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn server_tls_recipe_uses_shared_validation_without_opening_key_files() {
+        let config = serde_json::json!({
+            "kind": "bridgeTls", "version": 1, "role": "server",
+            "trust_roots": ["/not-opened/root.der"],
+            "certificate_chain": ["/not-opened/server.der"],
+            "private_key": "/not-opened/server.pk8",
+            "peer_certificate_sha256": "0".repeat(64)
+        });
+        let recipe: ComputationResourceConfig = serde_json::from_value(config.clone()).unwrap();
+        assert_eq!(recipe.role(), ResourceRole::Identity);
+        validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).unwrap();
+        assert_eq!(serde_json::to_value(&recipe).unwrap(), config);
+        for (field, invalid) in [
+            ("private_key", serde_json::json!("relative.pk8")),
+            ("peer_certificate_sha256", serde_json::json!("not-a-pin")),
+        ] {
+            let mut changed = config.clone();
+            changed[field] = invalid;
+            let recipe: ComputationResourceConfig = serde_json::from_value(changed).unwrap();
+            assert!(
+                validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn child_supervisor_recipe_rejects_unowned_or_ambiguous_paths_without_launching() {
+        let recipe = ComputationResourceConfig::ChildSupervisor {
+            executable: "/not-opened/drasi-instance-host".into(),
+            state_path: "/not-created/instance-state".into(),
+            runtime: drasi_instance_host::RuntimeBudget::default(),
+        };
+        assert!(
+            validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Borrowed)).is_err()
+        );
+        #[cfg(unix)]
+        validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).unwrap();
+        let bad = ComputationResourceConfig::ChildSupervisor {
+            executable: "drasi-instance-host".into(),
+            state_path: "/not-created/../state".into(),
+            runtime: drasi_instance_host::RuntimeBudget::default(),
+        };
+        assert!(validate_host_recipe(&bad, &hosting_resource(ResourceOwnership::Graph)).is_err());
+    }
 
     #[test]
     fn references_are_explicit_and_do_not_silently_coerce_values() {
