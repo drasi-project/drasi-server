@@ -48,7 +48,7 @@ export function validateNativeSseGraph(value: unknown, queryIds: readonly string
   }
 }
 
-// The pinned SDK's default validator expects a legacy Reaction DTO. Its public
+// The SDK's default validator expects a legacy Reaction DTO. Its public
 // client/provider binding lets this native example validate actual graph edges.
 type NativeOptions = { origin: string; instanceId: string; queryIds: readonly string[]; sinkId: string; endpoint: string };
 

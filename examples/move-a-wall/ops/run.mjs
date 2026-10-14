@@ -5,6 +5,8 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
+const serverRoot = resolve(root, '../..');
+const target = resolve(process.env.CARGO_TARGET_DIR ?? resolve(serverRoot, 'target'));
 for (const port of [8421,8422,8423,5421]) {
   await new Promise((accept,reject) => {
     const socket = createServer();
@@ -12,9 +14,9 @@ for (const port of [8421,8422,8423,5421]) {
     socket.listen(port,'127.0.0.1',() => socket.close(accept));
   });
 }
-const serverUi = resolve('../../ui/dist');
+const serverUi = resolve(serverRoot, 'ui/dist');
 await access(resolve(serverUi,'index.html')).catch(error => {
-  throw new Error('Stock Server Web UI assets are unavailable. Run make build-ui in drasi-server before ./demo start.',{cause:error});
+  throw new Error('Stock Server Web UI assets are unavailable. Run ./demo setup first.',{cause:error});
 });
 await mkdir('.build/ui',{recursive:true});
 await cp(serverUi,resolve('.build/ui/dist'),{recursive:true});
@@ -51,7 +53,7 @@ function run(binary,args,options) {
   return child;
 }
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal,() => void stop(0));
-run(resolve('target/debug/drasi-server'),['--config',resolve('server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification'],
+run(resolve(target,'debug/drasi-server'),['--config',resolve('server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification'],
   {cwd:resolve('.build'),stdio:['ignore',log.fd,log.fd],env:{...process.env,RUST_LOG:process.env.RUST_LOG ?? 'info'}});
 try {
   let ready = false;

@@ -1,49 +1,63 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-export CARGO_TARGET_DIR="$PWD/target"
+example_root="$PWD"
+server_root="$(cd ../.. && pwd)"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$server_root/target}"
+case "$CARGO_TARGET_DIR" in
+  /*) ;;
+  *) export CARGO_TARGET_DIR="$PWD/$CARGO_TARGET_DIR" ;;
+esac
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_DEV_STRIP=none
-revision=2a36f857526baa08304a698131854f222b40b108
+server_binary="$CARGO_TARGET_DIR/debug/drasi-server"
+if [ -z "${JQ_LIB_DIR:-}" ] && command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libjq; then
+  export JQ_LIB_DIR="$(pkg-config --variable=libdir libjq)"
+fi
 case "$(uname -s)" in
   Darwin) extension=dylib ;;
   Linux) extension=so ;;
   *) echo "This launcher supports macOS and Linux." >&2; exit 1 ;;
 esac
+validate_config() {
+  test -x "$server_binary" ||
+    { echo "Run ./demo setup first." >&2; return 1; }
+  "$server_binary" --config server.yaml --plugins-dir .build/plugins validate
+}
 case "${1:-help}" in
   setup)
-    test -f ../../ui/dist/index.html ||
-      { echo "Build the stock Server Web UI first: run make build-ui in drasi-server." >&2; exit 1; }
-    mkdir -p .build/react-source .build/plugins ui/vendor
-    if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
-      git -C ../.. cat-file -e "$revision^{commit}" ||
-        { echo "Pinned @drasi/react commit $revision is absent. Fetch it into the existing drasi-server checkout first." >&2; exit 1; }
-      git -C ../.. archive "$revision" dev-tools/react | tar -x -C .build/react-source
-    fi
+    echo "Building the in-tree @drasi/react package..."
     (
-      cd .build/react-source/dev-tools/react
-      npm ci --ignore-scripts --no-audit --no-fund
-      npm run build
-      npm pack --ignore-scripts --pack-destination ../../../../ui/vendor
+      cd "$server_root/dev-tools/react"
+      npm ci --no-audit --no-fund
     )
-    mv ui/vendor/drasi-react-0.1.0.tgz ui/vendor/drasi-react.tgz
-    (cd ui && if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi && npm run build)
-    cargo build --locked --features dynamic-plugin --lib
-    cargo build --locked --manifest-path ../../../drasi-core/Cargo.toml -p drasi-computation-network --features dynamic-plugin
-    cargo build --locked --manifest-path ../../Cargo.toml --bin drasi-server
-    cp "target/debug/libmove_a_wall.$extension" ".build/plugins/libdrasi_move_a_wall.$extension"
-    cp "target/debug/libdrasi_computation_network.$extension" ".build/plugins/libdrasi_computation_network.$extension"
+    echo "Building the example UI..."
+    (cd ui && npm ci --install-links=false --no-audit --no-fund && npm run build)
+    make -C "$server_root" build
+    (
+      cd "$server_root"
+      cargo build --locked --manifest-path "$example_root/Cargo.toml" --features dynamic-plugin --lib
+      cargo build --locked --manifest-path ../drasi-core/Cargo.toml -p drasi-computation-network --features dynamic-plugin
+    )
+    mkdir -p .build/plugins
+    cp "$CARGO_TARGET_DIR/debug/libmove_a_wall.$extension" ".build/plugins/libdrasi_move_a_wall.$extension"
+    cp "$CARGO_TARGET_DIR/debug/libdrasi_computation_network.$extension" ".build/plugins/libdrasi_computation_network.$extension"
     rm -f ".build/plugins/libdrasi_reaction_sse.$extension"
-    target/debug/drasi-server --config server.yaml --plugins-dir .build/plugins validate
+    validate_config
     echo "Ready: ./demo start"
     ;;
   start)
-    test -x target/debug/drasi-server &&
+    test -x "$server_binary" &&
       test -f ".build/plugins/libdrasi_move_a_wall.$extension" &&
-      test -f ".build/plugins/libdrasi_computation_network.$extension" ||
+      test -f ".build/plugins/libdrasi_computation_network.$extension" &&
+      test -f ui/node_modules/vite/bin/vite.js &&
+      test -f ui/node_modules/@drasi/react/dist/index.js ||
       { echo "Run ./demo setup first." >&2; exit 1; }
     exec node ops/run.mjs
+    ;;
+  validate)
+    validate_config
     ;;
   test)
     cargo test --locked
@@ -58,7 +72,7 @@ case "${1:-help}" in
     exec node ops/check-browser.mjs
     ;;
   *)
-    echo "Usage: ./demo setup | start | test | check | browser"
+    echo "Usage: ./demo setup | start | validate | test | check | browser"
     echo "start runs stock drasi-server and Vite in the foreground. Ctrl-C stops only its children."
     ;;
 esac

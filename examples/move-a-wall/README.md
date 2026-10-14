@@ -17,232 +17,31 @@ This is a change-processing example, not a scheduler, autonomous robot demo,
 route planner or safety system. The carts never move. There is no prediction
 clock, physics loop, rerouting, or robot stop/resume command.
 
-## Getting started
+## Quick Start
 
-**Run setup before start, including after cleaning the example.** `./demo start`
-does not install dependencies or rebuild missing binaries. Do not run `npm ci`
-in the example's `ui/` first: its local `@drasi/react` package is created by
-`./demo setup`.
+Use this ComputationGraph source checkout with the matching sibling `drasi-core`
+checkout and the [build prerequisites](#build-prerequisites) installed. No Docker,
+database, broker, or GPU is needed.
 
-### 1. Check the source checkouts and tools
-
-This is a source-built ComputationGraph example, not a standalone published
-package. Use the existing sibling checkouts on
-`agentofreality-parallel-computation-graph`:
-
-```text
-drasi-computation-graph/
-  drasi-core/
-  drasi-server/
-    examples/move-a-wall/
-```
-
-The commands below use this workspace's absolute path. If your checkouts live
-elsewhere, replace that prefix while keeping the sibling layout. Do not switch
-branches or create another checkout just to run this example. See the
-[compatible revisions](#compatibility-and-verified-evidence); an older checkout
-or a published Server binary may not support its native graph resources.
-
-Requirements:
-
-- macOS or Linux, Git, Bash, and make.
-- Rust/rustup. `rust-toolchain.toml` pins **1.97.1**, including rustfmt and Clippy,
-  for the host and plugins. If it is not installed:
-  `rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy`.
-- **Node.js 22 or 24** and npm, available in the same terminal as the build.
-- Native build tools and libraries, as below.
-- Internet access for initial Cargo/npm downloads. Allow at least **15 GB of
-  free disk space** for the example's native build and dependencies.
-
-No Docker, database, registry, broker, or GPU is needed.
-
-On **macOS**, install Xcode Command Line Tools if `cc` is unavailable
-(`xcode-select --install`), then install the native dependencies with Homebrew:
+From the **`drasi-server` repository root**:
 
 ```sh
-brew install jq protobuf pkg-config cmake
-export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+cd examples/move-a-wall
+./demo setup && ./demo start
 ```
 
-On **Debian/Ubuntu Linux**, the corresponding prerequisites are:
+Open **http://127.0.0.1:5421**, then drag the movable wall across Ada's path.
+The impact appears in the live query results; move the wall away to retract it.
+Use `127.0.0.1`, not `localhost`, because the command endpoint checks the origin.
 
-```sh
-sudo apt-get update
-sudo apt-get install -y build-essential clang libclang-dev cmake pkg-config \
-  jq libjq-dev libonig-dev protobuf-compiler libssl-dev
-export JQ_LIB_DIR="$(pkg-config --variable=libdir libjq)"
-```
+**Ctrl-C stops the example.** On subsequent runs, use `./demo start`.
 
-Keep `JQ_LIB_DIR` set in the terminal used for setup and Rust tests. Other Linux
-distributions need equivalent packages.
-
-### 2. Prepare the Server UI and React SDK source
-
-Start from the **Server repository root**, not the coordinator or example:
-
-```sh
-cd /Users/alljones/dev/drasi-computation-graph/drasi-server
-
-# Confirm that the sibling source tree and supported Node version are available.
-test -f ../drasi-core/Cargo.toml
-node --version
-npm --version
-
-# This is the stock Server administration UI, not the example's React UI.
-# Reuse an existing bundle; build it if it is missing.
-if [ ! -f ui/dist/index.html ]; then
-  make build-ui
-fi
-test -f ui/dist/index.html
-
-# Confirm that the pinned, real @drasi/react source is in this Git object store.
-git cat-file -e 2a36f857526baa08304a698131854f222b40b108:dev-tools/react/package.json
-```
-
-Coordinate with any owner of the shared Server UI before rebuilding its assets.
-If the Server UI source has changed since its last build, run `make build-ui`
-even if the bundle already exists. If the final Git check reports a missing
-object, obtain it in the same Server checkout, then repeat the check:
-
-```sh
-git fetch origin 2a36f857526baa08304a698131854f222b40b108
-git cat-file -e 2a36f857526baa08304a698131854f222b40b108:dev-tools/react/package.json
-```
-
-Setup uses the pinned SDK package even if another version is in the working tree.
-It exports just that package
-from the pinned commit, preserving its license, into this example's ignored
-staging directory and builds it. It does not switch branches, create a checkout,
-or copy GPU Lab's dependencies.
-
-### 3. Build the example, then run it
-
-In the same terminal:
-
-```sh
-cd /Users/alljones/dev/drasi-computation-graph/drasi-server/examples/move-a-wall
-./demo setup
-```
-
-Wait for **`Ready: ./demo start`**. Setup installs and builds the example's UI,
-builds both plugins and the stock Server, and validates the checked-in
-`server.yaml`. If any step fails, fix the reported error and rerun setup; do not
-proceed to start with an incomplete build.
-
-The validator may summarize this as zero sources and zero queries: those counts
-refer to the legacy configuration lists, while this example declares its native
-components under `computation.graph`. Confirm the running graph in step 4.
-
-```sh
-./demo start
-```
-
-Leave this terminal running. Use a **second terminal** for the checks below.
-
-Open **http://127.0.0.1:5421**. Use that exact hostname, not `localhost`, because
-the source's development command endpoint checks the browser origin.
-
-The first build compiles the stock Server and native dependencies and can take
-many minutes, especially while compiling `librocksdb-sys`. A clean example build
-took about 23 minutes on the validation Mac; incremental builds are much faster.
-`setup` defaults to one Cargo job (override with `CARGO_BUILD_JOBS`) and uses this
-example's own `target/`. The native scene and
-geometry plugin and the native network SSE plugin are built from the same local code
-and toolchain as the Server. Symbols are not stripped. The stock Server reads
-`server.yaml` directly and obtains port types and schemas from those factories.
-Setup does not write a configuration file or run an embedded runtime.
-All example execution components, including `wall-ui`, are native graph
-components. Query outputs connect directly to `drasi.network/sse-sink`; there is
-no legacy reaction subscription/processing queue. The existing browser event
-format and Server query snapshot API are unchanged. SSE remains a volatile UI
-notification channel, not acknowledged or durable browser delivery.
-
-`start` checks that its ports are free, launches the **actual**
-`target/debug/drasi-server --config server.yaml --plugins-dir
-.build/plugins --skip-verification`, then launches the thin Vite
-UI/proxy. It waits for a real `geometry-status` query result before opening the
-UI service. Server logs are in `.build/server.log`.
-
-The launcher copies the existing stock Server UI bundle into its own ignored
-`.build/ui/dist` directory; it does not rebuild or modify the shared UI.
-The checked-in configuration enables the Server UI.
-The footer's **Drasi Server Web UI** link opens **http://127.0.0.1:8421/ui/**,
-served by the same stock Server instance that runs this geometry graph.
-
-### Editing the solution
-
-Edit `server.yaml`, not a Rust configuration program or `.build/server.yaml`.
-The same file is used by setup, startup and the Rust query tests. Query text and
-join definitions live there once, rather than being copied into Rust helpers.
-
-`components` names each component's ID, factory `kind`, version and settings.
-`resources` declares the shared query indexes and result catalog. The catalog
-and `query-results` outlet expose the real query results through the stock
-Server API; `wall-ui` sends those same results to the browser over SSE.
-`connections` specifies where records flow. Because these components each have
-one input/output port, a connection needs only the two component names.
-The Server checks the actual port schemas; the YAML does not copy them.
-All output streams default to `component-id/port-id`, and the bounded
-connections use `defaultPipeCapacity: 32`.
-
-After a configuration edit, validate it with the built host and plugins:
-
-```sh
-target/debug/drasi-server --config server.yaml --plugins-dir .build/plugins validate
-```
-
-Stop and restart `./demo start` to apply the edit. Rebuild with `./demo setup`
-only when the host or plugin code changes. `persistConfig: false` keeps API
-operations from rewriting the example file.
-
-The old file's size came from repeated component descriptors and schema bytes,
-not polygon coordinates. The starting scene remains the small fixture in
-`src/model.rs`, loaded by the scene source's reset operation. A file bootstrapper
-was not needed to solve this configuration problem.
-
-### 4. Confirm startup
-
-The browser should show **Live query results** and two unobstructed planned
-journeys. From a second terminal:
-
-```sh
-curl --fail --silent --show-error \
-  http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/geometry-status/results
-```
-
-Before any edits, the successful response's `data` array contains a row with
-`id: "current"`, `revision: 1`, `objects: 9`, and `obstructions: 0`.
-The example UI is on **5421**; the separate stock Server administration UI is on
-**8421/ui/**. Neither is the Server's usual default port 8080.
-
-| Loopback port | Owner |
-| --- | --- |
-| 5421 | Vite: React assets and same-origin proxy only |
-| 8421 | Stock Drasi Server REST API and Server Web UI |
-| 8422 | Native `drasi.network/sse-sink`, inside Server |
-| 8423 | Example native scene source's input command endpoint, inside Server |
-
-### Stop, rebuild, or clean up
-
-**Stop:** Ctrl-C in the launch terminal. The launcher signals only the child
-processes it started and waits for them. It never discovers or kills other
-listeners. All data is intentionally volatile; a full stop/start reconstructs
-the fixture. Do not individually restart a native component: reconstruct the
-whole graph to get a fresh source bootstrap and query caches.
-
-**Rebuild:** stop the launcher, rerun `./demo setup`, then `./demo start`. Do this
-after changing native source or sibling Server/Core code; do not replace a plugin
-library while the Server has it loaded. Query-only edits in `server.yaml` need
-validation and a restart, not a rebuild.
-
-**After cleanup:** `.build/`, `target/`, `artifacts/`, `ui/dist/`,
-`ui/node_modules/`, and `ui/vendor/` are disposable, ignored example outputs.
-Removing them does not remove the source, but you must repeat setup before
-starting or running tests. The shared Server `ui/dist/` is a separate prerequisite.
-
-This is a local development example. Plugin signature verification is disabled
-only for these locally built libraries. Do not expose its command or Server
-management ports to a network.
+Setup builds the current in-tree React SDK, both UIs, the standard Server and the
+two native plugins. There is no separate UI preparation, historical Git fetch,
+vendored SDK, or generated configuration step. The first native build can take
+many minutes; later builds reuse the Server's Cargo cache. See
+[Detailed setup and development](#detailed-setup-and-development) for prerequisites,
+configuration edits, build outputs and troubleshooting.
 
 ## A 90-second presentation
 
@@ -372,7 +171,8 @@ each query's `out` port also connects to the outlet's `in` port. The example's
 
 The native SSE sink explicitly configures `heartbeatIntervalMs: 5000`. This is
 only a connection heartbeat; it never triggers geometry computation.
-The pinned React SDK remains unchanged. Its public `DrasiClientProvider` binds
+The UI uses the current `dev-tools/react` package through a local dependency,
+not an archived SDK or a modified copy. Its public `DrasiClientProvider` binds
 an application-owned client that validates the real native graph, query lifecycle
 and bound query-to-SSE edges instead of requiring a legacy Reaction DTO. It does
 not fabricate a legacy resource, bypass readiness checks or replace the SDK's
@@ -439,19 +239,162 @@ timeout; errors remain visible and queries remain the source of truth if the
 HTTP outcome is uncertain. The HTTP command response only confirms acceptance,
 never an obstruction.
 
+## Detailed setup and development
+
+### Build prerequisites
+
+Use the existing matching ComputationGraph checkouts, with this sibling layout:
+
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+    examples/move-a-wall/
+```
+
+This is a source-built example, not a standalone published package. An older
+checkout or published Server binary may lack its native graph resources or
+readable configuration support. No additional checkout or branch switch is
+needed.
+
+Requirements:
+
+- macOS or Linux, Git, Bash, make, and Python 3.11 or later.
+- Rust/rustup. The example inherits the Server's
+  [`rust-toolchain.toml`](../../rust-toolchain.toml); it has no separate toolchain
+  pin. The host and both native plugins use that same toolchain.
+- **Node.js 22 or 24** and npm.
+- Native build tools and libraries, as below.
+- Internet access for initial Cargo/npm downloads and at least **15 GB of free
+  disk space** for a clean native build.
+
+On **macOS**, install Xcode Command Line Tools if `cc` is unavailable
+(`xcode-select --install`), then install the native libraries:
+
+```sh
+brew install jq protobuf pkg-config cmake
+```
+
+On **Debian/Ubuntu Linux**:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential clang libclang-dev cmake pkg-config \
+  jq libjq-dev libonig-dev protobuf-compiler libssl-dev
+```
+
+Other Linux distributions need equivalent packages. The launcher discovers
+libjq with `pkg-config`; set `JQ_LIB_DIR` only if your installation needs an
+explicit library directory.
+
+### What setup builds
+
+Run `./demo setup` with the example stopped. It:
+
+1. Installs and builds the checked-in `dev-tools/react` package.
+2. Installs the example UI's locked dependencies with local packages linked to
+   their source, then type-checks and builds the UI.
+3. Runs the Server's standard `make build`, including its administration UI.
+4. Builds the scene/geometry plugin and Core's standard native network plugin,
+   then stages those two libraries in `.build/plugins`.
+5. Validates the checked-in `server.yaml`, including its nine native components.
+
+Wait for **`Ready: ./demo start`**. A failure stops setup; fix the reported error
+and rerun it rather than starting a partial build. There is no SDK archive,
+tarball generation, custom Server executable, or configuration generator.
+
+The default Cargo output is the Server's shared `target/`, not an example-local
+Server build. Standard `CARGO_TARGET_DIR` overrides are supported; use the same
+value for setup, start and tests. `CARGO_BUILD_JOBS` defaults to one to limit
+native-build memory use. Native debug information is disabled, but symbols are
+not stripped. A clean build can take many minutes, particularly for RocksDB.
+
+The launcher starts the stock Server binary, waits for the initial
+`geometry-status` query result, checks the administration UI, then starts the
+Vite frontend/proxy. It copies the standard administration UI bundle into the
+isolated `.build/ui/dist` runtime directory. Server logs are in
+`.build/server.log`. The footer's **Drasi Server Web UI** link opens
+**http://127.0.0.1:8421/ui/** on the same Server instance.
+
+| Loopback port | Owner |
+| --- | --- |
+| 5421 | Vite: React assets and same-origin proxy only |
+| 8421 | Stock Drasi Server REST API and administration UI |
+| 8422 | Native `drasi.network/sse-sink`, inside Server |
+| 8423 | Native scene source's input command endpoint, inside Server |
+
+### Editing the solution
+
+Edit `server.yaml`, not a Rust configuration program or `.build/server.yaml`.
+The same file is used by setup, startup and the Rust query tests. Query text and
+join definitions live there once, rather than being copied into Rust helpers.
+
+`components` names each component's ID, factory `kind`, version and settings.
+`resources` declares the shared query indexes and result catalog. The catalog
+and `query-results` outlet expose real results through the stock Server API;
+`wall-ui` sends those same results over SSE. `connections` specifies where
+records flow. Because these components each have one input/output port, a
+connection needs only the two component names. The Server checks the actual
+port schemas; the YAML does not copy them. Output streams default to
+`component-id/port-id`, with `defaultPipeCapacity: 32`.
+
+After a configuration edit:
+
+```sh
+./demo validate
+```
+
+Stop and restart `./demo start` to apply it; no rebuild is needed for YAML-only
+changes. `persistConfig: false` keeps API operations from rewriting the file.
+The initial scene remains the small fixture in `src/model.rs`, loaded by reset.
+
+### Confirming startup
+
+The browser should show **Live query results** and two unobstructed journeys.
+For a direct snapshot, use another terminal:
+
+```sh
+curl --fail --silent --show-error \
+  http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/geometry-status/results
+```
+
+Before edits, the response's `data` array contains `id: "current"`,
+`revision: 1`, `objects: 9`, and `obstructions: 0`.
+
+### Stopping, rebuilding and build outputs
+
+**Stop:** Ctrl-C in the launch terminal. The launcher signals only its own child
+processes and waits for them; it never kills another listener. All state is
+intentionally volatile. Restart the whole example for a fresh fixture and query
+caches rather than restarting an individual native component.
+
+**Rebuild:** stop the launcher, run `./demo setup`, then `./demo start`. Rebuild
+after changing native code, Server/Core or the SDK. Do not replace a plugin
+library while the Server has it loaded.
+
+Example-local `.build/`, `artifacts/`, `ui/dist/` and `ui/node_modules/` are
+ignored outputs. The Server Cargo target, administration UI and React SDK builds
+are shared repository outputs, not private copies. Repeat setup after cleaning
+required outputs. Earlier builds may have left an example-local `target/`,
+`.build/react-source/` or `ui/vendor/`; setup no longer uses those directories.
+
+This is a loopback-only development example. Plugin signature verification is
+disabled only for its locally built libraries. Do not expose its command or
+Server management ports to a network.
+
 ## Inspect and validate
 
 Complete setup first. For the Rust/UI checks, run this with the demo stopped:
 
 ```sh
-cd /Users/alljones/dev/drasi-computation-graph/drasi-server/examples/move-a-wall
+# From examples/move-a-wall:
 ./demo test                  # geometry/real-Cypher tests, Rust fmt/Clippy, UI tests/build
 ```
 
 For live acceptance, run `./demo start` in one terminal. In a **second terminal**:
 
 ```sh
-cd /Users/alljones/dev/drasi-computation-graph/drasi-server/examples/move-a-wall
+# From examples/move-a-wall, in a second terminal:
 ./demo check                 # real stock-server/API/SSE acceptance
 (cd ui && npx playwright install chromium)   # once, if Chromium is not installed
 ./demo browser               # actual drag, reload, offline/reconnect, errors, reset
@@ -477,10 +420,9 @@ test-only, not a substitute for the stock-server live check.
 filtering, multiple causes, retractions, reset and real SSE delivery. It requires
 actual stock SSE `ADD`, stable-key `UPDATE` and `DELETE` rows and saves them in
 ignored `artifacts/sse-changes.json`. `browser` writes screenshots
-to ignored `artifacts/`. Example-specific data, plugin binaries, packages, logs,
-and build outputs stay under this example and are ignored. Cargo/npm download
-caches, the Playwright browser installation, and the stock Server UI build are
-outside that directory and may be shared with other projects.
+to ignored `artifacts/`. Example-specific runtime files, staged plugins, logs and
+UI outputs stay under this example and are ignored. The Cargo target, stock UI,
+React SDK, download caches and Playwright browser installation may be shared.
 
 Useful actual Server endpoints:
 
@@ -495,15 +437,14 @@ curl -N http://127.0.0.1:8422/events
 | Symptom | Action |
 | --- | --- |
 | `./demo` is not found | Change to `drasi-server/examples/move-a-wall`, not the coordinator or Server root. |
-| `Build the stock Server Web UI first` or `/ui/` is unavailable | Run `make build-ui` from `drasi-server`, then rerun setup. Do not confuse `drasi-server/ui/dist` with this example's `ui/dist`. |
-| `Pinned @drasi/react commit ... is absent` | Fetch the pinned SDK commit into the Server checkout using step 2. |
-| npm cannot find `vendor/drasi-react.tgz` | Run `./demo setup` from the example root; it creates the local package before installing UI dependencies. |
-| `protoc`, a C/C++ compiler, CMake, libclang, or libjq is missing | Install the platform prerequisites above. For libjq discovery/link errors, set `JQ_LIB_DIR` in this terminal before rerunning setup or tests. |
+| Stock Server UI assets are unavailable or `/ui/` returns 404 | Rerun `./demo setup`; its standard Server build prepares the administration UI automatically. |
+| `@drasi/react` cannot be resolved or its `dist/` is missing | Run `./demo setup`; it builds the in-tree SDK before installing the UI's local dependencies. No Git fetch or vendor tarball is needed. |
+| `protoc`, a C/C++ compiler, CMake, libclang, or libjq is missing | Install the [build prerequisites](#build-prerequisites). For a nonstandard libjq installation, set `JQ_LIB_DIR` before rerunning setup. |
 | `Run ./demo setup first`, missing plugin, or missing Server executable | Setup did not finish, or its build artifacts were cleaned. Rerun setup and wait for its `Ready` message. |
 | `EADDRINUSE` | Stop the launcher that owns the conflicting port, or resolve the other service's ownership first. Do not kill unrelated processes. The fixed ports are listed above. |
 | Commands fail origin checks | Open `http://127.0.0.1:5421`, not `localhost`, a file URL, or a different port. |
 | Chromium executable is missing | Run `(cd ui && npx playwright install chromium)` after setup. |
-| Native resource/ABI error or no initial `geometry-status` result | Check the compatible source revisions and `.build/server.log`; stop and rebuild the host and both plugins together with setup. Do not mix downloaded binaries with these local plugins. |
+| Native resource/ABI error or no initial `geometry-status` result | Check the matching source checkouts and `.build/server.log`; stop and rebuild the host and both plugins together with setup. Do not mix downloaded binaries with these local plugins. |
 
 If startup fails, inspect `.build/server.log` rather than substituting a local
 result model. Port conflicts fail without touching another service. If a native
@@ -513,8 +454,10 @@ volatile; process restart intentionally starts fresh.
 
 ## Compatibility and verified evidence
 
-The example and native query-catalog integration were originally qualified at
-these committed revisions:
+Setup uses the current Server, sibling Core and in-tree React SDK. The revisions
+below record **historical qualification**, not dependency pins or instructions
+to fetch old source. The example and native query-catalog integration were
+originally qualified at these committed revisions:
 
 | Repository | Commit |
 | --- | --- |
