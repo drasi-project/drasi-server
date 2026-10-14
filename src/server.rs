@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
@@ -758,6 +759,15 @@ impl DrasiServer {
 
     #[allow(clippy::print_stdout)]
     async fn run_until_shutdown(&mut self) -> Result<()> {
+        #[cfg(unix)]
+        let (mut interrupt, mut terminate) = {
+            use tokio::signal::unix::{signal, SignalKind};
+            (
+                signal(SignalKind::interrupt()).context("Failed to register SIGINT handler")?,
+                signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?,
+            )
+        };
+
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
         println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
@@ -899,51 +909,145 @@ impl DrasiServer {
         };
 
         // Start web API if enabled
-        if self.enable_api {
-            self.start_api(
-                instances.clone(),
-                registry.clone(),
-                config_persistence.clone(),
-                solutions_dir,
-            )
-            .await?;
+        let (api_shutdown, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+        let mut api_task = if self.enable_api {
+            let task = self
+                .start_api(
+                    instances.clone(),
+                    registry.clone(),
+                    config_persistence.clone(),
+                    solutions_dir,
+                    api_shutdown_receiver,
+                )
+                .await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.port
             );
+            Some(task)
         } else {
             info!("Drasi Server started successfully (API disabled)");
-        }
+            None
+        };
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
+        #[cfg(unix)]
+        let signal_result = tokio::select! {
+            received = interrupt.recv() => received.context("SIGINT signal stream closed"),
+            received = terminate.recv() => received.context("SIGTERM signal stream closed"),
+        };
+        #[cfg(not(unix))]
+        let signal_result = tokio::signal::ctrl_c()
+            .await
+            .context("Failed to listen for Ctrl+C");
 
         info!("Shutting down Drasi Server");
+        let _ = api_shutdown.send(());
 
-        // Cancel the hot-reload watcher task if running
-        if let Some(handle) = self.watcher_handle.take() {
-            handle.abort();
-            let _ = handle.await;
-            info!("Plugin hot-reload watcher stopped");
+        let mut cores = Vec::new();
+        let mut failures = Vec::new();
+        let mut api_joined = false;
+        let shutdown_result = tokio::time::timeout(Duration::from_secs(30), async {
+            if let Err(error) = signal_result {
+                failures.push(error);
+            }
+
+            if let Some(handle) = self.watcher_handle.as_mut() {
+                handle.abort();
+                if let Err(error) = handle.await {
+                    if !error.is_cancelled() {
+                        failures.push(
+                            anyhow::Error::new(error).context("Plugin hot-reload watcher failed"),
+                        );
+                    }
+                    self.watcher_handle.take();
+                }
+                info!("Plugin hot-reload watcher stopped");
+            }
+
+            if let Some(task) = api_task.as_mut() {
+                match tokio::time::timeout(Duration::from_secs(5), &mut *task).await {
+                    Ok(result) => {
+                        api_joined = true;
+                        match result {
+                            Ok(Ok(())) => info!("Web API stopped"),
+                            Ok(Err(error)) => {
+                                failures.push(anyhow::Error::new(error).context("Web API failed"))
+                            }
+                            Err(error) => failures
+                                .push(anyhow::Error::new(error).context("Web API task failed")),
+                        }
+                    }
+                    Err(_) => {
+                        task.abort();
+                        failures.push(anyhow::anyhow!("Web API did not drain within 5 seconds"));
+                        if let Err(error) = (&mut *task).await {
+                            if !error.is_cancelled() {
+                                failures.push(
+                                    anyhow::Error::new(error)
+                                        .context("Web API task failed during cleanup"),
+                                );
+                            }
+                        }
+                        api_joined = true;
+                    }
+                }
+            }
+
+            cores = registry
+                .list()
+                .await
+                .into_iter()
+                .map(|(id, core)| (id, (*core).clone()))
+                .collect();
+            for (id, core) in &cores {
+                if let Err(error) = core.shutdown().await {
+                    error!("Failed to shut down instance '{id}': {error}");
+                    failures.push(
+                        anyhow::Error::from(error)
+                            .context(format!("Failed to shut down instance '{id}'")),
+                    );
+                }
+            }
+        })
+        .await
+        .context("Drasi Server shutdown timed out after 30 seconds");
+
+        if let Err(error) = shutdown_result {
+            failures.push(error);
         }
-
-        let cores: Vec<_> = registry
-            .list()
-            .await
-            .into_iter()
-            .map(|(_, core)| (*core).clone())
-            .collect();
-        let mut failure = None;
-        for core in &cores {
-            if let Err(error) = core.shutdown().await {
-                log::error!("Failed to shut down instance: {error}");
-                failure = Some(anyhow::Error::from(error));
+        if !api_joined {
+            if let Some(task) = api_task.as_mut() {
+                task.abort();
+                if let Err(error) = task.await {
+                    if !error.is_cancelled() {
+                        failures.push(
+                            anyhow::Error::new(error).context("Web API task failed during cleanup"),
+                        );
+                    }
+                }
             }
         }
-        if let Some(error) = failure {
-            return Err(crate::computation::cleanup_failed_preparation(cores, error).await);
+        if !failures.is_empty() {
+            if cores.is_empty() {
+                cores = registry
+                    .list()
+                    .await
+                    .into_iter()
+                    .map(|(id, core)| (id, (*core).clone()))
+                    .collect();
+            }
+            let error = anyhow::Error::new(drasi_lib::error::OperationFailures::new(
+                "Shutdown failed",
+                failures,
+            ));
+            return Err(crate::computation::cleanup_failed_preparation(
+                cores.into_iter().map(|(_, core)| core).collect(),
+                error,
+            )
+            .await);
         }
 
+        info!("Drasi Server shutdown complete");
         Ok(())
     }
 
@@ -953,7 +1057,8 @@ impl DrasiServer {
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
-    ) -> Result<()> {
+        shutdown: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<tokio::task::JoinHandle<std::io::Result<()>>> {
         // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
         let registry_version = {
@@ -1072,13 +1177,17 @@ impl DrasiServer {
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-        tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                error!("Web API server error: {e}");
+        Ok(tokio::spawn(async move {
+            let result = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown.await;
+                })
+                .await;
+            if let Err(error) = &result {
+                error!("Web API server error: {error}");
             }
-        });
-
-        Ok(())
+            result
+        }))
     }
 }
 

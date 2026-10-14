@@ -1399,6 +1399,7 @@ dependencies = [
  "drasi-lib",
  "log",
  "rmp-serde",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1463,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-server"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "assert_matches",
