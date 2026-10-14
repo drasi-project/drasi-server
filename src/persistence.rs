@@ -504,7 +504,8 @@ impl ConfigPersistence {
                 .snapshot_computation_configuration()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to snapshot instance '{id}': {e}"))?;
-            let computation = crate::computation::configuration_from_snapshot(&snapshot)?;
+            let computation =
+                crate::computation::configuration_from_snapshot(&snapshot)?.map(Into::into);
             let snapshot = snapshot.instance;
 
             let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);

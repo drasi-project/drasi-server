@@ -618,7 +618,9 @@ impl DrasiServer {
                     .filter(|_| instance.configuration_store.is_none())
                 {
                     let registry = plugin_registry.read().await;
-                    crate::computation::register_components(computation, &core, &registry)
+                    let factories = crate::computation::native_factory_registry(&registry)?;
+                    let computation = computation.resolve(&factories)?;
+                    crate::computation::register_components(&computation, &core, &registry)
                         .await
                         .with_context(|| "Failed to configure instance computation components")?;
                 }
@@ -1137,7 +1139,7 @@ mod single_runtime_tests {
         };
         let config = crate::config::DrasiServerConfig {
             id: crate::api::models::ConfigValue::Static("native-startup".into()),
-            computation: Some(graph_config.clone()),
+            computation: Some(graph_config.clone().into()),
             ..Default::default()
         };
         let directory = tempfile::tempdir().unwrap();
@@ -1174,9 +1176,12 @@ mod single_runtime_tests {
         core.shutdown().await.unwrap();
 
         let mut config = config;
-        config.computation.as_mut().unwrap().definition.components[0]
-            .lifecycle
-            .auto_start = true;
+        let crate::computation::ComputationConfigInput::Definition(graph) =
+            config.computation.as_mut().unwrap()
+        else {
+            panic!("expanded test definition");
+        };
+        graph.definition.components[0].lifecycle.auto_start = true;
         config.save_to_file(&path).unwrap();
         let failed = DrasiServer::new(path, 8080, directory.path().join("plugins"), false, false)
             .await

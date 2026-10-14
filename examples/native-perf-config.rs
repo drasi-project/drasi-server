@@ -252,9 +252,12 @@ fn main() -> Result<()> {
     config.sources.clear();
     config.queries.clear();
     config.reactions.clear();
-    config.computation = Some(ComputationConfig {
-        definition: graph.definition,
-    });
+    config.computation = Some(
+        ComputationConfig {
+            definition: graph.definition,
+        }
+        .into(),
+    );
     config.validate()?;
     println!("{}", serde_json::to_string_pretty(&config)?);
     Ok(())

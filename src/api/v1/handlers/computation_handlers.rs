@@ -34,7 +34,7 @@ use crate::{
         handlers::{get_instance_or_error, persist_after_operation},
         ApiResponse, StatusResponse,
     },
-    computation::ComputationConfig,
+    computation::ComputationConfigInput,
     instance_registry::InstanceRegistry,
     persistence::ConfigPersistence,
     plugin_registry::PluginRegistry,
@@ -153,7 +153,7 @@ pub async fn get_computation_configuration(
 #[utoipa::path(
     post, path = "/api/v1/instances/{instanceId}/computation/components",
     params(("instanceId" = String, Path, description = "DrasiLib instance ID")),
-    request_body(content = ComputationConfig, description = "Accepts application/json and application/yaml"),
+    request_body(content = ComputationConfigInput, description = "Readable graph or expanded definition; accepts application/json and application/yaml"),
     responses((status = 200, description = "Components added; inspect individual creation and startup status", body = ApiResponse<ComputationGraphInfo>),
               (status = 400, description = "Invalid definition or missing factory/resource", body = ErrorResponse),
               (status = 409, description = "Read-only or duplicate component", body = ErrorResponse)),
@@ -165,11 +165,25 @@ pub async fn create_computation_components(
     Extension(plugins): Extension<Arc<RwLock<PluginRegistry>>>,
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    ConfigBody(config): ConfigBody<ComputationConfig>,
+    ConfigBody(config): ConfigBody<ComputationConfigInput>,
 ) -> Result<Json<ApiResponse<ComputationGraphInfo>>, ErrorResponse> {
     require_writable(*read_only)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
     crate::api::shared::handlers::require_imperative_configuration(&core)?;
+    let plugins = plugins.read().await;
+    let config = crate::computation::native_factory_registry(&plugins)
+        .and_then(|factories| config.resolve(&factories))
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Invalid computation component configuration",
+            )
+            .with_details(ErrorDetail {
+                component_type: Some("computation".to_string()),
+                component_id: Some(instance_id.clone()),
+                technical_details: Some(format!("{error:#}")),
+            })
+        })?;
     let snapshot = core.computation_control()?.desired_snapshot();
     for component in &config.definition.components {
         if snapshot
@@ -183,7 +197,6 @@ pub async fn create_computation_components(
             ));
         }
     }
-    let plugins = plugins.read().await;
     let components = crate::computation::build_components_with_registry(&config, &core, &plugins)
         .await
         .map_err(|error| {

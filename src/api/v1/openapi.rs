@@ -138,6 +138,8 @@ use utoipa::openapi::RefOr;
             DrasiServerConfig,
             DrasiLibInstanceConfig,
             crate::computation::ComputationConfig,
+            crate::computation::ComputationConfigInput,
+            crate::computation::ComputationGraphConfig,
             crate::computation::ComputationResourceConfig,
             crate::managed_configuration::ConfigurationStoreConfig,
             super::handlers::DesiredConfigurationRequest,

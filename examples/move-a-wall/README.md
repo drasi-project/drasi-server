@@ -9,6 +9,10 @@ results retract.
 The display name is **Obstacle Impact**; the example directory and graph instance
 ID remain `move-a-wall`.
 
+The solution is declared in the checked-in [`server.yaml`](server.yaml):
+components, continuous queries, joins, resources and connections. There is no
+configuration generator or generated YAML prerequisite.
+
 This is a change-processing example, not a scheduler, autonomous robot demo,
 route planner or safety system. The carts never move. There is no prediction
 clock, physics loop, rerouting, or robot stop/resume command.
@@ -105,7 +109,8 @@ git fetch origin 2a36f857526baa08304a698131854f222b40b108
 git cat-file -e 2a36f857526baa08304a698131854f222b40b108:dev-tools/react/package.json
 ```
 
-The SDK is not in this branch's working tree. Setup exports just that package
+Setup uses the pinned SDK package even if another version is in the working tree.
+It exports just that package
 from the pinned commit, preserving its license, into this example's ignored
 staging directory and builds it. It does not switch branches, create a checkout,
 or copy GPU Lab's dependencies.
@@ -120,13 +125,13 @@ cd /Users/alljones/dev/drasi-computation-graph/drasi-server/examples/move-a-wall
 ```
 
 Wait for **`Ready: ./demo start`**. Setup installs and builds the example's UI,
-builds both plugins and the stock Server, generates the configuration, and
-validates it. If any step fails, fix the reported error and rerun setup; do not
+builds both plugins and the stock Server, and validates the checked-in
+`server.yaml`. If any step fails, fix the reported error and rerun setup; do not
 proceed to start with an incomplete build.
 
 The validator may summarize this as zero sources and zero queries: those counts
 refer to the legacy configuration lists, while this example declares its native
-components under `computation.definition`. Confirm the running graph in step 4.
+components under `computation.graph`. Confirm the running graph in step 4.
 
 ```sh
 ./demo start
@@ -143,9 +148,9 @@ took about 23 minutes on the validation Mac; incremental builds are much faster.
 `setup` defaults to one Cargo job (override with `CARGO_BUILD_JOBS`) and uses this
 example's own `target/`. The native scene and
 geometry plugin and the native network SSE plugin are built from the same local code
-and toolchain as the Server. Symbols are not stripped. `wall-config` generates
-`.build/server.yaml` from the actual native factory descriptors and built-in
-continuous-query factory contracts; it does not run an embedded runtime.
+and toolchain as the Server. Symbols are not stripped. The stock Server reads
+`server.yaml` directly and obtains port types and schemas from those factories.
+Setup does not write a configuration file or run an embedded runtime.
 All example execution components, including `wall-ui`, are native graph
 components. Query outputs connect directly to `drasi.network/sse-sink`; there is
 no legacy reaction subscription/processing queue. The existing browser event
@@ -153,16 +158,47 @@ format and Server query snapshot API are unchanged. SSE remains a volatile UI
 notification channel, not acknowledged or durable browser delivery.
 
 `start` checks that its ports are free, launches the **actual**
-`target/debug/drasi-server --config .build/server.yaml --plugins-dir
-.build/plugins --skip-verification --enable-ui`, then launches the thin Vite
+`target/debug/drasi-server --config server.yaml --plugins-dir
+.build/plugins --skip-verification`, then launches the thin Vite
 UI/proxy. It waits for a real `geometry-status` query result before opening the
 UI service. Server logs are in `.build/server.log`.
 
 The launcher copies the existing stock Server UI bundle into its own ignored
 `.build/ui/dist` directory; it does not rebuild or modify the shared UI.
-`--enable-ui` overrides the generated configuration's API-only default.
+The checked-in configuration enables the Server UI.
 The footer's **Drasi Server Web UI** link opens **http://127.0.0.1:8421/ui/**,
 served by the same stock Server instance that runs this geometry graph.
+
+### Editing the solution
+
+Edit `server.yaml`, not a Rust configuration program or `.build/server.yaml`.
+The same file is used by setup, startup and the Rust query tests. Query text and
+join definitions live there once, rather than being copied into Rust helpers.
+
+`components` names each component's ID, factory `kind`, version and settings.
+`resources` declares the shared query indexes and result catalog. The catalog
+and `query-results` outlet expose the real query results through the stock
+Server API; `wall-ui` sends those same results to the browser over SSE.
+`connections` specifies where records flow. Because these components each have
+one input/output port, a connection needs only the two component names.
+The Server checks the actual port schemas; the YAML does not copy them.
+All output streams default to `component-id/port-id`, and the bounded
+connections use `defaultPipeCapacity: 32`.
+
+After a configuration edit, validate it with the built host and plugins:
+
+```sh
+target/debug/drasi-server --config server.yaml --plugins-dir .build/plugins validate
+```
+
+Stop and restart `./demo start` to apply the edit. Rebuild with `./demo setup`
+only when the host or plugin code changes. `persistConfig: false` keeps API
+operations from rewriting the example file.
+
+The old file's size came from repeated component descriptors and schema bytes,
+not polygon coordinates. The starting scene remains the small fixture in
+`src/model.rs`, loaded by the scene source's reset operation. A file bootstrapper
+was not needed to solve this configuration problem.
 
 ### 4. Confirm startup
 
@@ -195,8 +231,9 @@ the fixture. Do not individually restart a native component: reconstruct the
 whole graph to get a fresh source bootstrap and query caches.
 
 **Rebuild:** stop the launcher, rerun `./demo setup`, then `./demo start`. Do this
-after changing the native source, queries, or sibling Server/Core code; do not
-replace a plugin library while the Server has it loaded.
+after changing native source or sibling Server/Core code; do not replace a plugin
+library while the Server has it loaded. Query-only edits in `server.yaml` need
+validation and a restart, not a rebuild.
 
 **After cleanup:** `.build/`, `target/`, `artifacts/`, `ui/dist/`,
 `ui/node_modules/`, and `ui/vendor/` are disposable, ignored example outputs.
@@ -462,7 +499,7 @@ curl -N http://127.0.0.1:8422/events
 | `Pinned @drasi/react commit ... is absent` | Fetch the pinned SDK commit into the Server checkout using step 2. |
 | npm cannot find `vendor/drasi-react.tgz` | Run `./demo setup` from the example root; it creates the local package before installing UI dependencies. |
 | `protoc`, a C/C++ compiler, CMake, libclang, or libjq is missing | Install the platform prerequisites above. For libjq discovery/link errors, set `JQ_LIB_DIR` in this terminal before rerunning setup or tests. |
-| `Run ./demo setup first`, missing plugin, or missing Server executable | Setup did not finish, or its generated files were cleaned. Rerun setup and wait for its `Ready` message. |
+| `Run ./demo setup first`, missing plugin, or missing Server executable | Setup did not finish, or its build artifacts were cleaned. Rerun setup and wait for its `Ready` message. |
 | `EADDRINUSE` | Stop the launcher that owns the conflicting port, or resolve the other service's ownership first. Do not kill unrelated processes. The fixed ports are listed above. |
 | Commands fail origin checks | Open `http://127.0.0.1:5421`, not `localhost`, a file URL, or a different port. |
 | Chromium executable is missing | Run `(cd ui && npx playwright install chromium)` after setup. |
@@ -507,24 +544,24 @@ binary may reject the resource recipe; build from the compatible checkouts with
 `./demo setup`. Rebuild all three artifacts after a Core/SDK update; an older
 plugin left in `target/` is not evidence that the current source works.
 
-The generator declares this resource alongside `memoryIndexes`:
+The static file declares this resource alongside `memoryIndexes`:
 
 ```yaml
-# Under computation.definition:
+# Under computation.graph:
 resources:
-  - id: wall-query-catalog
-    role: QueryCatalog
-    ownership: Graph
-    binding: wall-results
-resource_configurations:
   wall-query-catalog:
     kind: queryCatalog
 ```
 
-Each CQ has `dependencies.catalog: [wall-query-catalog]` as well as its index
+Each CQ has `resources.catalog: wall-query-catalog` as well as its index
 dependency. The shared stock outlet has the same catalog dependency and handled
 completion; all five query output ports connect to it. Descriptors and schemas
 come from the actual factory implementations, not hand-written equivalents.
+
+The readable `computation.graph` format requires the shared loader and factory
+description support in the current source. The committed revisions above
+document earlier runtime checks, not this configuration change. Older binaries
+do not understand the new format; rebuild the current host with `./demo setup`.
 
 Verified locally on macOS (Apple Silicon); the Linux prerequisites above are
 provided for Linux source builds, not a claim of a Linux validation run:

@@ -17,6 +17,7 @@ async fn managed_instance(
     plugins: Arc<RwLock<PluginRegistry>>,
     seed: Option<&ComputationConfig>,
 ) -> Result<Arc<DrasiLib>> {
+    let seed = seed.cloned().map(Into::into);
     let secrets = Arc::new(
         drasi_lib::secret_store::MemorySecretStoreProvider::new().with_secret("COUNT", "4"),
     );
@@ -27,7 +28,7 @@ async fn managed_instance(
                 .with_secret_store_provider(secrets.clone()),
             "managed-native",
             settings,
-            seed,
+            seed.as_ref(),
             plugins,
             Some(secrets),
         )

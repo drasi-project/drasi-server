@@ -437,23 +437,27 @@ pub fn validate_with_plugins(
             .iter()
             .flat_map(|instance| &instance.computation),
     ) {
-        let validation = crate::computation::validate_definition(graph).and_then(|()| {
+        let validation = (|| {
+            let factories = crate::computation::native_factory_registry(&registry)?;
+            let graph = graph.resolve(&factories)?;
             graph
                 .definition
                 .build(drasi_lib::computation::v1::TopologyBindings {
-                    factories: crate::computation::native_factory_registry(&registry)?,
+                    factories,
                     ..Default::default()
                 })
                 .map(|_| ())
                 .map_err(anyhow::Error::from)
-        });
+        })();
         if let Err(error) = validation {
             config_errors.push(ComponentValidationReport {
                 component_type: "computation".into(),
-                component_id: graph.definition.graph_id.clone(),
+                component_id: drasi_lib::management::DesiredInstance::default()
+                    .topology
+                    .graph_id,
                 plugin_kind: "computationGraph".into(),
                 errors: vec![FieldError {
-                    field: "definition".into(),
+                    field: "computation".into(),
                     message: format!("{error:#}"),
                     code: None,
                 }],

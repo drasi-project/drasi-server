@@ -26,6 +26,7 @@ use std::sync::OnceLock;
 use drasi_lib::get_or_init_global_registry;
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
+use drasi_server::computation::ComputationConfigInput;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
 mod cli_styles;
@@ -448,6 +449,22 @@ fn validate_config(
     let total_sources: usize = instances.iter().map(|i| i.sources.len()).sum();
     let total_queries: usize = instances.iter().map(|i| i.queries.len()).sum();
     let total_reactions: usize = instances.iter().map(|i| i.reactions.len()).sum();
+    let computation_counts: Vec<_> = instances
+        .iter()
+        .filter_map(|instance| {
+            instance.computation.as_ref().map(|input| {
+                let count = match input {
+                    ComputationConfigInput::Definition(config) => {
+                        config.definition.components.len()
+                    }
+                    ComputationConfigInput::Graph { graph } => graph.components.len(),
+                };
+                (instance, count)
+            })
+        })
+        .collect();
+    let total_computation_components: usize =
+        computation_counts.iter().map(|(_, count)| count).sum();
 
     if result.config_errors.is_empty() {
         // Report OK for each validated component
@@ -459,7 +476,20 @@ fn validate_config(
         for (id, kind) in &all_reactions {
             println!("  [OK] reaction '{id}' ({kind})");
         }
-        if all_sources.is_empty() && all_reactions.is_empty() {
+        for (instance, count) in &computation_counts {
+            if instance.configuration_store.is_some() {
+                println!(
+                    "  [INFO] computation seed for instance '{}' ({count} component(s)); accepted stored configuration takes priority",
+                    instance.id
+                );
+            } else {
+                println!(
+                    "  [OK] computation graph for instance '{}' ({count} component(s))",
+                    instance.id
+                );
+            }
+        }
+        if all_sources.is_empty() && all_reactions.is_empty() && computation_counts.is_empty() {
             println!("  (no components to validate)");
         }
     } else {
@@ -482,9 +512,15 @@ fn validate_config(
     let warning_count = result.missing_plugins.len();
     let instance_count = instances.len();
 
-    print!(
-        "Summary: {instance_count} instance(s), {total_sources} source(s), {total_queries} query/queries, {total_reactions} reaction(s)",
-    );
+    print!("Summary: {instance_count} instance(s)");
+    if !computation_counts.is_empty() {
+        print!(", {total_computation_components} computation component(s)");
+    }
+    if computation_counts.is_empty() || total_sources + total_queries + total_reactions > 0 {
+        print!(
+            ", {total_sources} source(s), {total_queries} query/queries, {total_reactions} reaction(s)",
+        );
+    }
     if error_count > 0 || warning_count > 0 {
         print!(" — ");
         let mut parts = Vec::new();

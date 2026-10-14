@@ -266,7 +266,7 @@ async fn native_bootstrap_server_recipes_restore_snapshot_and_preserve_secret_re
                 DrasiLib::builder().with_secret_store_provider(secrets.clone()),
                 instance,
                 &settings,
-                Some(&yaml),
+                Some(&yaml.clone().into()),
                 Arc::new(RwLock::new(registry()?)),
                 Some(secrets),
             )

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -162,7 +162,7 @@ pub struct DrasiServerConfig {
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     /// Native component declarations in the instance's ComputationGraph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub computation: Option<crate::computation::ComputationConfig>,
+    pub computation: Option<crate::computation::ComputationConfigInput>,
     /// Optional encrypted, authoritative desired-state storage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
@@ -346,7 +346,7 @@ pub struct DrasiLibInstanceConfig {
     #[schema(value_type = Vec<serde_json::Value>)]
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub computation: Option<crate::computation::ComputationConfig>,
+    pub computation: Option<crate::computation::ComputationConfigInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
@@ -367,7 +367,7 @@ pub struct ResolvedInstanceConfig {
     pub reactions: Vec<ReactionConfig>,
     pub identity_providers: Vec<IdentityProviderConfig>,
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
-    pub computation: Option<crate::computation::ComputationConfig>,
+    pub computation: Option<crate::computation::ComputationConfigInput>,
     pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
 
@@ -459,11 +459,9 @@ impl DrasiServerConfig {
                 .as_ref()
                 .filter(|_| instance.configuration_store.is_none())
             {
-                anyhow::ensure!(
-                    computation.definition.version == 1,
-                    "Instance '{id}': unsupported computation graph configuration version",
-                );
-                crate::computation::validate_definition(computation)?;
+                computation.validate().with_context(|| {
+                    format!("Instance '{id}': invalid computation configuration")
+                })?;
             }
 
             let default_priority_queue_capacity =

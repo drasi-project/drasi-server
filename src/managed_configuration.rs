@@ -20,7 +20,7 @@ use tokio::{
 };
 
 use crate::{
-    computation::{ComputationConfig, ServerManagementResources},
+    computation::{ComputationConfigInput, ServerManagementResources},
     plugin_registry::PluginRegistry,
 };
 
@@ -123,22 +123,23 @@ impl ConfigurationStores {
         builder: DrasiLibBuilder,
         instance: &str,
         config: &ConfigurationStoreConfig,
-        seed: Option<&ComputationConfig>,
+        seed: Option<&ComputationConfigInput>,
         plugins: Arc<RwLock<PluginRegistry>>,
         secrets: Option<Arc<dyn SecretStoreProvider>>,
     ) -> Result<DrasiLibBuilder> {
         let provider = self.open(config).await?;
+        let factories = crate::computation::native_factory_registry(&*plugins.read().await)?;
         provider
             .initialize_if_absent_with(instance, INITIAL_REQUEST_ID, || {
-                if let Some(seed) = seed {
-                    crate::computation::validate_definition(seed)?;
-                }
-                Ok(seed
-                    .map(|config| DesiredInstance::from(config.definition.clone()))
-                    .unwrap_or_default())
+                seed.map(|config| {
+                    config
+                        .resolve(&factories)
+                        .map(|config| DesiredInstance::from(config.definition.clone()))
+                })
+                .transpose()
+                .map(Option::unwrap_or_default)
             })
             .await?;
-        let factories = crate::computation::native_factory_registry(&*plugins.read().await)?;
         Ok(builder
             .with_id(instance)
             .with_component_factories(factories)

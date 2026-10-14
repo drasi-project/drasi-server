@@ -81,9 +81,12 @@ fn main() -> Result<()> {
         verify_plugins: false,
         enable_ui: false,
         persist_config: false,
-        computation: Some(ComputationConfig {
-            definition: graph.definition,
-        }),
+        computation: Some(
+            ComputationConfig {
+                definition: graph.definition,
+            }
+            .into(),
+        ),
         ..Default::default()
     };
     config.validate()?;

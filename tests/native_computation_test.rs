@@ -787,12 +787,14 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     target.shutdown().await?;
 
     let restored = core("first").await?;
-    register_components(
-        saved.instances[0].computation.as_ref().unwrap(),
-        &restored,
-        &factories(),
-    )
-    .await?;
+    let plugins = factories();
+    let registry = drasi_server::computation::native_factory_registry(&plugins)?;
+    let restored_config = saved.instances[0]
+        .computation
+        .as_ref()
+        .unwrap()
+        .resolve(&registry)?;
+    register_components(&restored_config, &restored, &plugins).await?;
     std::fs::remove_file(&output)?;
     assert_eq!(
         restored
@@ -1065,7 +1067,7 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
         .contains_key(&resource("configuration")));
     assert!(configuration_from_snapshot(&snapshot).is_err());
     let original = DrasiServerConfig {
-        computation: Some(config),
+        computation: Some(config.into()),
         ..Default::default()
     };
     assert_clone_and_save_rejected(
@@ -1646,15 +1648,18 @@ fn plugin_aware_validation_checks_native_factory_availability() -> Result<()> {
     )?;
     let graph = definition(Path::new("capture.jsonl"))?;
     let mut config = DrasiServerConfig {
-        computation: Some(graph),
+        computation: Some(graph.into()),
         ..Default::default()
     };
     let valid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
     assert_eq!(valid.plugins_loaded, 1);
     assert!(valid.config_errors.is_empty(), "{:?}", valid.config_errors);
-    if let ComponentConstruction::Factory(spec) =
-        &mut config.computation.as_mut().unwrap().definition.components[0].construction
-    {
+    let drasi_server::computation::ComputationConfigInput::Definition(graph) =
+        config.computation.as_mut().unwrap()
+    else {
+        panic!("expanded test definition");
+    };
+    if let ComponentConstruction::Factory(spec) = &mut graph.definition.components[0].construction {
         spec.implementation.name = "missing-native-factory".into();
     }
     let invalid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));

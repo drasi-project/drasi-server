@@ -50,6 +50,63 @@ fn unavailable_definition() -> anyhow::Result<crate::computation::ComputationCon
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("server.yaml");
+    let plugins = directory.path().join("plugins");
+    let mut config = settings(directory.path())?;
+    config.computation = Some(serde_json::from_value(serde_json::json!({
+        "graph": {
+            "allowIncomplete": true,
+            "resources": {"indexes": {"kind": "memoryIndexes"}},
+            "components": [{
+                "id": "query", "kind": "drasi/continuous-query", "autoStart": false,
+                "resources": {"indexes": "indexes"},
+                "config": {"query": "MATCH (n) RETURN n.value AS value"}
+            }]
+        }
+    }))?);
+    config.save_to_file(&path)?;
+    let accepted = {
+        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let core = &server.instances[0].core;
+        let accepted = core.desired_configuration()?.desired;
+        assert_eq!(accepted.topology.components.len(), 1);
+        assert_eq!(core.desired_configuration()?.revision, 1);
+        crate::managed_configuration::start_instance(core).await?;
+        core.shutdown().await?;
+        accepted
+    };
+    let crate::computation::ComputationConfigInput::Graph { graph } =
+        config.computation.as_mut().unwrap()
+    else {
+        panic!("readable test seed");
+    };
+    graph.components[0].kind = "obsolete/missing-factory".into();
+    graph.components[0].config = serde_json::json!({"query": 123});
+    graph.resources.insert(
+        ResourceId::try_new("indexes")?,
+        serde_json::json!({"kind": "obsolete"}),
+    );
+    graph.default_pipe_capacity = 0;
+    config.save_to_file(&path)?;
+    {
+        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let core = &server.instances[0].core;
+        assert_eq!(core.desired_configuration()?.desired, accepted);
+        assert_eq!(core.desired_configuration()?.revision, 1);
+        crate::managed_configuration::start_instance(core).await?;
+        core.shutdown().await?;
+    }
+    config.id = crate::api::models::ConfigValue::Static("uninitialized-readable".into());
+    config.save_to_file(&path)?;
+    assert!(DrasiServer::new(path, 0, plugins, false, false)
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspectable(
 ) -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
@@ -58,7 +115,7 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
     let mut config = settings(directory.path())?;
     let definition = unavailable_definition()?;
     let accepted = DesiredInstance::from(definition.definition.clone()).normalized()?;
-    config.computation = Some(definition);
+    config.computation = Some(definition.into());
     config.save_to_file(&path)?;
     {
         let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
@@ -77,17 +134,16 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
         );
         core.shutdown().await?;
     }
-    config.computation.as_mut().unwrap().definition.version = 999;
-    config
-        .computation
-        .as_mut()
-        .unwrap()
-        .definition
-        .resource_configurations
-        .insert(
-            ResourceId::try_new("middleware")?,
-            serde_json::json!({"kind":"obsolete"}),
-        );
+    let crate::computation::ComputationConfigInput::Definition(seed) =
+        config.computation.as_mut().unwrap()
+    else {
+        panic!("expanded test seed");
+    };
+    seed.definition.version = 999;
+    seed.definition.resource_configurations.insert(
+        ResourceId::try_new("middleware")?,
+        serde_json::json!({"kind":"obsolete"}),
+    );
     config.save_to_file(&path)?;
     {
         let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;

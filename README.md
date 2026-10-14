@@ -422,17 +422,86 @@ instance; it does not mean every source, query, and reaction is ready.
 #### Native computation components
 
 Declare an optional `computation` section at the root for a single instance, or
-on each entry in `instances`. Its `definition` is a Core version-1 `DesiredTopology`
-containing native components for that instance's ComputationGraph. Each component
-has a `lifecycle.auto_start` policy. The definition retains Core's field names,
-including `resource_configurations`; its graph identity defaults to the instance
-graph identity. Root computation configuration cannot be mixed with explicit
-instances. Definitions must contain version-qualified factory specifications and
-reconstructible pipes, not preconstructed Rust objects or external pipe bindings.
+on each entry in `instances`. **Use `computation.graph` when writing a solution
+configuration.** List components by ID and factory `kind`, provide their settings,
+declare shared resources, and connect component names:
 
-For a runnable native counter -> middleware -> arithmetic -> capture pipeline,
-generate the definition from the loaded plugin's actual descriptors rather than
-guessing port schemas or plugin versions:
+```yaml
+computation:
+  graph:
+    resources:
+      indexes: {kind: memoryIndexes}
+      results: {kind: queryCatalog}
+    components:
+      - id: scene
+        kind: move-a-wall/scene
+        version: "1"
+      - id: scene-inputs
+        kind: drasi/continuous-query
+        version: "1"
+        config:
+          query: |
+            MATCH (n:SceneObject)
+            RETURN collect(n.payload) AS objects
+        resources:
+          indexes: indexes
+          catalog: results
+      - id: query-results
+        kind: drasi/query-results-outlet
+        version: "1"
+        resources:
+          catalog: results
+    connections:
+      - {from: scene, to: scene-inputs}
+      - {from: scene-inputs, to: query-results}
+```
+
+This uses the Move-a-Wall scene plugin; see
+[`examples/move-a-wall/server.yaml`](examples/move-a-wall/server.yaml) and its
+[setup instructions](examples/move-a-wall/README.md) for the complete runnable
+solution. No configuration-generation program is needed.
+
+The Server obtains ports, schemas, roles and completion contracts from the
+selected factories. A `version` can be omitted only when exactly one matching
+factory is registered; the Server never guesses the newest version. Native
+loaded factories and the built-in continuous-query/result-outlet factories
+support this description step without constructing components or opening
+resources. A factory that cannot describe itself must use the expanded format.
+Unknown fields, duplicate component/resource IDs, incompatible connections and
+mismatched query catalogs are rejected.
+
+Components default to `autoStart: true`. Connections are bounded, with
+`defaultPipeCapacity: 32` unless overridden on the graph or an individual
+connection's `capacity`. A component name selects its only port in the required
+direction. For multiple ports, use an explicit endpoint:
+`{from: {component: producer, port: output}, to: consumer}`.
+Output stream names default to `component-id/port-id`; `streams` can override
+them. A factory's own stream setting, if provided, must agree with that binding.
+The built-in query factory supplies the default `stream` setting when omitted.
+Component `resources` maps factory dependency names to a resource ID or list of
+IDs. Resource roles and ownership come from their recipes; optional
+`resourceDependencies` lists prerequisite resource IDs. `config` values are
+literal factory settings, not resolved environment/secret references.
+
+**Existing `computation.definition` configurations remain supported.** This is
+the expanded Core version-1 `DesiredTopology` format, used for saved snapshots
+and advanced pipe, configuration-reference, merge and recovery settings.
+Both forms resolve into the same graph construction and validation paths.
+Use exactly one of `graph` or `definition`. Root computation configuration
+cannot be mixed with explicit instances. External component/pipe bindings
+cannot be reconstructed by the Server.
+
+The component-creation REST endpoint accepts either form too. In Rust,
+`DrasiServerConfig.computation` and per-instance inputs use
+`ComputationConfigInput`; existing `ComputationConfig { definition }` values
+convert with `.into()`. The canonical component construction helpers still take
+`ComputationConfig`. Resource variants with no settings use struct syntax, for
+example `ComputationResourceConfig::MemoryIndexes {}`; their YAML recipes are
+unchanged.
+
+The separate programmatic counter -> middleware -> arithmetic -> capture
+example exercises expanded-definition export. It remains useful for testing
+that representation, but is not a required way to author solution files:
 
 ```bash
 # From drasi-server; use only trusted local builds with verification disabled.
@@ -490,11 +559,11 @@ The remaining wiring uses the existing standard factories:
 | Declaration | Required configuration |
 |---|---|
 | Each `drasi/continuous-query` version `1` component | Add `catalog: [results]` to its factory `dependencies`, alongside its existing `indexes` dependency. |
-| One `drasi/query-results-outlet` version `1` component | Role `Sink`, completion `Handled`, configuration version `1`, empty configuration, and `catalog: [results]` in its factory `dependencies`. Generate its typed input descriptor with `QueryResultsOutlet::new(...).descriptor()`. |
+| One `drasi/query-results-outlet` version `1` component | Role `Sink`, completion `Handled`, configuration version `1`, empty configuration, and `catalog: [results]` in its factory `dependencies`. Obtain its typed specification with `QueryResultsOutletFactory::specification_from_config(...)`, without constructing an outlet or catalog. |
 | Query-to-outlet relationships | Connect every exposed query's `out` port to the outlet's `in` port with an ordinary bounded pipe. One shared outlet can receive all query outputs. |
 | Ordinary reaction declaration | Continue referring to the query IDs in `queries`, not the outlet's component ID. Configure the SSE reaction's host, port, path and heartbeat as usual. |
 
-Use actual factory/codec descriptors when generating the full topology rather
+For an expanded definition, use actual factory/codec descriptors rather
 than copying opaque serialized port-schema bytes. A query connected to the stock
 result outlet must have exactly one catalog dependency, and both ends must name
 the **same** declared `QueryCatalog` resource. Invalid or mismatched bindings

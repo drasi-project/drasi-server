@@ -270,9 +270,15 @@ Persistence uses a snapshot-based approach: `ConfigPersistence::save()` calls
 authoritative runtime state. The server preserves config-only references and
 settings separately, but must not keep a shadow runtime graph. YAML is
 reconstructed from the live graph and preserved configuration without selectors.
-The optional per-instance `computation` section contains a version-1 factory-only
-`DesiredTopology` definition for the instance's ComputationGraph, with explicit
-host resource recipes and per-component startup policies. Do not infer missing recipes
+The optional per-instance `computation` section accepts readable `graph`
+declarations or a version-1 factory-only `DesiredTopology` under `definition`.
+Resolve readable declarations using the actual registered factories, without
+constructing components or opening resources just to discover metadata.
+Both use the same graph owner, explicit host resource recipes and startup
+policies. Saved snapshots retain the canonical expanded `definition`, not a
+shadow authoring graph. Managed seeds must resolve only inside the deferred
+first-initialization callback; accepted stored state overrides obsolete seeds.
+Do not infer missing recipes
 from object pointers or persist resolved secrets in place of references. Unsupported
 external bindings must fail persistence and be rejected before cloning ordinary
 components. Full configuration snapshots are administrative data, not public topology.

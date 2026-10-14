@@ -1,7 +1,7 @@
 use super::*;
 use anyhow::{Context, Result};
 use drasi_core::{computation::InMemoryComputationProvider, models::SourceChange};
-use drasi_lib::{computation::v1::*, config::QueryJoinConfig};
+use drasi_lib::computation::v1::*;
 use model::{Entity, Shape};
 use source::{Command, SceneSource, Store};
 use std::{num::NonZeroUsize, sync::Arc};
@@ -13,11 +13,27 @@ struct Harness {
     geometry: transformer::Geometry,
     impact: ContinuousQueryTransformer,
 }
-async fn query(
-    id: &str,
-    text: &str,
-    joins: Vec<QueryJoinConfig>,
-) -> Result<ContinuousQueryTransformer> {
+async fn query(id: &str) -> Result<ContinuousQueryTransformer> {
+    let configuration: serde_json::Value = serde_yaml::from_str(include_str!("../server.yaml"))?;
+    let config = configuration["computation"]["graph"]["components"]
+        .as_array()
+        .context("static graph components")?
+        .iter()
+        .find(|component| component["id"].as_str() == Some(id))
+        .with_context(|| format!("static query '{id}'"))?
+        .get("config")
+        .context("static query config")?;
+    let text = config["query"].as_str().context("static query text")?;
+    let capacity = config["outbox_capacity"]
+        .as_u64()
+        .and_then(|capacity| usize::try_from(capacity).ok())
+        .and_then(NonZeroUsize::new)
+        .context("static query outbox capacity")?;
+    let execution = config
+        .get("execution")
+        .map(|value| serde_json::from_value(value.clone()))
+        .transpose()?
+        .unwrap_or_default();
     let mut q = ContinuousQueryTransformer::new_configured(
         ContinuousQueryDefinition {
             graph_id: "wall-test".into(),
@@ -25,14 +41,11 @@ async fn query(
             query: text.into(),
             language: ComputationQueryLanguage::Cypher,
             output_stream: StreamId::try_new(format!("{id}/out"))?,
-            outbox_capacity: NonZeroUsize::new(128).unwrap(),
+            outbox_capacity: capacity,
         },
         Arc::new(InMemoryComputationProvider),
         QueryOptions::default(),
-        QueryExecutionSettings {
-            joins,
-            ..Default::default()
-        },
+        execution,
         None,
     )
     .await?;
@@ -55,18 +68,8 @@ impl Harness {
             store,
             source,
             geometry,
-            context: query(
-                "geometry-context",
-                include_str!("../queries/geometry-context.cypher"),
-                vec![],
-            )
-            .await?,
-            impact: query(
-                "affected-journeys",
-                include_str!("../queries/affected-journeys.cypher"),
-                joins(),
-            )
-            .await?,
+            context: query("geometry-context").await?,
+            impact: query("affected-journeys").await?,
         })
     }
     async fn send(

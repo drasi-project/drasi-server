@@ -1,0 +1,161 @@
+apiVersion: drasi.io/v1
+id: move-a-wall
+host: 127.0.0.1
+port: 8421
+persistConfig: false
+enableUi: true
+# These plugins are built locally by ./demo setup.
+verifyPlugins: false
+corsAllowedOrigins:
+  - http://127.0.0.1:5421
+
+computation:
+  graph:
+    defaultPipeCapacity: 32
+
+    resources:
+      wall-memory-indexes:
+        kind: memoryIndexes
+      wall-query-catalog:
+        kind: queryCatalog
+
+    components:
+      - id: scene
+        kind: move-a-wall/scene
+        version: "1"
+
+      - id: geometry
+        kind: move-a-wall/geometry
+        version: "1"
+
+      - id: scene-inputs
+        kind: drasi/continuous-query
+        version: "1"
+        resources:
+          indexes: wall-memory-indexes
+          catalog: wall-query-catalog
+        config:
+          outbox_capacity: 128
+          query: |
+            MATCH (n:SceneObject)
+            RETURN collect(n.payload) AS objects
+
+      - id: geometry-context
+        kind: drasi/continuous-query
+        version: "1"
+        resources:
+          indexes: wall-memory-indexes
+          catalog: wall-query-catalog
+        config:
+          outbox_capacity: 128
+          query: |
+            MATCH (n:SceneObject)
+            WHERE n.active = true
+            RETURN collect(n.payload) AS objects
+
+      - id: obstructions
+        kind: drasi/continuous-query
+        version: "1"
+        resources:
+          indexes: wall-memory-indexes
+          catalog: wall-query-catalog
+        config:
+          outbox_capacity: 128
+          query: |
+            MATCH (o:Obstruction)
+            RETURN o.id AS id, o.journey_id AS journey_id,
+                   o.cart_id AS cart_id, o.obstacle_id AS obstacle_id,
+                   o.distance_m AS distance_m, o.required_m AS required_m
+
+      - id: affected-journeys
+        kind: drasi/continuous-query
+        version: "1"
+        resources:
+          indexes: wall-memory-indexes
+          catalog: wall-query-catalog
+        config:
+          outbox_capacity: 128
+          execution:
+            joins:
+              - id: CART_TASK
+                keys:
+                  - {label: Cart, property: cart_id}
+                  - {label: Journey, property: cart_id}
+              - id: TO_DESTINATION
+                keys:
+                  - {label: Journey, property: destination_id}
+                  - {label: Destination, property: destination_id}
+              - id: BLOCKS
+                keys:
+                  - {label: Obstruction, property: journey_id}
+                  - {label: Journey, property: journey_id}
+              - id: CAUSED_BY
+                keys:
+                  - {label: Obstruction, property: obstacle_id}
+                  - {label: Obstacle, property: obstacle_id}
+          query: |
+            MATCH (c:Cart)-[:CART_TASK]->(j:Journey)-[:TO_DESTINATION]->(d:Destination),
+                  (o:Obstruction)-[:BLOCKS]->(j),
+                  (o)-[:CAUSED_BY]->(b:Obstacle)
+            RETURN o.id AS id, c.id AS cart_id, c.name AS cart,
+                   j.id AS journey_id, j.name AS task,
+                   d.id AS destination_id, d.name AS destination,
+                   b.id AS obstacle_id, b.name AS obstacle,
+                   o.distance_m AS distance_m, o.required_m AS required_m
+
+      - id: geometry-status
+        kind: drasi/continuous-query
+        version: "1"
+        resources:
+          indexes: wall-memory-indexes
+          catalog: wall-query-catalog
+        config:
+          outbox_capacity: 128
+          query: |
+            MATCH (s:GeometryStatus)
+            RETURN s.id AS id, s.revision AS revision,
+                   s.objects AS objects, s.obstructions AS obstructions
+
+      # Publish the same query results to the stock Server snapshot API.
+      - id: query-results
+        kind: drasi/query-results-outlet
+        version: "1"
+        resources:
+          catalog: wall-query-catalog
+
+      # Send query changes directly to the browser over native SSE.
+      - id: wall-ui
+        kind: drasi.network/sse-sink
+        version: "1"
+        config:
+          host: 127.0.0.1
+          port: 8422
+          ssePath: /events
+          heartbeatIntervalMs: 5000
+          queryStreams:
+            scene-inputs: scene-inputs/out
+            geometry-context: geometry-context/out
+            obstructions: obstructions/out
+            affected-journeys: affected-journeys/out
+            geometry-status: geometry-status/out
+
+    # A component name selects its single output/input port.
+    connections:
+      - {from: scene, to: scene-inputs}
+      - {from: scene, to: geometry-context}
+      - {from: geometry-context, to: geometry}
+      - {from: geometry, to: obstructions}
+      - {from: geometry, to: affected-journeys}
+      - {from: geometry, to: geometry-status}
+
+      - {from: scene-inputs, to: query-results}
+      - {from: geometry-context, to: query-results}
+      - {from: obstructions, to: query-results}
+      - {from: affected-journeys, to: query-results}
+      - {from: geometry-status, to: query-results}
+
+      - {from: scene-inputs, to: wall-ui}
+      - {from: geometry-context, to: wall-ui}
+      - {from: obstructions, to: wall-ui}
+      - {from: affected-journeys, to: wall-ui}
+      - {from: geometry-status, to: wall-ui}

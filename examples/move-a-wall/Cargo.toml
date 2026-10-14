@@ -14,10 +14,6 @@ crate-type = ["lib", "cdylib"]
 default = []
 dynamic-plugin = []
 
-[[bin]]
-name = "wall-config"
-path = "src/config.rs"
-
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
@@ -25,16 +21,16 @@ axum = "0.7"
 chrono = "0.4"
 drasi-core = { path = "../../../drasi-core/core" }
 drasi-lib = { path = "../../../drasi-core/lib" }
-drasi-server = { path = "../.." }
-drasi-host-sdk = { path = "../../../drasi-core/components/host-sdk" }
 drasi-computation-plugin-sdk = { path = "../../../drasi-core/components/computation-plugin-sdk" }
 geo = "0.31"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+serde_yaml = "0.9"
 
 [profile.dev]
 debug = 0

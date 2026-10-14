@@ -51,7 +51,7 @@ function run(binary,args,options) {
   return child;
 }
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal,() => void stop(0));
-run(resolve('target/debug/drasi-server'),['--config',resolve('.build/server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification','--enable-ui'],
+run(resolve('target/debug/drasi-server'),['--config',resolve('server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification'],
   {cwd:resolve('.build'),stdio:['ignore',log.fd,log.fd],env:{...process.env,RUST_LOG:process.env.RUST_LOG ?? 'info'}});
 try {
   let ready = false;

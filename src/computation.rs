@@ -30,6 +30,12 @@ use drasi_lib::{
 };
 use serde::{Deserialize, Serialize};
 
+mod authoring;
+pub use authoring::{
+    ComputationConfigInput, ComputationGraphConfig, GraphComponentConfig, GraphConnectionConfig,
+    GraphEndpoint, GraphResourceBinding,
+};
+
 /// Native components, connections and resource recipes for a DrasiLib instance.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -56,7 +62,7 @@ pub fn native_factory_registry(
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ComputationResourceConfig {
-    MemoryIndexes,
+    MemoryIndexes {},
     QueryCatalog {},
     SourceProgress {
         #[schema(value_type = String)]
@@ -73,11 +79,11 @@ pub enum ComputationResourceConfig {
     SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
     NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
-    Middleware,
-    QueryMiddleware,
-    TransactionalTransformers,
-    BridgeIngressControl,
-    BridgeEgressControl,
+    Middleware {},
+    QueryMiddleware {},
+    TransactionalTransformers {},
+    BridgeIngressControl {},
+    BridgeEgressControl {},
     BridgeTls {
         version: u32,
         #[schema(value_type = String)]
@@ -94,7 +100,7 @@ pub enum ComputationResourceConfig {
         #[serde(default)]
         runtime: drasi_instance_host::RuntimeBudget,
     },
-    Configuration,
+    Configuration {},
     Qos {
         #[schema(value_type = serde_json::Value)]
         definition: QosChannelDefinition,
@@ -108,20 +114,20 @@ pub enum ComputationResourceConfig {
 impl ComputationResourceConfig {
     fn role(&self) -> ResourceRole {
         match self {
-            Self::MemoryIndexes
+            Self::MemoryIndexes {}
             | Self::RocksdbIndexes { .. }
             | Self::SharedStorage { .. }
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
             Self::QueryCatalog {} => ResourceRole::QueryCatalog,
             Self::NativeBootstrap(_) => ResourceRole::Bootstrap,
             Self::SourceProgress { .. } => ResourceRole::Checkpoint,
-            Self::Middleware | Self::QueryMiddleware => ResourceRole::Middleware,
-            Self::TransactionalTransformers
-            | Self::BridgeIngressControl
-            | Self::BridgeEgressControl
+            Self::Middleware {} | Self::QueryMiddleware {} => ResourceRole::Middleware,
+            Self::TransactionalTransformers {}
+            | Self::BridgeIngressControl {}
+            | Self::BridgeEgressControl {}
             | Self::ChildSupervisor { .. } => ResourceRole::Component,
             Self::BridgeTls { .. } => ResourceRole::Identity,
-            Self::Configuration => ResourceRole::SecretStore,
+            Self::Configuration {} => ResourceRole::SecretStore,
             Self::Qos { .. } | Self::SharedQos(_) => ResourceRole::StateStore,
         }
     }
@@ -366,8 +372,8 @@ fn validate_host_recipe(
             #[cfg(not(unix))]
             anyhow::bail!("owned child instance supervision is not supported on this platform");
         }
-        ComputationResourceConfig::BridgeIngressControl
-        | ComputationResourceConfig::BridgeEgressControl => {
+        ComputationResourceConfig::BridgeIngressControl {}
+        | ComputationResourceConfig::BridgeEgressControl {} => {
             anyhow::ensure!(
                 resource.ownership == ResourceOwnership::Graph,
                 "bridge control requires graph cleanup ownership"
@@ -635,7 +641,7 @@ impl ManagementResourceResolver for ServerManagementResources {
             "this server recipe does not accept resource dependencies"
         );
         let handle = match recipe {
-            ComputationResourceConfig::MemoryIndexes => ResourceHandle::new(
+            ComputationResourceConfig::MemoryIndexes {} => ResourceHandle::new(
                 ResourceRole::IndexBackend,
                 Arc::new(QueryIndexProviderResource(Arc::new(
                     drasi_core::computation::InMemoryComputationProvider,
@@ -695,24 +701,24 @@ impl ManagementResourceResolver for ServerManagementResources {
             ComputationResourceConfig::NativeBootstrap(_) => {
                 unreachable!("native bootstrap resolved with dependencies")
             }
-            ComputationResourceConfig::Middleware => ResourceHandle::new(
+            ComputationResourceConfig::Middleware {} => ResourceHandle::new(
                 ResourceRole::Middleware,
                 Arc::new(MiddlewareRegistryResource(self.middleware.clone())),
             ),
-            ComputationResourceConfig::QueryMiddleware => ResourceHandle::new(
+            ComputationResourceConfig::QueryMiddleware {} => ResourceHandle::new(
                 ResourceRole::Middleware,
                 Arc::new(QueryMiddlewareResource(self.middleware.clone())),
             ),
-            ComputationResourceConfig::TransactionalTransformers => ResourceHandle::new(
+            ComputationResourceConfig::TransactionalTransformers {} => ResourceHandle::new(
                 ResourceRole::Component,
                 Arc::new(TransactionalTransformerRegistryResource(
                     self.transactional.clone(),
                 )),
             ),
-            ComputationResourceConfig::BridgeIngressControl => {
+            ComputationResourceConfig::BridgeIngressControl {} => {
                 Arc::new(drasi_computation_bridge::BridgeIngressControl::new()).resource()
             }
-            ComputationResourceConfig::BridgeEgressControl => {
+            ComputationResourceConfig::BridgeEgressControl {} => {
                 Arc::new(drasi_computation_bridge::BridgeEgressControl::new()).resource()
             }
             ComputationResourceConfig::BridgeTls { .. } => {
@@ -747,7 +753,7 @@ impl ManagementResourceResolver for ServerManagementResources {
                     );
                 }
             }
-            ComputationResourceConfig::Configuration => ResourceHandle::new(
+            ComputationResourceConfig::Configuration {} => ResourceHandle::new(
                 ResourceRole::SecretStore,
                 Arc::new(ConfigurationResolverResource(Arc::new(
                     HostConfigurationResolver::new(self.secrets.clone()),
@@ -948,8 +954,8 @@ mod tests {
     #[test]
     fn bridge_control_resources_require_explicit_graph_cleanup_ownership() {
         for recipe in [
-            ComputationResourceConfig::BridgeIngressControl,
-            ComputationResourceConfig::BridgeEgressControl,
+            ComputationResourceConfig::BridgeIngressControl {},
+            ComputationResourceConfig::BridgeEgressControl {},
         ] {
             assert_eq!(recipe.role(), ResourceRole::Component);
             validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).unwrap();
