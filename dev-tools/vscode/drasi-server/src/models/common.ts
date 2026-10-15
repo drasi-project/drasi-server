@@ -37,6 +37,9 @@ export interface CreateInstanceRequest {
 
 export type ComponentType = 'Source' | 'Query' | 'Reaction';
 
+export type ComponentLogType = ComponentType
+  | 'BootstrapProvider' | 'IdentityProvider' | 'Transformer' | 'Sink' | 'Service';
+
 export type ComponentStatus =
   | 'Stopped'
   | 'Starting'
@@ -62,7 +65,7 @@ export interface LogMessage {
   level: LogLevel;
   message: string;
   componentId: string;
-  componentType: ComponentType;
+  componentType: ComponentLogType;
 }
 
 export interface Resource<TSpec = any> {

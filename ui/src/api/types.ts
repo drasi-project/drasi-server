@@ -11,6 +11,14 @@ export type ComponentStatus =
 
 export type ComponentType = "Source" | "Query" | "Reaction";
 
+export type ComponentLogType =
+  | ComponentType
+  | "BootstrapProvider"
+  | "IdentityProvider"
+  | "Transformer"
+  | "Sink"
+  | "Service";
+
 export type SourceKind = "mock" | "http" | "grpc" | "postgres" | "platform";
 
 export interface ComputationPort {
@@ -196,7 +204,7 @@ export interface LogMessage {
   level: "Trace" | "Debug" | "Info" | "Warn" | "Error";
   message: string;
   componentId?: string;
-  componentType?: ComponentType;
+  componentType?: ComponentLogType;
 }
 
 export interface InstanceInfo {

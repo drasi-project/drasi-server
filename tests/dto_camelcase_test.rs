@@ -6,7 +6,8 @@
 
 use drasi_lib::config::QueryLanguage;
 use drasi_server::api::models::observability::{
-    ComponentEventDto, ComponentStatusDto, ComponentTypeDto, LogLevelDto, LogMessageDto,
+    ComponentEventDto, ComponentLogTypeDto, ComponentStatusDto, ComponentTypeDto, LogLevelDto,
+    LogMessageDto,
 };
 use drasi_server::api::models::queries::query::{QueryConfigDto, SourceSubscriptionConfigDto};
 
@@ -116,7 +117,7 @@ fn test_log_message_dto_serializes_camelcase() {
         level: LogLevelDto::Info,
         message: "test".to_string(),
         component_id: "my-source".to_string(),
-        component_type: ComponentTypeDto::Source,
+        component_type: ComponentLogTypeDto::Source,
     };
 
     let json = serde_json::to_value(&dto).unwrap();

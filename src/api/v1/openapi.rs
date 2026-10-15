@@ -26,10 +26,10 @@ use crate::api::models::solution::{
     SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
 };
 use crate::api::models::{
-    ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
-    ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema, ConfigValueU64Schema,
-    ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto, RedbStateStoreConfigDto,
-    SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
+    ComponentEventDto, ComponentLogTypeDto, ComponentStatusDto, ComponentTypeDto,
+    ConfigValueBoolSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
+    ConfigValueU64Schema, ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto,
+    RedbStateStoreConfigDto, SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::handlers::{CloneInstanceRequest, CloneInstanceResponse};
@@ -131,6 +131,7 @@ use utoipa::openapi::RefOr;
             ErrorResponse,
             ErrorDetail,
             ComponentTypeDto,
+            ComponentLogTypeDto,
             ComponentStatusDto,
             LogLevelDto,
             ComponentEventDto,

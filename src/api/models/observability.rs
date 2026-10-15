@@ -15,7 +15,9 @@
 //! DTOs for component events and logs.
 
 use chrono::{DateTime, Utc};
-use drasi_lib::{ComponentEvent, ComponentStatus, ComponentType, LogLevel, LogMessage};
+use drasi_lib::{
+    ComponentEvent, ComponentLogType, ComponentStatus, ComponentType, LogLevel, LogMessage,
+};
 use serde::{Deserialize, Serialize};
 
 /// Component type for observability payloads.
@@ -37,6 +39,35 @@ impl From<ComponentType> for ComponentTypeDto {
             ComponentType::Reaction => Self::Reaction,
             ComponentType::BootstrapProvider => Self::BootstrapProvider,
             ComponentType::IdentityProvider => Self::IdentityProvider,
+        }
+    }
+}
+
+/// Log categories, including native roles without extending lifecycle events.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ComponentLogType)]
+pub enum ComponentLogTypeDto {
+    Source,
+    Query,
+    Reaction,
+    BootstrapProvider,
+    IdentityProvider,
+    Transformer,
+    Sink,
+    Service,
+}
+
+impl From<ComponentLogType> for ComponentLogTypeDto {
+    fn from(component_type: ComponentLogType) -> Self {
+        match component_type {
+            ComponentLogType::Source => Self::Source,
+            ComponentLogType::Query => Self::Query,
+            ComponentLogType::Reaction => Self::Reaction,
+            ComponentLogType::BootstrapProvider => Self::BootstrapProvider,
+            ComponentLogType::IdentityProvider => Self::IdentityProvider,
+            ComponentLogType::Transformer => Self::Transformer,
+            ComponentLogType::Sink => Self::Sink,
+            ComponentLogType::Service => Self::Service,
         }
     }
 }
@@ -132,8 +163,8 @@ pub struct LogMessageDto {
     pub level: LogLevelDto,
     pub message: String,
     pub component_id: String,
-    #[schema(value_type = ComponentType)]
-    pub component_type: ComponentTypeDto,
+    #[schema(value_type = ComponentLogType)]
+    pub component_type: ComponentLogTypeDto,
 }
 
 impl From<LogMessage> for LogMessageDto {
@@ -143,7 +174,86 @@ impl From<LogMessage> for LogMessageDto {
             level: LogLevelDto::from(message.level),
             message: message.message,
             component_id: message.component_id,
-            component_type: ComponentTypeDto::from(message.component_type),
+            component_type: ComponentLogTypeDto::from(message.component_type),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utoipa::OpenApi;
+
+    #[test]
+    fn log_payloads_preserve_native_roles_and_existing_fields() {
+        for (category, name) in [
+            (ComponentLogType::Source, "Source"),
+            (ComponentLogType::Query, "Query"),
+            (ComponentLogType::Reaction, "Reaction"),
+            (ComponentLogType::BootstrapProvider, "BootstrapProvider"),
+            (ComponentLogType::IdentityProvider, "IdentityProvider"),
+            (ComponentLogType::Transformer, "Transformer"),
+            (ComponentLogType::Sink, "Sink"),
+            (ComponentLogType::Service, "Service"),
+        ] {
+            let message = LogMessage::with_instance(
+                LogLevel::Info,
+                "started",
+                "instance",
+                "component",
+                category,
+            );
+            let timestamp = message.timestamp;
+            let payload = serde_json::to_value(LogMessageDto::from(message)).unwrap();
+            assert_eq!(
+                payload,
+                serde_json::json!({
+                    "timestamp": timestamp,
+                    "level": "Info",
+                    "message": "started",
+                    "componentId": "component",
+                    "componentType": name
+                })
+            );
+            let decoded: LogMessageDto = serde_json::from_value(payload.clone()).unwrap();
+            assert_eq!(serde_json::to_value(decoded).unwrap(), payload);
+        }
+    }
+
+    #[test]
+    fn log_schema_adds_native_roles_without_changing_event_categories() {
+        let document = serde_json::to_value(crate::api::v1::openapi::ApiDocV1::openapi()).unwrap();
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["ComponentType"]["enum"],
+            serde_json::json!([
+                "Source",
+                "Query",
+                "Reaction",
+                "BootstrapProvider",
+                "IdentityProvider"
+            ])
+        );
+        assert_eq!(
+            schemas["ComponentLogType"]["enum"],
+            serde_json::json!([
+                "Source",
+                "Query",
+                "Reaction",
+                "BootstrapProvider",
+                "IdentityProvider",
+                "Transformer",
+                "Sink",
+                "Service"
+            ])
+        );
+        assert_eq!(
+            schemas["LogMessage"]["properties"]["componentType"]["$ref"],
+            "#/components/schemas/ComponentLogType"
+        );
+        assert_eq!(
+            schemas["ComponentEvent"]["properties"]["componentType"]["$ref"],
+            "#/components/schemas/ComponentType"
+        );
     }
 }

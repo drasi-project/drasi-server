@@ -2288,6 +2288,12 @@ curl -N http://localhost:8080/api/v1/events
 
 ### Per-Component Logs and Events
 
+Log messages use a separate `ComponentLogType` schema. Native entries retain
+their actual `Source`, `Transformer`, `Query`, `Sink` or `Service` role rather
+than calling transformers/services queries or sinks reactions. Ordinary
+Source/Query/Reaction adapters keep their existing log labels. The
+`ComponentType` schema for lifecycle events is unchanged.
+
 ```bash
 # Get source events (paginated)
 curl http://localhost:8080/api/v1/sources/test-source/events
