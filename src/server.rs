@@ -261,12 +261,12 @@ impl DrasiServer {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
                 runtime_handle: tokio::runtime::Handle::current(),
-                log_registry: drasi_lib::managers::get_or_init_global_registry(),
+                log_registry: drasi_lib::observability::get_or_init_global_registry(),
                 source_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::managers::ComponentEventHistory::new(),
+                    drasi_lib::observability::ComponentEventHistory::new(),
                 )),
                 reaction_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::managers::ComponentEventHistory::new(),
+                    drasi_lib::observability::ComponentEventHistory::new(),
                 )),
             });
             let load_stats = crate::dynamic_loading::load_plugins(
