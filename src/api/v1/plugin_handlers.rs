@@ -89,6 +89,8 @@ pub struct ComputationPluginMetadataResponse {
     pub bootstrap_factories: Vec<drasi_host_sdk::computation::BootstrapFactoryMetadata>,
     #[schema(value_type = Vec<serde_json::Value>)]
     pub consumer_factories: Vec<drasi_host_sdk::computation::NativeConsumerFactoryMetadata>,
+    /// Configuration schemas with negotiated defaults, descriptions and supported values.
+    pub configuration_schemas: Vec<serde_json::Value>,
 }
 
 /// Information about a specific plugin kind.
@@ -256,6 +258,18 @@ pub async fn computation_plugin_metadata(
         plugins: registry.computation_plugin_metadata(),
         bootstrap_factories: registry.computation_bootstrap_metadata(),
         consumer_factories: registry.computation_consumer_metadata(),
+        configuration_schemas: registry
+            .computation_plugins()
+            .flat_map(|plugin| plugin.factories())
+            .map(|factory| {
+                serde_json::json!({
+                    "implementation": factory.metadata().implementation,
+                    "configVersion": factory.metadata().configuration_version,
+                    "detailsAvailable": factory.configuration_details().is_some(),
+                    "schema": factory.configuration_schema(),
+                })
+            })
+            .collect(),
     })
 }
 
@@ -498,39 +512,6 @@ async fn collect_plugin_dependents(
     Ok(dependents)
 }
 
-pub(crate) fn native_configuration_schema(
-    schema: &drasi_host_sdk::computation::ConfigSchema,
-) -> serde_json::Value {
-    use drasi_host_sdk::computation::ConfigType;
-    let mut properties = serde_json::Map::new();
-    let mut required = Vec::new();
-    for (name, field) in &schema.fields {
-        let mut property = serde_json::Map::new();
-        let kind = match field.value_type {
-            ConfigType::Boolean => Some("boolean"),
-            ConfigType::Integer => Some("integer"),
-            ConfigType::String => Some("string"),
-            ConfigType::Object => Some("object"),
-            ConfigType::Array => Some("array"),
-            ConfigType::Json => None,
-        };
-        if let Some(kind) = kind {
-            property.insert("type".into(), serde_json::json!(kind));
-            if kind == "array" {
-                property.insert("items".into(), serde_json::json!({}));
-            }
-        }
-        if field.secret {
-            property.insert("writeOnly".into(), serde_json::json!(true));
-        }
-        properties.insert(name.clone(), serde_json::Value::Object(property));
-        if field.required {
-            required.push(name.clone());
-        }
-    }
-    serde_json::json!({"type":"object", "properties":properties, "required":required, "additionalProperties":schema.allow_additional})
-}
-
 #[utoipa::path(
     get,
     path = "/api/v1/plugins/kinds/{category}/{kind}/schema",
@@ -555,17 +536,17 @@ pub async fn get_kind_schema(
 
     if category == "computation" {
         let matches: Vec<_> = reg
-            .computation_plugin_metadata()
-            .into_iter()
-            .flat_map(|plugin| plugin.factories)
-            .filter(|factory| factory.implementation.name.as_ref() == kind)
+            .computation_plugins()
+            .flat_map(|plugin| plugin.factories())
+            .filter(|factory| factory.metadata().implementation.name.as_ref() == kind)
             .collect();
         return match matches.as_slice() {
             [factory] => (StatusCode::OK, Json(serde_json::json!({
                 "kind":kind, "category":category,
-                "implementation":factory.implementation,
-                "configVersion":factory.configuration_version,
-                "schema":native_configuration_schema(&factory.configuration),
+                "implementation":factory.metadata().implementation,
+                "configVersion":factory.metadata().configuration_version,
+                "detailsAvailable":factory.configuration_details().is_some(),
+                "schema":factory.configuration_schema(),
             }))),
             [] => ErrorResponse::new(error_codes::PLUGIN_KIND_NOT_FOUND, "Native factory not found").into_json_response(),
             _ => ErrorResponse::new(error_codes::INVALID_REQUEST, "Multiple native factory versions match; use /plugins/computation for version-qualified metadata").into_json_response(),

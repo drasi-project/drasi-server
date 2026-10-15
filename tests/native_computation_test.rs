@@ -543,6 +543,30 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     assert!(plugins
         .iter()
         .all(|plugin| plugin["factories"].as_array().unwrap().len() == 1));
+    let configurations = metadata["configurationSchemas"]
+        .as_array()
+        .context("configuration schemas")?;
+    assert_eq!(configurations.len(), 4);
+    assert!(configurations
+        .iter()
+        .all(|value| value["detailsAvailable"] == true));
+    let counter = configurations
+        .iter()
+        .find(|value| value["implementation"]["name"] == COUNTER)
+        .context("counter schema")?;
+    assert_eq!(counter["schema"]["properties"]["count"]["default"], 10);
+    assert_eq!(counter["schema"]["properties"]["count"]["minimum"], 0);
+    let (status, schema) = request(
+        &app,
+        "GET",
+        "/kinds/computation/drasi.standard%2Fvolatile-counter/schema",
+        "",
+        "application/json",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{schema}");
+    assert_eq!(schema["schema"], counter["schema"]);
+    assert_eq!(schema["detailsAvailable"], true);
     let (status, kinds) = request(&app, "GET", "/kinds", "", "application/json").await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(kinds["computation"].as_array().unwrap().len(), 4);
@@ -1009,6 +1033,26 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
         "application/json",
     )
     .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_REQUEST");
+    assert!(core.computation_component("counter").is_err());
+
+    // Individually valid fields can still fail a constructor's combined checks.
+    if let ComponentConstruction::Factory(spec) = &mut config.definition.components[0].construction
+    {
+        spec.configuration
+            .insert("count".into(), ConfigurationValue::Literal(json!(2)));
+        spec.configuration
+            .insert("start".into(), ConfigurationValue::Literal(json!(i64::MAX)));
+    }
+    let (status, body) = request(
+        &app,
+        "POST",
+        "/instances/failed-native/computation/components",
+        &serde_json::to_string(&config)?,
+        "application/json",
+    )
+    .await?;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         core.computation_component("counter")?
@@ -1251,6 +1295,24 @@ async fn openapi_refreshes_native_factory_schemas_after_runtime_registration() -
             .count(),
         4
     );
+    let counter_schema = schemas
+        .schemas
+        .iter()
+        .filter(|(name, _)| name.starts_with("NativeComputationConfig_"))
+        .map(|(_, schema)| serde_json::to_value(schema))
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .find(|schema| schema["properties"].get("count").is_some())
+        .context("counter OpenAPI schema")?;
+    assert_eq!(counter_schema["properties"]["count"]["default"], 10);
+    assert_eq!(
+        counter_schema["properties"]["count"]["minimum"].as_f64(),
+        Some(0.0)
+    );
+    assert_eq!(counter_schema["properties"]["paused"]["default"], false);
+    assert!(counter_schema["properties"]["count"]["description"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
     for name in [
         "ComputationConfig",
         "ComputationResourceConfig",

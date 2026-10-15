@@ -656,6 +656,20 @@ discovery share family dispatch and verification. Invalid native declarations ne
 fall back to ABI 0.15. Replacing a loaded plugin or overwriting an installed binary
 at runtime is rejected: restart to replace it. There is no hot unloading.
 
+Native `configurationSchemas` include each component's descriptions, defaults,
+limits and supported values when its binary supplies the optional configuration
+description extension. The kind-schema endpoint and OpenAPI expose the same
+schema. For example, adaptive ingress allows only `false`, and native gRPC
+`batchSize` allows only `1`; descriptions do not enable unimplemented features.
+`detailsAvailable: false` identifies older binaries with only field/type metadata.
+The base native ABI and wire format are unchanged.
+
+Known invalid values in a fully literal configuration are rejected before graph
+changes are accepted. Checks involving combinations of fields or external
+resources still run during construction, and their failures remain inspectable.
+Percent-encode namespaced kinds in schema URLs, for example:
+`/api/v1/plugins/kinds/computation/drasi.network%2Fsse-sink/schema`.
+
 #### Creation, persistence, and restarts
 
 With `persistConfig: true` (the default) and a writable configuration file, an API

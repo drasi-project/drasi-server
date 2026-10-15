@@ -222,21 +222,20 @@ pub struct ApiDocV1;
 pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &PluginRegistry) {
     let components = openapi.components.get_or_insert_with(Default::default);
     let schemas = &mut components.schemas;
-    for plugin in registry.computation_plugin_metadata() {
-        for factory in plugin.factories {
+    for plugin in registry.computation_plugins() {
+        for factory in plugin.factories() {
             let identity = serde_json::json!([
-                plugin.plugin.id,
-                plugin.plugin.version,
-                factory.implementation.name,
-                factory.implementation.version
+                plugin.metadata().plugin.id,
+                plugin.metadata().plugin.version,
+                factory.metadata().implementation.name,
+                factory.metadata().implementation.version
             ])
             .to_string();
             let name = format!(
                 "NativeComputationConfig_{}",
                 crate::instance_paths::instance_storage_key(&identity)
             );
-            let schema =
-                super::plugin_handlers::native_configuration_schema(&factory.configuration);
+            let schema = factory.configuration_schema();
             inject_schemas_from_json(&serde_json::json!({name: schema}).to_string(), schemas);
         }
     }
