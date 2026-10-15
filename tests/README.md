@@ -17,20 +17,21 @@ Build these once before the full suite (no `--all-features` or bundled jq):
 # From drasi-server/
 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
   --manifest-path ../drasi-core/Cargo.toml --target-dir ./target \
-  -p drasi-computation-standard -p drasi-source-mock -p drasi-reaction-log \
+  -p drasi-computation-source-counter -p drasi-computation-transformer-middleware \
+  -p drasi-computation-transformer-arithmetic -p drasi-computation-sink-capture \
+  -p drasi-source-mock -p drasi-reaction-log \
   -p drasi-bootstrap-scriptfile \
   --features dynamic-plugin
 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_computation_test
 ```
 
 The default fixture directory is `target/debug`; override it with
-`DRASI_SERVER_TEST_PLUGINS_DIR`. `DRASI_NATIVE_STANDARD_PLUGIN` overrides just the
-native standard library, allowing the completed Core fixture to be used while
-keeping legacy fixtures in the Server directory:
+`DRASI_SERVER_TEST_PLUGINS_DIR`. That directory must contain the four native
+component libraries and the legacy fixtures; each native library is checked to
+expose exactly its own factory.
 
 ```bash
-# macOS; use the corresponding .so or .dll on other platforms.
-DRASI_NATIVE_STANDARD_PLUGIN=../drasi-core/target/debug/libdrasi_computation_standard.dylib \
+DRASI_SERVER_TEST_PLUGINS_DIR=../drasi-core/target/debug \
   CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 \
   cargo test --offline --test native_computation_test
 ```

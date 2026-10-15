@@ -295,8 +295,9 @@ Run `./demo setup` with the example stopped. It:
 2. Installs the example UI's locked dependencies with local packages linked to
    their source, then type-checks and builds the UI.
 3. Runs the Server's standard `make build`, including its administration UI.
-4. Builds the scene/geometry plugin and Core's standard native network plugin,
-   then stages those two libraries in `.build/plugins`.
+4. Builds the scene/geometry plugin and Core's individual
+   `drasi-computation-sink-sse` plugin, then stages those two libraries in
+   `.build/plugins`. No other Core network component is built or loaded.
 5. Validates the checked-in `server.yaml`, including its nine native components.
 
 Wait for **`Ready: ./demo start`**. A failure stops setup; fix the reported error

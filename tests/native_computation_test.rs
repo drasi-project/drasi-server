@@ -1,7 +1,7 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Requires separately built ABI 1.0 standard and ABI 0.16/0.17 mock/log/bootstrap libraries.
+//! Requires separately built ABI 1.0 native components and ABI 0.16/0.17 mock/log/bootstrap libraries.
 //! See tests/README.md. Missing binaries are a failed prerequisite, never a skip.
 
 #![allow(clippy::unwrap_used)]
@@ -76,28 +76,55 @@ fn artifact(name: &str) -> PathBuf {
     let directory = std::env::var_os("DRASI_SERVER_TEST_PLUGINS_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
-    let default_path = directory.join(format!(
+    let path = directory.join(format!(
         "{}{name}{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
     ));
-    let path = if name == "drasi_computation_standard" {
-        std::env::var_os("DRASI_NATIVE_STANDARD_PLUGIN")
-            .map(PathBuf::from)
-            .unwrap_or(default_path)
-    } else {
-        default_path
-    };
-    assert!(path.is_file(), "Missing fixture {}. Build drasi-computation-standard, drasi-source-mock, drasi-reaction-log and drasi-bootstrap-scriptfile with --features dynamic-plugin --offline --target-dir ../drasi-server/target, set DRASI_SERVER_TEST_PLUGINS_DIR, or select the native library with DRASI_NATIVE_STANDARD_PLUGIN. This test does not skip missing native binaries.", path.display());
+    assert!(path.is_file(), "Missing fixture {}. Build the four native standard component crates, drasi-source-mock, drasi-reaction-log and drasi-bootstrap-scriptfile with --features dynamic-plugin --offline --target-dir ../drasi-server/target, or set DRASI_SERVER_TEST_PLUGINS_DIR. This test does not skip missing native binaries.", path.display());
     path
 }
 
 fn plugin() -> Arc<NativePlugin> {
-    static PLUGIN: OnceLock<Arc<NativePlugin>> = OnceLock::new();
-    PLUGIN
+    component_plugin(COUNTER)
+}
+
+fn component_plugin(kind: &str) -> Arc<NativePlugin> {
+    static COUNTER_PLUGIN: OnceLock<Arc<NativePlugin>> = OnceLock::new();
+    static MIDDLEWARE_PLUGIN: OnceLock<Arc<NativePlugin>> = OnceLock::new();
+    static ARITHMETIC_PLUGIN: OnceLock<Arc<NativePlugin>> = OnceLock::new();
+    static CAPTURE_PLUGIN: OnceLock<Arc<NativePlugin>> = OnceLock::new();
+    let (cache, artifact_name) = match kind {
+        COUNTER => (&COUNTER_PLUGIN, "drasi_computation_source_counter"),
+        MIDDLEWARE => (
+            &MIDDLEWARE_PLUGIN,
+            "drasi_computation_transformer_middleware",
+        ),
+        ARITHMETIC => (
+            &ARITHMETIC_PLUGIN,
+            "drasi_computation_transformer_arithmetic",
+        ),
+        CAPTURE => (&CAPTURE_PLUGIN, "drasi_computation_sink_capture"),
+        _ => panic!("unknown native test component {kind}"),
+    };
+    cache
         .get_or_init(|| {
-            drasi_host_sdk::computation::load(artifact("drasi_computation_standard"))
-                .expect("load real native ABI")
+            let plugin = drasi_host_sdk::computation::load(artifact(artifact_name))
+                .expect("load real native ABI");
+            assert_eq!(plugin.factories().len(), 1);
+            assert_eq!(
+                plugin.factories()[0]
+                    .metadata()
+                    .implementation
+                    .name
+                    .as_ref(),
+                kind
+            );
+            assert_eq!(
+                plugin.metadata().plugin.id.as_ref(),
+                artifact_name.replace('_', "-")
+            );
+            plugin
         })
         .clone()
 }
@@ -105,16 +132,20 @@ fn plugin() -> Arc<NativePlugin> {
 fn factories() -> PluginRegistry {
     let mut registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut registry);
-    registry.register_computation_plugin(plugin()).unwrap();
+    for kind in [COUNTER, MIDDLEWARE, ARITHMETIC, CAPTURE] {
+        registry
+            .register_computation_plugin(component_plugin(kind))
+            .unwrap();
+    }
     registry
 }
 
 fn factory(name: &str) -> Arc<NativeFactory> {
-    plugin()
+    component_plugin(name)
         .factories()
         .iter()
         .find(|factory| factory.metadata().implementation.name.as_ref() == name)
-        .expect("native standard factory")
+        .expect("native component factory")
         .clone()
 }
 
@@ -452,7 +483,10 @@ async fn exact_output(path: &Path) -> Result<()> {
 async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> {
     let directory = tempfile::tempdir()?;
     for name in [
-        "drasi_computation_standard",
+        "drasi_computation_source_counter",
+        "drasi_computation_transformer_middleware",
+        "drasi_computation_transformer_arithmetic",
+        "drasi_computation_sink_capture",
         "drasi_source_mock",
         "drasi_reaction_log",
         "drasi_bootstrap_scriptfile",
@@ -462,7 +496,7 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     }
     let mut registry = PluginRegistry::new();
     let stats = load_plugins(directory.path(), &mut registry, None, None)?;
-    assert_eq!(stats.plugins_loaded, 4);
+    assert_eq!(stats.plugins_loaded, 7);
     assert_eq!(stats.plugins_failed, 0, "{:?}", stats.failures);
     assert_eq!(stats.source_descriptors, 1);
     assert_eq!(stats.reaction_descriptors, 1);
@@ -491,7 +525,7 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
         .record_startup_plugins(&stats.loaded_plugins)
         .await;
     let mut native_events = 0;
-    for _ in 0..4 {
+    for _ in 0..stats.loaded_plugins.len() {
         if let PluginEvent::Loaded { kinds, .. } = events.try_recv()? {
             native_events += usize::from(
                 kinds
@@ -500,17 +534,15 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
             );
         }
     }
-    assert_eq!(native_events, 1);
+    assert_eq!(native_events, 4);
     let app = build_plugin_router(orchestrator, InstanceRegistry::new(), Arc::new(false));
     let (status, metadata) = request(&app, "GET", "/computation", "", "application/json").await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        metadata["plugins"][0]["factories"]
-            .as_array()
-            .unwrap()
-            .len(),
-        4
-    );
+    let plugins = metadata["plugins"].as_array().unwrap();
+    assert_eq!(plugins.len(), 4);
+    assert!(plugins
+        .iter()
+        .all(|plugin| plugin["factories"].as_array().unwrap().len() == 1));
     let (status, kinds) = request(&app, "GET", "/kinds", "", "application/json").await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(kinds["computation"].as_array().unwrap().len(), 4);
@@ -725,7 +757,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     orchestrator
         .record_startup_plugins(&[drasi_server::dynamic_loading::StartupPluginRecord {
             plugin_id: native_id.clone(),
-            file_path: artifact("drasi_computation_standard"),
+            file_path: artifact("drasi_computation_source_counter"),
             kinds: Vec::new(),
             plugin_version: plugin().metadata().plugin.version.to_string(),
             sdk_version: "1.0.0".into(),
@@ -741,7 +773,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{dependents}");
-    assert_eq!(dependents["dependentCount"], 4);
+    assert_eq!(dependents["dependentCount"], 1);
 
     let clone = clone_instance(
         instances.clone(),
@@ -1198,10 +1230,17 @@ async fn openapi_refreshes_native_factory_schemas_after_runtime_registration() -
         .schemas
         .keys()
         .any(|key| key.starts_with("NativeComputationConfig_")));
-    plugins
-        .write()
-        .await
-        .register_computation_plugin(plugin())?;
+    {
+        let mut registry = plugins.write().await;
+        for kind in [
+            "drasi.standard/volatile-counter",
+            "drasi.standard/middleware",
+            "drasi.standard/arithmetic",
+            "drasi.standard/capture",
+        ] {
+            registry.register_computation_plugin(component_plugin(kind))?;
+        }
+    }
     let after = cache.get_spec().await;
     let schemas = after.components.as_ref().unwrap();
     assert_eq!(
@@ -1399,7 +1438,7 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
         std::env::consts::DLL_SUFFIX
     );
     std::fs::copy(
-        artifact("drasi_computation_standard"),
+        artifact("drasi_computation_source_counter"),
         source.path().join(&native_filename),
     )?;
     std::fs::copy(
@@ -1436,7 +1475,7 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
 #[tokio::test]
 async fn runtime_loading_verification_events_and_replacement_policy() -> Result<()> {
     let directory = tempfile::tempdir()?;
-    let source = artifact("drasi_computation_standard");
+    let source = artifact("drasi_computation_source_counter");
     let path = directory.path().join(source.file_name().unwrap());
     std::fs::copy(&source, &path)?;
     let registry = Arc::new(RwLock::new(PluginRegistry::new()));
@@ -1462,7 +1501,7 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
         .to_string()
         .contains("restart"));
     assert!(orchestrator
-        .install_and_load("computation/standard", None, None)
+        .install_and_load("computation/source-counter", None, None)
         .await
         .is_err());
     assert_eq!(
@@ -1499,7 +1538,7 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
         VerificationConfig::default(),
     );
     let installed = installer
-        .install_and_load("computation/standard", None, None)
+        .install_and_load("computation/source-counter", None, None)
         .await?;
     assert_eq!(installed.sdk_version, "1.0.0");
     assert_eq!(
@@ -1513,7 +1552,7 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
     let lock = drasi_server::plugin_lockfile::PluginLockfile::read(installed_directory.path())?
         .context("installed plugin lock")?;
     let entry = lock
-        .get("computation/standard")
+        .get("computation/source-counter")
         .context("native lock entry")?;
     assert_eq!(entry.sdk_version, "1.0.0");
     assert!(entry.core_version.is_empty());
@@ -1539,7 +1578,7 @@ async fn watcher_native_candidate_uses_the_same_verified_family_loader() -> Resu
         Arc::new(PluginLifecycleManager::new(registry.clone())),
         directory.path().to_owned(),
     );
-    let source = artifact("drasi_computation_standard");
+    let source = artifact("drasi_computation_source_counter");
     let path = directory.path().join(source.file_name().unwrap());
     std::fs::copy(source, &path)?;
     let candidate = tokio::time::timeout(DEADLINE, async {
@@ -1641,18 +1680,25 @@ fn native_config_preserves_component_definitions_and_rejects_unknown_fields() ->
 #[test]
 fn plugin_aware_validation_checks_native_factory_availability() -> Result<()> {
     let directory = tempfile::tempdir()?;
-    let artifact = artifact("drasi_computation_standard");
-    std::fs::copy(
-        &artifact,
-        directory.path().join(artifact.file_name().unwrap()),
-    )?;
+    for name in [
+        "drasi_computation_source_counter",
+        "drasi_computation_transformer_middleware",
+        "drasi_computation_transformer_arithmetic",
+        "drasi_computation_sink_capture",
+    ] {
+        let artifact = artifact(name);
+        std::fs::copy(
+            &artifact,
+            directory.path().join(artifact.file_name().unwrap()),
+        )?;
+    }
     let graph = definition(Path::new("capture.jsonl"))?;
     let mut config = DrasiServerConfig {
         computation: Some(graph.into()),
         ..Default::default()
     };
     let valid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
-    assert_eq!(valid.plugins_loaded, 1);
+    assert_eq!(valid.plugins_loaded, 4);
     assert!(valid.config_errors.is_empty(), "{:?}", valid.config_errors);
     let drasi_server::computation::ComputationConfigInput::Definition(graph) =
         config.computation.as_mut().unwrap()

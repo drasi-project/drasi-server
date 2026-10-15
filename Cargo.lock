@@ -1146,7 +1146,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "drasi-computation-bridge"
+name = "drasi-computation-bridge-common"
 version = "0.11.3"
 dependencies = [
  "anyhow",
@@ -1186,6 +1186,35 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_bytes",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "drasi-computation-sink-bridge"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-bridge-common",
+ "drasi-core",
+ "drasi-lib",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "drasi-computation-source-bridge"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-bridge-common",
+ "drasi-core",
+ "drasi-lib",
+ "futures-util",
  "serde_json",
  "tokio",
 ]
@@ -1316,7 +1345,9 @@ version = "0.11.3"
 dependencies = [
  "anyhow",
  "async-trait",
- "drasi-computation-bridge",
+ "drasi-computation-bridge-common",
+ "drasi-computation-sink-bridge",
+ "drasi-computation-source-bridge",
  "drasi-core",
  "drasi-host-sdk",
  "drasi-index-rocksdb",
@@ -1478,7 +1509,9 @@ dependencies = [
  "dotenvy",
  "drasi-bootstrap-application",
  "drasi-bootstrap-noop",
- "drasi-computation-bridge",
+ "drasi-computation-bridge-common",
+ "drasi-computation-sink-bridge",
+ "drasi-computation-source-bridge",
  "drasi-core",
  "drasi-host-sdk",
  "drasi-index-rocksdb",

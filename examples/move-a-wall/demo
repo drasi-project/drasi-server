@@ -38,19 +38,19 @@ case "${1:-help}" in
     (
       cd "$server_root"
       cargo build --locked --manifest-path "$example_root/Cargo.toml" --features dynamic-plugin --lib
-      cargo build --locked --manifest-path ../drasi-core/Cargo.toml -p drasi-computation-network --features dynamic-plugin
+      cargo build --locked --manifest-path ../drasi-core/Cargo.toml -p drasi-computation-sink-sse --features dynamic-plugin
     )
     mkdir -p .build/plugins
     cp "$CARGO_TARGET_DIR/debug/libmove_a_wall.$extension" ".build/plugins/libdrasi_move_a_wall.$extension"
-    cp "$CARGO_TARGET_DIR/debug/libdrasi_computation_network.$extension" ".build/plugins/libdrasi_computation_network.$extension"
-    rm -f ".build/plugins/libdrasi_reaction_sse.$extension"
+    cp "$CARGO_TARGET_DIR/debug/libdrasi_computation_sink_sse.$extension" ".build/plugins/libdrasi_computation_sink_sse.$extension"
+    rm -f ".build/plugins/libdrasi_reaction_sse.$extension" ".build/plugins/libdrasi_computation_network.$extension"
     validate_config
     echo "Ready: ./demo start"
     ;;
   start)
     test -x "$server_binary" &&
       test -f ".build/plugins/libdrasi_move_a_wall.$extension" &&
-      test -f ".build/plugins/libdrasi_computation_network.$extension" &&
+      test -f ".build/plugins/libdrasi_computation_sink_sse.$extension" &&
       test -f ui/node_modules/vite/bin/vite.js &&
       test -f ui/node_modules/@drasi/react/dist/index.js ||
       { echo "Run ./demo setup first." >&2; exit 1; }

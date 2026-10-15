@@ -314,7 +314,10 @@ the UI query group.
 [gpu-runtime.rs](src/main.rs) is the composition root.
 There is no demo-specific `server.yaml` containing this topology. Startup:
 
-1. Loads matching `libgpu_native` and `libdrasi_computation_network` plugins.
+1. Loads matching `libgpu_native` and the individual
+   `libdrasi_computation_sink_sse` plugin; no other native network component is
+   loaded. `GPU_NETWORK_PLUGIN` retains its existing environment-variable name
+   but now points to that SSE-only library.
    PostgreSQL uses the existing in-process Rust native factory, not a legacy
    adapter or a new PostgreSQL cdylib.
 2. Builds `DrasiLib` with instance ID `gpu-demo` and the native component factories.

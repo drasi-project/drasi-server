@@ -45,7 +45,7 @@ services:
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       PLAN_ENDPOINT: http://control:5400/internal/placement-plans
-      RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_computation_network=warn
+      RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_computation_sink_sse=warn
       GPU_LAB_LOG_QUERIES:
     volumes:
       - native-state:/var/lib/gpu-runtime

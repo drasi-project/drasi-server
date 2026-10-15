@@ -523,15 +523,21 @@ that representation, but is not a required way to author solution files:
 ```bash
 # From drasi-server; use only trusted local builds with verification disabled.
 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
-  --manifest-path ../drasi-core/Cargo.toml -p drasi-computation-standard \
+  --manifest-path ../drasi-core/Cargo.toml \
+  -p drasi-computation-source-counter -p drasi-computation-transformer-middleware \
+  -p drasi-computation-transformer-arithmetic -p drasi-computation-sink-capture \
   --features dynamic-plugin --target-dir ./target
-# macOS: .dylib; Linux: .so; Windows: drasi_computation_standard.dll
+# The example loads just those four individual libraries from the directory.
 cargo run --offline --example native-computation -- \
-  ./target/debug/libdrasi_computation_standard.dylib ./native-output.jsonl \
+  ./target/debug ./native-output.jsonl \
   > ./native-server.yaml
 cargo run --offline --bin drasi-server -- --config ./native-server.yaml \
   --plugins-dir ./target/debug --skip-verification --disable-ui
 ```
+
+Remove obsolete `drasi_computation_standard` bundle artifacts from an existing
+plugin directory before running discovery; do not load both the old bundle and
+its per-component replacements.
 
 The example emits four graph-change envelopes with values `24, 30, 36, 42`
 and the `Projected` label. Its counter and standalone arithmetic are volatile

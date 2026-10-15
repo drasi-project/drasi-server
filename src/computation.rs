@@ -49,9 +49,12 @@ pub fn native_factory_registry(
     plugins: &crate::plugin_registry::PluginRegistry,
 ) -> Result<FactoryRegistry> {
     let mut factories = plugins.computation_factory_registry()?;
-    for factory in drasi_computation_bridge::factories()
-        .into_iter()
-        .chain(drasi_instance_host::factories())
+    for factory in [
+        drasi_computation_source_bridge::factory(),
+        drasi_computation_sink_bridge::factory(),
+    ]
+    .into_iter()
+    .chain(drasi_instance_host::factories())
     {
         factories.register(factory)?;
     }
@@ -87,7 +90,7 @@ pub enum ComputationResourceConfig {
     BridgeTls {
         version: u32,
         #[schema(value_type = String)]
-        role: drasi_computation_bridge::TlsRole,
+        role: drasi_computation_bridge_common::TlsRole,
         trust_roots: Vec<PathBuf>,
         certificate_chain: Vec<PathBuf>,
         private_key: PathBuf,
@@ -337,7 +340,7 @@ fn validate_host_recipe(
 ) -> Result<()> {
     match recipe {
         ComputationResourceConfig::BridgeTls { .. } => {
-            let tls: drasi_computation_bridge::TlsResourceRecipe =
+            let tls: drasi_computation_bridge_common::TlsResourceRecipe =
                 serde_json::from_value(serde_json::to_value(recipe)?)?;
             tls.validate()?;
             anyhow::ensure!(
@@ -716,13 +719,13 @@ impl ManagementResourceResolver for ServerManagementResources {
                 )),
             ),
             ComputationResourceConfig::BridgeIngressControl {} => {
-                Arc::new(drasi_computation_bridge::BridgeIngressControl::new()).resource()
+                Arc::new(drasi_computation_bridge_common::BridgeIngressControl::new()).resource()
             }
             ComputationResourceConfig::BridgeEgressControl {} => {
-                Arc::new(drasi_computation_bridge::BridgeEgressControl::new()).resource()
+                Arc::new(drasi_computation_bridge_common::BridgeEgressControl::new()).resource()
             }
             ComputationResourceConfig::BridgeTls { .. } => {
-                let tls: drasi_computation_bridge::TlsResourceRecipe =
+                let tls: drasi_computation_bridge_common::TlsResourceRecipe =
                     serde_json::from_value(configuration.clone())?;
                 ResourceHandle::new(
                     ResourceRole::Identity,
@@ -933,7 +936,10 @@ mod tests {
     fn host_and_bridge_factories_are_available_without_loading_child_plugins() {
         let plugins = crate::plugin_registry::PluginRegistry::new();
         let registry = native_factory_registry(&plugins).unwrap();
-        let bridge = drasi_computation_bridge::factories();
+        let bridge = [
+            drasi_computation_source_bridge::factory(),
+            drasi_computation_sink_bridge::factory(),
+        ];
         let host = drasi_instance_host::factories();
         assert_eq!(bridge.len(), 2);
         assert!(!host.is_empty());

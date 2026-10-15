@@ -2,12 +2,15 @@
 // Licensed under the Apache License, Version 2.0.
 
 //! Generate a server YAML configuration from the real native factory contracts.
-//! Usage: cargo run --example native-computation -- <library> [capture.jsonl]
+//! Usage: cargo run --example native-computation -- <plugin-directory> [capture.jsonl]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
-use drasi_host_sdk::computation::{NativeFactory, NativePlugin};
+use drasi_host_sdk::computation::NativeFactory;
 use drasi_lib::computation::v1::{
     BoundedPipeConfig, ComponentBatch, ComponentId, EdgeDefinition, Endpoint, PortId, StreamId,
 };
@@ -16,7 +19,19 @@ use drasi_server::{
 };
 use serde_json::json;
 
-fn factory(plugin: &NativePlugin, name: &str) -> Result<Arc<NativeFactory>> {
+fn factory(directory: &Path, library: &str, name: &str) -> Result<Arc<NativeFactory>> {
+    let path = directory.join(format!(
+        "{}{library}{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX,
+    ));
+    let plugin = drasi_host_sdk::computation::load(&path)
+        .with_context(|| format!("load native component {}", path.display()))?;
+    anyhow::ensure!(
+        plugin.factories().len() == 1,
+        "expected one factory in {}",
+        path.display()
+    );
     plugin
         .factories()
         .iter()
@@ -35,19 +50,35 @@ fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
 #[allow(clippy::print_stdout)]
 fn main() -> Result<()> {
     let mut args = std::env::args_os().skip(1);
-    let library = args
-        .next()
-        .context("usage: native-computation <native-standard-library> [capture.jsonl]")?;
+    let directory = PathBuf::from(
+        args.next()
+            .context("usage: native-computation <plugin-directory> [capture.jsonl]")?,
+    );
     let path = args
         .next()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("native-output.jsonl"));
     anyhow::ensure!(args.next().is_none(), "too many arguments");
-    let plugin = drasi_host_sdk::computation::load(PathBuf::from(library))?;
-    let counter = factory(&plugin, "drasi.standard/volatile-counter")?;
-    let middleware = factory(&plugin, "drasi.standard/middleware")?;
-    let arithmetic = factory(&plugin, "drasi.standard/arithmetic")?;
-    let capture = factory(&plugin, "drasi.standard/capture")?;
+    let counter = factory(
+        &directory,
+        "drasi_computation_source_counter",
+        "drasi.standard/volatile-counter",
+    )?;
+    let middleware = factory(
+        &directory,
+        "drasi_computation_transformer_middleware",
+        "drasi.standard/middleware",
+    )?;
+    let arithmetic = factory(
+        &directory,
+        "drasi_computation_transformer_arithmetic",
+        "drasi.standard/arithmetic",
+    )?;
+    let capture = factory(
+        &directory,
+        "drasi_computation_sink_capture",
+        "drasi.standard/capture",
+    )?;
     let mut builder = ComponentBatch::builder()
         .component(counter.specification(ComponentId::try_new("counter")?,
             json!({"stream":"counter/out","count":4,"start":2,"step":3}))?, counter)
