@@ -1,8 +1,8 @@
 use anyhow::{ensure, Context, Result};
-use drasi_core::models::SourceChange;
-use drasi_lib::computation::v1::{
+use drasi_computation_contracts::{
     ChangeOperation, EnvelopeCodec, GraphChangeCodec, QueryChangeCodec,
 };
+use drasi_core_types::models::SourceChange;
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,

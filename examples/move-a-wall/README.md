@@ -119,6 +119,11 @@ produce visible errors.
 
 ## What actually runs
 
+The scene and geometry plugin uses the native SDK and shared message contracts;
+it does not include the query engine or `drasi-lib`. Drasi Server owns the graph
+and queries. The example's Rust tests select the runtime as a test dependency.
+The Quick Start and checked-in configuration are unchanged.
+
 ```text
 React input command (no geometry)
     |

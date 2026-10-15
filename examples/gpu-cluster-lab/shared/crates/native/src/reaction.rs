@@ -1,10 +1,10 @@
 use crate::status::Hub;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use drasi_lib::computation::v1::{
-    ChangeOperation, ComponentDescriptor, ComputationComponent, EnvelopeSink, InputEnvelope,
-    QueryChangeCodec, SinkCompletion,
+use drasi_computation_contracts::{
+    ChangeOperation, ComponentDescriptor, InputEnvelope, QueryChangeCodec, SinkCompletion,
 };
+use drasi_computation_plugin_sdk::{NativeComponent, NativeSink};
 use gpu_contracts::Candidate;
 use gpu_control::writer::{Outcome, PlanWriter};
 use serde::Deserialize;
@@ -73,7 +73,7 @@ impl Reaction {
     }
 }
 #[async_trait]
-impl ComputationComponent for Reaction {
+impl NativeComponent for Reaction {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -161,7 +161,7 @@ impl ComputationComponent for Reaction {
     }
 }
 #[async_trait]
-impl EnvelopeSink for Reaction {
+impl NativeSink for Reaction {
     fn completion(&self) -> SinkCompletion {
         SinkCompletion::Accepted
     }

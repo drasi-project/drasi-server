@@ -1,5 +1,6 @@
 use super::*;
 use anyhow::{Context, Result};
+use drasi_computation_plugin_sdk::{NativeComponent, NativeSource, NativeTransformer};
 use drasi_core::{computation::InMemoryComputationProvider, models::SourceChange};
 use drasi_lib::computation::v1::*;
 use model::{Entity, Shape};

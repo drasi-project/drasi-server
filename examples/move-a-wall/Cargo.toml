@@ -19,8 +19,8 @@ anyhow = "1"
 async-trait = "0.1"
 axum = "0.7"
 chrono = "0.4"
-drasi-core = { path = "../../../drasi-core/core" }
-drasi-lib = { path = "../../../drasi-core/lib" }
+drasi-core-types = { path = "../../../drasi-core/core-types" }
+drasi-computation-contracts = { path = "../../../drasi-core/components/computation-contracts" }
 drasi-computation-plugin-sdk = { path = "../../../drasi-core/components/computation-plugin-sdk" }
 geo = "0.31"
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+drasi-core = { path = "../../../drasi-core/core" }
+drasi-lib = { path = "../../../drasi-core/lib" }
 serde_yaml = "0.9"
 
 [profile.dev]

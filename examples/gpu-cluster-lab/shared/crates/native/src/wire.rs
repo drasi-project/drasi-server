@@ -1,10 +1,10 @@
 use anyhow::{ensure, Context, Result};
-use drasi_core::models::{
-    Element, ElementMetadata, ElementPropertyMap, ElementReference, ElementValue, SourceChange,
-};
-use drasi_lib::computation::v1::{
+use drasi_computation_contracts::{
     ChangeEnvelope, ChangeOperation, GraphChangeCodec, InputEnvelope, OutputEnvelope, PortId,
     QueryChangeCodec, StreamId,
+};
+use drasi_core_types::models::{
+    Element, ElementMetadata, ElementPropertyMap, ElementReference, ElementValue, SourceChange,
 };
 use gpu_contracts::{Capacity, Configuration, Plan, Settings};
 use gpu_policy::Assessment;

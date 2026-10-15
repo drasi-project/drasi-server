@@ -1,9 +1,8 @@
 use crate::wire::Emitter;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use drasi_lib::computation::v1::{
-    ComponentDescriptor, ComputationComponent, EnvelopeSource, OutputEnvelope, StreamId,
-};
+use drasi_computation_contracts::{ComponentDescriptor, OutputEnvelope, StreamId};
+use drasi_computation_plugin_sdk::{NativeComponent, NativeSource};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -443,7 +442,7 @@ impl Producer {
     }
 }
 #[async_trait]
-impl ComputationComponent for Producer {
+impl NativeComponent for Producer {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -476,7 +475,7 @@ impl ComputationComponent for Producer {
     }
 }
 #[async_trait]
-impl EnvelopeSource for Producer {
+impl NativeSource for Producer {
     async fn next(&mut self) -> Result<Option<OutputEnvelope>> {
         anyhow::ensure!(self.running, "status producer is stopped");
         loop {

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use drasi_core::models::{
+use drasi_computation_contracts::*;
+use drasi_core_types::models::{
     Element, ElementMetadata, ElementPropertyMap, ElementReference, SourceChange,
 };
-use drasi_lib::computation::v1::*;
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -99,11 +99,5 @@ pub fn port(name: &str, direction: PortDirection, query: bool) -> Result<PortDes
         .descriptor()
         .clone(),
         PipeRequirements::default(),
-    ))
-}
-pub fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
-    Ok(Endpoint::new(
-        ComponentId::try_new(component)?,
-        PortId::try_new(port)?,
     ))
 }

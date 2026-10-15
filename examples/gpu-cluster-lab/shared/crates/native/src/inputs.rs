@@ -1,5 +1,5 @@
 use anyhow::{ensure, Context, Result};
-use drasi_lib::computation::v1::{
+use drasi_computation_contracts::{
     ChangeOperation, QueryChangeCodec, QueryRowKind, RecordId, RecordImage,
 };
 use gpu_contracts::{Configuration, Plan, Settings};
@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub const SIMULATION_QUERY: &str = include_str!("../../../queries/simulation-inputs.cypher");
 pub const SCHEDULING_QUERY: &str = include_str!("../../../queries/scheduling-inputs.cypher");
 
+#[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
 pub fn processing_queries() -> Vec<(
     &'static str,
     &'static str,
@@ -276,7 +277,7 @@ impl DatabaseInputs {
                         row.signature,
                         &BTreeMap::from([(
                             "records".into(),
-                            drasi_core::evaluation::variable_value::VariableValue::from(
+                            drasi_core_types::evaluation::variable_value::VariableValue::from(
                                 Value::Array(row.records.clone()),
                             ),
                         )]),

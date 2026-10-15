@@ -13,12 +13,13 @@ crate-type = ["lib", "cdylib"]
 [features]
 default = []
 dynamic-plugin = []
-query-isolation = ["dep:drasi-source-application"]
+query-isolation = ["dep:drasi-source-application", "dep:drasi-core", "dep:drasi-lib", "dep:drasi-middleware"]
 runtime = [
     "dep:axum", "dep:drasi-server", "dep:drasi-host-sdk",
     "dep:drasi-source-postgres", "dep:drasi-index-rocksdb",
     "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
     "dep:sqlx",
+    "dep:drasi-core", "dep:drasi-lib", "dep:drasi-middleware",
 ]
 
 [[bin]]
@@ -37,9 +38,11 @@ gpu-policy = { path = "../policy" }
 gpu-placement = { path = "../placement" }
 gpu-simulator = { path = "../simulator" }
 gpu-control = { path = "../control" }
-drasi-lib = { path = "../../../../../../drasi-core/lib" }
-drasi-core = { path = "../../../../../../drasi-core/core" }
-drasi-middleware = { path = "../../../../../../drasi-core/middleware", default-features = false, features = ["parse_json"] }
+drasi-lib = { path = "../../../../../../drasi-core/lib", optional = true }
+drasi-core = { path = "../../../../../../drasi-core/core", optional = true }
+drasi-middleware = { path = "../../../../../../drasi-core/middleware", default-features = false, features = ["parse_json"], optional = true }
+drasi-core-types = { path = "../../../../../../drasi-core/core-types" }
+drasi-computation-contracts = { path = "../../../../../../drasi-core/components/computation-contracts" }
 drasi-computation-plugin-sdk = { path = "../../../../../../drasi-core/components/computation-plugin-sdk" }
 anyhow = "1"
 async-trait = "0.1"
@@ -60,6 +63,9 @@ drasi-source-application = { path = "../../../../../../drasi-core/components/sou
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json"], optional = true }
 
 [dev-dependencies]
+drasi-core = { path = "../../../../../../drasi-core/core" }
+drasi-lib = { path = "../../../../../../drasi-core/lib" }
+drasi-middleware = { path = "../../../../../../drasi-core/middleware", default-features = false, features = ["parse_json"] }
 drasi-source-application = { path = "../../../../../../drasi-core/components/sources/application" }
 drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false }
 axum = "0.7"

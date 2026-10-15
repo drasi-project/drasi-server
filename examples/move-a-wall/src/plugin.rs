@@ -1,10 +1,10 @@
 use crate::{source::SceneSource, transformer::Geometry, wire};
 use anyhow::Result;
+use drasi_computation_contracts::*;
 use drasi_computation_plugin_sdk::{
     Capabilities, Component, ConfigSchema, ControlSender, CreateRequest, CreatedComponent, Factory,
     FactoryMetadata, PluginDefinition,
 };
-use drasi_lib::computation::v1::*;
 use std::sync::Arc;
 
 struct NativeFactory {

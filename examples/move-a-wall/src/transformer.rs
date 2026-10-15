@@ -6,7 +6,8 @@ use crate::{
 };
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
-use drasi_lib::computation::v1::*;
+use drasi_computation_contracts::*;
+use drasi_computation_plugin_sdk::{NativeComponent, NativeTransformer};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -116,7 +117,7 @@ fn descriptor(id: ComponentId) -> Result<ComponentDescriptor> {
     )?)
 }
 #[async_trait]
-impl ComputationComponent for Geometry {
+impl NativeComponent for Geometry {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -136,7 +137,7 @@ impl ComputationComponent for Geometry {
     }
 }
 #[async_trait]
-impl Transformer for Geometry {
+impl NativeTransformer for Geometry {
     async fn transform(&mut self, input: InputEnvelope) -> Result<Vec<OutputEnvelope>> {
         ensure!(!self.stopped, "geometry transformer stopped");
         ensure!(input.port.as_str() == "in", "unknown geometry port");

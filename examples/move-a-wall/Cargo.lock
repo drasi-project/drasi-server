@@ -362,6 +362,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-contracts"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bincode",
+ "bytes",
+ "chrono",
+ "drasi-core-types",
+ "drasi-query-ast",
+ "futures-core",
+ "im",
+ "log",
+ "rmp-serde",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-computation-plugin-abi"
 version = "0.11.3"
 
@@ -372,9 +396,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "drasi-computation-contracts",
  "drasi-computation-plugin-abi",
- "drasi-core",
- "drasi-lib",
+ "drasi-core-types",
  "futures-core",
  "rmp-serde",
  "serde",
@@ -395,6 +419,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dateparser",
+ "drasi-core-types",
  "drasi-query-ast",
  "drasi-query-cypher",
  "futures",
@@ -423,6 +448,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-core-types"
+version = "0.11.3"
+dependencies = [
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "drasi-query-ast",
+ "itoa",
+ "lazy_static",
+ "log",
+ "ordered-float",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
+]
+
+[[package]]
 name = "drasi-functions-cypher"
 version = "0.5.10"
 dependencies = [
@@ -445,7 +489,9 @@ dependencies = [
  "bincode",
  "bytes",
  "chrono",
+ "drasi-computation-contracts",
  "drasi-core",
+ "drasi-core-types",
  "drasi-functions-cypher",
  "drasi-functions-gql",
  "drasi-query-ast",
@@ -1094,8 +1140,10 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "drasi-computation-contracts",
  "drasi-computation-plugin-sdk",
  "drasi-core",
+ "drasi-core-types",
  "drasi-lib",
  "geo",
  "serde",

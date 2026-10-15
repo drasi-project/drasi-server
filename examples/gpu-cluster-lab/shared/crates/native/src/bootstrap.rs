@@ -1,8 +1,8 @@
 //! Bounded transport for the embedded host's canonical query bootstrap snapshots.
 use crate::{inputs::BootstrapBoundary, lifecycle::BOOTSTRAP_COMPLETE};
 use anyhow::{ensure, Context, Result};
+use drasi_computation_contracts::{ComponentId, MAX_CONTROL_JSON_DEPTH, MAX_CONTROL_PAYLOAD_BYTES};
 use drasi_computation_plugin_sdk::{ControlDirection, ControlMessage, ControlNotification};
-use drasi_lib::computation::v1::{ComponentId, MAX_CONTROL_JSON_DEPTH, MAX_CONTROL_PAYLOAD_BYTES};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{

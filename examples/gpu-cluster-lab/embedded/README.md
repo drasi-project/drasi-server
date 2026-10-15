@@ -336,6 +336,12 @@ a graph-change output port, `out`. It consumes `QueryChangeCodec` envelopes and
 emits `GraphChangeCodec` envelopes with stable identities, nested properties,
 sequences, and provenance.
 
+The plugin library uses shared contracts and values, without the query engine.
+Its existing `runtime` and `query-isolation` features explicitly select host/query
+helpers and their heavier dependencies; those are not required by a standalone
+`--features dynamic-plugin` library build. This separation does not change the
+demo's graph, query definitions, processing behavior or binary plugin contract.
+
 Factory configuration is intentionally small. For example, the simulator's
 factory configuration is:
 

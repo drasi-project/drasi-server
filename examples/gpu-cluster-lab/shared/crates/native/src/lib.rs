@@ -2,8 +2,10 @@ pub mod bootstrap;
 mod evidence;
 pub mod inputs;
 pub mod lifecycle;
+#[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
 pub mod postgres;
 mod processor;
+#[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
 pub mod projections;
 mod reaction;
 mod status;
@@ -11,13 +13,13 @@ pub mod wire;
 pub use status::{RuntimeComponent, RuntimeObservation};
 
 use anyhow::Result;
+use drasi_computation_contracts::{
+    ComponentRole, GraphChangeCodec, ImplementationIdentity, PipeRequirements, PortDescriptor,
+    PortDirection, PortId, QueryChangeCodec,
+};
 use drasi_computation_plugin_sdk::{
     Capabilities, Component, ConfigField, ConfigSchema, ConfigType, ControlSender, CreateRequest,
     CreatedComponent, Factory, FactoryMetadata, PluginDefinition,
-};
-use drasi_lib::computation::v1::{
-    ComponentRole, GraphChangeCodec, ImplementationIdentity, PipeRequirements, PortDescriptor,
-    PortDirection, PortId, QueryChangeCodec,
 };
 use std::{
     collections::BTreeMap,
@@ -215,7 +217,7 @@ impl Factory for AuxiliaryFactory {
             }],
             completion: self
                 .reaction
-                .then_some(drasi_lib::computation::v1::SinkCompletion::Accepted),
+                .then_some(drasi_computation_contracts::SinkCompletion::Accepted),
             capabilities: Capabilities {
                 control: !self.reaction,
                 snapshot: self.reaction,

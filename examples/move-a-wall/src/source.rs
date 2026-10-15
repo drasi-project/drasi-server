@@ -11,7 +11,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use drasi_lib::computation::v1::*;
+use drasi_computation_contracts::*;
+use drasi_computation_plugin_sdk::{NativeComponent, NativeSource};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -196,7 +197,7 @@ impl Store {
 }
 
 #[async_trait]
-impl ComputationComponent for SceneSource {
+impl NativeComponent for SceneSource {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -239,7 +240,7 @@ impl ComputationComponent for SceneSource {
     }
 }
 #[async_trait]
-impl EnvelopeSource for SceneSource {
+impl NativeSource for SceneSource {
     async fn next(&mut self) -> Result<Option<OutputEnvelope>> {
         if let Some((_, task)) = self.server.as_ref() {
             ensure!(

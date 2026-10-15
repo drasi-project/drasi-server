@@ -7,11 +7,12 @@ use crate::{
 };
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
-use drasi_core::models::SourceChange;
-use drasi_lib::computation::v1::{
-    ChangeOperation, ComponentDescriptor, ComputationComponent, InputEnvelope, OutputEnvelope,
-    QueryChangeCodec, StreamId, Transformer, WakeupSource,
+use drasi_computation_contracts::{
+    ChangeOperation, ComponentDescriptor, InputEnvelope, OutputEnvelope, QueryChangeCodec,
+    StreamId, WakeupSource,
 };
+use drasi_computation_plugin_sdk::{NativeComponent, NativeTransformer};
+use drasi_core_types::models::SourceChange;
 use gpu_contracts::*;
 use gpu_placement::{LossKind, Outcome, Resilience, Scenario};
 use gpu_policy::{Assessment, Evaluator};
@@ -1079,7 +1080,7 @@ impl Processor {
     }
 }
 #[async_trait]
-impl ComputationComponent for Processor {
+impl NativeComponent for Processor {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -1128,7 +1129,7 @@ impl ComputationComponent for Processor {
     }
 }
 #[async_trait]
-impl Transformer for Processor {
+impl NativeTransformer for Processor {
     fn wakeup_source(&self) -> Option<Arc<dyn WakeupSource>> {
         Some(self.timer.clone())
     }

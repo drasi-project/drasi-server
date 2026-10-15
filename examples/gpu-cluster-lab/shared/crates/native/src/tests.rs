@@ -4,6 +4,7 @@ use crate::{
     wire::{Emitter, Message, SolveInput},
 };
 use anyhow::{Context, Result};
+use drasi_computation_plugin_sdk::{NativeComponent, NativeSink, NativeSource, NativeTransformer};
 use drasi_core::{computation::InMemoryComputationProvider, models::SourceChange};
 use drasi_lib::computation::v1::*;
 use drasi_lib::{queries::FetchError, ComponentStatus, DrasiError};
