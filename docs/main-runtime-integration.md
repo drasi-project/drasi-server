@@ -68,6 +68,18 @@ job boundary, action pins and stack-top gate are unchanged. Compilation uses the
 same strict gh-aw 0.88.8 compiler; an ancestor's skipped job is not an executed
 top-of-stack validation.
 
+### Template validation on musl
+
+Pest 2.9.3 checks native stack headroom before parsing Handlebars templates.
+On musl, main-thread stack bounds can report less than the required 64 KiB
+remaining during startup even when the process stack limit is much larger.
+The shared configuration template validator uses bounded stack growth: below
+128 KiB of reported headroom, parsing runs temporarily on a 2 MiB stack on the
+same thread. This applies to default and routed templates, including nested
+instances. Parser resource limits and syntax errors remain enforced; no
+dependency downgrade, Dockerfile change or stack-limit environment setting is
+required. See [#226](https://github.com/drasi-project/drasi-server/issues/226).
+
 ### Persistent-state upgrade: reconstruct all affected state
 
 All affected numeric groups require reconstruction, **including ordinary integer

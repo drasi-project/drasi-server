@@ -18,7 +18,7 @@ exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 authors = ["Drasi Project"]
 description = "Standalone Drasi server for data change processing"
@@ -98,6 +98,7 @@ thiserror = "1.0"
 dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
+stacker = "=0.1.25"
 async-stream = "0.3.6"
 regex = "1"
 jsonschema = "0.28"
@@ -135,7 +136,7 @@ warnings = "deny"
 # Use rustls with aws-lc-rs instead of ring to avoid ring's macOS cross-compilation
 # assembly architecture mismatch (ring compiles asm for target instead of host).
 ureq = { version = "3", default-features = false, features = ["json", "rustls-no-provider", "rustls-webpki-roots"] }
-rustls = { version = "=0.23.45", default-features = false, features = ["aws-lc-rs"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["aws-lc-rs"] }
 flate2 = "1"
 tar = "0.4"
 serde_json = "1"

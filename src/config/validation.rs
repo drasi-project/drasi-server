@@ -20,6 +20,11 @@
 
 use handlebars::Handlebars;
 
+// Leave margin above Pest's 64 KiB guard and bound the temporary parsing stack.
+// Policy validated by the reproducer in https://github.com/drasi-project/drasi-server/issues/226.
+const TEMPLATE_PARSE_MIN_HEADROOM: usize = 128 * 1024;
+const TEMPLATE_PARSE_STACK_SIZE: usize = 2 * 1024 * 1024;
+
 /// Validation error for configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ValidationError {
@@ -213,15 +218,17 @@ fn validate_template_query_config_inner(
 /// Uses Handlebars' own register_template_string() which parses and compiles
 /// the template, returning errors for invalid syntax.
 fn validate_template_syntax(template: &str, context: &str, errors: &mut Vec<String>) {
-    let mut hb = Handlebars::new();
-
-    // Handlebars::register_template_string() performs full parsing and compilation.
-    // It will catch:
-    // - Unclosed braces: "{{name"
-    // - Empty expressions: "{{}}"
-    // - Invalid syntax: "{{#if}}" without closing
-    // - Malformed helpers: "{{#each items}}...{{/each}" with mismatched tags
-    if let Err(e) = hb.register_template_string("_validation_", template) {
+    // musl can report little main-thread headroom despite a larger process limit.
+    // Supply a bounded stack without disabling the parser's stack-safety checks.
+    let result = stacker::maybe_grow(
+        TEMPLATE_PARSE_MIN_HEADROOM,
+        TEMPLATE_PARSE_STACK_SIZE,
+        || {
+            let mut hb = Handlebars::new();
+            hb.register_template_string("_validation_", template)
+        },
+    );
+    if let Err(e) = result {
         errors.push(format!("{context}: invalid Handlebars template - {e}"));
     }
 }
@@ -233,6 +240,78 @@ mod tests {
     use crate::config::types::{DrasiLibInstanceConfig, DrasiServerConfig};
 
     // ==================== Template syntax validation (validate_config) ====================
+
+    #[test]
+    fn test_hello_world_templates_pass_with_low_stack() {
+        let value: serde_yaml::Value = serde_yaml::from_str(include_str!(
+            "../../tests/integration/hello-world/config.yaml"
+        ))
+        .unwrap();
+
+        let unprotected = stacker::grow(64 * 1024, || {
+            let remaining = stacker::remaining_stack().expect("Stack bounds should be known");
+            assert!(
+                remaining < 64 * 1024,
+                "Expected low stack headroom: {remaining}"
+            );
+            Handlebars::new().register_template_string("_validation_", "hello")
+        });
+        assert!(unprotected
+            .unwrap_err()
+            .to_string()
+            .contains("stack limit reached"));
+
+        let result = stacker::grow(64 * 1024, || validate_config(&value));
+        assert!(
+            result.is_ok(),
+            "Valid templates should pass with low stack: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_invalid_templates_remain_errors_with_low_stack() {
+        let value: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+            instances:
+              - reactions:
+                  - kind: log
+                    id: test-log
+                    defaultTemplate:
+                      added:
+                        template: "{{after.Name"
+                      deleted:
+                        template: "{{#if condition}}"
+            "#,
+        )
+        .unwrap();
+
+        let error = stacker::grow(64 * 1024, || validate_config(&value)).unwrap_err();
+        let ValidationError::Multiple(errors) = error else {
+            panic!("Expected both invalid templates to be reported");
+        };
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].contains("defaultTemplate.added.template"));
+        assert!(errors[1].contains("defaultTemplate.deleted.template"));
+        for error in errors {
+            assert!(error.contains("invalid Handlebars template"));
+            assert!(!error.contains("stack limit reached"), "{error}");
+        }
+    }
+
+    #[test]
+    fn test_deep_template_retains_parser_stack_limit() {
+        let template = format!(
+            "{}value{}",
+            "{{#if condition}}".repeat(10_000),
+            "{{/if}}".repeat(10_000)
+        );
+        let mut errors = Vec::new();
+        stacker::grow(64 * 1024, || {
+            validate_template_syntax(&template, "deep-template", &mut errors);
+        });
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("stack limit reached"));
+    }
 
     #[test]
     fn test_valid_config_passes() {
