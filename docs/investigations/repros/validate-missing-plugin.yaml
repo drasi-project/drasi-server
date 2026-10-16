@@ -1,0 +1,11 @@
+# Direct CLI fixture for drasi-project/drasi-server#195.
+# Validation against an empty plugin directory reports the missing kind but
+# currently exits successfully.
+apiVersion: drasi.io/v1
+persistConfig: false
+sources:
+  - kind: definitely-not-installed
+    id: missing-source
+    autoStart: false
+queries: []
+reactions: []
