@@ -237,7 +237,7 @@ case "${1:-help}" in
         configure
         compose config --quiet
         case "${2:-unit}" in
-            --acceptance) acceptance --writer-recovery; acceptance --acceptance ;;
+            --acceptance) python3 ops/check-native-input.py; acceptance --writer-recovery; acceptance --acceptance ;;
             --functional) python3 ops/check-native-input.py; acceptance --writer-recovery; acceptance --restart; acceptance --runbook ;;
             --native-input) shift 2; python3 ops/check-native-input.py "$@" ;;
             --writer-recovery) acceptance --writer-recovery ;;
@@ -262,7 +262,8 @@ case "${1:-help}" in
         '  ./demo wait --timeout 120 | reset baseline | reset fragmentation | reset regional' \
         '  ./demo status | logs | sql | build | check | check --smoke | check --errors | check --concurrency | check --commands | check --runbook | check --restart | check --writer-recovery | check --acceptance' \
         '  ./demo check --query-drain  Isolated diagnostic report pause; never acceptance evidence' \
-        '  ./demo check --functional  Isolated writer recovery, restart and scenarios; no transaction-completion claim' \
+        '  ./demo check --functional  Isolated native input, writer recovery, restart and scenarios' \
+        '  ./demo check --acceptance  The same supported path plus policy-context capability acceptance' \
         '  ./demo check --native-input  Isolated atomic input, restart, crash, reset and missing-history checks' \
         '  ./demo check --postgres-mutations  Isolated SQL mutation checks with real query logging' \
         '  ./demo check --admin-ui  Read-only checks of the Drasi admin UI, assets and component APIs' \

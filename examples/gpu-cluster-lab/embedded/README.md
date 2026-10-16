@@ -745,10 +745,19 @@ this query snapshot with a current repeatable-read, read-only database snapshot;
 stale recovered rows cannot alone open readiness. Reset also requires the expected
 saved-plan decision identity.
 
-**Atomic input is not atomic downstream effects.** Domain workers, different UI
-queries, HTTP plan commits and browsers still complete independently. The health
-contract retains `transaction_completion: "not-supported"` for that stronger
-whole-application guarantee.
+**Transaction completion describes policy context, not atomic downstream
+effects.** The native input path reports `transaction_completion: "supported"`:
+one complete committed PostgreSQL transaction updates the persistent
+`input-configuration` aggregate before its replacement configuration is
+published. Policy/configuration fingerprints prevent mixed contexts from being
+used, and generation checks reject an older policy calculation that finishes
+after revocation. The simulator and plan writer retain their independent
+current-policy checks.
+
+Domain workers, different UI queries, HTTP plan commits and browsers still
+complete independently. Saved, applied and freshly confirmed remain different
+states. This capability is not a distributed transaction or a promise that all
+GPU effects happen atomically.
 
 ### Runtime-status source
 
@@ -1234,8 +1243,8 @@ checkout-specific Compose project, not every Drasi environment on the machine.
 | `./demo check --commands` / `--concurrency` / `--runbook` | **Mutate and reset the current demo.** Use only when its current edits may be replaced. |
 | `./demo check --restart` | Isolated database-preserving stack restart and fresh-confirmation checks, including clean service exit codes. |
 | `./demo check --writer-recovery` | Isolated real plan-writer fault/retry/idempotency checks. |
-| `./demo check --acceptance` | Isolated writer faults, restart, commands, and scenarios; retains the final unsupported transaction-completion assertion. |
-| `./demo check --functional` | Isolated writer faults, restart and runbook scenarios using the current built images, without resetting the live deployment. Qualifies existing functionality, not the deferred whole-transaction policy guarantee. |
+| `./demo check --acceptance` | Isolated native transaction input/recovery, writer faults, restart, commands and scenarios, including the supported policy-context capability assertion. |
+| `./demo check --functional` | Isolated native input, writer faults, restart and runbook scenarios using the current built images, without resetting the live deployment. |
 | `./demo check --native-input` | Fresh isolated database: concurrent cold-start writes, multi-table input commits, stopped/crashed runtime recovery, slot-preserving reset, and explicit failure on missing retained history. |
 | `./demo check --postgres-mutations` | Isolated copy of current PostgreSQL data, real query logging, SQL mutations, snapshots, and recovery findings. |
 | `./demo check --query-drain` | Isolated diagnostic report pause/drain; convergence after pausing is not an acceptance or performance pass. |
@@ -1246,6 +1255,21 @@ and remove their own services/volumes afterward. They preserve failure evidence
 under `.build/`. Build images with `./demo up` or `./demo build control drasi`
 before using them.
 
+The 16 October transaction-support update removes a capability marker left over
+from the pre-native implementation. Full acceptance now runs the native-input
+checks before checking writer recovery and live scenarios; it does not rely only
+on a status string. Two consecutive complete `./demo check --acceptance` runs
+passed on matching current-source images through Podman on 2026-10-16.
+The restart check waits for matching saved/applied/confirmed versions and all
+eight ready replicas in the exact rows it captures, instead of checking readiness
+and then reading a different snapshot. Saved-plan, configuration, identity and
+durable non-replaying receipt assertions are unchanged. Temporary projects were
+removed without changing the original deployment or its database.
+The native Rust suite additionally covers atomic committed configuration/reopen
+and a completed old policy worker arriving after a newer revocation, on both
+runtime flavors. The historical checkpoints below retain their original scope
+and reported limitations.
+
 Historical pre-migration requalification on 2026-10-07 rebuilt the matching embedded host
 and native plugin from Core `e46f6130b29d9268603585a5912e92d6839fa01f` and Server
 `a7b564a8fbbfaf141cd078994275e09f13a798d9`, including their uncommitted reliability
@@ -1254,9 +1278,9 @@ Server and native lockfile sources. `check --functional` passed writer failure/
 retry/exhaustion cases, a full database-preserving stack restart, and the
 fragmentation, device-loss, regional-policy, revocation and reset scenarios.
 The temporary projects were removed; the previously running deployment and its
-saved scenario were not changed. This does not upgrade
-`transaction_completion: "not-supported"` or make `check --acceptance` pass its
-deliberately retained whole-transaction assertion.
+saved scenario were not changed. At that checkpoint,
+`transaction_completion: "not-supported"` was retained and full acceptance did
+not pass its final policy-context assertion.
 
 Native migration qualification on 2026-10-08 rebuilt current sources at Core
 `953479729465b412a16764b29c9e56c55a1531e1` and Server
@@ -1272,8 +1296,8 @@ all fourteen native query logs against a separate disposable baseline fixture.
 The admin UI check passed bundled assets, live component details and native graph
 inspection; it also runs as part of the native-input qualification.
 All temporary projects were removed; the running deployment was not changed.
-This does not claim atomic downstream effects or change the retained acceptance
-assertion. The image contains `/app/native-network.Cargo.lock` for its native
+That checkpoint did not claim atomic downstream effects or update the retained
+acceptance marker. The image contains `/app/native-network.Cargo.lock` for its native
 network-library dependency resolution.
 
 ### Query logging and reproducible SQL checks
@@ -1318,8 +1342,8 @@ redeploying the presenter:
   --runtime-image <local-runtime-image>
 ```
 
-These are correctness diagnostics, not throughput measurements or proof of the
-deferred whole-transaction policy guarantee. Dumps and logs can contain
+These are targeted correctness diagnostics, not throughput measurements or a
+replacement for full native-input and policy-context acceptance. Dumps and logs can contain
 configuration data; keep `.build/` private and untracked.
 
 ### Deeper query diagnostics
@@ -1407,7 +1431,7 @@ failure/recovery combination is solved.
 
 | Symptom or boundary | Meaning and action |
 |---|---|
-| `transaction_completion: "not-supported"` | PostgreSQL emits committed rows individually. Complete multi-row policy-context publication remains deferred. `--acceptance` retains its final `supported` assertion and therefore remains nonzero under this contract even when preceding scenarios pass. Do not infer completion from LSN grouping, delays, or quiet periods. |
+| `transaction_completion: "not-supported"` | An older runtime still reports the pre-native capability marker. Rebuild the matching current runtime/plugin and run full acceptance; do not change only the health response on an unqualified input path. Current support means complete transactional policy context, not atomic downstream effects, and is not inferred from quiet periods or LSN grouping. |
 | A saved plan is rejected during startup | A valid source/bootstrap with an invalid saved plan reports `application-rejected`, preserving the error while allowing corrective edits. Older runtime images incorrectly reported `initialization-error` and closed this gate. Rebuild the matching runtime/plugin if an older image still exhibits that lockout; do not bypass a genuine source/bootstrap failure. |
 | Containers are running but `./demo status` fails | Container liveness is not scenario readiness. Inspect **System status**, `./demo logs drasi`, and `./demo logs control` for bootstrap, policy, placement, application, or reset failures. |
 | Browser reads work but a command returns 403 | Use `http://localhost:<DEMO_PORT>`, matching `PUBLIC_ORIGIN`, rather than the `127.0.0.1` alias. Do not weaken origin checks to conceal the mismatch. |

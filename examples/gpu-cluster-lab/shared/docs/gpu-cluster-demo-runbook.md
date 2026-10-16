@@ -2,15 +2,16 @@
 
 Companion to the [implementation guide](gpu-cluster-demo.md). These scripts define the full presentation acceptance contract; they are not a claim that every scenario is qualified.
 
-**Not yet presentation-ready:** the live native graph, database feedback,
-query-backed React UI and durable reset coordinator are implemented. Scripts
-1-4 and direct SQL/browser recovery have live evidence. The temporal aggregate
-repair is qualified upstream, but isolated runs expose query processing lag that
-retains old plan/readiness and deleted-workload projections beyond the deadline.
-Complete device-loss and regional sequences
-remain acceptance gates until those projections converge correctly;
-the complete-transaction policy guarantee also awaits a final user decision.
-Do not present the complete sequence until those gates pass.
+**Presentation qualification:** the live native graph, database feedback,
+query-backed React UI, durable reset and native transactional policy-context
+path are implemented. Run `./demo check --acceptance` on matching current
+images before presenting the complete sequence. It includes real native-input
+and recovery checks, writer failures, a database-preserving restart, commands,
+device-loss and regional scenarios. Earlier lag failures and the pre-native
+unsupported marker are historical; they do not replace this current-binary
+acceptance gate or establish a production performance guarantee.
+The 2026-10-16 matching-source qualification passed the complete command twice
+consecutively through Podman, preserving the original deployment and its data.
 See the [implementation status](../../embedded/README.md). Run the operational
 commands in this guide from `examples/gpu-cluster-lab/embedded/`; the Server-hosted
 version is not implemented yet.

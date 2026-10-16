@@ -515,3 +515,254 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
     query.stop().await?;
     Ok(())
 }
+
+async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<()> {
+    fn usable_schedules(rows: Vec<Value>) -> Result<Vec<SolveInput>> {
+        let mut usable = Vec::new();
+        for value in rows {
+            let row: crate::inputs::SchedulingRow = serde_json::from_value(value.clone())?;
+            match row.message() {
+                Ok(Message::Schedule { input, .. }) => usable.push(input),
+                Ok(_) => anyhow::bail!("unexpected scheduling message"),
+                Err(error) => {
+                    // An empty aggregate placeholder must fail the production completeness guard.
+                    assert_eq!(
+                        value["capacities"],
+                        json!([]),
+                        "unexpected rejected schedule: {value}"
+                    );
+                    assert!(
+                        format!("{error:#}").contains("incomplete capacity snapshot"),
+                        "{error:#}"
+                    );
+                }
+            }
+        }
+        Ok(usable)
+    }
+
+    async fn update_policy(
+        source: &mut Emitter,
+        query: &mut ContinuousQueryTransformer,
+        policy: &mut Processor,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<OutputEnvelope>> {
+        let mut value = value.clone();
+        value["__gpu_table"] = json!("placement_policies");
+        let change = source
+            .record("placement_policies", key, &value)?
+            .context("policy revision did not change")?;
+        let mut published = Vec::new();
+        for input in source.emit(vec![change], None)? {
+            let outputs = query
+                .transform(InputEnvelope {
+                    port: PortId::try_new("in")?,
+                    envelope: input.envelope,
+                })
+                .await?;
+            for output in &outputs {
+                published.extend(
+                    policy
+                        .transform(InputEnvelope {
+                            port: PortId::try_new("in")?,
+                            envelope: output.envelope.clone(),
+                        })
+                        .await?,
+                );
+            }
+            query.delivery_completed(&outputs).await?;
+        }
+        Ok(published)
+    }
+
+    let epoch = Uuid::new_v4();
+    let fixture = fixtures::load("regional-boundary")?;
+    let records = fixture_rows(&fixture, epoch)?
+        .remove(DATABASE_QUERY)
+        .context("database fixture missing")?;
+    let text = crate::inputs::database_queries().remove(0).1;
+    let mut database = query(DATABASE_QUERY, &text).await?;
+    let mut source = Emitter::new(StreamId::try_new("policy-revocation-input")?);
+    let mut changes = Vec::new();
+    let records = records.as_array().context("fixture is not an array")?;
+    for (index, record) in records.iter().enumerate() {
+        let mut value = record["value"].clone();
+        value["__gpu_table"] = record["table"].clone();
+        changes.extend(source.record(
+            record["table"].as_str().context("table missing")?,
+            &index.to_string(),
+            &value,
+        )?);
+    }
+    project(&mut database, &source.emit(changes, None)?).await?;
+    let snapshot = database.results().snapshot()?;
+    assert_eq!(snapshot.rows.len(), 1);
+    let row =
+        QueryChangeCodec::decode_row(snapshot.rows.values().next().context("snapshot missing")?)?;
+    let mut complete = boundary(epoch, Some(serde_json::to_value(&row.values["records"])?));
+    let watermark = complete
+        .queries
+        .get_mut(DATABASE_QUERY)
+        .context("watermark missing")?;
+    watermark.sequence = snapshot.as_of_sequence;
+    watermark.rows.as_mut().context("bootstrap rows missing")?[0].signature = row.signature;
+
+    let workers = Arc::new(Workers::default());
+    let mut policy = processor(Kind::Policy, workers.clone())?;
+    policy.start().await?;
+    policy.signals.lock().expect("signal lock").bootstrap = Some(complete);
+    let initial = policy.on_wakeup().await?;
+    let queries = crate::inputs::processing_queries();
+    let (_, simulation_text, simulation_settings) = queries
+        .iter()
+        .find(|(id, _, _)| *id == "simulation-inputs")
+        .context("simulation query missing")?;
+    let (_, scheduling_text, scheduling_settings) = queries
+        .iter()
+        .find(|(id, _, _)| *id == "scheduling-inputs")
+        .context("scheduling query missing")?;
+    let mut simulation = configured_query(
+        "simulation-inputs",
+        simulation_text,
+        simulation_settings.clone(),
+    )
+    .await?;
+    let mut scheduling = configured_query(
+        "scheduling-inputs",
+        scheduling_text,
+        scheduling_settings.clone(),
+    )
+    .await?;
+    project(&mut simulation, &initial).await?;
+    project(&mut scheduling, &initial).await?;
+    let allowed = poll_until(&mut policy, "PolicyAssessment").await?;
+    let initial_rows = project(&mut simulation, &allowed).await?;
+    assert_eq!(initial_rows.len(), 1);
+    assert!(initial_rows.iter().all(|row| !row["policy"].is_null()));
+    assert_eq!(project(&mut scheduling, &allowed).await?.len(), 1);
+
+    let index = records
+        .iter()
+        .position(|record| {
+            record["table"] == "placement_policies"
+                && record["value"]["policy_id"] == "customer-eu-processing"
+        })
+        .context("customer policy missing")?;
+    let mut changed = fixture.configuration.policies["customer-eu-processing"].clone();
+    changed.revision += 1;
+    let pending = update_policy(
+        &mut source,
+        &mut database,
+        &mut policy,
+        &index.to_string(),
+        &serde_json::to_value(&changed)?,
+    )
+    .await?;
+    project(&mut simulation, &pending).await?;
+    project(&mut scheduling, &pending).await?;
+
+    // Finish the old allowed calculation without collecting its result, and hold the next worker.
+    let held = tokio::time::timeout(
+        Duration::from_secs(5),
+        workers.policy.clone().acquire_owned(),
+    )
+    .await??;
+    changed.allowed_regions.clear();
+    changed.revision += 1;
+    let revoked = update_policy(
+        &mut source,
+        &mut database,
+        &mut policy,
+        &index.to_string(),
+        &serde_json::to_value(&changed)?,
+    )
+    .await?;
+    let configuration: Configuration = serde_json::from_value(
+        payloads(&revoked, "FleetConfiguration")?
+            .into_iter()
+            .next()
+            .context("revocation configuration missing")?["configuration"]
+            .clone(),
+    )?;
+    let waiting = project(&mut simulation, &revoked).await?;
+    assert_eq!(waiting.len(), 1);
+    assert!(
+        waiting[0]["policy"].is_null(),
+        "old policy joined to revoked configuration"
+    );
+    assert!(
+        usable_schedules(project(&mut scheduling, &revoked).await?)?.is_empty(),
+        "revocation left a usable old scheduling context"
+    );
+
+    let stale_completion = policy.on_wakeup().await?;
+    assert!(
+        payloads(&stale_completion, "PolicyAssessment")?.is_empty(),
+        "a completed old allowed worker was published after revocation"
+    );
+    assert!(project(&mut simulation, &stale_completion).await?[0]["policy"].is_null());
+    assert!(usable_schedules(project(&mut scheduling, &stale_completion).await?)?.is_empty());
+    drop(held);
+
+    let denied = poll_until(&mut policy, "PolicyAssessment").await?;
+    let message: Message = serde_json::from_value(
+        payloads(&denied, "PolicyAssessment")?
+            .into_iter()
+            .next()
+            .context("new assessment missing")?,
+    )?;
+    let Message::Policy {
+        config_fingerprint,
+        assessment,
+        ..
+    } = message
+    else {
+        anyhow::bail!("wrong policy message");
+    };
+    assert_eq!(config_fingerprint, configuration.fingerprint()?);
+    assessment.validate_current(&configuration)?;
+    assert!(assessment
+        .pairs
+        .values()
+        .all(|pair| pair.authorization == gpu_policy::Authorization::Deny));
+    let current = project(&mut simulation, &denied).await?;
+    assert_eq!(current.len(), 1);
+    let observed: gpu_policy::Assessment = serde_json::from_value(current[0]["policy"].clone())?;
+    observed.validate_current(&configuration)?;
+    let usable = usable_schedules(project(&mut scheduling, &denied).await?)?;
+    assert_eq!(usable.len(), 1);
+    assert_eq!(
+        usable[0].configuration.fingerprint()?,
+        configuration.fingerprint()?
+    );
+    assert!(usable[0]
+        .policy
+        .pairs
+        .values()
+        .all(|pair| pair.authorization == gpu_policy::Authorization::Deny));
+
+    policy.stop().await?;
+    simulation.stop().await?;
+    scheduling.stop().await?;
+    database.stop().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn old_policy_completion_is_rejected_after_revocation_current_thread() -> Result<()> {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        completed_old_policy_cannot_reauthorize_new_configuration(),
+    )
+    .await?
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn old_policy_completion_is_rejected_after_revocation_multi_thread() -> Result<()> {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        completed_old_policy_cannot_reauthorize_new_configuration(),
+    )
+    .await?
+}

@@ -146,7 +146,7 @@ try {
     'impact-results': [/AffectedJourney row/, /task: string/, /destination: string/, /obstacle: string/],
     'inspection-results': [/scene-inputs row/, /obstructions row/, /geometry-status row/],
     'catalog-api': [/Row values, selected by query ID/, /affected-journeys:/],
-    'catalog-sse': [/QueryResult \{/, /query_id: string; sequence: u64/, /grouping_keys\?: string\[\]/],
+    'catalog-sse': [/Native query-row change envelopes/, /row identities\/signatures/, /query generation and sequence/, /snapshot markers/],
     'api-browser': [/success: true/, /data: Row\[\]/, /error: null/],
     'sse-browser': [/queryId: string/, /results: ResultDiff\[\]/, /type: "aggregation"/, /Heartbeat/],
   };
@@ -162,7 +162,11 @@ try {
     assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440 && box.y + box.height <= 1050, `${id} schema stays in the viewport`);
     assert.equal(await tooltip.evaluate(element => element.scrollWidth <= element.clientWidth), true, `${id} schema has no horizontal overflow`);
     assert.equal(await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.classList.contains('architecture-edge-target'), point), true, `${id} popup must not cover its clicked arrow`);
-    if (id.startsWith('catalog-')) assert.match(await tooltip.innerText(), /not a graph pipe/);
+    if (id === 'catalog-api') assert.match(await tooltip.innerText(), /not a graph pipe/);
+    if (id === 'catalog-sse') {
+      assert.match(await tooltip.innerText(), /Five independent bounded graph pipes/);
+      assert.match(await tooltip.innerText(), /without catalog subscriptions or a reaction queue/);
+    }
     if (id === 'sse-browser') assert.doesNotMatch(schema, /\bsequence\s*:/, 'Default SSE must not promise a query sequence');
   }
   await clickFlow('geometry-impact');

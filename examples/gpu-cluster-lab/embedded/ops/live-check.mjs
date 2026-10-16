@@ -107,12 +107,18 @@ async function resilience(check) {
       && assessment.policy_signature === status.policy_signature && check(assessment);
   }, 60_000);
 }
+function hasConfirmedReplicas(plan, workloads, count) {
+  return plan?.status === 'confirmed'
+    && plan.desired_plan_version === plan.applied_plan_version
+    && plan.applied_plan_version === plan.confirmed_plan_version
+    && plan.desired.length === count
+    && workloads.reduce((sum, w) => sum + w.ready_replicas, 0) === count
+    && workloads.every(w => w.ready_replicas === w.replicas);
+}
 async function replicas(count) {
   await until(`${count} required replicas are freshly confirmed`, async () => {
     const [workloads, [plan]] = await Promise.all([rows('ui-workloads'), rows('ui-placements')]);
-    return plan?.status === 'confirmed' && plan.desired.length === count
-      && workloads.reduce((sum, w) => sum + w.ready_replicas, 0) === count
-      && workloads.every(w => w.ready_replicas === w.replicas);
+    return hasConfirmedReplicas(plan, workloads, count);
   });
 }
 async function addWorkload(name, profile_id, replicas) {
@@ -323,21 +329,27 @@ async function concurrentCommands() {
 }
 
 async function restartSnapshot() {
-  await replicas(8);
-  const [[plan], gpus, workloads] = await Promise.all([
-    rows('ui-placements'), rows('ui-gpus'), rows('ui-workloads'),
-  ]);
   const fields = ['gpu_id', 'name', 'host_id', 'cluster_id', 'region', 'slot', 'memory_mib',
     'inventory_revision', 'telemetry_revision', 'powered_on', 'reporting_enabled',
     'scheduling_enabled', 'background_compute_units', 'background_memory_mib', 'interval_ms'];
-  return {
-    epoch: plan.observation_epoch,
-    version: plan.desired_plan_version,
-    desired: plan.desired.toSorted((a, b) => a.id.localeCompare(b.id)),
-    gpus: gpus.map(g => Object.fromEntries(fields.map(field => [field, g[field]])))
-      .sort((a, b) => a.gpu_id.localeCompare(b.gpu_id)),
-    workloads: workloads.toSorted((a, b) => a.workload_id.localeCompare(b.workload_id)),
-  };
+  let snapshot;
+  await until('the captured restart snapshot has eight freshly confirmed replicas', async () => {
+    const [[plan], gpus, workloads] = await Promise.all([
+      rows('ui-placements'), rows('ui-gpus'), rows('ui-workloads'),
+    ]);
+    if (!hasConfirmedReplicas(plan, workloads, 8)) return false;
+    // Validate the captured rows, not an earlier observation followed by another read.
+    snapshot = {
+      epoch: plan.observation_epoch,
+      version: plan.desired_plan_version,
+      desired: plan.desired.toSorted((a, b) => a.id.localeCompare(b.id)),
+      gpus: gpus.map(g => Object.fromEntries(fields.map(field => [field, g[field]])))
+        .sort((a, b) => a.gpu_id.localeCompare(b.gpu_id)),
+      workloads: workloads.toSorted((a, b) => a.workload_id.localeCompare(b.workload_id)),
+    };
+    return true;
+  });
+  return snapshot;
 }
 async function prepareRestart() {
   const key = randomUUID();
@@ -580,5 +592,5 @@ if (mode === '--runbook' || mode === '--acceptance') {
 }
 if (mode === '--acceptance') {
   assert.equal(health.transaction_completion, 'supported',
-    'Full acceptance still requires the user-approved PostgreSQL policy-context consistency contract.');
+    'Full acceptance requires the running native PostgreSQL policy-context consistency contract.');
 }

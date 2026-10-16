@@ -566,10 +566,12 @@ impl Runtime {
                     }
                     let status = core.get_query_results("ui-status").await?;
                     ensure!(status.len() <= 1, "multiple readiness records");
+                    // The fixed native input path publishes complete transactional policy context,
+                    // not an atomic transaction across downstream effects or GPU execution.
                     *self.view.write().await = json!({
                         "ready": status.first().is_some_and(|row| row["scenario_ready"] == true),
                         "state": "running", "scenario":scenario, "observation_epoch":epoch,
-                        "status":status.first(), "transaction_completion":"not-supported",
+                        "status":status.first(), "transaction_completion":"supported",
                     });
                 }
             }

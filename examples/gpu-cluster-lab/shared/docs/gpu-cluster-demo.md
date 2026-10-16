@@ -9,11 +9,13 @@ This is the specification for building, installing, and presenting a simulated G
 `../shared/`. The separate `../server/` version is not implemented yet.
 The matching-source runtime/plugin, complete instance graph, PostgreSQL/bootstrap,
 nine query-backed React feeds, plan feedback and durable reset coordinator are
-implemented. Ordinary API/SQL feedback and browser recovery work; full live
-acceptance remains blocked by excessive query processing lag and the separately
-user-gated PostgreSQL complete-transaction guarantee.
-The temporal aggregate repair is qualified upstream; full live qualification
-still requires all multi-device and regional scenarios to pass on matching images.
+implemented. Native PostgreSQL transactions feed one atomic configuration query;
+matching policy fingerprints and stale-worker checks protect its consumers.
+The older unsupported marker is replaced by the implemented policy-context
+capability, not a promise of atomic downstream effects. Use full acceptance on
+matching current images to check native input/recovery, writer failures,
+restart and multi-device/regional scenarios; historical lag observations are
+not a substitute for that current-binary qualification.
 See the [example README](../../embedded/README.md) for the precise implementation boundary.
 `./demo up` starts the real services and waits for observed query-backed readiness;
 `./demo down` stops them and preserves data. Later sections remain the full
@@ -1070,14 +1072,24 @@ update/removal and source-rebinding; declared native Source/Reaction roles are
 visible through ordinary inventory/diagnostic/lifecycle/removal APIs. This does
 not make them interchangeable with legacy plugins, relax recovery policies or
 grant convenience APIs to opaque/custom input layouts. Full managed REST and
-creation-path parity are not claimed; H03 remains partial. The demo remains
-**NOT READY**.
-PostgreSQL still lacks a public
-complete-transaction event usable by the policy context adapter; row delivery,
-LSN/offset metadata, or a quiet interval is not a transaction-completion signal.
-Transaction completion is not supplied by the new query read-access contract.
-PostgreSQL transaction-boundary work must be last and requires notifying and
-consulting the user before starting; the user may choose a different design.
+creation-path parity were not claimed at that checkpoint; H03 remained partial.
+The demo was then **NOT READY** because its PostgreSQL input did not yet expose
+the complete-transaction event required by the policy context adapter.
+
+**Current native-path update (16 October 2026):** the October native migration
+added that transaction-aware PostgreSQL source and one persistent atomic
+`input-configuration` query. Complete committed configuration replaces the old
+context; matching fingerprints and worker generations prevent stale permissions
+from becoming current. Atomic configuration/reopen and delayed policy-completion
+regressions protect this path. The runtime now reports the implemented
+policy-context capability, and full acceptance includes real native-input checks.
+Two consecutive full acceptance runs passed on matching current-source images
+through Podman, including writer faults, confirmed restart snapshots, commands
+and scenarios. The isolated projects were removed without changing the original
+deployment.
+This does not make downstream workers, plan writes, GPU application or browser
+delivery one atomic transaction. Row timing, LSN grouping and quiet intervals
+are still not substitutes for an actual transaction boundary.
 
 Before feature work, prove a tiny database -> query -> timed transformer -> query -> SSE browser path and a complete-plan write back to PostgreSQL. Verify snapshot/deletion behavior, transaction-coherent policy contexts, invalidation/fencing delivery, and HTTP error feedback. Also pin Regorus and exercise its Rego v1 evaluation, result validation, and execution limits. Record exact successful source revisions, Rust/Node versions, image digests, plugin versions/hashes, and the policy bundle hash in a checked-in `dependencies.lock.json`. A changed binary/plugin interface must fail visibly, not be "fixed" by weakening client validation.
 
