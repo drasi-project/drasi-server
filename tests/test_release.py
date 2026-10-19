@@ -59,14 +59,15 @@ class ReleaseTests(unittest.TestCase):
         os.chdir(self.root)
         self.addCleanup(os.chdir, self.old_cwd)
         subprocess.run(["git", "init", "-q"], check=True)
+        (self.root / ".gitattributes").write_bytes((ROOT / ".gitattributes").read_bytes())
         (self.root / "examples").mkdir()
         (self.root / "examples/README.md").write_text("Example documentation\n")
         (self.root / "examples/config.yaml").write_text("sources: []\n")
         (self.root / "Cargo.toml").write_text('[package]\nname="drasi-server"\nversion="0.2.4"\n')
         (self.root / "Cargo.lock").write_text(
-            'version=4\n[[package]]\nname="drasi-host-sdk"\nversion="0.11.3"\n')
+            'version=4\n[[package]]\nname="drasi-host-sdk"\nversion="0.11.3"\n', newline="\n")
         (self.root / "examples/sse-cli").mkdir()
-        (self.root / "examples/sse-cli/Cargo.lock").write_text("version=4\n")
+        (self.root / "examples/sse-cli/Cargo.lock").write_text("version=4\n", newline="\n")
         subprocess.run(["git", "add", "."], check=True)
         subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
                         "commit", "-qm", "Test fixture"], check=True)
@@ -136,6 +137,43 @@ class ReleaseTests(unittest.TestCase):
         (self.root / "Cargo.toml").write_text("dirty")
         with self.assertRaisesRegex(ValueError, "uncommitted"):
             release.candidate(args)
+
+    def test_lockfile_hashes_and_windows_binary_record_survive_git_eol_settings(self):
+        with patch.dict(os.environ, GITHUB_OUTPUT=str(self.root / "outputs")):
+            release.candidate(SimpleNamespace(
+                kind="release", base_sha="", tag="", output="candidate.json"))
+        locks = {name: (self.root / name).read_bytes() for name in self.candidate["lockfiles"]}
+        release.write_json("runtime.json", self.runtime())
+        binary = self.artifacts / "drasi-server-x86_64-windows-msvc.exe"
+        args = SimpleNamespace(
+            candidate="candidate.json", type="binary", target="x86_64-windows-msvc",
+            binary=binary / binary.name, runtime="runtime.json", output="windows.json")
+
+        subprocess.run(["git", "config", "core.eol", "crlf"], check=True)
+        for autocrlf in ("true", "false", "input"):
+            with self.subTest(autocrlf=autocrlf):
+                subprocess.run(["git", "config", "core.autocrlf", autocrlf], check=True)
+                for name in locks:
+                    (self.root / name).unlink()
+                subprocess.run(["git", "checkout-index", "--", *locks], check=True)
+                for name, original in locks.items():
+                    self.assertEqual((self.root / name).read_bytes(), original)
+                    self.assertNotIn(b"\r", original)
+                release.record(args)
+                self.assertEqual(release.read_json("windows.json")["binary_sha256"],
+                                 release.sha256(args.binary))
+
+    def test_changed_lockfile_bytes_still_reject_candidate(self):
+        for name in self.candidate["lockfiles"]:
+            path = self.root / name
+            original = path.read_bytes()
+            for changed in (original.replace(b"\n", b"\r\n"), original + b"\n# changed\n"):
+                with self.subTest(lockfile=name, changed=changed):
+                    path.write_bytes(changed)
+                    with self.assertRaisesRegex(ValueError, "Candidate dependency lockfiles changed"):
+                        release.load_candidate("candidate.json")
+                    path.write_bytes(original)
+        self.assertEqual(release.load_candidate("candidate.json"), self.candidate)
 
     def test_assets_have_exact_names_and_committed_examples_only(self):
         (self.root / "examples/untracked-secret").write_text("must not ship")

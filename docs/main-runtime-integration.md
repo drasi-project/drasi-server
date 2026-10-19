@@ -141,6 +141,12 @@ Every build, test, asset and publication job checks out the recorded candidate
 SHA. Candidate evidence includes the baseline SHA, run/attempt, both Cargo
 lockfile hashes, resolved Drasi package versions/checksums and reviewed native
 plugin ABI. All server and independent SSE CLI builds use `--locked`.
+The [Git attributes](../.gitattributes) force `Cargo.lock` files to LF on every
+platform, including the independent CLI lockfile. This keeps candidate hashes
+identical even when Windows Git uses `core.autocrlf=true`; the integrity check
+still compares raw bytes and rejects actual lockfile changes. Without this rule,
+the Windows smoke job could pass its runtime checks and then fail while recording
+evidence solely because checkout converted LF to CRLF.
 The SSE CLI lockfile correction from
 [`0347dee1`](https://github.com/drasi-project/drasi-server/commit/0347dee15dc0ab0e66ffcca08d83599509aae6f1)
 is included without other changes from that commit, addressing the locked-build
