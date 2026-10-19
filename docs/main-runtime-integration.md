@@ -104,29 +104,38 @@ assistive-technology limitations remain explicit.
 
 ## Release rehearsal and publication gates
 
-[Daily Release Rehearsal](../.github/workflows/release-rehearsal.yaml) runs at
-08:00 UTC daily and supports manual dispatch. Scheduled runs resolve fresh `main`
-once; manual runs use the selected branch's exact commit. The workflow records
-that baseline SHA and explicitly invokes the
-[shared candidate checks](../.github/workflows/release-candidate.yaml) twice:
+[Nightly](../.github/workflows/nightly.yml) is a standalone workflow, following
+the short prepare-then-release-check pattern used by drasi-core. It runs at
+08:00 UTC daily and supports manual dispatch:
 
-- **Locked baseline health** checks the unchanged, committed baseline.
-- **Experimental dependency upgrade** uses the same
-  [dependency-update helper](../scripts/update-release-dependencies.sh) as
-  [Version Bump](../.github/workflows/version-bump.yaml): upgrade all direct
-  `drasi-*` requirements, including workspace dev/build dependencies, refresh
-  their lock entries, bump only `drasi-server`, and reconcile the workspace
-  lockfile without a general dependency upgrade.
+```text
+Prepare dependency-upgrade candidate -> Test candidate release -> Nightly result
+```
+
+There is **one upgraded candidate and one full build/test pass**, not two copies
+of the release matrix. Nightly calls [Build and Release](../.github/workflows/release.yaml)
+directly with `dry_run: true`. Build and Release contains the shared jobs and
+also remains the normal manual production/dry-run entry point. There are no
+intermediate workflow wrappers or nightly mode switches in the release UI.
+
+Scheduled Nightly runs resolve fresh `main`; manual runs use the selected
+branch's exact commit. Preparation records that baseline SHA and uses the same
+[dependency-update helper](../scripts/update-release-dependencies.sh) as
+[Version Bump](../.github/workflows/version-bump.yaml): upgrade all direct
+`drasi-*` requirements, including workspace dev/build dependencies, refresh their
+lock entries, bump only `drasi-server`, and reconcile the workspace lockfile
+without a general dependency upgrade.
 
 The experiment commits all changed Cargo manifests/lockfiles to a unique
 `automation/release-rehearsal/<run-id>-<attempt>` branch before testing. It
 never writes `main` or `automation/version-bump`. Checks are invoked explicitly;
 they do not depend on a token-authored push triggering another workflow.
 These diagnostic branches are retained; automatic cleanup/recovery is not
-part of the workflow. The two outcomes remain separate in the run summary.
-An incompatible upgrade or rejection by the reviewed plugin-origin policy
-fails the experiment, not the locked baseline. The policy is not relaxed to
-make nightly upgrades pass.
+part of the workflow. Preparation and release-check outcomes are reported
+separately. A dependency-upgrade failure does **not** establish the health of the
+unchanged baseline, which is recorded but not separately tested by Nightly.
+Use a separate Build and Release dry run for locked-baseline health. The reviewed
+plugin-origin policy is not relaxed to make nightly upgrades pass.
 
 Every build, test, asset and publication job checks out the recorded candidate
 SHA. Candidate evidence includes the baseline SHA, run/attempt, both Cargo
@@ -137,44 +146,34 @@ The SSE CLI lockfile correction from
 is included without other changes from that commit, addressing the locked-build
 input described in [#181](https://github.com/drasi-project/drasi-server/issues/181).
 
-### Manually test an unmerged branch
+### Manual runs
 
-Use the existing [Build and Release](../.github/workflows/release.yaml) dispatch
-entry point with `nightly_test=true`. It invokes the full nightly process from
-the selected commit: locked baseline, isolated dependency-upgrade preparation,
-both candidate checks, asset assembly and the publication gates. Both candidates
-explicitly set `publish_official: false`. The production job is disabled in this
-mode even if `dry_run` is omitted or false.
-
-GitHub requires a manually dispatched entry workflow to exist on the default
-branch. `release.yaml` already exists there, so this entry point can load the new
-reusable workflows from your feature branch without merging them into `main`.
-Before merge, use the CLI because the web form may still show the default
-branch's older inputs.
-
-After committing all workflow, helper and test changes, push to your fork and
-dispatch the selected branch:
+Choose **Nightly -> Run workflow** and select a branch, or use:
 
 ```bash
-git push https://github.com/<owner>/drasi-server.git HEAD:<branch>
-gh workflow run release.yaml \
-  --repo <owner>/drasi-server \
-  --ref <branch> \
-  -f nightly_test=true \
-  -f dry_run=true
-gh run list --repo <owner>/drasi-server --workflow release.yaml --branch <branch> --limit 5
+gh workflow run nightly.yml --repo drasi-project/drasi-server --ref <branch>
+gh run list --repo drasi-project/drasi-server --workflow nightly.yml --limit 5
 ```
 
-Check the push destination: a local `origin` may point to `drasi-project` rather
-than your fork. No automatic push trigger is added. This test does publish
-canary images to your fork's test package and creates an isolated upgrade branch;
-it does not publish official image tags, Git tags or GitHub Releases, or update
-`main` or the version-bump PR branch. Normal release/dry-run dispatch remains
-available with `nightly_test=false`.
+**First-time setup:** GitHub requires `nightly.yml` on the repository's default
+branch before it can be manually dispatched. Pushing this new file only to a
+feature branch is not enough. Land the standalone workflow through normal review
+first; it can then be dispatched on branches containing it. No push trigger or
+release-entrypoint workaround is added.
+
+To check an unchanged branch without the dependency-upgrade step:
+
+```bash
+gh workflow run release.yaml --repo drasi-project/drasi-server --ref <branch> -f dry_run=true
+```
+
+For a fork, substitute its repository name in these commands. Nightly creates
+canary images and an isolated upgrade branch, but never official image tags,
+Git tags or GitHub Releases, and never updates `main` or the version-bump PR branch.
 
 ### Test staging is not official publication
 
-Production, manual `dry_run`, and both rehearsal candidates build images once
+Production, manual `dry_run`, and Nightly's upgraded candidate build images once
 into `ghcr.io/<owner>/drasi-server-test`, using unique
 `run-<id>-<attempt>-<kind>-<sha>-<architecture>` tags. Thus a dry run requires
 test-package write permission and network access; it is not a no-push build.
@@ -209,11 +208,12 @@ the gate. Reports and approvals must match the SHA, run and attempt; another
 nightly cannot approve a production release. Artifacts are attempt-scoped:
 use **Re-run all jobs**, not partial reruns that mix evidence across attempts.
 
-Only a **Build and Release** manual dispatch with `nightly_test=false` and
-`dry_run=false` enables official promotion in the shared candidate workflow.
-Nightly calls always disable it, and the candidate workflow additionally requires
-the `release` candidate kind and a successful gate before any official image,
-GitHub Release or tag writes. Production still supports the
+Only a direct **Build and Release** manual dispatch with `dry_run=false` enables
+official promotion. Reusable calls must supply a candidate SHA and kind;
+publication guards require both inputs to be absent, so even a manual Nightly
+call cannot enter the official publication jobs. Nightly also explicitly passes
+`dry_run: true`, the reusable default. A successful same-candidate gate is required
+before any official image, GitHub Release or tag writes. Production still supports the
 existing version override, image prefix, preview releases and `latest` behavior.
 The gate is part of that production run, not a dependency on a prior nightly.
 Promotion copies the tested digests without rebuilding, verifies the

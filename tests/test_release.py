@@ -362,7 +362,7 @@ class SmokeAssertionsTests(unittest.TestCase):
 
 class WorkflowContractTests(unittest.TestCase):
     def test_workflow_gates_and_all_seven_targets_are_wired(self):
-        workflow = (ROOT / ".github/workflows/release-candidate.yaml").read_text()
+        workflow = (ROOT / ".github/workflows/release.yaml").read_text()
         job_text = workflow.split("\njobs:\n", 1)[1]
         jobs = dict(re.findall(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)",
                                job_text, re.MULTILINE | re.DOTALL))
@@ -372,8 +372,9 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("if: always()", gate)
         for name in ("create-manifest", "create-release"):
             self.assertIn("needs.release-gate.result == 'success'", jobs[name])
-            self.assertIn("inputs.candidate_kind == 'release'", jobs[name])
-            self.assertIn("inputs.publish_official", jobs[name])
+            self.assertIn("inputs.candidate_kind == ''", jobs[name])
+            self.assertIn("inputs.candidate_sha == ''", jobs[name])
+            self.assertIn("!inputs.dry_run", jobs[name])
             self.assertIn("github.event_name == 'workflow_dispatch'", jobs[name])
         targets = re.findall(r"artifact_suffix: ([\w-]+)", jobs["test-binaries"])
         self.assertEqual(set(targets), set(release.TARGETS))
@@ -390,54 +391,74 @@ class WorkflowContractTests(unittest.TestCase):
                 if " build --" in line:
                     self.assertIn("--locked", line)
 
-    def test_rehearsal_and_real_bump_share_policy_without_official_branch_mutation(self):
-        rehearsal = (ROOT / ".github/workflows/release-rehearsal.yaml").read_text()
+    def test_nightly_and_real_bump_share_policy_without_official_branch_mutation(self):
+        nightly = (ROOT / ".github/workflows/nightly.yml").read_text()
         bump = (ROOT / ".github/workflows/version-bump.yaml").read_text()
-        for workflow in (rehearsal, bump):
+        for workflow in (nightly, bump):
             self.assertIn("bash scripts/update-release-dependencies.sh", workflow)
-        self.assertIn("cron: '0 8 * * *'", rehearsal)
+        self.assertIn("cron: '0 8 * * *'", nightly)
         self.assertIn(
-            "ref: ${{ github.event_name == 'schedule' && 'main' || inputs.base_sha || github.sha }}",
-            rehearsal)
-        self.assertIn("automation/release-rehearsal/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", rehearsal)
-        self.assertNotIn("automation/version-bump", rehearsal)
-        self.assertEqual(rehearsal.count("uses: ./.github/workflows/release-candidate.yaml"), 2)
-        self.assertEqual(rehearsal.count("publish_official: false"), 2)
-        self.assertNotIn("continue-on-error", rehearsal)
-        self.assertNotIn("gh release", rehearsal)
-        self.assertNotIn("git tag", rehearsal)
+            "ref: ${{ github.event_name == 'schedule' && 'main' || github.sha }}",
+            nightly)
+        self.assertIn("automation/release-rehearsal/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", nightly)
+        self.assertNotIn("automation/version-bump", nightly)
+        self.assertNotIn("continue-on-error", nightly)
+        self.assertNotIn("gh release", nightly)
+        self.assertNotIn("git tag", nightly)
 
-    def test_existing_manual_entrypoint_runs_full_branch_rehearsal_without_publication(self):
-        entry = (ROOT / ".github/workflows/release.yaml").read_text()
-        self.assertIn("workflow_dispatch:", entry)
-        self.assertIn("nightly_test:", entry)
+    def test_nightly_has_one_candidate_and_calls_release_directly(self):
+        nightly = (ROOT / ".github/workflows/nightly.yml").read_text()
+        self.assertIn("name: Nightly\n", nightly)
+        self.assertIn("workflow_dispatch:", nightly)
+        self.assertNotIn("workflow_call:", nightly)
         jobs = dict(re.findall(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)",
-                               entry.split("\njobs:\n", 1)[1], re.MULTILINE | re.DOTALL))
-        self.assertEqual(set(jobs), {"nightly-test", "release"})
-        self.assertIn("if: inputs.nightly_test\n", jobs["nightly-test"])
-        self.assertIn("uses: ./.github/workflows/release-rehearsal.yaml", jobs["nightly-test"])
-        self.assertIn("base_sha: ${{ github.sha }}", jobs["nightly-test"])
-        self.assertNotIn("publish_official", jobs["nightly-test"])
-        self.assertIn("if: ${{ !inputs.nightly_test }}", jobs["release"])
-        self.assertIn("publish_official: ${{ !inputs.dry_run }}", jobs["release"])
-        self.assertIn("candidate_sha: ${{ github.sha }}", jobs["release"])
-        self.assertNotIn("\n  push:", entry)
+                               nightly.split("\njobs:\n", 1)[1], re.MULTILINE | re.DOTALL))
+        self.assertEqual(set(jobs), {"prepare-candidate", "release-checks", "summary"})
+        self.assertIn("base_sha: ${{ steps.baseline.outputs.sha }}", jobs["prepare-candidate"])
+        self.assertIn("sha: ${{ steps.commit.outputs.sha }}", jobs["prepare-candidate"])
+        self.assertIn("needs: prepare-candidate", jobs["release-checks"])
+        self.assertIn("candidate_sha: ${{ needs.prepare-candidate.outputs.sha }}", jobs["release-checks"])
+        self.assertIn("base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}", jobs["release-checks"])
+        self.assertIn("candidate_kind: upgrade", jobs["release-checks"])
+        self.assertIn("dry_run: true", jobs["release-checks"])
+        self.assertEqual(re.findall(r"uses: \./\.github/workflows/([\w.-]+)", nightly), ["release.yaml"])
+        self.assertNotIn("\n  push:", nightly)
 
-    def test_reusable_release_workflows_have_no_call_cycle(self):
-        names = ("release.yaml", "release-rehearsal.yaml", "release-candidate.yaml")
-        graph = {
-            name: re.findall(r"uses: \./\.github/workflows/([\w.-]+)",
-                             (ROOT / ".github/workflows" / name).read_text())
-            for name in names
-        }
+    def test_release_is_a_standalone_entrypoint_without_nested_wrappers(self):
+        workflow = (ROOT / ".github/workflows/release.yaml").read_text()
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("workflow_call:", workflow)
+        self.assertNotIn("nightly_test", workflow)
+        self.assertNotIn("publish_official", workflow)
+        self.assertNotIn("uses: ./.github/workflows/", workflow)
+        dispatch, reusable = workflow.split("  workflow_call:\n", 1)
+        self.assertRegex(dispatch, r"dry_run:\n(?:.*\n)*?        default: false")
+        self.assertRegex(reusable, r"dry_run:\n(?:.*\n)*?        default: true")
+        for name in ("release-rehearsal.yaml", "release-candidate.yaml"):
+            self.assertFalse((ROOT / ".github/workflows" / name).exists())
 
-        def visit(name, ancestors):
-            self.assertNotIn(name, ancestors, f"Recursive reusable workflow: {name}")
-            for child in graph[name]:
-                visit(child, ancestors | {name})
-
-        visit("release.yaml", set())
-        self.assertEqual(graph["release-candidate.yaml"], [])
+    def test_nightly_summary_rejects_failures_cancellations_and_skips(self):
+        nightly = (ROOT / ".github/workflows/nightly.yml").read_text()
+        summary = nightly.split("\n  summary:\n", 1)[1]
+        self.assertIn("if: always()", summary)
+        self.assertIn("needs: [prepare-candidate, release-checks]", summary)
+        self.assertIn("recorded, not separately tested", summary)
+        script = "\n".join(line[10:] for line in summary.split("run: |\n", 1)[1].splitlines())
+        with tempfile.TemporaryDirectory() as temp:
+            for preparation in ("success", "failure", "cancelled", "skipped", ""):
+                for checks in ("success", "failure", "cancelled", "skipped", ""):
+                    with self.subTest(preparation=preparation, checks=checks):
+                        result = subprocess.run(
+                            ["bash", "-euo", "pipefail", "-c", script],
+                            env={**os.environ, "GITHUB_STEP_SUMMARY": str(Path(temp) / "summary"),
+                                 "PREPARATION_RESULT": preparation, "CHECKS_RESULT": checks,
+                                 "BASE_SHA": "a" * 40, "CANDIDATE_SHA": "b" * 40},
+                            capture_output=True, text=True,
+                        )
+                        self.assertEqual(result.returncode == 0,
+                                         preparation == checks == "success", result.stderr)
+                        if result.returncode:
+                            self.assertIn("::error::", result.stdout)
 
     def test_container_checks_do_not_repair_or_override_the_runtime(self):
         script = (ROOT / "scripts/smoke-release-container.sh").read_text()

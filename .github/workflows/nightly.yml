@@ -1,66 +1,35 @@
 # Copyright 2026 The Drasi Authors.
 # Licensed under the Apache License, Version 2.0.
 
-name: Daily Release Rehearsal
+name: Nightly
+run-name: "Nightly (${{ github.ref_name }})"
 
 on:
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      base_sha:
-        description: 'Exact baseline commit selected by the manual entry workflow'
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 jobs:
-  base-revision:
-    name: Record baseline revision
+  prepare-candidate:
+    name: Prepare dependency-upgrade candidate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      sha: ${{ steps.baseline.outputs.sha }}
+      base_sha: ${{ steps.baseline.outputs.sha }}
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'schedule' && 'main' || inputs.base_sha || github.sha }}
-          persist-credentials: false
+          ref: ${{ github.event_name == 'schedule' && 'main' || github.sha }}
       - id: baseline
         run: |
           SHA=$(git rev-parse HEAD)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Rehearsal baseline: \`$SHA\` (scheduled runs resolve fresh main; manual runs use the selected commit)" >> "$GITHUB_STEP_SUMMARY"
-
-  locked:
-    name: Locked baseline health
-    needs: base-revision
-    # The reusable workflow has a contents:write release job, but its publication
-    # is explicitly disabled for both rehearsal candidates.
-    permissions:
-      contents: write
-      packages: write
-    uses: ./.github/workflows/release-candidate.yaml
-    with:
-      candidate_sha: ${{ needs.base-revision.outputs.sha }}
-      base_sha: ${{ needs.base-revision.outputs.sha }}
-      candidate_kind: locked
-      publish_official: false
-
-  prepare-upgrade:
-    name: Prepare isolated dependency-upgrade commit
-    needs: base-revision
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      sha: ${{ steps.commit.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.base-revision.outputs.sha }}
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
@@ -76,7 +45,7 @@ jobs:
       - name: Commit all dependency changes on an isolated branch
         id: commit
         env:
-          BASE_SHA: ${{ needs.base-revision.outputs.sha }}
+          BASE_SHA: ${{ steps.baseline.outputs.sha }}
         run: |
           set -euo pipefail
           BRANCH="automation/release-rehearsal/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -107,42 +76,48 @@ jobs:
         if: failure()
         run: git --no-pager diff -- '**/Cargo.toml' '**/Cargo.lock' Cargo.toml Cargo.lock
 
-  upgrade:
-    name: Experimental dependency-upgrade rehearsal
-    needs: [base-revision, prepare-upgrade]
+  release-checks:
+    name: Test candidate release
+    needs: prepare-candidate
     permissions:
+      # Called workflow permissions are checked statically, including its
+      # publication jobs, which remain disabled for this candidate.
       contents: write
       packages: write
     # Explicit invocation: GITHUB_TOKEN pushes do not trigger another workflow.
-    uses: ./.github/workflows/release-candidate.yaml
+    uses: ./.github/workflows/release.yaml
     with:
-      candidate_sha: ${{ needs.prepare-upgrade.outputs.sha }}
-      base_sha: ${{ needs.base-revision.outputs.sha }}
+      candidate_sha: ${{ needs.prepare-candidate.outputs.sha }}
+      base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}
       candidate_kind: upgrade
-      publish_official: false
+      dry_run: true
 
   summary:
-    name: Rehearsal outcomes
+    name: Nightly result
     if: always()
-    needs: [base-revision, locked, prepare-upgrade, upgrade]
+    needs: [prepare-candidate, release-checks]
     runs-on: ubuntu-latest
     env:
-      LOCKED_RESULT: ${{ needs.locked.result }}
-      PREPARATION_RESULT: ${{ needs.prepare-upgrade.result }}
-      UPGRADE_RESULT: ${{ needs.upgrade.result }}
-      BASE_SHA: ${{ needs.base-revision.outputs.sha }}
-      UPGRADE_SHA: ${{ needs.prepare-upgrade.outputs.sha }}
+      PREPARATION_RESULT: ${{ needs.prepare-candidate.result }}
+      CHECKS_RESULT: ${{ needs.release-checks.result }}
+      BASE_SHA: ${{ needs.prepare-candidate.outputs.base_sha }}
+      CANDIDATE_SHA: ${{ needs.prepare-candidate.outputs.sha }}
     steps:
       - run: |
           {
-            echo "## Release rehearsal"
-            echo "| Candidate | SHA | Result |"
-            echo "| --- | --- | --- |"
-            echo "| Locked baseline | $BASE_SHA | $LOCKED_RESULT |"
-            echo "| Upgrade preparation | $UPGRADE_SHA | $PREPARATION_RESULT |"
-            echo "| Experimental dependency upgrade | $UPGRADE_SHA | $UPGRADE_RESULT |"
+            echo "## Nightly release rehearsal"
+            echo "Baseline: \`$BASE_SHA\` (recorded, not separately tested)"
+            echo "Candidate: \`$CANDIDATE_SHA\`"
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| Dependency upgrade | $PREPARATION_RESULT |"
+            echo "| Release checks | $CHECKS_RESULT |"
             echo ""
-            echo "An upgrade failure is not evidence that the locked release candidate is unhealthy."
+            echo "An upgrade failure does not establish the health of the locked baseline."
+            echo "Use a separate Build and Release dry run to check the locked baseline."
             echo "No official image tags, Git tags, Releases or main were changed."
           } >> "$GITHUB_STEP_SUMMARY"
-          [[ "$LOCKED_RESULT" == success && "$PREPARATION_RESULT" == success && "$UPGRADE_RESULT" == success ]]
+          if [[ "$PREPARATION_RESULT" != success || "$CHECKS_RESULT" != success ]]; then
+            echo "::error::Nightly did not complete every required stage successfully"
+            exit 1
+          fi
