@@ -101,7 +101,7 @@ fn declare(topology: &mut DesiredTopology, name: &str, role: ResourceRole, recip
         .insert(resource(name), recipe);
 }
 
-fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
+fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
     let mut topology = DesiredInstance::default().topology;
     let indexes = resource("indexes");
     let query = ContinuousQueryDefinition {
@@ -173,7 +173,7 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
         &mut topology,
         "indexes",
         ResourceRole::IndexBackend,
-        json!({"kind":"rocksdbIndexes","path":path}),
+        index_recipe,
     );
     declare(
         &mut topology,
@@ -187,6 +187,11 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
         ResourceRole::Checkpoint,
         json!({"kind":"sourceProgress","component":"query"}),
     );
+    Ok(topology)
+}
+
+fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
+    let mut topology = bootstrap_topology(json!({"kind":"rocksdbIndexes","path":path}))?;
     declare(
         &mut topology,
         "secrets",
@@ -235,6 +240,111 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
     Ok(ComputationConfig {
         definition: topology,
     })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() -> Result<()> {
+    let plugin = drasi_host_sdk::computation::load(artifact("drasi_computation_bootstrap_sqlite"))?;
+    assert!(plugin.factories().is_empty());
+    assert_eq!(plugin.bootstrap_factories().len(), 1);
+    let metadata = plugin.bootstrap_factories()[0].metadata().clone();
+    let mut plugins = factories();
+    plugins.register_computation_plugin(plugin)?;
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("input.db");
+    let connection = rusqlite::Connection::open(&path)?;
+    connection.execute_batch(
+        "CREATE TABLE Item(code TEXT PRIMARY KEY,value TEXT);
+         INSERT INTO Item VALUES('one','first');",
+    )?;
+    for (instance, value) in [
+        ("sqlite-memory-first", "first"),
+        ("sqlite-memory-new", "fresh"),
+    ] {
+        connection.execute("UPDATE Item SET value=?1", [value])?;
+        let mut topology = bootstrap_topology(json!({"kind":"memoryIndexes"}))?;
+        let configuration = BTreeMap::<Arc<str>, _>::from([
+            ("source".into(), ConfigurationValue::Literal(json!("input"))),
+            (
+                "stream".into(),
+                ConfigurationValue::Literal(json!("input/out")),
+            ),
+            (
+                "settings".into(),
+                ConfigurationValue::Literal(json!({
+                    "path":path,
+                    "tables":["Item"],
+                    "max_tables":8,
+                    "max_bytes":65536,
+                    "max_duration_ms":5000,
+                    "output_capacity":1,
+                    "shutdown_timeout_ms":5000
+                })),
+            ),
+        ]);
+        declare(
+            &mut topology,
+            "bootstrap",
+            ResourceRole::Bootstrap,
+            json!({"kind":"nativeBootstrap","component":"query",
+                "implementation":metadata.implementation,
+                "configurationVersion":metadata.configuration_version,
+                "configuration":configuration}),
+        );
+        assert!(
+            topology.resource_dependencies.is_empty(),
+            "file bootstrap needs no fabricated source-progress dependency"
+        );
+        let config = ComputationConfig {
+            definition: topology,
+        };
+        validate_definition(&config)?;
+        let yaml: ComputationConfig = serde_yaml::from_str(&serde_yaml::to_string(&config)?)?;
+        assert_eq!(yaml.definition, config.definition);
+        let core = DrasiLib::builder().with_id(instance).build().await?;
+        let result = async {
+            register_components(&yaml, &core, &plugins).await?;
+            core.start().await?;
+            tokio::time::timeout(
+                DEADLINE,
+                core.computation_component("query")?.wait_started(),
+            )
+            .await??;
+            assert_eq!(
+                core.get_query_results("query").await?,
+                vec![json!({"value":value})]
+            );
+            let saved = core.snapshot_computation_configuration().await?;
+            let rebuilt = configuration_from_snapshot(&saved)?
+                .context("file bootstrap configuration snapshot")?;
+            assert_eq!(
+                rebuilt.definition.resource_configurations,
+                config.definition.resource_configurations
+            );
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        let cleanup = core.shutdown().await;
+        result?;
+        cleanup?;
+    }
+    let orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
+        Arc::new(PluginLifecycleManager::new(Arc::new(RwLock::new(plugins)))),
+        directory.path().into(),
+    ));
+    let app = build_plugin_router(orchestrator, InstanceRegistry::new(), Arc::new(false));
+    let (status, catalogue) = request(&app, "GET", "/computation", "", "application/json").await?;
+    assert_eq!(status, StatusCode::OK);
+    let bootstraps = catalogue["bootstrapFactories"]
+        .as_array()
+        .context("bootstrap catalogue")?;
+    assert_eq!(bootstraps.len(), 1);
+    assert_eq!(
+        bootstraps[0]["implementation"]["name"],
+        "drasi.sqlite/file-bootstrap"
+    );
+    assert_eq!(bootstraps[0]["source_progress"], false);
+    Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]

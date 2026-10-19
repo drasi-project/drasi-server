@@ -19,6 +19,7 @@ CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
   --manifest-path ../drasi-core/Cargo.toml --target-dir ./target \
   -p drasi-computation-source-counter -p drasi-computation-transformer-middleware \
   -p drasi-computation-transformer-arithmetic -p drasi-computation-sink-capture \
+  -p drasi-computation-bootstrap-sqlite \
   -p drasi-source-mock -p drasi-reaction-log \
   -p drasi-bootstrap-scriptfile \
   --features dynamic-plugin
@@ -27,8 +28,9 @@ CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_comput
 
 The default fixture directory is `target/debug`; override it with
 `DRASI_SERVER_TEST_PLUGINS_DIR`. That directory must contain the four native
-component libraries and the legacy fixtures; each native library is checked to
-expose exactly its own factory.
+component libraries, the native SQLite file-bootstrap library and the legacy
+fixtures. Each processing library exposes exactly its own factory; the SQLite
+library exposes a bootstrap factory without a dummy processing component.
 
 ```bash
 DRASI_SERVER_TEST_PLUGINS_DIR=../drasi-core/target/debug \
@@ -44,6 +46,11 @@ snapshots, persistence/restart/clone, empty native configuration, and read-only/
 The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, and
 batch counters. Counter reconstruction deliberately starts a new volatile run;
 these roundtrips do not claim durable source recovery or capture-file fsync.
+The SQLite file-bootstrap case checks native catalogue discovery, JSON/YAML
+resource recipes, actual initial rows using ordinary memory-backed queries,
+fresh loading in another instance, and configuration snapshot preservation.
+It keeps live input paused during initialization and does not claim a durable
+snapshot/live handover or a fully migrated live SQLite source.
 
 The `managed` cases in the same binary additionally exercise encrypted desired
 configuration through the actual Router: JSON/YAML acceptance, lost responses,

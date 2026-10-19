@@ -1019,7 +1019,7 @@ Source review found these concrete starting points:
 | Graph-aware server | `drasi-project/drasi-server`, `agentofreality-parallel-computation-graph` | `e302f97752eac76a5069aeb594492421b62ab832` |
 | React package | `drasi-project/drasi-server`, `agentofreality-react-independent-examples` | `2a36f857526baa08304a698131854f222b40b108` |
 
-These are **historically reviewed source starting points, not a tested three-way release combination**. Keep the React checkout separate from the graph-server checkout. The current graph server uses a sibling `../drasi-core`; ComputationGraph is now unconditional rather than selected by a computation feature or runtime switch. The React branch's live example uses a different backend dependency/plugin setup. Do not copy that example's backend pins into the graph server blindly.
+These are **historically reviewed source starting points, not a tested three-way release combination**. The embedded implementation now packages the React SDK from the same current Server checkout as its backend, with a sibling `../drasi-core`. ComputationGraph is unconditional rather than selected by a computation feature or runtime switch. The historical React branch's live example used a different backend dependency/plugin setup; do not copy those pins into the current graph server.
 
 The reviewed core exposes `Transformer`, `WakeupSource`, `InputEnvelope`, and `OutputEnvelope` in `lib/src/computation/v1/component.rs`, graph/query codecs in the same directory, and managed lifecycle support. Timed processing is therefore a concrete implementation path, not a reason to invent an unmanaged timer service.
 
@@ -1182,20 +1182,21 @@ The completed `check --smoke` must be non-destructive: validate running componen
 
 ### 11.3 Building the React package from source
 
-The launcher exports the exact locked commit into ignored `.build/react-source`
-using `git archive`. Do not create another checkout or switch the shared server
-branch. From `embedded/`, build the tarball from that exported source:
+The launcher stages the current matching Server checkout in ignored
+`.build/runtime-src`; the container build packages its React SDK as a tarball.
+Do not use the earlier archived SDK with the current Server: its query validator
+requires the removed `bootstrapBufferSize` setting. No additional checkout or
+branch switch is needed. From `embedded/`, prepare the same current package:
 
 ```sh
-./demo configure
-npm --prefix .build/react-source/dev-tools/react ci --ignore-scripts
-npm --prefix .build/react-source/dev-tools/react run build
 mkdir -p ../shared/ui/vendor
-(cd .build/react-source/dev-tools/react && npm pack --ignore-scripts --pack-destination ../../../../../shared/ui/vendor)
-mv ../shared/ui/vendor/drasi-react-0.1.0.tgz ../shared/ui/vendor/drasi-react.tgz
+sdk_archive_dir="$(cd ../shared/ui/vendor && pwd)"
+npm --prefix ../../../dev-tools/react ci --ignore-scripts
+npm --prefix ../../../dev-tools/react run build
+(cd ../../../dev-tools/react && npm pack --ignore-scripts --pack-destination "$sdk_archive_dir")
 ```
 
-Install the resulting `drasi-react-0.1.0.tgz` into the demo's `ui` project along with exact React/React DOM 18.3.1 peers, then commit the consumer lockfile. Use the tarball, not a development symlink or package source alias. `./demo build` must reproduce this automatically using the locked source revision.
+Install the resulting `drasi-react-0.1.0.tgz` into the demo's `ui` project along with exact React/React DOM 18.3.1 peers, and retain its integrity in the consumer lockfile. Use the tarball, not a development symlink or package source alias. `./demo build` reproduces this from the staged checkout.
 
 Use the Rust toolchain declared by the pinned graph repositories, not the older generic minimum in a server README. Build the graph server with its compatible sibling core checkout. Capture required native build libraries in the Dockerfile; Linux builds may need libjq/Oniguruma and index-backend dependencies. The final user should not have to discover them.
 

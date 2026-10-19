@@ -16,7 +16,13 @@ struct Harness {
 }
 async fn query(id: &str) -> Result<ContinuousQueryTransformer> {
     let configuration: serde_json::Value = serde_yaml::from_str(include_str!("../server.yaml"))?;
-    let config = configuration["computation"]["graph"]["components"]
+    let instance = configuration["instances"]
+        .as_array()
+        .context("configured instances")?
+        .iter()
+        .find(|instance| instance["id"].as_str() == Some("move-a-wall"))
+        .context("move-a-wall instance")?;
+    let config = instance["computation"]["graph"]["components"]
         .as_array()
         .context("static graph components")?
         .iter()

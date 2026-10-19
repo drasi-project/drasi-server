@@ -50,12 +50,8 @@ drasi-lib = { path = "../drasi-core/lib", features = [
 # Core models (for SourceMiddlewareConfig and other shared types)
 drasi-core = { path = "../drasi-core/core" }
 
-# Core bootstrap providers (used by the application API)
+# Core bootstrap provider
 drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-
-# Core reaction (used by the application API)
-drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
 
 # Index plugins
 drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
@@ -132,8 +128,10 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
+rusqlite = { version = "0.32", features = ["bundled"] }
 drasi-core = { path = "../drasi-core/core" }
 drasi-source-application = { path = "../drasi-core/components/sources/application" }
+drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
 
 [lints.rust]
 warnings = "deny"

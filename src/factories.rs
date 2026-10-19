@@ -656,25 +656,52 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    struct MetadataReaction;
+
+    #[async_trait::async_trait]
+    impl drasi_plugin_sdk::ReactionPluginDescriptor for MetadataReaction {
+        fn kind(&self) -> &str {
+            "metadata-fixture"
+        }
+        fn config_version(&self) -> &str {
+            "1.0.0"
+        }
+        fn config_schema_name(&self) -> &str {
+            "MetadataReactionFixture"
+        }
+        fn config_schema_json(&self) -> String {
+            r#"{"type":"object"}"#.into()
+        }
+        async fn create_reaction(
+            &self,
+            _: &str,
+            _: Vec<String>,
+            _: &serde_json::Value,
+            _: bool,
+        ) -> Result<Box<dyn Reaction>> {
+            anyhow::bail!("metadata fixture does not create runtime reactions")
+        }
+    }
+
     fn test_registry() -> PluginRegistry {
         let mut registry = PluginRegistry::new();
-        // Register core plugins (noop, application)
         crate::server::register_core_plugins(&mut registry);
+        registry.register_reaction(Arc::new(MetadataReaction));
         registry
     }
 
     #[test]
     fn reaction_metadata_reports_package_version_not_configuration_version() {
         let mut registry = test_registry();
-        let descriptor = registry.get_reaction("application").unwrap().clone();
+        let descriptor = registry.get_reaction("metadata-fixture").unwrap().clone();
         let configuration_version = descriptor.config_version().to_owned();
         registry.register_reaction_with_package_version(
             descriptor,
-            "reaction/application",
+            "reaction/metadata-fixture",
             Some("9.7.3"),
         );
-        let metadata = get_reaction_plugin_metadata(&registry, "application");
-        assert_eq!(metadata["pluginId"], "reaction/application");
+        let metadata = get_reaction_plugin_metadata(&registry, "metadata-fixture");
+        assert_eq!(metadata["pluginId"], "reaction/metadata-fixture");
         assert_eq!(metadata["pluginVersion"], "9.7.3");
         assert_ne!(metadata["pluginVersion"], configuration_version);
     }
@@ -682,11 +709,11 @@ mod tests {
     #[test]
     fn unknown_package_versions_are_not_replaced_by_configuration_versions() {
         let mut registry = test_registry();
-        assert!(get_reaction_plugin_metadata(&registry, "application").is_empty());
-        let descriptor = registry.get_reaction("application").unwrap().clone();
-        registry.register_reaction_with_metadata(descriptor, "reaction/application");
-        let metadata = get_reaction_plugin_metadata(&registry, "application");
-        assert_eq!(metadata["pluginId"], "reaction/application");
+        assert!(get_reaction_plugin_metadata(&registry, "metadata-fixture").is_empty());
+        let descriptor = registry.get_reaction("metadata-fixture").unwrap().clone();
+        registry.register_reaction_with_metadata(descriptor, "reaction/metadata-fixture");
+        let metadata = get_reaction_plugin_metadata(&registry, "metadata-fixture");
+        assert_eq!(metadata["pluginId"], "reaction/metadata-fixture");
         assert!(!metadata.contains_key("pluginVersion"));
     }
 

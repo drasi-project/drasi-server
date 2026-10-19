@@ -47,7 +47,7 @@ use crate::plugin_registry::PluginRegistry;
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
-use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
+use drasi_plugin_sdk::BootstrapPluginDescriptor;
 use drasi_wal_redb::RedbWalProvider;
 
 pub struct DrasiServer {
@@ -1156,14 +1156,6 @@ pub fn register_core_plugins(registry: &mut PluginRegistry) {
     let desc = drasi_bootstrap_noop::descriptor::NoOpBootstrapDescriptor;
     info!("  [static/core] bootstrap: {}", desc.kind());
     registry.register_bootstrapper(Arc::new(desc));
-
-    let desc = drasi_bootstrap_application::descriptor::ApplicationBootstrapDescriptor;
-    info!("  [static/core] bootstrap: {}", desc.kind());
-    registry.register_bootstrapper(Arc::new(desc));
-
-    let desc = drasi_reaction_application::descriptor::ApplicationReactionDescriptor;
-    info!("  [static/core] reaction: {}", desc.kind());
-    registry.register_reaction(Arc::new(desc));
 }
 
 #[cfg(test)]
@@ -1173,6 +1165,15 @@ mod managed_tests;
 #[cfg(test)]
 mod single_runtime_tests {
     use super::*;
+
+    #[test]
+    fn core_registry_does_not_invent_application_owned_channels_or_snapshot_data() {
+        let mut registry = PluginRegistry::new();
+        register_core_plugins(&mut registry);
+        assert!(registry.get_bootstrapper("noop").is_some());
+        assert!(registry.get_bootstrapper("application").is_none());
+        assert!(registry.get_reaction("application").is_none());
+    }
 
     #[tokio::test]
     async fn native_components_are_registered_before_instance_start() {

@@ -22,17 +22,6 @@ configure() {
             'printf "RESET_PASSWORD="; od -An -N32 -tx1 /dev/urandom | tr -d " \n"; printf "\n"' >> .env
     fi
 }
-react_source() {
-    revision=2a36f857526baa08304a698131854f222b40b108
-    if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
-        git -C ../../.. cat-file -e "$revision^{commit}" 2>/dev/null ||
-            git -C ../../.. fetch --no-tags origin "$revision"
-        mkdir -p .build/react-source
-        git -C ../../.. archive --output="$PWD/.build/react-source.tar" "$revision" dev-tools/react
-        tar -x -f .build/react-source.tar -C .build/react-source
-        rm .build/react-source.tar
-    fi
-}
 runtime_source() {
     python3 ops/export-runtime.py
 }
@@ -169,10 +158,9 @@ acceptance() (
     fi
 )
 case "${1:-help}" in
-    configure) configure; react_source ;;
+    configure) configure ;;
     up)
         configure
-        react_source
         npm_cache
         runtime_source
         compose up --build -d control
@@ -185,7 +173,7 @@ case "${1:-help}" in
     down)
         if [ -f .env ]; then compose down; fi
         ;;
-    build) configure; react_source; npm_cache; runtime_source; shift; compose build "$@" ;;
+    build) configure; npm_cache; runtime_source; shift; compose build "$@" ;;
     status)
         if [ ! -f .env ]; then
             printf '%s\n' 'Demo is not configured. Run ./demo up.' >&2

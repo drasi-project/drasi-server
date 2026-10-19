@@ -3,7 +3,7 @@ ARG NPM_REGISTRY=https://registry.npmjs.org/
 ENV npm_config_registry=$NPM_REGISTRY
 WORKDIR /react-package
 COPY embedded/.build/npm-cache/ /npm-cache/
-COPY embedded/.build/react-source/dev-tools/react/ ./
+COPY embedded/.build/runtime-src/drasi-server/dev-tools/react/ ./
 RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
     set -- /npm-cache/*.tgz; \
     if [ -f "$1" ]; then npm cache add --offline --ignore-scripts "$@"; fi; \
@@ -12,7 +12,7 @@ WORKDIR /ui
 COPY embedded/.build/runtime-src/drasi-server/examples/native-sse-client/ /native-sse-client/
 COPY shared/ui/package.json shared/ui/package-lock.json shared/ui/.npmrc ./
 RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
-    mkdir vendor && cp /tmp/drasi-react-0.1.0.tgz vendor/drasi-react.tgz && npm ci --no-audit --no-fund
+    mkdir vendor && cp /tmp/drasi-react-0.1.0.tgz vendor/drasi-react-0.1.0.tgz && npm ci --no-audit --no-fund
 COPY shared/ui/ ./
 RUN npm run build
 

@@ -1123,30 +1123,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
-name = "drasi-bootstrap-application"
-version = "0.2.15"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "drasi-core",
- "drasi-lib",
- "drasi-plugin-sdk",
- "log",
- "ordered-float",
- "postgres-types",
- "prost-types",
- "redis",
- "serde",
- "serde_json",
- "tokio",
- "tokio-postgres",
- "tokio-stream",
- "utoipa",
- "uuid",
-]
-
-[[package]]
 name = "drasi-bootstrap-noop"
 version = "0.2.15"
 dependencies = [
@@ -1560,28 +1536,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "drasi-reaction-application"
-version = "0.3.13"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "drasi-lib",
- "drasi-plugin-sdk",
- "futures",
- "log",
- "ordered-float",
- "prost-types",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-stream",
- "utoipa",
- "uuid",
-]
-
-[[package]]
 name = "drasi-server"
 version = "0.2.4"
 dependencies = [
@@ -1594,7 +1548,6 @@ dependencies = [
  "clap",
  "console",
  "dotenvy",
- "drasi-bootstrap-application",
  "drasi-bootstrap-noop",
  "drasi-computation-bridge-common",
  "drasi-computation-sink-bridge",
@@ -1605,7 +1558,6 @@ dependencies = [
  "drasi-instance-host",
  "drasi-lib",
  "drasi-plugin-sdk",
- "drasi-reaction-application",
  "drasi-state-store-redb",
  "drasi-wal-redb",
  "flate2",
@@ -1651,14 +1603,10 @@ dependencies = [
  "drasi-core",
  "drasi-lib",
  "log",
- "ordered-float",
- "prost-types",
  "serde",
  "serde_json",
  "tokio",
- "tokio-stream",
  "tracing",
- "uuid",
 ]
 
 [[package]]

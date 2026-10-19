@@ -652,6 +652,13 @@ ends the stream with a logged error rather than silently skipping data. This is
 a result-view subscription, not a durable consumer or confirmation of effects.
 Disconnect unregisters the reader synchronously, including responses whose bodies
 were never polled.
+
+In-process application sources, reactions and bootstrap snapshots are supplied
+as native Rust components by the embedding application. Server does not register
+an `application` reaction with no reader or an `application` bootstrap provider
+with no application-owned data. Query viewing uses the native snapshot/stream
+API above, not those placeholder registrations.
+
 Pipeline queries support the ordinary query
 DELETE route, including dependent-consumer protection and owned-state cleanup.
 Source and reaction PUT routes retain their behavior when those components

@@ -1195,10 +1195,12 @@ Rust builds default to one job with architecture-specific Linux caches; override
 it with `./demo build --build-arg CARGO_BUILD_JOBS=3`. Use a separate host target
 directory for host native development.
 
-The React SDK source is exported from Server commit
-`2a36f857526baa08304a698131854f222b40b108`, built, and packed as the local
-`drasi-react` tarball used by the UI. This does not switch the checkout's branch.
-`demo up` performs the packaging inside Docker.
+The React SDK is built from the matching current Server checkout staged in
+`.build/runtime-src`, then packed as `drasi-react-0.1.0.tgz` for the UI. There is
+no historical React export, branch switch or source alias. This keeps its query
+DTO validation aligned with the Server; the old archived SDK required the
+retired `bootstrapBufferSize` field and rejected current query metadata.
+`demo up` performs the tarball packaging inside the container build.
 
 ### Environment and endpoints
 
@@ -1391,18 +1393,17 @@ cargo clippy --locked --manifest-path ../shared/crates/native/Cargo.toml \
 python3 -m unittest discover -s ops -p 'test_*.py'
 ```
 
-To prepare the UI's local SDK dependency using the same pinned source as Docker:
+To prepare the UI's tarball dependency from the same current source as the container build:
 
 ```sh
-./demo configure
 mkdir -p ../shared/ui/vendor
+sdk_archive_dir="$(cd ../shared/ui/vendor && pwd)"
 (
-  cd .build/react-source/dev-tools/react
+  cd ../../../dev-tools/react
   npm ci --ignore-scripts --no-audit --no-fund
   npm run build
-  npm pack --ignore-scripts --pack-destination ../../../../../shared/ui/vendor
+  npm pack --ignore-scripts --pack-destination "$sdk_archive_dir"
 )
-mv ../shared/ui/vendor/drasi-react-0.1.0.tgz ../shared/ui/vendor/drasi-react.tgz
 cd ../shared/ui
 npm ci
 npm test

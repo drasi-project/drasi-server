@@ -14,7 +14,7 @@ assert.ok(registry.protocol === 'https:' && !registry.username && !registry.pass
 await mkdir(destination, { recursive: true });
 const integrities = new Set();
 for (const file of ['../shared/ui/package-lock.json', '../../../ui/package-lock.json',
-  '.build/react-source/dev-tools/react/package-lock.json']) {
+  '../../../dev-tools/react/package-lock.json']) {
   const lock = JSON.parse(await readFile(join(example, file), 'utf8'));
   for (const entry of Object.values(lock.packages)) {
     if (/^(sha512|sha1)-/.test(entry.integrity ?? '') && entry.resolved?.startsWith('https://')) {

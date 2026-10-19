@@ -4,11 +4,8 @@ shared/ui/node_modules
 shared/ui/dist
 shared/ui/vendor
 embedded/.build/*
-!embedded/.build/react-source
 !embedded/.build/runtime-src
 !embedded/.build/npm-cache
-embedded/.build/react-source/**/node_modules
-embedded/.build/react-source/**/dist
 .git
 **/__pycache__
 **/*.py[cod]
