@@ -33,12 +33,12 @@ pub mod server;
 pub mod ui_assets;
 
 // Main exports for library users
+pub use api::models::{ReactionConfig, SourceConfig, StateStoreConfig};
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
 pub use config::{
     default_plugin_registry, load_config_file, save_config_file, ConfigError,
-    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig,
-    ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
+    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ResolvedInstanceConfig,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use index_provider::PERSISTENT_INDEX_PROVIDER_NAME;

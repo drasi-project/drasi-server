@@ -40,7 +40,6 @@
 # SECURITY: Use environment variables for tokens in production!
 
 apiVersion: drasi.io/v1
-id: http-webhook-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -51,84 +50,86 @@ plugins:
   - ref: reaction/log
   - ref: reaction/http
 
-sources:
-  - kind: mock
-    id: orders
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 3000
-
-queries:
-  - id: new-orders
-    autoStart: true
-    query: |
-      MATCH (o:Order)
-      RETURN o.id AS OrderId, o.customer AS Customer, o.total AS Total
-    queryLanguage: Cypher
+instances:
+  - id: http-webhook-demo
     sources:
-      - sourceId: orders
+      - kind: mock
+        id: orders
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 3000
 
-  - id: high-value-orders
-    autoStart: true
-    query: |
-      MATCH (o:Order)
-      WHERE o.total > 500
-      RETURN o.id AS OrderId, o.total AS Total
-    queryLanguage: Cypher
-    sources:
-      - sourceId: orders
-
-reactions:
-  # Log for debugging
-  - kind: log
-    id: debug-logger
     queries:
-      - new-orders
-      - high-value-orders
-    autoStart: true
+      - id: new-orders
+        autoStart: true
+        query: |
+          MATCH (o:Order)
+          RETURN o.id AS OrderId, o.customer AS Customer, o.total AS Total
+        queryLanguage: Cypher
+        sources:
+          - sourceId: orders
+
+      - id: high-value-orders
+        autoStart: true
+        query: |
+          MATCH (o:Order)
+          WHERE o.total > 500
+          RETURN o.id AS OrderId, o.total AS Total
+        queryLanguage: Cypher
+        sources:
+          - sourceId: orders
+
+    reactions:
+  # Log for debugging
+      - kind: log
+        id: debug-logger
+        queries:
+          - new-orders
+          - high-value-orders
+        autoStart: true
 
   # HTTP webhook reaction
-  - kind: http
-    id: order-webhooks
-    queries:
-      - new-orders
-      - high-value-orders
-    autoStart: true
+      - kind: http
+        id: order-webhooks
+        queries:
+          - new-orders
+          - high-value-orders
+        autoStart: true
 
     # Base configuration
-    baseUrl: "${WEBHOOK_BASE_URL:-http://localhost:3000}"
-    token: "${WEBHOOK_TOKEN}"
-    timeoutMs: 10000
+        baseUrl: "${WEBHOOK_BASE_URL:-http://localhost:3000}"
+        token: "${WEBHOOK_TOKEN}"
+        timeoutMs: 10000
 
     # Per-query routes
-    routes:
-      new-orders:
-        added:
-          url: "/webhooks/orders/created"
-          method: "POST"
-          body: '{"event": "order.created", "orderId": "{{after.OrderId}}", "customer": "{{after.Customer}}", "total": {{after.Total}}}'
-          headers:
-            Content-Type: "application/json"
-            X-Event-Type: "order.created"
-        updated:
-          url: "/webhooks/orders/updated"
-          method: "POST"
-          body: '{"event": "order.updated", "orderId": "{{after.OrderId}}", "before": {"customer": "{{before.Customer}}", "total": {{before.Total}}}, "after": {"customer": "{{after.Customer}}", "total": {{after.Total}}}}'
-          headers:
-            Content-Type: "application/json"
-        deleted:
-          url: "/webhooks/orders/cancelled"
-          method: "POST"
-          body: '{"event": "order.cancelled", "orderId": "{{before.OrderId}}", "customer": "{{before.Customer}}", "total": {{before.Total}}}'
-          headers:
-            Content-Type: "application/json"
+        routes:
+          new-orders:
+            added:
+              url: "/webhooks/orders/created"
+              method: "POST"
+              body: '{"event": "order.created", "orderId": "{{after.OrderId}}", "customer": "{{after.Customer}}", "total": {{after.Total}}}'
+              headers:
+                Content-Type: "application/json"
+                X-Event-Type: "order.created"
+            updated:
+              url: "/webhooks/orders/updated"
+              method: "POST"
+              body: '{"event": "order.updated", "orderId": "{{after.OrderId}}", "before": {"customer": "{{before.Customer}}", "total": {{before.Total}}}, "after": {"customer": "{{after.Customer}}", "total": {{after.Total}}}}'
+              headers:
+                Content-Type: "application/json"
+            deleted:
+              url: "/webhooks/orders/cancelled"
+              method: "POST"
+              body: '{"event": "order.cancelled", "orderId": "{{before.OrderId}}", "customer": "{{before.Customer}}", "total": {{before.Total}}}'
+              headers:
+                Content-Type: "application/json"
 
-      high-value-orders:
-        added:
-          url: "/webhooks/alerts/high-value"
-          method: "POST"
-          body: '{"alert": "high_value_order", "orderId": "{{after.OrderId}}", "total": {{after.Total}}}'
-          headers:
-            Content-Type: "application/json"
-            X-Priority: "high"
+          high-value-orders:
+            added:
+              url: "/webhooks/alerts/high-value"
+              method: "POST"
+              body: '{"alert": "high_value_order", "orderId": "{{after.OrderId}}", "total": {{after.Total}}}'
+              headers:
+                Content-Type: "application/json"
+                X-Priority: "high"

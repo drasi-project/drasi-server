@@ -100,7 +100,7 @@ async fn cancelled_requests_and_uncertain_confirmation_resolve_through_durable_r
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("configuration.redb");
         let mut desired = DesiredInstance::default();
-        desired.topology.allow_incomplete = !desired.topology.allow_incomplete;
+        desired.topology.requirements = PipeRequirements::new([PipeCapability::Backpressure]);
         {
             let gate = Arc::new(ConfirmationGate {
                 armed: AtomicBool::new(true),

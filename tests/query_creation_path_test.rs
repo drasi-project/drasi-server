@@ -107,7 +107,12 @@ async fn request(
         .await?;
     let status = response.status();
     let body = to_bytes(response.into_body(), 1024 * 1024).await?;
-    Ok((status, serde_json::from_slice(&body)?))
+    let body = if status == StatusCode::NOT_FOUND && body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body)?
+    };
+    Ok((status, body))
 }
 
 async fn scenario(native: bool) -> Result<()> {
@@ -177,6 +182,10 @@ async fn scenario(native: bool) -> Result<()> {
     for prefix in ["/instances/first", ""] {
         let (status, body) =
             request(&app, "GET", &format!("{prefix}/queries"), Value::Null).await?;
+        if prefix.is_empty() {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            continue;
+        }
         anyhow::ensure!(status == StatusCode::OK, "{body}");
         assert!(body["data"]
             .as_array()
@@ -218,6 +227,17 @@ async fn scenario(native: bool) -> Result<()> {
         .await?;
     assert_eq!(stream.status(), StatusCode::OK);
     let mut stream = stream.into_body().into_data_stream();
+    use futures_util::StreamExt;
+    let snapshot = tokio::time::timeout(DEADLINE, stream.next())
+        .await?
+        .context("initial SSE snapshot")??;
+    let snapshot = std::str::from_utf8(&snapshot)?;
+    assert!(snapshot.lines().any(|line| line == "event: snapshot"));
+    let data = snapshot
+        .lines()
+        .find_map(|line| line.strip_prefix("data:"))
+        .context("snapshot data")?;
+    assert_eq!(serde_json::from_str::<Value>(data.trim())?, json!([]));
     input
         .send_node_insert(
             "one",
@@ -225,7 +245,6 @@ async fn scenario(native: bool) -> Result<()> {
             PropertyMapBuilder::new().with_integer("value", 7).build(),
         )
         .await?;
-    use futures_util::StreamExt;
     let event = tokio::time::timeout(DEADLINE, stream.next())
         .await?
         .context("SSE event")??;
@@ -236,6 +255,7 @@ async fn scenario(native: bool) -> Result<()> {
         .context("SSE data")?;
     let result: Value = serde_json::from_str(data.trim())?;
     assert_eq!(result["query_id"], "items");
+    assert!(core.list_reactions().await?.is_empty());
     for prefix in ["/instances/first", ""] {
         let (status, body) = request(
             &app,
@@ -244,26 +264,15 @@ async fn scenario(native: bool) -> Result<()> {
             Value::Null,
         )
         .await?;
+        if prefix.is_empty() {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            continue;
+        }
         anyhow::ensure!(status == StatusCode::OK, "{body}");
         assert_eq!(body["data"], json!([{"value":7}]));
     }
     drop(stream);
-    tokio::time::timeout(DEADLINE, async {
-        let mut interval = tokio::time::interval(Duration::from_millis(5));
-        loop {
-            if core
-                .list_reactions()
-                .await?
-                .iter()
-                .all(|(id, _)| !id.starts_with("__attach_items_"))
-            {
-                return Ok::<_, anyhow::Error>(());
-            }
-            interval.tick().await;
-        }
-    })
-    .await
-    .context("closed SSE attachment must release its temporary reaction")??;
+    assert!(core.list_reactions().await?.is_empty());
     for operation in ["stop", "start"] {
         let (status, body) = request(
             &app,
@@ -336,6 +345,10 @@ async fn scenario(native: bool) -> Result<()> {
             Value::Null,
         )
         .await?;
+        if prefix.is_empty() {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            continue;
+        }
         anyhow::ensure!(status == StatusCode::OK, "{body}");
         assert_eq!(body["data"], json!([{"value":22}]));
     }
@@ -377,12 +390,12 @@ async fn scenario(native: bool) -> Result<()> {
 }
 
 #[tokio::test]
-async fn ordinary_query_creation_supports_default_and_instance_management_routes() -> Result<()> {
+async fn ordinary_query_creation_requires_explicit_instance_management_routes() -> Result<()> {
     tokio::time::timeout(Duration::from_secs(30), scenario(false)).await?
 }
 
 #[tokio::test]
-async fn native_query_creation_supports_default_and_instance_management_routes() -> Result<()> {
+async fn native_query_creation_requires_explicit_instance_management_routes() -> Result<()> {
     tokio::time::timeout(Duration::from_secs(30), scenario(true)).await?
 }
 
@@ -454,6 +467,10 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     for prefix in ["/api/v1", "/api/v1/instances/native-components"] {
         let (status, body) =
             request(&app, "GET", &format!("{prefix}/{route}"), Value::Null).await?;
+        if prefix == "/api/v1" {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            continue;
+        }
         anyhow::ensure!(status == StatusCode::OK, "{body}");
         assert!(body["data"]
             .as_array()
@@ -516,7 +533,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         let (status, body) = request(
             &app,
             "POST",
-            &format!("/api/v1/{route}/component/{operation}"),
+            &format!("/api/v1/instances/native-components/{route}/component/{operation}"),
             Value::Null,
         )
         .await?;
@@ -525,7 +542,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     let (status, _) = request(
         &app,
         "POST",
-        &format!("/api/v1/{route}/component/start"),
+        &format!("/api/v1/instances/native-components/{route}/component/start"),
         Value::Null,
     )
     .await?;
@@ -536,7 +553,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     let (status, body) = request(
         &app,
         "DELETE",
-        &format!("/api/v1/{route}/component"),
+        &format!("/api/v1/instances/native-components/{route}/component"),
         Value::Null,
     )
     .await?;
@@ -544,7 +561,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     let (status, _) = request(
         &app,
         "GET",
-        &format!("/api/v1/{route}/component"),
+        &format!("/api/v1/instances/native-components/{route}/component"),
         Value::Null,
     )
     .await?;
@@ -563,7 +580,13 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
             .build()?,
     )
     .await?;
-    let (status, body) = request(&app, "GET", &format!("/api/v1/{route}"), Value::Null).await?;
+    let (status, body) = request(
+        &app,
+        "GET",
+        &format!("/api/v1/instances/native-components/{route}"),
+        Value::Null,
+    )
+    .await?;
     anyhow::ensure!(status == StatusCode::OK, "{body}");
     let named = body["data"]
         .as_array()
@@ -586,7 +609,13 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         }))
         .build()?;
     core.add_components(opaque).await?;
-    let (status, body) = request(&app, "GET", &format!("/api/v1/{route}"), Value::Null).await?;
+    let (status, body) = request(
+        &app,
+        "GET",
+        &format!("/api/v1/instances/native-components/{route}"),
+        Value::Null,
+    )
+    .await?;
     anyhow::ensure!(status == StatusCode::OK, "{body}");
     assert!(body["data"]
         .as_array()
@@ -596,7 +625,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     let (status, _) = request(
         &app,
         "GET",
-        &format!("/api/v1/{route}/opaque?view=full"),
+        &format!("/api/v1/instances/native-components/{route}/opaque?view=full"),
         Value::Null,
     )
     .await?;
@@ -613,7 +642,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         let (status, body) = request(
             &app,
             "GET",
-            &format!("/api/v1/{route}/opaque/{suffix}"),
+            &format!("/api/v1/instances/native-components/{route}/opaque/{suffix}"),
             Value::Null,
         )
         .await?;
@@ -720,7 +749,7 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
             let (status, body) = request(
                 &app,
                 "GET",
-                &format!("/{route}/failed?view=full"),
+                &format!("/instances/failed-native/{route}/failed?view=full"),
                 Value::Null,
             )
             .await?;
@@ -730,15 +759,25 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
                 .as_str()
                 .context("construction error")?
                 .contains("injected native construction failure"));
-            let (status, body) =
-                request(&app, "GET", &format!("/{route}/failed/events"), Value::Null).await?;
+            let (status, body) = request(
+                &app,
+                "GET",
+                &format!("/instances/failed-native/{route}/failed/events"),
+                Value::Null,
+            )
+            .await?;
             anyhow::ensure!(status == StatusCode::OK, "{body}");
             assert!(!body["data"]
                 .as_array()
                 .context("failure events")?
                 .is_empty());
-            let (status, body) =
-                request(&app, "DELETE", &format!("/{route}/failed"), Value::Null).await?;
+            let (status, body) = request(
+                &app,
+                "DELETE",
+                &format!("/instances/failed-native/{route}/failed"),
+                Value::Null,
+            )
+            .await?;
             anyhow::ensure!(status == StatusCode::OK, "{body}");
             core.shutdown().await?;
         }

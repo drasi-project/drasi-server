@@ -45,7 +45,7 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
           const hasQueries = docs.some((x) => !!x && x.kind === 'Query');
           const hasSources = docs.some((x) => !!x && x.kind === 'Source');
           const hasReactions = docs.some((x) => !!x && x.kind === 'Reaction');
-          const hasConfig = docs.some((x) => !!x && (x.sources || x.queries || x.reactions));
+          const hasConfig = docs.some((x) => Array.isArray(x?.instances));
 
           if (hasQueries || hasSources || hasReactions || hasConfig) {
             result.push(new FileNode(f));
@@ -88,7 +88,8 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
         result.push(new ReactionNode(resource, element.resourceUri, line));
       }
 
-      for (const configDoc of docs.filter((x) => !!x && (x.sources || x.queries || x.reactions))) {
+      const instanceConfigs = docs.flatMap((doc) => Array.isArray(doc?.instances) ? doc.instances : []);
+      for (const configDoc of instanceConfigs) {
         for (const qry of (configDoc.queries ?? [])) {
           if (qry?.id) {
             const line = findNestedResourceLine(text, 'queries', qry.id);

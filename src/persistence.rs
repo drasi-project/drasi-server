@@ -12,62 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::bootstrap::{
-    BootstrapProviderConfig, BootstrapProviderRef, TopLevelBootstrapProviderConfig,
-};
-use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
-use crate::config::{
-    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
-    TrustedIdentity,
-};
+use crate::api::mappings::DtoMapper;
+use crate::api::models::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
+use crate::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig};
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 use crate::instance_registry::InstanceRegistry;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::{debug, error, info};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-/// Server-level settings preserved from the original config file.
-///
-/// These fields are not part of any DrasiLib instance — they are server-wide
-/// settings that `save()` must round-trip faithfully to avoid erasing user
-/// configuration on the first persist operation.
-#[derive(Clone)]
-struct PreservedServerSettings {
-    managed_instances: IndexMap<String, DrasiLibInstanceConfig>,
-    enable_ui: bool,
-    memory_budget_mib_by_instance: IndexMap<String, ConfigValue<usize>>,
-    plugin_registry: Option<String>,
-    auto_install_plugins: bool,
-    plugins: Vec<PluginDependency>,
-    verify_plugins: bool,
-    trusted_identities: Vec<TrustedIdentity>,
-    hot_reload_plugins: bool,
-    hot_reload_debounce_ms: u64,
-    cors_allowed_origins: Vec<String>,
-    /// Top-level `identityProviders` from the original single-instance config.
-    ///
-    /// Identity providers are config-only (they have no runtime graph
-    /// representation) so they cannot be recovered from `snapshot_configuration()`.
-    /// They must be preserved here and re-emitted by `save()`.
-    identity_providers: Vec<IdentityProviderConfig>,
-    /// Per-instance `identityProviders` keyed by instance id, captured from the
-    /// original multi-instance config. Used to repopulate the field for any
-    /// instance that was declared statically rather than created dynamically
-    /// via `register_instance`.
-    identity_providers_by_instance: IndexMap<String, Vec<IdentityProviderConfig>>,
-    /// Top-level `bootstrapProviders` from the original single-instance config.
-    ///
-    /// Like identity providers, top-level bootstrap providers are config-only
-    /// (they have no runtime graph representation) so they cannot be
-    /// recovered from `snapshot_configuration()`. They must be preserved here
-    /// and re-emitted by `save()`.
-    bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
-    /// Per-instance `bootstrapProviders` keyed by instance id, captured from
-    /// the original multi-instance config. See `identity_providers_by_instance`.
-    bootstrap_providers_by_instance: IndexMap<String, Vec<TopLevelBootstrapProviderConfig>>,
-}
 
 /// Snapshot-based persistence for DrasiServerConfig.
 ///
@@ -81,16 +36,8 @@ struct PreservedServerSettings {
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
     registry: InstanceRegistry,
-    host: String,
-    port: u16,
-    log_level: String,
-    persist_config: bool,
-    persist_settings: IndexMap<String, bool>,
-    archive_settings: IndexMap<String, bool>,
-    solutions_dir: Option<String>,
-    /// Server-level settings preserved from the original config file.
-    preserved: PreservedServerSettings,
-    /// Instance configs for dynamic instances
+    server_configuration: DrasiServerConfig,
+    /// Config-only settings for both declared and API-created instances.
     instance_configs: Arc<RwLock<IndexMap<String, DrasiLibInstanceConfig>>>,
     /// Per-component `identityProvider` references for sources, keyed by
     /// `(instance_id, source_id)`. Seeded from the original config and
@@ -119,13 +66,40 @@ pub struct ConfigPersistence {
     source_bootstrap_provider: Arc<RwLock<IndexMap<(String, String), BootstrapProviderRef>>>,
 }
 
+fn capture_instance_settings(
+    mut config: DrasiLibInstanceConfig,
+    source_identity: &mut IndexMap<(String, String), String>,
+    reaction_identity: &mut IndexMap<(String, String), String>,
+    source_bootstrap: &mut IndexMap<(String, String), BootstrapProviderRef>,
+) -> Result<(String, DrasiLibInstanceConfig)> {
+    let id: String = DtoMapper::new().resolve_typed(config.id.as_ref())?;
+    anyhow::ensure!(!id.is_empty(), "Cannot preserve an empty instance identity");
+    for source in &config.sources {
+        if let Some(provider) = source.identity_provider() {
+            source_identity.insert((id.clone(), source.id.clone()), provider.to_owned());
+        }
+        if let Some(provider) = source.bootstrap_provider() {
+            source_bootstrap.insert((id.clone(), source.id.clone()), provider.clone());
+        }
+    }
+    for reaction in &config.reactions {
+        if let Some(provider) = reaction.identity_provider() {
+            reaction_identity.insert((id.clone(), reaction.id.clone()), provider.to_owned());
+        }
+    }
+    config.computation = None;
+    config.sources.clear();
+    config.queries.clear();
+    config.reactions.clear();
+    Ok((id, config))
+}
+
 impl ConfigPersistence {
     /// Create a new ConfigPersistence instance.
     ///
     /// The `original_config` parameter captures server-level settings (plugin
     /// registry, hot-reload, verification, etc.) so they are preserved across
     /// save operations rather than being reset to hard-coded defaults.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config_file_path: PathBuf,
         registry: InstanceRegistry,
@@ -133,196 +107,39 @@ impl ConfigPersistence {
         port: u16,
         log_level: String,
         persist_config: bool,
-        persist_settings: IndexMap<String, bool>,
-        archive_settings: IndexMap<String, bool>,
-        solutions_dir: Option<String>,
         original_config: &DrasiServerConfig,
-    ) -> Self {
-        // Build per-(instance, component) identity-provider lookup maps so
-        // `save()` can re-emit `identityProvider: <id>` references that aren't
-        // part of `snapshot_configuration()`. We resolve `ConfigValue` ids by
-        // their Static form only; env-var / secret ids cannot be matched
-        // reliably here so those components silently fall through to the
-        // existing (lossy) behaviour.
-        let top_level_instance_id = match &original_config.id {
-            ConfigValue::Static(s) => Some(s.clone()),
-            _ => None,
-        };
-
-        let mut source_identity_provider_by_instance: IndexMap<(String, String), String> =
-            IndexMap::new();
-        let mut reaction_identity_provider_by_instance: IndexMap<(String, String), String> =
-            IndexMap::new();
-        let mut source_bootstrap_provider_by_instance: IndexMap<
-            (String, String),
-            BootstrapProviderRef,
-        > = IndexMap::new();
-
-        if let Some(inst_id) = &top_level_instance_id {
-            for src in &original_config.sources {
-                if let Some(ip) = src.identity_provider() {
-                    source_identity_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), ip.to_string());
-                }
-                if let Some(bp) = src.bootstrap_provider() {
-                    source_bootstrap_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), bp.clone());
-                }
-            }
-            for r in &original_config.reactions {
-                if let Some(ip) = r.identity_provider() {
-                    reaction_identity_provider_by_instance
-                        .insert((inst_id.clone(), r.id.clone()), ip.to_string());
-                }
-            }
+    ) -> Result<Self> {
+        let mut server_configuration = original_config.clone();
+        server_configuration.instances.clear();
+        server_configuration.host = ConfigValue::Static(host);
+        server_configuration.port = ConfigValue::Static(port);
+        server_configuration.log_level = ConfigValue::Static(log_level);
+        server_configuration.persist_config = persist_config;
+        let mut instance_configs = IndexMap::new();
+        let mut source_identity_provider = IndexMap::new();
+        let mut reaction_identity_provider = IndexMap::new();
+        let mut source_bootstrap_provider = IndexMap::new();
+        for instance in &original_config.instances {
+            let (id, settings) = capture_instance_settings(
+                instance.clone(),
+                &mut source_identity_provider,
+                &mut reaction_identity_provider,
+                &mut source_bootstrap_provider,
+            )?;
+            anyhow::ensure!(
+                instance_configs.insert(id.clone(), settings).is_none(),
+                "Duplicate instance configuration '{id}'"
+            );
         }
-
-        for inst in &original_config.instances {
-            let ConfigValue::Static(inst_id) = &inst.id else {
-                continue;
-            };
-            for src in &inst.sources {
-                if let Some(ip) = src.identity_provider() {
-                    source_identity_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), ip.to_string());
-                }
-                if let Some(bp) = src.bootstrap_provider() {
-                    source_bootstrap_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), bp.clone());
-                }
-            }
-            for r in &inst.reactions {
-                if let Some(ip) = r.identity_provider() {
-                    reaction_identity_provider_by_instance
-                        .insert((inst_id.clone(), r.id.clone()), ip.to_string());
-                }
-            }
-        }
-
-        Self {
+        Ok(Self {
             config_file_path,
             registry,
-            host,
-            port,
-            log_level,
-            persist_config,
-            persist_settings,
-            archive_settings,
-            solutions_dir,
-            preserved: PreservedServerSettings {
-                managed_instances: original_config
-                    .instance_configurations()
-                    .into_iter()
-                    .filter(|instance| instance.configuration_store.is_some())
-                    .filter_map(|mut instance| {
-                        let id = match &instance.id {
-                            ConfigValue::Static(id) => Some(id.clone()),
-                            ConfigValue::EnvironmentVariable { name, default } => {
-                                std::env::var(name).ok().or_else(|| default.clone())
-                            }
-                            ConfigValue::Secret { .. } => None,
-                        }?;
-                        instance.computation = None;
-                        instance.sources.clear();
-                        instance.queries.clear();
-                        instance.reactions.clear();
-                        Some((id, instance))
-                    })
-                    .collect(),
-                enable_ui: original_config.enable_ui,
-                memory_budget_mib_by_instance: {
-                    let mut by_instance: IndexMap<String, ConfigValue<usize>> = original_config
-                        .instances
-                        .iter()
-                        .filter_map(
-                            |instance| match (&instance.id, &instance.memory_budget_mib) {
-                                (ConfigValue::Static(id), Some(memory_budget_mib)) => {
-                                    Some((id.clone(), memory_budget_mib.clone()))
-                                }
-                                _ => None,
-                            },
-                        )
-                        .collect();
-                    if let (Some(instance_id), Some(memory_budget_mib)) =
-                        (&top_level_instance_id, &original_config.memory_budget_mib)
-                    {
-                        by_instance
-                            .entry(instance_id.clone())
-                            .or_insert_with(|| memory_budget_mib.clone());
-                    }
-                    by_instance
-                },
-                plugin_registry: original_config.plugin_registry.clone(),
-                auto_install_plugins: original_config.auto_install_plugins,
-                plugins: original_config.plugins.clone(),
-                verify_plugins: original_config.verify_plugins,
-                trusted_identities: original_config.trusted_identities.clone(),
-                hot_reload_plugins: original_config.hot_reload_plugins,
-                hot_reload_debounce_ms: original_config.hot_reload_debounce_ms,
-                cors_allowed_origins: original_config.cors_allowed_origins.clone(),
-                identity_providers: original_config.identity_providers.clone(),
-                // Seed per-instance identity providers from the original config so
-                // they survive a save in multi-instance format. The top-level
-                // `identityProviders` block (single-instance format) is folded in
-                // under the top-level instance id so that if a save later emits
-                // the multi-instance format the providers migrate into
-                // `instances[<top-level>].identityProviders` rather than being
-                // silently dropped.
-                identity_providers_by_instance: {
-                    let mut by_instance: IndexMap<String, Vec<IdentityProviderConfig>> =
-                        original_config
-                            .instances
-                            .iter()
-                            .filter_map(|inst| match &inst.id {
-                                ConfigValue::Static(id) if !inst.identity_providers.is_empty() => {
-                                    Some((id.clone(), inst.identity_providers.clone()))
-                                }
-                                _ => None,
-                            })
-                            .collect();
-                    if !original_config.identity_providers.is_empty() {
-                        if let Some(inst_id) = &top_level_instance_id {
-                            by_instance
-                                .entry(inst_id.clone())
-                                .or_insert_with(|| original_config.identity_providers.clone());
-                        }
-                    }
-                    by_instance
-                },
-                bootstrap_providers: original_config.bootstrap_providers.clone(),
-                // Seed per-instance bootstrap providers from the original config
-                // so they survive a save in multi-instance format, folding the
-                // top-level single-instance block under the top-level instance
-                // id. Mirrors `identity_providers_by_instance`.
-                bootstrap_providers_by_instance: {
-                    let mut by_instance: IndexMap<String, Vec<TopLevelBootstrapProviderConfig>> =
-                        original_config
-                            .instances
-                            .iter()
-                            .filter_map(|inst| match &inst.id {
-                                ConfigValue::Static(id) if !inst.bootstrap_providers.is_empty() => {
-                                    Some((id.clone(), inst.bootstrap_providers.clone()))
-                                }
-                                _ => None,
-                            })
-                            .collect();
-                    if !original_config.bootstrap_providers.is_empty() {
-                        if let Some(inst_id) = &top_level_instance_id {
-                            by_instance
-                                .entry(inst_id.clone())
-                                .or_insert_with(|| original_config.bootstrap_providers.clone());
-                        }
-                    }
-                    by_instance
-                },
-            },
-            instance_configs: Arc::new(RwLock::new(IndexMap::new())),
-            source_identity_provider: Arc::new(RwLock::new(source_identity_provider_by_instance)),
-            reaction_identity_provider: Arc::new(RwLock::new(
-                reaction_identity_provider_by_instance,
-            )),
-            source_bootstrap_provider: Arc::new(RwLock::new(source_bootstrap_provider_by_instance)),
-        }
+            server_configuration,
+            instance_configs: Arc::new(RwLock::new(instance_configs)),
+            source_identity_provider: Arc::new(RwLock::new(source_identity_provider)),
+            reaction_identity_provider: Arc::new(RwLock::new(reaction_identity_provider)),
+            source_bootstrap_provider: Arc::new(RwLock::new(source_bootstrap_provider)),
+        })
     }
 
     /// Register an `identityProvider` reference for a source.
@@ -337,7 +154,7 @@ impl ConfigPersistence {
         source_id: &str,
         identity_provider: Option<&str>,
     ) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.source_identity_provider.write().await;
@@ -357,7 +174,7 @@ impl ConfigPersistence {
     /// Remove any preserved `identityProvider` reference for a source.
     /// Called by the source delete handler.
     pub async fn unregister_source_identity_provider(&self, instance_id: &str, source_id: &str) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.source_identity_provider.write().await;
@@ -372,7 +189,7 @@ impl ConfigPersistence {
         reaction_id: &str,
         identity_provider: Option<&str>,
     ) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.reaction_identity_provider.write().await;
@@ -395,7 +212,7 @@ impl ConfigPersistence {
         instance_id: &str,
         reaction_id: &str,
     ) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.reaction_identity_provider.write().await;
@@ -415,7 +232,7 @@ impl ConfigPersistence {
         source_id: &str,
         bootstrap_provider: Option<&BootstrapProviderRef>,
     ) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.source_bootstrap_provider.write().await;
@@ -432,7 +249,7 @@ impl ConfigPersistence {
     /// Remove any preserved `bootstrapProvider` reference for a source.
     /// Called by the source delete handler.
     pub async fn unregister_source_bootstrap_provider(&self, instance_id: &str, source_id: &str) {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             return;
         }
         let mut map = self.source_bootstrap_provider.write().await;
@@ -440,31 +257,29 @@ impl ConfigPersistence {
     }
 
     /// Register a new instance config for persistence
-    pub async fn register_instance(&self, config: DrasiLibInstanceConfig) {
-        if !self.persist_config {
-            return;
+    pub async fn register_instance(&self, config: DrasiLibInstanceConfig) -> Result<()> {
+        if !self.server_configuration.persist_config {
+            return Ok(());
         }
         let mut instance_configs = self.instance_configs.write().await;
-        // Extract the ID from the ConfigValue
-        let id = match &config.id {
-            crate::api::models::ConfigValue::Static(s) => s.clone(),
-            crate::api::models::ConfigValue::EnvironmentVariable { name, default } => {
-                std::env::var(name).unwrap_or_else(|_| default.clone().unwrap_or_default())
-            }
-            crate::api::models::ConfigValue::Secret { name } => name.clone(),
-        };
-        // Only config-only instance settings belong here. Native declarations
-        // are always read from the authoritative graph snapshot during save().
-        let mut config = config;
-        config.computation = None;
+        let mut source_identity = self.source_identity_provider.write().await;
+        let mut reaction_identity = self.reaction_identity_provider.write().await;
+        let mut source_bootstrap = self.source_bootstrap_provider.write().await;
+        let (id, config) = capture_instance_settings(
+            config,
+            &mut source_identity,
+            &mut reaction_identity,
+            &mut source_bootstrap,
+        )?;
         instance_configs.insert(id, config);
+        Ok(())
     }
 
     /// Save the current configuration to the config file using atomic writes.
     /// Uses `snapshot_configuration()` to get current state from each DrasiLib instance.
-    /// Uses single-instance format when there's 1 instance, multi-instance format otherwise.
+    /// Always writes explicit instances, including an empty list.
     pub async fn save(&self) -> Result<()> {
-        if !self.persist_config {
+        if !self.server_configuration.persist_config {
             debug!("Persistence disabled (persist_config: false), skipping save");
             return Ok(());
         }
@@ -474,7 +289,7 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
 
-        let dynamic_instance_configs = self.instance_configs.read().await;
+        let instance_settings = self.instance_configs.read().await;
         let source_identity_provider = self.source_identity_provider.read().await;
         let reaction_identity_provider = self.reaction_identity_provider.read().await;
         let source_bootstrap_provider = self.source_bootstrap_provider.read().await;
@@ -482,24 +297,23 @@ impl ConfigPersistence {
         let mut instance_configs = Vec::new();
 
         for (id, core) in self.registry.list().await {
+            let mut settings = instance_settings.get(&id).cloned().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot persist instance '{id}': its config-only settings were not registered"
+                )
+            })?;
             if core.configuration_is_persistent() {
-                let mut settings = dynamic_instance_configs.get(&id)
-                    .or_else(|| self.preserved.managed_instances.get(&id))
-                    .cloned().ok_or_else(|| anyhow::anyhow!(
-                        "Cannot persist managed instance '{id}': configurationStore settings are unavailable"
-                    ))?;
                 anyhow::ensure!(
                     settings.configuration_store.is_some(),
                     "Cannot persist managed instance '{id}' without its configurationStore"
                 );
-                settings.id = ConfigValue::Static(id);
-                settings.computation = None;
-                settings.sources.clear();
-                settings.queries.clear();
-                settings.reactions.clear();
                 instance_configs.push(settings);
                 continue;
             }
+            anyhow::ensure!(
+                settings.configuration_store.is_none(),
+                "Cannot persist unmanaged instance '{id}' with configurationStore settings"
+            );
             let snapshot = core
                 .snapshot_computation_configuration()
                 .await
@@ -507,9 +321,6 @@ impl ConfigPersistence {
             let computation =
                 crate::computation::configuration_from_snapshot(&snapshot)?.map(Into::into);
             let snapshot = snapshot.instance;
-
-            let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
-            let enable_archive = *self.archive_settings.get(&id).unwrap_or(&false);
 
             // Map snapshot sources to SourceConfig, filtering internal sources
             let sources: Vec<SourceConfig> = snapshot
@@ -557,14 +368,12 @@ impl ConfigPersistence {
             let queries: Vec<QueryConfigDto> = snapshot
                 .queries
                 .iter()
-                .filter_map(|q| match QueryConfigDto::try_from(q.config.clone()) {
-                    Ok(dto) => Some(dto),
-                    Err(e) => {
-                        log::error!("Failed to serialize query '{}' config: {e}", q.id);
-                        None
-                    }
+                .map(|q| {
+                    QueryConfigDto::try_from(q.config.clone()).with_context(|| {
+                        format!("Cannot serialize query '{}' in instance '{id}'", q.id)
+                    })
                 })
-                .collect();
+                .collect::<Result<_>>()?;
 
             // Map snapshot reactions to ReactionConfig
             let reactions: Vec<ReactionConfig> = snapshot
@@ -588,189 +397,15 @@ impl ConfigPersistence {
                 })
                 .collect();
 
-            // Check if this is a dynamically created instance
-            let instance_config = if let Some(dynamic_config) = dynamic_instance_configs.get(&id) {
-                DrasiLibInstanceConfig {
-                    id: ConfigValue::Static(snapshot.instance_id.clone()),
-                    persist_index: dynamic_config.persist_index,
-                    enable_archive: dynamic_config.enable_archive,
-                    memory_budget_mib: dynamic_config.memory_budget_mib.clone(),
-                    state_store: dynamic_config.state_store.clone(),
-                    secret_store: dynamic_config.secret_store.clone(),
-                    default_priority_queue_capacity: dynamic_config
-                        .default_priority_queue_capacity
-                        .clone(),
-                    default_dispatch_buffer_capacity: dynamic_config
-                        .default_dispatch_buffer_capacity
-                        .clone(),
-                    sources,
-                    reactions,
-                    queries,
-                    computation,
-                    configuration_store: None,
-                    // Identity providers are config-only and never appear in
-                    // `snapshot_configuration()`. Prefer the dynamic config's
-                    // list (set when the instance was registered via the API),
-                    // and fall back to what the original config declared for
-                    // this instance id so static identityProviders survive a
-                    // save triggered by an unrelated mutation.
-                    identity_providers: if !dynamic_config.identity_providers.is_empty() {
-                        dynamic_config.identity_providers.clone()
-                    } else {
-                        self.preserved
-                            .identity_providers_by_instance
-                            .get(&id)
-                            .cloned()
-                            .unwrap_or_default()
-                    },
-                    bootstrap_providers: if !dynamic_config.bootstrap_providers.is_empty() {
-                        dynamic_config.bootstrap_providers.clone()
-                    } else {
-                        self.preserved
-                            .bootstrap_providers_by_instance
-                            .get(&id)
-                            .cloned()
-                            .unwrap_or_default()
-                    },
-                }
-            } else {
-                DrasiLibInstanceConfig {
-                    id: ConfigValue::Static(snapshot.instance_id.clone()),
-                    persist_index,
-                    enable_archive,
-                    memory_budget_mib: self
-                        .preserved
-                        .memory_budget_mib_by_instance
-                        .get(&id)
-                        .cloned(),
-                    state_store: None,
-                    secret_store: None,
-                    default_priority_queue_capacity: None,
-                    default_dispatch_buffer_capacity: None,
-                    sources,
-                    reactions,
-                    queries,
-                    computation,
-                    configuration_store: None,
-                    identity_providers: self
-                        .preserved
-                        .identity_providers_by_instance
-                        .get(&id)
-                        .cloned()
-                        .unwrap_or_default(),
-                    bootstrap_providers: self
-                        .preserved
-                        .bootstrap_providers_by_instance
-                        .get(&id)
-                        .cloned()
-                        .unwrap_or_default(),
-                }
-            };
-            instance_configs.push(instance_config);
+            settings.sources = sources;
+            settings.reactions = reactions;
+            settings.queries = queries;
+            settings.computation = computation;
+            instance_configs.push(settings);
         }
 
-        let wrapper_config = if instance_configs.len() == 1 {
-            // Single instance → use single-instance format (root-level fields)
-            let instance = instance_configs.remove(0);
-            // In single-instance format, identityProviders move to the top
-            // level so they read naturally next to the other root component
-            // lists. Prefer the (now-promoted) instance value; if none was
-            // captured, fall back to the original top-level value.
-            let identity_providers = if !instance.identity_providers.is_empty() {
-                instance.identity_providers.clone()
-            } else {
-                self.preserved.identity_providers.clone()
-            };
-            // Same promotion for bootstrapProviders in single-instance format.
-            let bootstrap_providers = if !instance.bootstrap_providers.is_empty() {
-                instance.bootstrap_providers.clone()
-            } else {
-                self.preserved.bootstrap_providers.clone()
-            };
-            DrasiServerConfig {
-                api_version: None,
-                id: instance.id,
-                host: ConfigValue::Static(self.host.clone()),
-                port: ConfigValue::Static(self.port),
-                log_level: ConfigValue::Static(self.log_level.clone()),
-                persist_config: self.persist_config,
-                persist_index: instance.persist_index,
-                enable_archive: instance.enable_archive,
-                memory_budget_mib: instance.memory_budget_mib,
-                enable_ui: self.preserved.enable_ui,
-                solutions_dir: self.solutions_dir.clone(),
-                state_store: instance.state_store,
-                secret_store: instance.secret_store,
-                default_priority_queue_capacity: instance.default_priority_queue_capacity,
-                default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
-                plugin_registry: self.preserved.plugin_registry.clone(),
-                auto_install_plugins: self.preserved.auto_install_plugins,
-                plugins: self.preserved.plugins.clone(),
-                verify_plugins: self.preserved.verify_plugins,
-                trusted_identities: self.preserved.trusted_identities.clone(),
-                hot_reload_plugins: self.preserved.hot_reload_plugins,
-                hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
-                cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
-                sources: instance.sources,
-                queries: instance.queries,
-                reactions: instance.reactions,
-                identity_providers,
-                bootstrap_providers,
-                computation: instance.computation,
-                configuration_store: instance.configuration_store,
-                instances: Vec::new(), // Empty = single-instance format
-            }
-        } else {
-            // Multiple instances → use multi-instance format (instances array)
-            let first_id = instance_configs
-                .first()
-                .and_then(|cfg| match &cfg.id {
-                    ConfigValue::Static(id) => Some(id.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
-
-            DrasiServerConfig {
-                api_version: None,
-                id: ConfigValue::Static(first_id),
-                host: ConfigValue::Static(self.host.clone()),
-                port: ConfigValue::Static(self.port),
-                log_level: ConfigValue::Static(self.log_level.clone()),
-                persist_config: self.persist_config,
-                persist_index: false, // Per-instance setting in multi-instance mode
-                enable_archive: false, // Per-instance setting in multi-instance mode
-                memory_budget_mib: None, // Per-instance setting in multi-instance mode
-                enable_ui: self.preserved.enable_ui,
-                solutions_dir: self.solutions_dir.clone(),
-                state_store: None,  // Per-instance setting in multi-instance mode
-                secret_store: None, // Per-instance setting in multi-instance mode
-                default_priority_queue_capacity: None,
-                default_dispatch_buffer_capacity: None,
-                plugin_registry: self.preserved.plugin_registry.clone(),
-                auto_install_plugins: self.preserved.auto_install_plugins,
-                plugins: self.preserved.plugins.clone(),
-                verify_plugins: self.preserved.verify_plugins,
-                trusted_identities: self.preserved.trusted_identities.clone(),
-                hot_reload_plugins: self.preserved.hot_reload_plugins,
-                hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
-                cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
-                sources: Vec::new(),
-                queries: Vec::new(),
-                reactions: Vec::new(),
-                // In multi-instance format, identityProviders live per-instance
-                // (inside the `instances` array). Any top-level providers from
-                // the original single-instance config are migrated into the
-                // top-level instance's `identityProviders` at construction time
-                // (see `new()`), so the top-level field stays empty here.
-                identity_providers: Vec::new(),
-                // Same as identityProviders: bootstrapProviders live per-instance
-                // in multi-instance format.
-                bootstrap_providers: Vec::new(),
-                computation: None,
-                configuration_store: None,
-                instances: instance_configs,
-            }
-        };
+        let mut wrapper_config = self.server_configuration.clone();
+        wrapper_config.instances = instance_configs;
 
         // Validate before saving
         wrapper_config.validate()?;
@@ -825,6 +460,8 @@ impl ConfigPersistence {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::api::models::TopLevelBootstrapProviderConfig;
+    use crate::config::{PluginDependency, TrustedIdentity};
     use async_trait::async_trait;
     use drasi_lib::{
         channels::{
@@ -1005,7 +642,13 @@ mod tests {
         path: std::path::PathBuf,
         persist: bool,
     ) -> ConfigPersistence {
-        let default_config = DrasiServerConfig::default();
+        let default_config = DrasiServerConfig {
+            instances: vec![DrasiLibInstanceConfig {
+                id: ConfigValue::Static(instance_id.to_string()).into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
         make_persistence_with_config(core, instance_id, path, persist, &default_config)
     }
 
@@ -1020,10 +663,6 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(instance_id.to_string(), core);
         let registry = InstanceRegistry::from_map(map);
-        let mut persist_settings = IndexMap::new();
-        persist_settings.insert(instance_id.to_string(), original_config.persist_index);
-        let mut archive_settings = IndexMap::new();
-        archive_settings.insert(instance_id.to_string(), original_config.enable_archive);
         ConfigPersistence::new(
             path,
             registry,
@@ -1031,11 +670,9 @@ mod tests {
             8080,
             "info".to_string(),
             persist,
-            persist_settings,
-            archive_settings,
-            None,
             original_config,
         )
+        .expect("valid instance settings")
     }
 
     /// Parse the saved YAML file back into a serde_yaml::Value for assertions.
@@ -1110,7 +747,7 @@ mod tests {
         p.save().await.unwrap();
 
         let val = read_yaml(&cfg_path);
-        let sources = val["sources"].as_sequence().unwrap();
+        let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         assert_eq!(sources.len(), 3, "all three sources must be present");
 
         let ids: Vec<&str> = sources.iter().map(|s| s["id"].as_str().unwrap()).collect();
@@ -1129,18 +766,24 @@ mod tests {
         let cfg_path = tmp.path().join("server.yaml");
 
         let original = DrasiServerConfig {
-            id: ConfigValue::Static("inst1".to_string()),
             persist_config: true,
-            sources: vec![SourceConfig {
-                kind: "postgres".to_string(),
-                id: "src1".to_string(),
-                auto_start: false,
-                identity_provider: None,
-                bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                id: ConfigValue::Static("inst1".to_string()).into(),
+                sources: vec![SourceConfig {
                     kind: "postgres".to_string(),
-                    config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
-                })),
-                config: serde_json::json!({ "host": "db.local" }),
+                    id: "src1".to_string(),
+                    auto_start: false,
+                    identity_provider: None,
+                    bootstrap_provider: Some(BootstrapProviderRef::Inline(
+                        BootstrapProviderConfig {
+                            kind: "postgres".to_string(),
+                            config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+                        },
+                    )),
+                    config: serde_json::json!({ "host": "db.local" }),
+                }],
+                ..Default::default()
             }],
             ..DrasiServerConfig::default()
         };
@@ -1156,7 +799,7 @@ mod tests {
         p.save().await.unwrap();
 
         let val = read_yaml(&cfg_path);
-        let sources = val["sources"].as_sequence().unwrap();
+        let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         let bp = &sources[0]["bootstrapProvider"];
         assert!(
             bp.is_mapping(),
@@ -1176,24 +819,28 @@ mod tests {
         let cfg_path = tmp.path().join("server.yaml");
 
         let original = DrasiServerConfig {
-            id: ConfigValue::Static("inst1".to_string()),
             persist_config: true,
-            bootstrap_providers: vec![TopLevelBootstrapProviderConfig {
-                id: "pg-bootstrap".to_string(),
-                inner: BootstrapProviderConfig {
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                id: ConfigValue::Static("inst1".to_string()).into(),
+                bootstrap_providers: vec![TopLevelBootstrapProviderConfig {
+                    id: "pg-bootstrap".to_string(),
+                    inner: BootstrapProviderConfig {
+                        kind: "postgres".to_string(),
+                        config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+                    },
+                }],
+                sources: vec![SourceConfig {
                     kind: "postgres".to_string(),
-                    config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
-                },
-            }],
-            sources: vec![SourceConfig {
-                kind: "postgres".to_string(),
-                id: "src1".to_string(),
-                auto_start: false,
-                identity_provider: None,
-                bootstrap_provider: Some(BootstrapProviderRef::Reference(
-                    "pg-bootstrap".to_string(),
-                )),
-                config: serde_json::json!({ "host": "db.local" }),
+                    id: "src1".to_string(),
+                    auto_start: false,
+                    identity_provider: None,
+                    bootstrap_provider: Some(BootstrapProviderRef::Reference(
+                        "pg-bootstrap".to_string(),
+                    )),
+                    config: serde_json::json!({ "host": "db.local" }),
+                }],
+                ..Default::default()
             }],
             ..DrasiServerConfig::default()
         };
@@ -1211,15 +858,17 @@ mod tests {
         let val = read_yaml(&cfg_path);
 
         // The source keeps a string reference, not an inlined mapping.
-        let bp = &val["sources"].as_sequence().unwrap()[0]["bootstrapProvider"];
+        let bp = &val["instances"][0]["sources"].as_sequence().unwrap()[0]["bootstrapProvider"];
         assert!(
             bp.is_string(),
             "reference must persist as a string, got: {bp:?}"
         );
         assert_eq!(bp.as_str().unwrap(), "pg-bootstrap");
 
-        // The top-level bootstrapProviders block is retained with the entry.
-        let providers = val["bootstrapProviders"].as_sequence().unwrap();
+        // The instance's bootstrapProviders block is retained with the entry.
+        let providers = val["instances"][0]["bootstrapProviders"]
+            .as_sequence()
+            .unwrap();
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0]["id"].as_str().unwrap(), "pg-bootstrap");
         assert_eq!(providers[0]["kind"].as_str().unwrap(), "postgres");
@@ -1254,7 +903,7 @@ mod tests {
         p.save().await.unwrap();
 
         let val = read_yaml(&cfg_path);
-        let queries = val["queries"].as_sequence().unwrap();
+        let queries = val["instances"][0]["queries"].as_sequence().unwrap();
         assert_eq!(queries.len(), 2);
 
         // Verify query text is preserved (camelCase field name)
@@ -1296,7 +945,7 @@ mod tests {
         p.save().await.unwrap();
 
         let val = read_yaml(&cfg_path);
-        let reactions = val["reactions"].as_sequence().unwrap();
+        let reactions = val["instances"][0]["reactions"].as_sequence().unwrap();
         assert_eq!(reactions.len(), 2);
 
         let webhook = reactions
@@ -1337,7 +986,7 @@ mod tests {
         p.save().await.unwrap();
 
         let val = read_yaml(&cfg_path);
-        let sources = val["sources"].as_sequence().unwrap();
+        let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         let ids: Vec<&str> = sources.iter().map(|s| s["id"].as_str().unwrap()).collect();
         assert!(ids.contains(&"visible"), "user source must be present");
         assert!(
@@ -1390,23 +1039,16 @@ mod tests {
         let val = read_yaml(&cfg_path);
         let map = val.as_mapping().unwrap();
 
-        // Single-instance format: sources/queries/reactions at root
-        assert!(map.contains_key("sources"), "sources must be at root level");
-        assert!(map.contains_key("queries"), "queries must be at root level");
-        assert!(
-            map.contains_key("reactions"),
-            "reactions must be at root level"
-        );
-
-        // instances array should be absent or empty
-        let instances = map.get("instances");
-        assert!(
-            instances.is_none()
-                || instances
-                    .and_then(|v| v.as_sequence())
-                    .is_none_or(|s| s.is_empty()),
-            "single-instance format must not have a populated instances array"
-        );
+        let instances = val["instances"].as_sequence().unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0]["id"].as_str(), Some("inst1"));
+        for field in ["sources", "queries", "reactions"] {
+            assert!(
+                !map.contains_key(field),
+                "{field} must not be at root level"
+            );
+            assert_eq!(instances[0][field].as_sequence().unwrap().len(), 1);
+        }
     }
 
     #[tokio::test]
@@ -1442,7 +1084,7 @@ mod tests {
         let val = read_yaml(&cfg_path);
 
         // Sources: auto_start metadata is stored by the builder
-        let sources = val["sources"].as_sequence().unwrap();
+        let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         let src_on = sources
             .iter()
             .find(|s| s["id"].as_str() == Some("src-on"))
@@ -1455,7 +1097,7 @@ mod tests {
         assert!(!src_off["autoStart"].as_bool().unwrap());
 
         // Queries: auto_start metadata is stored by the builder
-        let queries = val["queries"].as_sequence().unwrap();
+        let queries = val["instances"][0]["queries"].as_sequence().unwrap();
         let q_on = queries
             .iter()
             .find(|q| q["id"].as_str() == Some("q-on"))
@@ -1468,7 +1110,7 @@ mod tests {
         assert!(!q_off["autoStart"].as_bool().unwrap());
 
         // Reactions: verify autoStart field is present in the YAML output
-        let reactions = val["reactions"].as_sequence().unwrap();
+        let reactions = val["instances"][0]["reactions"].as_sequence().unwrap();
         let rx = reactions
             .iter()
             .find(|r| r["id"].as_str() == Some("rx1"))
@@ -1515,23 +1157,26 @@ mod tests {
         assert_eq!(parsed.port, crate::api::models::ConfigValue::Static(8080));
         assert!(parsed.persist_config);
 
-        // Single-instance → sources/queries/reactions at root
-        assert_eq!(parsed.sources.len(), 1);
-        assert_eq!(parsed.sources[0].id, "src1");
-        assert_eq!(parsed.sources[0].kind, "mock");
+        assert_eq!(parsed.instances.len(), 1);
+        assert_eq!(parsed.instances[0].sources.len(), 1);
+        assert_eq!(parsed.instances[0].sources[0].id, "src1");
+        assert_eq!(parsed.instances[0].sources[0].kind, "mock");
 
-        assert_eq!(parsed.queries.len(), 1);
-        assert_eq!(parsed.queries[0].id, "q1");
+        assert_eq!(parsed.instances[0].queries.len(), 1);
+        assert_eq!(parsed.instances[0].queries[0].id, "q1");
         assert_eq!(
-            parsed.queries[0].query,
+            parsed.instances[0].queries[0].query,
             "MATCH (s:Sensor) WHERE s.temp > 75 RETURN s"
         );
-        assert_eq!(parsed.queries[0].sources[0].source_id, "src1");
+        assert_eq!(parsed.instances[0].queries[0].sources[0].source_id, "src1");
 
-        assert_eq!(parsed.reactions.len(), 1);
-        assert_eq!(parsed.reactions[0].id, "rx1");
-        assert_eq!(parsed.reactions[0].kind, "log");
-        assert_eq!(parsed.reactions[0].queries, vec!["q1".to_string()]);
+        assert_eq!(parsed.instances[0].reactions.len(), 1);
+        assert_eq!(parsed.instances[0].reactions[0].id, "rx1");
+        assert_eq!(parsed.instances[0].reactions[0].kind, "log");
+        assert_eq!(
+            parsed.instances[0].reactions[0].queries,
+            vec!["q1".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -1560,6 +1205,10 @@ mod tests {
                 "http://localhost:3000".to_string(),
                 "https://dashboard.example.com".to_string(),
             ],
+            instances: vec![DrasiLibInstanceConfig {
+                id: ConfigValue::Static("settings-inst".into()).into(),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -1606,9 +1255,12 @@ mod tests {
         let cfg_path = tmp.path().join("server.yaml");
         let core = build_core("budget-inst", vec![], vec![], vec![]).await;
         let original_config = DrasiServerConfig {
-            id: ConfigValue::Static("budget-inst".to_string()),
-            persist_index: true,
-            memory_budget_mib: Some(ConfigValue::Static(512)),
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                id: ConfigValue::Static("budget-inst".to_string()).into(),
+                persist_index: true,
+                memory_budget_mib: Some(ConfigValue::Static(512)),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -1627,13 +1279,19 @@ mod tests {
             "#,
         )
         .unwrap();
-        persistence.register_instance(instance_config).await;
+        persistence
+            .register_instance(instance_config)
+            .await
+            .unwrap();
         persistence.save().await.unwrap();
 
         let content = std::fs::read_to_string(&cfg_path).unwrap();
         let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
-        assert!(parsed.persist_index);
-        assert_eq!(parsed.memory_budget_mib, Some(ConfigValue::Static(512)));
+        assert!(parsed.instances[0].persist_index);
+        assert_eq!(
+            parsed.instances[0].memory_budget_mib,
+            Some(ConfigValue::Static(512))
+        );
     }
 
     #[tokio::test]
@@ -1658,10 +1316,6 @@ mod tests {
             "#,
         )
         .unwrap();
-        let persist_settings =
-            IndexMap::from([("first".to_string(), true), ("second".to_string(), true)]);
-        let archive_settings =
-            IndexMap::from([("first".to_string(), false), ("second".to_string(), false)]);
         let persistence = ConfigPersistence::new(
             cfg_path.clone(),
             registry,
@@ -1669,15 +1323,9 @@ mod tests {
             8080,
             "info".to_string(),
             true,
-            persist_settings,
-            archive_settings,
-            None,
             &original_config,
-        );
-        for instance in original_config.instances.clone() {
-            persistence.register_instance(instance).await;
-        }
-
+        )
+        .expect("valid instance settings");
         persistence.save().await.unwrap();
 
         let content = std::fs::read_to_string(&cfg_path).unwrap();
@@ -1694,16 +1342,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_root_memory_budget_does_not_leak_to_another_instance() {
+    async fn test_missing_instance_settings_fail_without_inheriting_another_memory_budget() {
         let tmp = TempDir::new().unwrap();
         let cfg_path = tmp.path().join("server.yaml");
         let remaining = build_core("remaining", vec![], vec![], vec![]).await;
         let registry =
             InstanceRegistry::from_map(IndexMap::from([("remaining".to_string(), remaining)]));
         let original_config = DrasiServerConfig {
-            id: ConfigValue::Static("original".to_string()),
-            persist_index: true,
-            memory_budget_mib: Some(ConfigValue::Static(512)),
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                id: ConfigValue::Static("original".to_string()).into(),
+                persist_index: true,
+                memory_budget_mib: Some(ConfigValue::Static(512)),
+                ..Default::default()
+            }],
             ..Default::default()
         };
         let persistence = ConfigPersistence::new(
@@ -1713,18 +1364,26 @@ mod tests {
             8080,
             "info".to_string(),
             true,
-            IndexMap::from([("remaining".to_string(), false)]),
-            IndexMap::from([("remaining".to_string(), false)]),
-            None,
             &original_config,
-        );
+        )
+        .expect("valid instance settings");
 
+        let error = persistence.save().await.unwrap_err();
+        assert!(error.to_string().contains("remaining"), "{error:#}");
+        assert!(!cfg_path.exists());
+        persistence
+            .register_instance(DrasiLibInstanceConfig {
+                id: ConfigValue::Static("remaining".into()).into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         persistence.save().await.unwrap();
 
         let content = std::fs::read_to_string(&cfg_path).unwrap();
         let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
-        assert!(!parsed.persist_index);
-        assert_eq!(parsed.memory_budget_mib, None);
+        assert!(!parsed.instances[0].persist_index);
+        assert_eq!(parsed.instances[0].memory_budget_mib, None);
     }
 
     #[tokio::test]
@@ -1750,11 +1409,9 @@ mod tests {
             8080,
             "info".to_string(),
             true,
-            IndexMap::from([("recreated".to_string(), false)]),
-            IndexMap::from([("recreated".to_string(), false)]),
-            None,
             &original_config,
-        );
+        )
+        .expect("valid instance settings");
         let recreated_config: DrasiLibInstanceConfig = serde_yaml::from_str(
             r#"
                 id: recreated
@@ -1762,14 +1419,17 @@ mod tests {
             "#,
         )
         .unwrap();
-        persistence.register_instance(recreated_config).await;
+        persistence
+            .register_instance(recreated_config)
+            .await
+            .unwrap();
 
         persistence.save().await.unwrap();
 
         let content = std::fs::read_to_string(&cfg_path).unwrap();
         let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
-        assert!(!parsed.persist_index);
-        assert_eq!(parsed.memory_budget_mib, None);
+        assert!(!parsed.instances[0].persist_index);
+        assert_eq!(parsed.instances[0].memory_budget_mib, None);
     }
 
     /// `persist_after_operation` must surface persistence failures to the

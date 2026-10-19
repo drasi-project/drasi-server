@@ -38,8 +38,6 @@ pub struct QueryConfigDto {
     pub sources: Vec<SourceSubscriptionConfigDto>,
     #[serde(default = "default_enable_bootstrap")]
     pub enable_bootstrap: bool,
-    #[serde(default = "default_bootstrap_buffer_size")]
-    pub bootstrap_buffer_size: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub joins: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,10 +91,6 @@ fn default_enable_bootstrap() -> bool {
     true
 }
 
-fn default_bootstrap_buffer_size() -> usize {
-    10000
-}
-
 fn default_outbox_capacity() -> usize {
     1000
 }
@@ -140,7 +134,6 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
                 })
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,
-            bootstrap_buffer_size: config.bootstrap_buffer_size,
             joins,
             priority_queue_capacity: config.priority_queue_capacity,
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,

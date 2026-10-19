@@ -37,7 +37,6 @@ use drasi_server::{
 };
 use drasi_source_application::{ApplicationSource, ApplicationSourceConfig, PropertyMapBuilder};
 use futures_util::StreamExt;
-use indexmap::IndexMap;
 use mock_components::{MockReaction, MockSource};
 use serde_json::{json, Value};
 use std::{
@@ -275,7 +274,7 @@ struct Harness {
 impl Harness {
     async fn new(running: bool) -> Self {
         let original: DrasiServerConfig = serde_json::from_value(json!({
-            "id": "native",
+            "instances": [{"id": "native"}, {"id": "origin"}],
         }))
         .unwrap();
         let core = Arc::new(DrasiLib::builder().with_id("native").build().await.unwrap());
@@ -286,18 +285,18 @@ impl Harness {
         registry.add("native".into(), core.clone()).await.unwrap();
         let directory = tempfile::tempdir().unwrap();
         let config_path = directory.path().join("server.yaml");
-        let persistence = Arc::new(ConfigPersistence::new(
-            config_path.clone(),
-            registry.clone(),
-            "127.0.0.1".into(),
-            8080,
-            "info".into(),
-            true,
-            IndexMap::new(),
-            IndexMap::new(),
-            None,
-            &original,
-        ));
+        let persistence = Arc::new(
+            ConfigPersistence::new(
+                config_path.clone(),
+                registry.clone(),
+                "127.0.0.1".into(),
+                8080,
+                "info".into(),
+                true,
+                &original,
+            )
+            .expect("valid instance settings"),
+        );
         let source_probe = Arc::new(LifecycleProbe::default());
         let reaction_probe = Arc::new(LifecycleProbe::default());
         let mut plugins = PluginRegistry::new();
@@ -362,7 +361,7 @@ async fn assert_status(harness: &Harness, resource: &str, id: &str, expected: &s
     let (status, body) = request(
         &harness.app,
         "GET",
-        &format!("/api/v1/{resource}/{id}?view=full"),
+        &format!("/api/v1/instances/native/{resource}/{id}?view=full"),
         Value::Null,
     )
     .await;
@@ -382,9 +381,9 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
     ] {
         let id = format!("{resource}-{method}");
         let path = if method == "PUT" {
-            format!("/api/v1/{resource}/{id}")
+            format!("/api/v1/instances/native/{resource}/{id}")
         } else {
-            format!("/api/v1/{resource}")
+            format!("/api/v1/instances/native/{resource}")
         };
         let mut config = json!({
             "kind": kind, "id": id, "autoStart": true,
@@ -402,7 +401,7 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
 
         let persisted = serde_json::to_value(harness.saved()).unwrap();
         assert!(
-            persisted[resource]
+            persisted["instances"][0][resource]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -430,7 +429,7 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
         let (status, body) = request(
             &harness.app,
             "POST",
-            &format!("/api/v1/{resource}/{id}/start"),
+            &format!("/api/v1/instances/native/{resource}/{id}/start"),
             Value::Null,
         )
         .await;
@@ -452,8 +451,13 @@ async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_
         if resource == "reactions" {
             config["queries"] = json!([]);
         }
-        let (status, body) =
-            request(&harness.app, "POST", &format!("/api/v1/{resource}"), config).await;
+        let (status, body) = request(
+            &harness.app,
+            "POST",
+            &format!("/api/v1/instances/native/{resource}"),
+            config,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let handle = harness.core.computation_component(resource).unwrap();
         tokio::time::timeout(DEADLINE, handle.wait_created())
@@ -466,7 +470,7 @@ async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_
         let (status, body) = request(
             &harness.app,
             "POST",
-            &format!("/api/v1/{resource}/{resource}/start"),
+            &format!("/api/v1/instances/native/{resource}/{resource}/start"),
             Value::Null,
         )
         .await;
@@ -484,7 +488,13 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
         "id": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
         "sources": [{"sourceId": "missing-source"}], "autoStart": true,
     });
-    let (status, body) = request(&harness.app, "POST", "/api/v1/queries", config.clone()).await;
+    let (status, body) = request(
+        &harness.app,
+        "POST",
+        "/api/v1/instances/native/queries",
+        config.clone(),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let handle = harness.core.computation_component("invalid-query").unwrap();
     assert!(tokio::time::timeout(DEADLINE, handle.wait_created())
@@ -495,15 +505,21 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
     assert_eq!(body["data"]["config"]["query"], INVALID_QUERY);
     assert!(body["data"]["error_message"].is_string());
     let saved = harness.saved();
-    assert_eq!(saved.queries[0].query, INVALID_QUERY);
-    assert!(saved.queries[0].auto_start);
+    assert_eq!(saved.instances[0].queries[0].query, INVALID_QUERY);
+    assert!(saved.instances[0].queries[0].auto_start);
 
-    let (status, body) = request(&harness.app, "POST", "/api/v1/queries", config).await;
+    let (status, body) = request(
+        &harness.app,
+        "POST",
+        "/api/v1/instances/native/queries",
+        config,
+    )
+    .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     let (status, body) = request(
         &harness.app,
         "POST",
-        "/api/v1/queries/invalid-query/start",
+        "/api/v1/instances/native/queries/invalid-query/start",
         Value::Null,
     )
     .await;
@@ -522,8 +538,13 @@ async fn native_factory_failures_remain_create_errors_without_nodes() {
         if resource == "reactions" {
             config["queries"] = json!([]);
         }
-        let (status, body) =
-            request(&harness.app, "POST", &format!("/api/v1/{resource}"), config).await;
+        let (status, body) = request(
+            &harness.app,
+            "POST",
+            &format!("/api/v1/instances/native/{resource}"),
+            config,
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
         assert!(body["message"]
             .as_str()
@@ -532,7 +553,7 @@ async fn native_factory_failures_remain_create_errors_without_nodes() {
         let (status, body) = request(
             &harness.app,
             "GET",
-            &format!("/api/v1/{resource}/factory-failure"),
+            &format!("/api/v1/instances/native/{resource}/factory-failure"),
             Value::Null,
         )
         .await;
@@ -543,7 +564,7 @@ async fn native_factory_failures_remain_create_errors_without_nodes() {
 }
 
 #[tokio::test]
-async fn native_query_attach_starts_one_temporary_reaction_and_streams_results() {
+async fn native_query_attach_streams_results_without_temporary_reaction_nodes() {
     let harness = Harness::new(true).await;
     let (source, input) = ApplicationSource::new(
         "input",
@@ -574,11 +595,18 @@ async fn native_query_attach_starts_one_temporary_reaction_and_streams_results()
         .await
         .unwrap()
         .unwrap();
+    let control = harness.core.computation_control().unwrap();
+    let before = control
+        .observed()
+        .components
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
     let response = tokio::time::timeout(
         DEADLINE,
         harness.app.clone().oneshot(
             Request::builder()
-                .uri("/api/v1/queries/selected/attach")
+                .uri("/api/v1/instances/native/queries/selected/attach")
                 .body(Body::empty())
                 .unwrap(),
         ),
@@ -587,11 +615,32 @@ async fn native_query_attach_starts_one_temporary_reaction_and_streams_results()
     .unwrap()
     .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let reactions = harness.core.list_reactions().await.unwrap();
-    assert_eq!(reactions.len(), 1);
-    assert!(reactions[0].0.starts_with("__attach_selected_"));
-    assert_eq!(reactions[0].1, ComponentStatus::Running);
+    assert!(harness.core.list_reactions().await.unwrap().is_empty());
+    assert_eq!(
+        control
+            .observed()
+            .components
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        before
+    );
     let mut stream = response.into_body().into_data_stream();
+    let snapshot = tokio::time::timeout(DEADLINE, stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let snapshot = std::str::from_utf8(&snapshot).unwrap();
+    assert!(snapshot.lines().any(|line| line == "event: snapshot"));
+    let data = snapshot
+        .lines()
+        .find_map(|line| line.strip_prefix("data:"))
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(data.trim()).unwrap(),
+        json!([])
+    );
     input
         .send_node_insert(
             "item",
@@ -605,17 +654,72 @@ async fn native_query_attach_starts_one_temporary_reaction_and_streams_results()
         .unwrap()
         .unwrap()
         .unwrap();
-    assert!(std::str::from_utf8(&chunk)
+    let data = std::str::from_utf8(&chunk)
         .unwrap()
-        .contains("\"value\":42"));
+        .lines()
+        .find_map(|line| line.strip_prefix("data:"))
+        .expect("SSE query data");
+    let result: QueryResult = serde_json::from_str(data.trim()).unwrap();
+    assert_eq!(result.query_id, "selected");
+    assert!(matches!(
+        &result.results[..],
+        [drasi_lib::channels::ResultDiff::Add { data, .. }] if data["value"] == 42
+    ));
     drop(stream);
+    assert!(harness.core.list_reactions().await.unwrap().is_empty());
+    assert_eq!(
+        control
+            .observed()
+            .components
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        before
+    );
+    input
+        .send_node_update(
+            "item",
+            vec!["Item"],
+            PropertyMapBuilder::new().with_integer("value", 43).build(),
+        )
+        .await
+        .unwrap();
     tokio::time::timeout(DEADLINE, async {
-        while !harness.core.list_reactions().await.unwrap().is_empty() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+        while harness.core.get_query_results("selected").await.unwrap() != [json!({"value":43})] {
+            tokio::time::sleep(Duration::from_millis(2)).await;
         }
     })
     .await
-    .expect("temporary attach reaction is removed when the stream closes");
+    .unwrap();
+    let response = harness
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/instances/native/queries/selected/attach")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut reconnected = response.into_body().into_data_stream();
+    let snapshot = tokio::time::timeout(DEADLINE, reconnected.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let snapshot = std::str::from_utf8(&snapshot).unwrap();
+    assert!(snapshot.lines().any(|line| line == "event: snapshot"));
+    let data = snapshot
+        .lines()
+        .find_map(|line| line.strip_prefix("data:"))
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(data.trim()).unwrap(),
+        json!([{"value":43}])
+    );
+    drop(reconnected);
     harness.core.stop().await.unwrap();
 }
 
@@ -734,10 +838,13 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
         "{message}"
     );
     let saved = harness.saved();
-    assert_eq!(saved.sources.len(), 1);
-    assert_eq!(saved.sources[0].id, "deferred");
-    assert_eq!(saved.sources[0].config["blockInitialization"], true);
-    assert!(!saved.sources[0].auto_start);
+    assert_eq!(saved.instances[0].sources.len(), 1);
+    assert_eq!(saved.instances[0].sources[0].id, "deferred");
+    assert_eq!(
+        saved.instances[0].sources[0].config["blockInitialization"],
+        true
+    );
+    assert!(!saved.instances[0].sources[0].auto_start);
 
     let observed = handle.observed().unwrap();
     assert_eq!(observed.realization, RealizationState::CreationFailed);
@@ -817,10 +924,10 @@ async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_
     assert_status(&harness, "queries", "invalid-query", "Error").await;
     assert_status(&harness, "reactions", "failed-reaction", "Error").await;
     let saved = harness.saved();
-    assert_eq!(saved.sources.len(), 2);
-    assert_eq!(saved.queries.len(), 2);
-    assert_eq!(saved.reactions.len(), 1);
-    assert!(saved
+    assert_eq!(saved.instances[0].sources.len(), 2);
+    assert_eq!(saved.instances[0].queries.len(), 2);
+    assert_eq!(saved.instances[0].reactions.len(), 1);
+    assert!(saved.instances[0]
         .queries
         .iter()
         .any(|query| query.query == INVALID_QUERY));
@@ -917,8 +1024,13 @@ async fn default_runtime_reports_autostart_failures_as_node_health() {
             config["queries"] = json!([]);
         }
         let id = config["id"].as_str().unwrap().to_string();
-        let (status, body) =
-            request(&harness.app, "POST", &format!("/api/v1/{resource}"), config).await;
+        let (status, body) = request(
+            &harness.app,
+            "POST",
+            &format!("/api/v1/instances/native/{resource}"),
+            config,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let handle = harness.core.computation_component(&id).unwrap();
         let error = tokio::time::timeout(DEADLINE, handle.wait_started())
@@ -932,7 +1044,7 @@ async fn default_runtime_reports_autostart_failures_as_node_health() {
             .unwrap()
             .contains("fixture start failure"));
         let persisted = serde_json::to_value(harness.saved()).unwrap();
-        assert_eq!(persisted[resource][0]["id"], id);
+        assert_eq!(persisted["instances"][0][resource][0]["id"], id);
     }
     assert_eq!(harness.source_probe.starts.load(Ordering::SeqCst), 1);
     assert_eq!(harness.reaction_probe.starts.load(Ordering::SeqCst), 1);

@@ -21,7 +21,7 @@ cd examples/sse-cli
 cargo build --release
 
 # Stream events from a query (Drasi Server must be running)
-cargo run -- --server http://localhost:8080 --query all-messages
+cargo run -- --server http://localhost:8080 --instance my-instance --query all-messages
 ```
 
 You'll see output like this:
@@ -57,10 +57,11 @@ Reaction 'sse-cli-a3f1b2c4' deleted.
 ## Command-Line Arguments
 
 ```
-Usage: drasi-sse-cli [OPTIONS] --server <SERVER> --query <QUERY>
+Usage: drasi-sse-cli [OPTIONS] --server <SERVER> --instance <INSTANCE> --query <QUERY>
 
 Options:
   -s, --server <SERVER>      Drasi Server base URL (e.g. http://localhost:8080)
+  -i, --instance <INSTANCE>  Instance containing the query
   -q, --query <QUERY>        Query ID to subscribe to
   -d, --debug                Show heartbeat messages (debug mode)
   -l, --log-file <LOG_FILE>  Log received events to a file
@@ -75,19 +76,25 @@ The base URL of the Drasi Server. Can also be set via the `DRASI_SERVER_URL` env
 
 ```bash
 # Using the flag
-drasi-sse-cli --server http://localhost:8080 --query my-query
+drasi-sse-cli --server http://localhost:8080 --instance my-instance --query my-query
 
 # Using the environment variable
 export DRASI_SERVER_URL=http://localhost:8080
-drasi-sse-cli --query my-query
+drasi-sse-cli --instance my-instance --query my-query
 ```
+
+### `--instance` / `-i` (required)
+
+The instance containing the query. Set `DRASI_INSTANCE_ID` instead of the flag
+when scripting. Creation and cleanup use that same explicit instance; the CLI
+does not select the first available instance.
 
 ### `--query` / `-q` (required)
 
 The ID of the continuous query to subscribe to. The query must already exist on the Drasi Server. Can also be set via the `DRASI_QUERY` environment variable.
 
 ```bash
-drasi-sse-cli -s http://localhost:8080 -q all-messages
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages
 ```
 
 ### `--debug` / `-d`
@@ -95,7 +102,7 @@ drasi-sse-cli -s http://localhost:8080 -q all-messages
 Enables debug mode. In normal mode, only query result change events are displayed. In debug mode, heartbeat messages and raw SSE protocol lines are also shown:
 
 ```bash
-drasi-sse-cli -s http://localhost:8080 -q all-messages --debug
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --debug
 ```
 
 Debug output appears on stderr so it doesn't interfere with piping the JSON data:
@@ -115,7 +122,7 @@ Debug output appears on stderr so it doesn't interfere with piping the JSON data
 Path to a file where all query result events will be appended. Each event is written as pretty-printed JSON. The file is created if it doesn't exist. Heartbeats are not logged to the file.
 
 ```bash
-drasi-sse-cli -s http://localhost:8080 -q all-messages --log-file events.json
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --log-file events.json
 ```
 
 ### `--sse-port` / `-p`
@@ -124,11 +131,11 @@ The port on which the SSE Reaction's HTTP server will listen. Defaults to `8090`
 
 ```bash
 # Use a different port
-drasi-sse-cli -s http://localhost:8080 -q all-messages --sse-port 9090
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --sse-port 9090
 
 # Run two instances side by side
-drasi-sse-cli -s http://localhost:8080 -q query-a --sse-port 8090 &
-drasi-sse-cli -s http://localhost:8080 -q query-b --sse-port 8091 &
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q query-a --sse-port 8090 &
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q query-b --sse-port 8091 &
 ```
 
 ## Sample Output
@@ -207,7 +214,7 @@ The SSE CLI operates in four phases:
 
 ### 1. Create Reaction
 
-On startup, the tool generates a unique reaction ID (e.g., `sse-cli-a3f1b2c4`) and sends a `POST /api/v1/reactions` request to the Drasi Server with the following configuration:
+On startup, the tool generates a unique reaction ID (e.g., `sse-cli-a3f1b2c4`) and sends a `POST /api/v1/instances/my-instance/reactions` request to the Drasi Server with the following configuration:
 
 ```json
 {
@@ -241,7 +248,7 @@ The tool reads the SSE stream line by line, parsing `data:` frames as JSON:
 Status messages and diagnostics are always written to stderr, keeping stdout clean for JSON data. This means you can pipe the output:
 
 ```bash
-drasi-sse-cli -s http://localhost:8080 -q all-messages | jq '.results[].data'
+drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages | jq '.results[].data'
 ```
 
 ### 4. Cleanup on Exit
@@ -249,7 +256,7 @@ drasi-sse-cli -s http://localhost:8080 -q all-messages | jq '.results[].data'
 When the user presses **Ctrl-C**, the tool:
 
 1. Cancels the SSE stream via `tokio::select!`
-2. Sends a `DELETE /api/v1/reactions/{id}` request to the Drasi Server to remove the reaction
+2. Sends a `DELETE /api/v1/instances/my-instance/reactions/{id}` request to the Drasi Server to remove the reaction
 3. Exits
 
 This ensures no orphaned reactions are left on the server. If the delete request fails (e.g., the server is unreachable), a warning is printed but the tool still exits.
@@ -263,4 +270,4 @@ The tool is a single-file Rust binary (~230 lines) with no external state. Key d
 - **stderr for status, stdout for data** — all operational messages (connection status, heartbeats, errors) go to stderr. Only query result JSON goes to stdout, making it safe to pipe.
 - **Manual SSE parsing** — uses `reqwest`'s streaming response with line-by-line parsing rather than a dedicated SSE client library, keeping dependencies minimal.
 - **Graceful shutdown** — `tokio::select!` races the SSE stream against `Ctrl-C`, ensuring cleanup always runs.
-- **Environment variable fallback** — `--server` and `--query` can be set via `DRASI_SERVER_URL` and `DRASI_QUERY` environment variables, useful for scripting and CI.
+- **Environment variables** — `DRASI_SERVER_URL`, `DRASI_INSTANCE_ID`, and `DRASI_QUERY` can supply the server, instance, and query for scripts and CI.

@@ -43,6 +43,10 @@ pub struct InstanceRegistry {
 }
 
 impl InstanceRegistry {
+    pub(crate) fn same_instances(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.instances, &other.instances)
+    }
+
     /// Create a new empty instance registry.
     pub fn new() -> Self {
         Self {
@@ -79,12 +83,6 @@ impl InstanceRegistry {
     pub async fn get(&self, id: &str) -> Option<Arc<DrasiLib>> {
         let instances = self.instances.read().await;
         instances.get(id).cloned()
-    }
-
-    /// Get the first (default) instance.
-    pub async fn get_default(&self) -> Option<(String, Arc<DrasiLib>)> {
-        let instances = self.instances.read().await;
-        instances.iter().next().map(|(k, v)| (k.clone(), v.clone()))
     }
 
     /// List all instance IDs.

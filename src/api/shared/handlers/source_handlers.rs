@@ -27,11 +27,11 @@ use super::{
     apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
     ComponentViewQuery, ObservabilityQuery,
 };
+use crate::api::models::SourceConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
-use crate::config::SourceConfig;
 use crate::factories::{create_source_locked, resolve_source_bootstrap_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;

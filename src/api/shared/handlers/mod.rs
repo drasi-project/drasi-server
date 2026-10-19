@@ -91,19 +91,6 @@ pub async fn get_instance_or_error(
     }
 }
 
-/// Helper to get the default instance from the registry
-pub async fn get_default_instance_or_error(
-    registry: &InstanceRegistry,
-) -> Result<(String, Arc<DrasiLib>), ErrorResponse> {
-    match registry.get_default().await {
-        Some((id, core)) => Ok((id, core)),
-        None => Err(ErrorResponse::new(
-            error_codes::INSTANCE_NOT_FOUND,
-            "No instances configured",
-        )),
-    }
-}
-
 pub(crate) fn component_links(
     api_prefix: &str,
     instance_id: &str,
@@ -230,24 +217,26 @@ pub async fn persist_after_operation(
     };
     match persistence.save().await {
         Ok(()) => Ok(()),
-        Err(e) => {
-            log::error!("Failed to persist configuration after {operation}: {e}");
-            Err(ErrorResponse::new(
-                error_codes::PERSISTENCE_FAILED,
-                format!(
-                    "Configuration change applied in memory but could not be persisted to disk \
-                     after {operation}. The runtime state has changed; the on-disk \
-                     configuration has not. Retry the operation or restart the server \
-                     after fixing the underlying persistence issue."
-                ),
-            )
-            .with_details(ErrorDetail {
-                component_type: None,
-                component_id: None,
-                technical_details: Some(e.to_string()),
-            }))
-        }
+        Err(error) => Err(persistence_error(operation, error)),
     }
+}
+
+pub(super) fn persistence_error(operation: &str, error: anyhow::Error) -> ErrorResponse {
+    log::error!("Failed to persist configuration after {operation}: {error}");
+    ErrorResponse::new(
+        error_codes::PERSISTENCE_FAILED,
+        format!(
+            "Configuration change applied in memory but could not be persisted to disk \
+             after {operation}. The runtime state has changed; the on-disk \
+             configuration has not. Retry the operation or restart the server \
+             after fixing the underlying persistence issue."
+        ),
+    )
+    .with_details(ErrorDetail {
+        component_type: None,
+        component_id: None,
+        technical_details: Some(error.to_string()),
+    })
 }
 
 /// List available API versions

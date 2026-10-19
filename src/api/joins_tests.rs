@@ -141,7 +141,6 @@ mod api_query_joins_tests {
                 })
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,
-            bootstrap_buffer_size: config.bootstrap_buffer_size,
             joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
             priority_queue_capacity: config.priority_queue_capacity,
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,

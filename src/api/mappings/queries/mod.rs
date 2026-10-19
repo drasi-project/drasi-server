@@ -89,7 +89,6 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             middleware,
             sources,
             enable_bootstrap: dto.enable_bootstrap,
-            bootstrap_buffer_size: dto.bootstrap_buffer_size,
             joins,
             priority_queue_capacity: dto.priority_queue_capacity,
             dispatch_buffer_capacity: dto.dispatch_buffer_capacity,

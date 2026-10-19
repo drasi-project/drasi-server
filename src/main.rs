@@ -561,9 +561,6 @@ fn validate_config(
 /// Collect (id, kind) pairs for all sources in the config.
 fn collect_all_sources_for_display(config: &DrasiServerConfig) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for src in &config.sources {
-        out.push((src.id.clone(), src.kind.clone()));
-    }
     for inst in &config.instances {
         for src in &inst.sources {
             out.push((src.id.clone(), src.kind.clone()));
@@ -575,9 +572,6 @@ fn collect_all_sources_for_display(config: &DrasiServerConfig) -> Vec<(String, S
 /// Collect (id, kind) pairs for all reactions in the config.
 fn collect_all_reactions_for_display(config: &DrasiServerConfig) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for rxn in &config.reactions {
-        out.push((rxn.id.clone(), rxn.kind.clone()));
-    }
     for inst in &config.instances {
         for rxn in &inst.reactions {
             out.push((rxn.id.clone(), rxn.kind.clone()));

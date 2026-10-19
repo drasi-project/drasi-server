@@ -26,9 +26,6 @@
 //! /api/v1/instances/{id}/sources             - Source management
 //! /api/v1/instances/{id}/queries             - Query management
 //! /api/v1/instances/{id}/reactions           - Reaction management
-//! /api/v1/sources                            - First instance sources (convenience)
-//! /api/v1/queries                            - First instance queries (convenience)
-//! /api/v1/reactions                          - First instance reactions (convenience)
 //! ```
 //!
 //! ## Module Organization

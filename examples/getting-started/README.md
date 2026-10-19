@@ -74,7 +74,7 @@ What it does:
 4. Verifies that the configured sources and queries are present via the
    REST API.
 5. Inserts a `'Hello World'` row into the `message` table and polls
-   `/api/v1/queries/hello-world-from/results` until the new row appears
+   `/api/v1/instances/getting-started-server/queries/hello-world-from/results` until the new row appears
    (asserting the end-to-end CDC pipeline works).
 6. Stops the server. By default it leaves the Postgres container
    running so you can keep exploring; pass `CLEANUP=1` to tear it down.
@@ -396,29 +396,29 @@ The server exposes a REST API on port 8080:
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/sources` | List all sources |
-| `GET /api/v1/sources/{id}` | Get source status |
-| `POST /api/v1/sources/{id}/start` | Start a source |
-| `POST /api/v1/sources/{id}/stop` | Stop a source |
+| `GET /api/v1/instances/getting-started-server/sources` | List all sources |
+| `GET /api/v1/instances/getting-started-server/sources/{id}` | Get source status |
+| `POST /api/v1/instances/getting-started-server/sources/{id}/start` | Start a source |
+| `POST /api/v1/instances/getting-started-server/sources/{id}/stop` | Stop a source |
 
 ### Queries
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/queries` | List all queries |
-| `GET /api/v1/queries/{id}` | Get query status |
-| `GET /api/v1/queries/{id}/results` | Get current query results |
-| `POST /api/v1/queries/{id}/start` | Start a query |
-| `POST /api/v1/queries/{id}/stop` | Stop a query |
+| `GET /api/v1/instances/getting-started-server/queries` | List all queries |
+| `GET /api/v1/instances/getting-started-server/queries/{id}` | Get query status |
+| `GET /api/v1/instances/getting-started-server/queries/{id}/results` | Get current query results |
+| `POST /api/v1/instances/getting-started-server/queries/{id}/start` | Start a query |
+| `POST /api/v1/instances/getting-started-server/queries/{id}/stop` | Stop a query |
 
 ### Reactions
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/reactions` | List all reactions |
-| `GET /api/v1/reactions/{id}` | Get reaction status |
-| `POST /api/v1/reactions/{id}/start` | Start a reaction |
-| `POST /api/v1/reactions/{id}/stop` | Stop a reaction |
+| `GET /api/v1/instances/getting-started-server/reactions` | List all reactions |
+| `GET /api/v1/instances/getting-started-server/reactions/{id}` | Get reaction status |
+| `POST /api/v1/instances/getting-started-server/reactions/{id}/start` | Start a reaction |
+| `POST /api/v1/instances/getting-started-server/reactions/{id}/stop` | Stop a reaction |
 
 See `requests.http` for examples using VSCode REST Client.
 
@@ -453,7 +453,7 @@ See `requests.http` for examples using VSCode REST Client.
 1. Verify Drasi Server is running
 2. Check SSE reaction is started:
    ```bash
-   curl http://localhost:8080/api/v1/reactions/sse-stream
+   curl http://localhost:8080/api/v1/instances/getting-started-server/reactions/sse-stream
    ```
 3. Check browser console for CORS errors
 4. Try the terminal stream: `./scripts/stream-events.sh`
@@ -465,12 +465,12 @@ See `requests.http` for examples using VSCode REST Client.
 **Solution**:
 1. Check if source is connected:
    ```bash
-   curl http://localhost:8080/api/v1/sources/postgres-messages
+   curl http://localhost:8080/api/v1/instances/getting-started-server/sources/postgres-messages
    ```
 2. Verify bootstrap completed in server logs
 3. Check query status:
    ```bash
-   curl http://localhost:8080/api/v1/queries/hello-world-from
+   curl http://localhost:8080/api/v1/instances/getting-started-server/queries/hello-world-from
    ```
 
 ### Port Already in Use

@@ -233,7 +233,7 @@ export class SyntheticTrading {
           links: { self, full: `${self}?view=full` },
           config: {
             autoStart: false, middleware: [], enableBootstrap: true,
-            bootstrapBufferSize: 10000, outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
+            outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
             ...definition,
             sources: Array.isArray(definition.sources) ? definition.sources.map(source => ({
               pipeline: [], nodes: [], relations: [], ...source,

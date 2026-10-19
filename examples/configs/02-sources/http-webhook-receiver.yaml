@@ -36,7 +36,6 @@
 #     -d '{"id": "event-1", "type": "order", "amount": 100}'
 
 apiVersion: drasi.io/v1
-id: http-source-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -47,48 +46,50 @@ plugins:
   - ref: source/http
   - ref: reaction/log
 
-sources:
-  # HTTP source that receives webhook events
-  - kind: http
-    id: webhook-receiver
-    autoStart: true
-    host: "0.0.0.0"
-    port: 9000
-    timeoutMs: 30000
-
-queries:
-  # Process all incoming events
-  - id: all-events
-    autoStart: true
-    query: |
-      MATCH (e:Event)
-      RETURN e.id AS EventId, e.type AS EventType, e.data AS Data
-    queryLanguage: Cypher
+instances:
+  - id: http-source-demo
     sources:
-      - sourceId: webhook-receiver
+  # HTTP source that receives webhook events
+      - kind: http
+        id: webhook-receiver
+        autoStart: true
+        host: "0.0.0.0"
+        port: 9000
+        timeoutMs: 30000
+
+    queries:
+  # Process all incoming events
+      - id: all-events
+        autoStart: true
+        query: |
+          MATCH (e:Event)
+          RETURN e.id AS EventId, e.type AS EventType, e.data AS Data
+        queryLanguage: Cypher
+        sources:
+          - sourceId: webhook-receiver
 
   # Filter for high-value events
-  - id: high-value-events
-    autoStart: true
-    query: |
-      MATCH (e:Event)
-      WHERE e.amount > 1000
-      RETURN e.id AS EventId, e.amount AS Amount
-    queryLanguage: Cypher
-    sources:
-      - sourceId: webhook-receiver
+      - id: high-value-events
+        autoStart: true
+        query: |
+          MATCH (e:Event)
+          WHERE e.amount > 1000
+          RETURN e.id AS EventId, e.amount AS Amount
+        queryLanguage: Cypher
+        sources:
+          - sourceId: webhook-receiver
 
-reactions:
-  - kind: log
-    id: event-logger
-    queries:
-      - all-events
-      - high-value-events
-    autoStart: true
-    routes:
-      all-events:
-        added:
-          template: "[HTTP] Event {{after.EventId}} ({{after.EventType}}): {{after.Data}}"
-      high-value-events:
-        added:
-          template: "[HTTP] HIGH VALUE: Event {{after.EventId}} amount={{after.Amount}}"
+    reactions:
+      - kind: log
+        id: event-logger
+        queries:
+          - all-events
+          - high-value-events
+        autoStart: true
+        routes:
+          all-events:
+            added:
+              template: "[HTTP] Event {{after.EventId}} ({{after.EventType}}): {{after.Data}}"
+          high-value-events:
+            added:
+              template: "[HTTP] HIGH VALUE: Event {{after.EventId}} amount={{after.Amount}}"

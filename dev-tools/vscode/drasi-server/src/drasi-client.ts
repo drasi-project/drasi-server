@@ -91,11 +91,7 @@ export class DrasiClient {
     if (connection.instanceId) {
       return connection.instanceId;
     }
-    const instances = await this.listInstances();
-    if (instances.length === 0) {
-      throw new Error('No instances available');
-    }
-    return instances[0].id;
+    throw new Error('No instance selected. Select or create an instance before operating on components.');
   }
 
   async listSources(): Promise<ComponentListItem[]> {
@@ -325,7 +321,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for query attach');
     }
-    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/queries/${id}/attach`;
+    return `${this.baseUrl}${this.apiBase}/instances/${encodeURIComponent(instanceId)}/queries/${encodeURIComponent(id)}/attach`;
   }
 
   async getSourceConfig(id: string): Promise<Record<string, unknown>> {

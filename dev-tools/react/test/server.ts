@@ -23,7 +23,7 @@ export function queryConfig(id: string, overrides: Partial<QueryConfig> = {}): Q
   return {
     id, query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [],
     autoStart: true, middleware: [], enableBootstrap: true,
-    bootstrapBufferSize: 10000, outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
+    outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
     ...overrides,
   };
 }

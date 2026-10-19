@@ -33,6 +33,10 @@ struct Args {
     #[arg(short, long, env = "DRASI_SERVER_URL")]
     server: String,
 
+    /// Instance containing the query
+    #[arg(short, long, env = "DRASI_INSTANCE_ID")]
+    instance: String,
+
     /// Query ID to subscribe to
     #[arg(short, long, env = "DRASI_QUERY")]
     query: String,
@@ -50,15 +54,39 @@ struct Args {
     sse_port: u16,
 }
 
+fn reaction_api_url(
+    server: &str,
+    instance: &str,
+    reaction: Option<&str>,
+) -> Result<reqwest::Url, String> {
+    if instance.is_empty() || matches!(instance, "." | "..") {
+        return Err("A valid instance ID is required".into());
+    }
+    let mut url =
+        reqwest::Url::parse(server).map_err(|error| format!("Invalid server URL: {error}"))?;
+    {
+        let mut path = url
+            .path_segments_mut()
+            .map_err(|_| "Server URL cannot be used as a base".to_string())?;
+        path.pop_if_empty()
+            .extend(["api", "v1", "instances", instance, "reactions"]);
+        if let Some(reaction) = reaction {
+            path.push(reaction);
+        }
+    }
+    Ok(url)
+}
+
 /// Create the SSE Reaction on the Drasi Server. Returns the reaction ID.
 async fn create_reaction(
     client: &reqwest::Client,
     server: &str,
+    instance: &str,
     reaction_id: &str,
     query_id: &str,
     sse_port: u16,
 ) -> Result<(), String> {
-    let url = format!("{server}/api/v1/reactions");
+    let url = reaction_api_url(server, instance, None)?;
     let body = serde_json::json!({
         "kind": "sse",
         "id": reaction_id,
@@ -70,7 +98,7 @@ async fn create_reaction(
     });
 
     let resp = client
-        .post(&url)
+        .post(url)
         .json(&body)
         .send()
         .await
@@ -86,9 +114,20 @@ async fn create_reaction(
 }
 
 /// Delete the SSE Reaction from the Drasi Server.
-async fn delete_reaction(client: &reqwest::Client, server: &str, reaction_id: &str) {
-    let url = format!("{server}/api/v1/reactions/{reaction_id}");
-    match client.delete(&url).send().await {
+async fn delete_reaction(
+    client: &reqwest::Client,
+    server: &str,
+    instance: &str,
+    reaction_id: &str,
+) {
+    let url = match reaction_api_url(server, instance, Some(reaction_id)) {
+        Ok(url) => url,
+        Err(error) => {
+            eprintln!("Warning: failed to address reaction cleanup: {error}");
+            return;
+        }
+    };
+    match client.delete(url).send().await {
         Ok(resp) if resp.status().is_success() => {
             eprintln!("Reaction '{reaction_id}' deleted.");
         }
@@ -191,8 +230,20 @@ async fn main() {
     let client = reqwest::Client::new();
 
     // Create the SSE Reaction
-    eprint!("Creating SSE reaction '{reaction_id}' for query '{}'... ", args.query);
-    if let Err(e) = create_reaction(&client, &server, &reaction_id, &args.query, args.sse_port).await {
+    eprint!(
+        "Creating SSE reaction '{reaction_id}' for query '{}'... ",
+        args.query
+    );
+    if let Err(e) = create_reaction(
+        &client,
+        &server,
+        &args.instance,
+        &reaction_id,
+        &args.query,
+        args.sse_port,
+    )
+    .await
+    {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
@@ -227,5 +278,34 @@ async fn main() {
     }
 
     // Cleanup
-    delete_reaction(&client, &server, &reaction_id).await;
+    delete_reaction(&client, &server, &args.instance, &reaction_id).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reaction_urls_require_and_encode_the_instance() {
+        for instance in ["", ".", ".."] {
+            assert!(reaction_api_url("http://localhost:8080", instance, None).is_err());
+        }
+        assert_eq!(
+            reaction_api_url("http://localhost:8080/", "a/b %", Some("r?#"))
+                .unwrap()
+                .as_str(),
+            "http://localhost:8080/api/v1/instances/a%2Fb%20%25/reactions/r%3F%23"
+        );
+        let args = Args::try_parse_from([
+            "drasi-sse-cli",
+            "--server",
+            "http://localhost:8080",
+            "--instance",
+            "selected",
+            "--query",
+            "q",
+        ])
+        .unwrap();
+        assert_eq!(args.instance, "selected");
+    }
 }

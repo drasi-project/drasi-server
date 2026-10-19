@@ -37,71 +37,71 @@
 # Run with: cargo run -- --config examples/configs/05-advanced-features/persistent-storage.yaml
 
 apiVersion: drasi.io/v1
-id: persistent-storage-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: true  # Also persist config changes via API
 
 # Enable RocksDB-based index persistence
-persistIndex: true
-
-# Configure state store for plugin state persistence
-stateStore:
-  kind: redb
-  path: "${STATE_STORE_PATH:-./data/state.redb}"
-
 autoInstallPlugins: true
 plugins:
   - ref: source/mock
   - ref: reaction/log
 
-sources:
-  - kind: mock
-    id: persistent-source
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 2000
+instances:
+  - id: persistent-storage-demo
+    persistIndex: true
 
-queries:
-  # This query's index will be persisted in RocksDB
-  - id: persisted-query
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN n.id AS Id, n.value AS Value
-    queryLanguage: Cypher
+# Configure state store for plugin state persistence
+    stateStore:
+      kind: redb
+      path: "${STATE_STORE_PATH:-./data/state.redb}"
+
     sources:
-      - sourceId: persistent-source
-    enableBootstrap: true
-    bootstrapBufferSize: 10000
+      - kind: mock
+        id: persistent-source
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 2000
+
+    queries:
+  # This query's index will be persisted in RocksDB
+      - id: persisted-query
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN n.id AS Id, n.value AS Value
+        queryLanguage: Cypher
+        sources:
+          - sourceId: persistent-source
+        enableBootstrap: true
 
   # Aggregation that maintains state
-  - id: running-totals
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN count(n) AS TotalRecords, sum(n.value) AS TotalValue
-    queryLanguage: Cypher
-    sources:
-      - sourceId: persistent-source
+      - id: running-totals
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN count(n) AS TotalRecords, sum(n.value) AS TotalValue
+        queryLanguage: Cypher
+        sources:
+          - sourceId: persistent-source
 
-reactions:
-  - kind: log
-    id: persistence-demo-log
-    queries:
-      - persisted-query
-      - running-totals
-    autoStart: true
-    routes:
-      persisted-query:
-        added:
-          template: "[PERSISTENT] persisted-query: + Id={{after.Id}} Value={{after.Value}}"
-        updated:
-          template: "[PERSISTENT] persisted-query: ~ Id={{after.Id}} Value={{after.Value}}"
-      running-totals:
-        added:
-          template: "[PERSISTENT] running-totals: + Records={{after.TotalRecords}} Sum={{after.TotalValue}}"
-        updated:
-          template: "[PERSISTENT] running-totals: ~ Records={{after.TotalRecords}} Sum={{after.TotalValue}}"
+    reactions:
+      - kind: log
+        id: persistence-demo-log
+        queries:
+          - persisted-query
+          - running-totals
+        autoStart: true
+        routes:
+          persisted-query:
+            added:
+              template: "[PERSISTENT] persisted-query: + Id={{after.Id}} Value={{after.Value}}"
+            updated:
+              template: "[PERSISTENT] persisted-query: ~ Id={{after.Id}} Value={{after.Value}}"
+          running-totals:
+            added:
+              template: "[PERSISTENT] running-totals: + Records={{after.TotalRecords}} Sum={{after.TotalValue}}"
+            updated:
+              template: "[PERSISTENT] running-totals: ~ Records={{after.TotalRecords}} Sum={{after.TotalValue}}"

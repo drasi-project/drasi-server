@@ -126,7 +126,6 @@ export interface QueryConfig {
   readonly middleware: readonly QueryMiddleware[];
   readonly sources: readonly QuerySource[];
   readonly enableBootstrap: boolean;
-  readonly bootstrapBufferSize: number;
   readonly joins?: readonly QueryJoin[];
   readonly priorityQueueCapacity?: number;
   readonly dispatchBufferCapacity?: number;

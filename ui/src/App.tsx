@@ -587,6 +587,7 @@ export default function App() {
           instances={instances}
           selectedId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
+          onCreateNew={() => setShowCreateInstance(true)}
         />
       }
     >

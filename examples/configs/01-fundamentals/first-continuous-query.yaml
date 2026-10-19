@@ -28,7 +28,6 @@
 # Run with: cargo run -- --config examples/configs/01-fundamentals/first-continuous-query.yaml
 
 apiVersion: drasi.io/v1
-id: query-demo-server
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -38,83 +37,84 @@ plugins:
   - ref: source/mock
   - ref: reaction/log
 
-sources:
+instances:
+  - id: query-demo-server
+    sources:
   # Mock source generates data with labels based on dataType enum:
   #   - { type: sensorReading, sensorCount: N } → SensorReading nodes with temperature, humidity, sensor_id
   #     First reading per sensor = INSERT, subsequent readings = UPDATE
   #   - { type: counter } → Counter nodes with sequential count value (always INSERT)
   #   - { type: generic } → Generic nodes with random value and message (always INSERT)
-  - kind: mock
-    id: sensor-data
-    autoStart: true
-    dataType:
-      type: sensorReading
-    intervalMs: 2000
+      - kind: mock
+        id: sensor-data
+        autoStart: true
+        dataType:
+          type: sensorReading
+        intervalMs: 2000
 
-queries:
+    queries:
   # Query 1: Simple match-all query
-  - id: all-data
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN n
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-data
-    enableBootstrap: true
-    bootstrapBufferSize: 10000
+      - id: all-data
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN n
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-data
+        enableBootstrap: true
 
   # Query 2: Filtered query with projection
-  - id: high-values
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      WHERE s.temperature > 25
-      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.timestamp AS Timestamp
-    sources:
-      - sourceId: sensor-data
-    enableBootstrap: true
+      - id: high-values
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          WHERE s.temperature > 25
+          RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.timestamp AS Timestamp
+        sources:
+          - sourceId: sensor-data
+        enableBootstrap: true
 
   # Query 3: Aggregation query
-  - id: value-summary
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
-    sources:
-      - sourceId: sensor-data
+      - id: value-summary
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
+        sources:
+          - sourceId: sensor-data
 
-reactions:
-  - kind: log
-    id: query-results-logger
-    queries:
-      - all-data
-      - high-values
-      - value-summary
-    autoStart: true
+    reactions:
+      - kind: log
+        id: query-results-logger
+        queries:
+          - all-data
+          - high-values
+          - value-summary
+        autoStart: true
     # Use routes to define per-query templates since each query returns different fields
-    routes:
+        routes:
       # all-data returns the whole node as 'n'
-      all-data:
-        added:
-          template: "[all-data] + Node: {{after.n}}"
-        updated:
-          template: "[all-data] ~ Node: {{after.n}}"
-        deleted:
-          template: "[all-data] - Node removed"
+          all-data:
+            added:
+              template: "[all-data] + Node: {{after.n}}"
+            updated:
+              template: "[all-data] ~ Node: {{after.n}}"
+            deleted:
+              template: "[all-data] - Node removed"
       # high-values returns SensorId, Temperature, Timestamp
-      high-values:
-        added:
-          template: "[high-values] + HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C ({{after.Timestamp}})"
-        updated:
-          template: "[high-values] ~ HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C"
-        deleted:
-          template: "[high-values] - Sensor {{before.SensorId}} no longer high"
+          high-values:
+            added:
+              template: "[high-values] + HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C ({{after.Timestamp}})"
+            updated:
+              template: "[high-values] ~ HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C"
+            deleted:
+              template: "[high-values] - Sensor {{before.SensorId}} no longer high"
       # value-summary returns TotalSensors, AverageTemperature
-      value-summary:
-        added:
-          template: "[value-summary] + Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
-        updated:
-          template: "[value-summary] ~ Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
-        deleted:
-          template: "[value-summary] - Summary cleared"
+          value-summary:
+            added:
+              template: "[value-summary] + Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
+            updated:
+              template: "[value-summary] ~ Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
+            deleted:
+              template: "[value-summary] - Summary cleared"

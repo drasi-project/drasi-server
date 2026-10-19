@@ -109,6 +109,10 @@ adapter, not a legacy runtime. Preserve its public inspection behavior.
 ### Configuration File Support
 
 DrasiServer supports YAML configuration files for defining server settings and queries.
+Only Server-wide settings belong at the root. Instance IDs, providers, storage,
+sources, queries, reactions and computation definitions belong in `instances`.
+An absent or empty list starts an empty Server; do not synthesize a default
+instance or route component operations to the first instance.
 ComputationGraph is unconditional. Do not add runtime selectors: root/per-instance
 `executionMode`, `--execution-mode`, and builder mode methods have been removed.
 Reject obsolete configuration fields with removal guidance, including values
@@ -123,14 +127,10 @@ cargo run -- --config config/server.yaml
 apiVersion: drasi.io/v1
 
 # Server identification
-id: "my-server"  # Unique server ID (defaults to UUID if not specified)
-
-# Server settings
 host: "0.0.0.0"
 port: 8080
 logLevel: "info"
 persistConfig: true  # Enable persistence (default)
-persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: true)
 enableUi: true       # Enable the web UI at /ui (default: true)
 
@@ -188,30 +188,35 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 #     kind: postgres
 
 # Sources (parsed into plugin instances)
-sources:
-  - kind: mock
-    id: "sensors"
-    autoStart: true
+instances:
+  - id: "my-server" # Unique server ID (defaults to UUID if not specified)
+
+# Server settings
+    persistIndex: false # Use RocksDB for persistent indexing (default: false, uses in-memory)
+    sources:
+      - kind: mock
+        id: "sensors"
+        autoStart: true
 
 # Queries
-queries:
-  - id: "high-temp"
-    query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
-    queryLanguage: Cypher
-    sources:
-      - sourceId: "sensors"
-    autoStart: true
+    queries:
+      - id: "high-temp"
+        query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
+        queryLanguage: Cypher
+        sources:
+          - sourceId: "sensors"
+        autoStart: true
 
 # Reactions
-reactions:
-  - kind: log
-    id: "log-temps"
-    queries:
-      - "high-temp"
-    autoStart: true
+    reactions:
+      - kind: log
+        id: "log-temps"
+        queries:
+          - "high-temp"
+        autoStart: true
 ```
 
-For multiple DrasiLib instances, use the `instances` array (legacy single-instance fields continue to work and map to the first instance):
+For one or more DrasiLib instances, use the `instances` array; root-level instance settings and first-instance fallback routes are not supported:
 
 ```yaml
 apiVersion: drasi.io/v1
@@ -242,7 +247,8 @@ instances:
     reactions: []
 ```
 
-The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-instance access; the first configured instance is also accessible via convenience routes at `/api/v1/sources`, `/api/v1/queries`, and `/api/v1/reactions`.
+The REST API requires `/api/v1/instances/{instanceId}/...` for every component
+operation. No unscoped or first-instance component routes are registered.
 
 **Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
 
@@ -423,13 +429,6 @@ Reactions:
 - `DELETE /api/v1/instances/{instanceId}/reactions/{id}` - Delete reaction
 - `POST /api/v1/instances/{instanceId}/reactions/{id}/start` - Start reaction
 - `POST /api/v1/instances/{instanceId}/reactions/{id}/stop` - Stop reaction
-
-### Convenience Routes (First Instance)
-
-For convenience, the first configured instance is accessible via shortened routes:
-- `GET/POST /api/v1/sources` - Sources of the first instance
-- `GET/POST /api/v1/queries` - Queries of the first instance
-- `GET/POST /api/v1/reactions` - Reactions of the first instance
 
 ### Plugin Management (Server-Wide)
 

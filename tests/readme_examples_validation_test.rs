@@ -184,21 +184,22 @@ host: 0.0.0.0
 port: 8080
 logLevel: info
 
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
+instances:
+  - sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
 
-queries:
-  - id: my-query
-    query: "MATCH (n:Node) RETURN n"
-    sources:
-      - sourceId: test-source
+    queries:
+      - id: my-query
+        query: "MATCH (n:Node) RETURN n"
+        sources:
+          - sourceId: test-source
 
-reactions:
-  - kind: log
-    id: log-output
-    queries: [my-query]
+    reactions:
+      - kind: log
+        id: log-output
+        queries: [my-query]
 "#;
 
     let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
@@ -213,20 +214,21 @@ reactions:
 #[test]
 fn test_readme_server_settings_example() {
     let yaml = r#"
-id: my-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
-persistIndex: false
+instances:
+  - id: my-server
+    persistIndex: false
 
-stateStore:
-  kind: redb
-  path: ./data/state.redb
+    stateStore:
+      kind: redb
+      path: ./data/state.redb
 
-sources: []
-queries: []
-reactions: []
+    sources: []
+    queries: []
+    reactions: []
 "#;
 
     let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");

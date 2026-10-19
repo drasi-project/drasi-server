@@ -77,7 +77,7 @@ describe('versioned real server read contract', () => {
 
   it.each([
     { id: 'other-query' }, { query: 7 }, { queryLanguage: 'SQL' }, { autoStart: 'true' },
-    { enableBootstrap: null }, { bootstrapBufferSize: -1 }, { bootstrapTimeoutSecs: 0.5 },
+    { enableBootstrap: null }, { outboxCapacity: -1 }, { bootstrapTimeoutSecs: 0.5 },
     { outboxCapacity: Number.MAX_SAFE_INTEGER + 1 }, { sources: null },
     { sources: [{ sourceId: 'one', nodes: [], pipeline: [] }] },
     { sources: [{ sourceId: 3, nodes: [], pipeline: [], relations: [] }] },

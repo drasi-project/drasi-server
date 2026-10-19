@@ -355,7 +355,7 @@ pub async fn get_query_results(
     shared::get_query_results(Extension(core), Path(id)).await
 }
 
-/// Attach to a running query and stream results as NDJSON.
+/// Stream an initial snapshot followed by live query changes as SSE.
 #[utoipa::path(
     get,
     path = "/api/v1/instances/{instanceId}/queries/{id}/attach",
@@ -364,7 +364,7 @@ pub async fn get_query_results(
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
-        (status = 200, description = "Streaming query results (NDJSON)"),
+        (status = 200, description = "A named snapshot event with current rows, then live QueryResult events after that snapshot", body = String, content_type = "text/event-stream"),
         (status = 404, description = "Query not found"),
         (status = 500, description = "Internal server error"),
     ),

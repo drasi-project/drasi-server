@@ -232,9 +232,9 @@ Once running, access the server at:
 - `GET /health` - Health check
 - `GET /api/v1/openapi.json` - OpenAPI specification
 - `GET /api/v1/docs/` - Swagger UI
-- `GET /api/v1/sources` - List sources
-- `GET /api/v1/queries` - List queries
-- `GET /api/v1/reactions` - List reactions
+- `GET /api/v1/instances/{instanceId}/sources` - List sources
+- `GET /api/v1/instances/{instanceId}/queries` - List queries
+- `GET /api/v1/instances/{instanceId}/reactions` - List reactions
 
 ## License
 

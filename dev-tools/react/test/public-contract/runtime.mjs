@@ -312,7 +312,7 @@ try {
       config: {
         id: 'temperatures', query: 'MATCH (s:Station) RETURN s.stationId AS stationId',
         queryLanguage: 'Cypher', sources: [], autoStart: false, middleware: [],
-        enableBootstrap: true, bootstrapBufferSize: 100, outboxCapacity: 100, bootstrapTimeoutSecs: 30,
+        enableBootstrap: true, outboxCapacity: 100, bootstrapTimeoutSecs: 30,
       },
     };
     const reaction = {

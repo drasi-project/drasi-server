@@ -13,7 +13,6 @@
 # limitations under the License.
 
 apiVersion: drasi.io/v1
-id: trading-server
 host: 0.0.0.0
 port: 8280
 logLevel: info
@@ -35,66 +34,68 @@ plugins:
   # (see app/src/drasi/config.ts), so it must be present in the plugins dir even
   # though the YAML below has no entry under `reactions:`.
   - ref: reaction/sse
-sources:
-- kind: http
-  id: price-feed
-  autoStart: true
-  host: 0.0.0.0
-  port: 9100
-  timeoutMs: 10000
-  bootstrapProvider:
-    kind: scriptfile
-    filePaths:
-      - ./examples/trading/mock-generator/initial-prices.jsonl
-- kind: postgres
-  id: postgres-stocks
-  autoStart: true
+instances:
+  - id: trading-server
+    sources:
+      - kind: http
+        id: price-feed
+        autoStart: true
+        host: 0.0.0.0
+        port: 9100
+        timeoutMs: 10000
+        bootstrapProvider:
+          kind: scriptfile
+          filePaths:
+            - ./examples/trading/mock-generator/initial-prices.jsonl
+      - kind: postgres
+        id: postgres-stocks
+        autoStart: true
   # Bare-metal default: localhost:5632 (docker-compose publishes 5432 -> 5632).
   # Dev container overrides via POSTGRES_HOST=trading-postgres / POSTGRES_PORT=5432
   # (set in .devcontainer/trading/devcontainer.json) so drasi-server reaches
   # postgres over the shared `drasi-network`.
-  host: "${POSTGRES_HOST:-localhost}"
-  port: "${POSTGRES_PORT:-5632}"
-  database: trading_demo
-  user: drasi_user
-  password: drasi_password
-  tables:
-  - stocks
-  - portfolio
-  - watchlist
-  slotName: drasi_trading_slot
-  publicationName: drasi_trading_pub
-  sslMode: prefer
-  tableKeys:
-  - table: stocks
-    keyColumns:
-    - id
-  - table: portfolio
-    keyColumns:
-    - id
-  - table: watchlist
-    keyColumns:
-    - id
-  bootstrapProvider:
-    kind: postgres
-- kind: postgres
-  id: postgres-broker
-  autoStart: true
-  host: "${POSTGRES_HOST:-localhost}"
-  port: "${POSTGRES_PORT:-5632}"
-  database: trading_demo
-  user: drasi_user
-  password: drasi_password
-  tables:
-  - limit_orders
-  slotName: drasi_broker_slot
-  publicationName: drasi_broker_pub
-  sslMode: prefer
-  tableKeys:
-  - table: limit_orders
-    keyColumns:
-    - id
-  bootstrapProvider:
-    kind: postgres
-queries: []
-reactions: []
+        host: "${POSTGRES_HOST:-localhost}"
+        port: "${POSTGRES_PORT:-5632}"
+        database: trading_demo
+        user: drasi_user
+        password: drasi_password
+        tables:
+          - stocks
+          - portfolio
+          - watchlist
+        slotName: drasi_trading_slot
+        publicationName: drasi_trading_pub
+        sslMode: prefer
+        tableKeys:
+          - table: stocks
+            keyColumns:
+              - id
+          - table: portfolio
+            keyColumns:
+              - id
+          - table: watchlist
+            keyColumns:
+              - id
+        bootstrapProvider:
+          kind: postgres
+      - kind: postgres
+        id: postgres-broker
+        autoStart: true
+        host: "${POSTGRES_HOST:-localhost}"
+        port: "${POSTGRES_PORT:-5632}"
+        database: trading_demo
+        user: drasi_user
+        password: drasi_password
+        tables:
+          - limit_orders
+        slotName: drasi_broker_slot
+        publicationName: drasi_broker_pub
+        sslMode: prefer
+        tableKeys:
+          - table: limit_orders
+            keyColumns:
+              - id
+        bootstrapProvider:
+          kind: postgres
+    queries: []
+    reactions: []

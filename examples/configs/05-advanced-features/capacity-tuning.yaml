@@ -45,102 +45,100 @@
 # Run with: cargo run -- --config examples/configs/05-advanced-features/capacity-tuning.yaml
 
 apiVersion: drasi.io/v1
-id: capacity-tuning-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: false
 
 # Server-level defaults (can use environment variables)
-defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-15000}"
-defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-2000}"
-
 autoInstallPlugins: true
 plugins:
   - ref: source/mock
   - ref: reaction/log
   - ref: reaction/profiler
 
-sources:
-  # High-volume source for testing capacity
-  - kind: mock
-    id: high-throughput
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 50
+instances:
+  - id: capacity-tuning-demo
+    defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-15000}"
+    defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-2000}"
 
-queries:
-  # Query with default capacity (inherits server defaults)
-  - id: default-capacity
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN n
-    queryLanguage: Cypher
     sources:
-      - sourceId: high-throughput
-    bootstrapBufferSize: 10000
+  # High-volume source for testing capacity
+      - kind: mock
+        id: high-throughput
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 50
+
+    queries:
+  # Query with default capacity (inherits server defaults)
+      - id: default-capacity
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN n
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-throughput
 
   # Query with custom high capacity (for burst handling)
-  - id: high-capacity-query
-    autoStart: true
-    query: |
-      MATCH (n)
-      WHERE n.priority = 'high'
-      RETURN n.id AS Id, n.data AS Data
-    queryLanguage: Cypher
-    sources:
-      - sourceId: high-throughput
-    priorityQueueCapacity: 50000
-    dispatchBufferCapacity: 5000
-    bootstrapBufferSize: 20000
+      - id: high-capacity-query
+        autoStart: true
+        query: |
+          MATCH (n)
+          WHERE n.priority = 'high'
+          RETURN n.id AS Id, n.data AS Data
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-throughput
+        priorityQueueCapacity: 50000
+        dispatchBufferCapacity: 5000
 
   # Query with low capacity (memory constrained)
-  - id: low-capacity-query
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN count(n) AS Count
-    queryLanguage: Cypher
-    sources:
-      - sourceId: high-throughput
-    priorityQueueCapacity: 1000
-    dispatchBufferCapacity: 100
-    bootstrapBufferSize: 500
+      - id: low-capacity-query
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN count(n) AS Count
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-throughput
+        priorityQueueCapacity: 1000
+        dispatchBufferCapacity: 100
 
-reactions:
-  - kind: log
-    id: capacity-monitor
-    queries:
-      - default-capacity
-      - high-capacity-query
-      - low-capacity-query
-    autoStart: true
-    routes:
-      default-capacity:
-        added:
-          template: "[default-capacity] + New record"
-        updated:
-          template: "[default-capacity] ~ Record updated"
-      high-capacity-query:
-        added:
-          template: "[high-capacity-query] + Id={{after.Id}} Data={{after.Data}}"
-        updated:
-          template: "[high-capacity-query] ~ Id={{after.Id}} Data={{after.Data}}"
-      low-capacity-query:
-        added:
-          template: "[low-capacity-query] + Count={{after.Count}}"
-        updated:
-          template: "[low-capacity-query] ~ Count={{after.Count}}"
+    reactions:
+      - kind: log
+        id: capacity-monitor
+        queries:
+          - default-capacity
+          - high-capacity-query
+          - low-capacity-query
+        autoStart: true
+        routes:
+          default-capacity:
+            added:
+              template: "[default-capacity] + New record"
+            updated:
+              template: "[default-capacity] ~ Record updated"
+          high-capacity-query:
+            added:
+              template: "[high-capacity-query] + Id={{after.Id}} Data={{after.Data}}"
+            updated:
+              template: "[high-capacity-query] ~ Id={{after.Id}} Data={{after.Data}}"
+          low-capacity-query:
+            added:
+              template: "[low-capacity-query] + Count={{after.Count}}"
+            updated:
+              template: "[low-capacity-query] ~ Count={{after.Count}}"
 
   # Profiler to monitor performance
-  - kind: profiler
-    id: throughput-profiler
-    queries:
-      - default-capacity
-      - high-capacity-query
-      - low-capacity-query
-    autoStart: true
-    windowSize: 500
-    reportIntervalSecs: 15
+      - kind: profiler
+        id: throughput-profiler
+        queries:
+          - default-capacity
+          - high-capacity-query
+          - low-capacity-query
+        autoStart: true
+        windowSize: 500
+        reportIntervalSecs: 15

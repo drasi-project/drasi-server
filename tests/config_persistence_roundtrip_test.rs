@@ -45,27 +45,31 @@ fn roundtrip_config(config: &DrasiServerConfig) -> DrasiServerConfig {
 fn test_secret_reference_survives_source_config_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": "db.example.com",
-                "port": 5432,
-                "database": "mydb",
-                "user": "admin",
-                "password": { "kind": "secret", "name": "DB_PASSWORD" }
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": "db.example.com",
+                    "port": 5432,
+                    "database": "mydb",
+                    "user": "admin",
+                    "password": { "kind": "secret", "name": "DB_PASSWORD" }
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
 
-    assert_eq!(loaded.sources.len(), 1);
-    let source = &loaded.sources[0];
+    assert_eq!(loaded.instances[0].sources.len(), 1);
+    let source = &loaded.instances[0].sources[0];
     assert_eq!(source.id, "pg-source");
     assert_eq!(source.kind, "postgres");
 
@@ -90,24 +94,28 @@ fn test_secret_reference_survives_source_config_roundtrip() {
 fn test_secret_reference_survives_reaction_config_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        reactions: vec![ReactionConfig {
-            kind: "http".to_string(),
-            id: "webhook".to_string(),
-            queries: vec!["q1".to_string()],
-            auto_start: true,
-            config: serde_json::json!({
-                "endpoint": "https://api.example.com",
-                "authToken": { "kind": "secret", "name": "API_TOKEN" }
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            reactions: vec![ReactionConfig {
+                kind: "http".to_string(),
+                id: "webhook".to_string(),
+                queries: vec!["q1".to_string()],
+                auto_start: true,
+                config: serde_json::json!({
+                    "endpoint": "https://api.example.com",
+                    "authToken": { "kind": "secret", "name": "API_TOKEN" }
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
 
-    assert_eq!(loaded.reactions.len(), 1);
-    let reaction = &loaded.reactions[0];
+    assert_eq!(loaded.instances[0].reactions.len(), 1);
+    let reaction = &loaded.instances[0].reactions[0];
 
     let auth = reaction
         .config
@@ -126,26 +134,30 @@ fn test_secret_reference_survives_reaction_config_roundtrip() {
 fn test_env_var_reference_survives_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": { "kind": "EnvironmentVariable", "name": "DB_HOST", "default": "localhost" },
-                "port": 5432,
-                "database": "mydb",
-                "user": "admin",
-                "password": "static-pass"
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": { "kind": "EnvironmentVariable", "name": "DB_HOST", "default": "localhost" },
+                    "port": 5432,
+                    "database": "mydb",
+                    "user": "admin",
+                    "password": "static-pass"
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
 
-    let source = &loaded.sources[0];
+    let source = &loaded.instances[0].sources[0];
     let host = source.config.get("host").expect("host should exist");
     assert!(
         host.is_object(),
@@ -160,23 +172,27 @@ fn test_env_var_reference_survives_roundtrip() {
 fn test_env_var_without_default_survives_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": { "kind": "EnvironmentVariable", "name": "DB_HOST" },
-                "port": 5432
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": { "kind": "EnvironmentVariable", "name": "DB_HOST" },
+                    "port": 5432
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
 
-    let host = loaded.sources[0].config.get("host").unwrap();
+    let host = loaded.instances[0].sources[0].config.get("host").unwrap();
     assert_eq!(host.get("kind").unwrap(), "EnvironmentVariable");
     assert_eq!(host.get("name").unwrap(), "DB_HOST");
     // "default" key should not be present (or be null)
@@ -194,26 +210,30 @@ fn test_env_var_without_default_survives_roundtrip() {
 fn test_camelcase_keys_preserved_in_source_config_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": "localhost",
-                "port": 5432,
-                "slotName": "my_slot",
-                "publicationName": "my_pub",
-                "sslMode": "prefer",
-                "tables": [{ "name": "users", "keys": ["id"] }]
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": "localhost",
+                    "port": 5432,
+                    "slotName": "my_slot",
+                    "publicationName": "my_pub",
+                    "sslMode": "prefer",
+                    "tables": [{ "name": "users", "keys": ["id"] }]
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
-    let source = &loaded.sources[0];
+    let source = &loaded.instances[0].sources[0];
 
     // Verify camelCase keys are preserved
     assert!(
@@ -248,24 +268,28 @@ fn test_camelcase_keys_preserved_in_source_config_roundtrip() {
 fn test_camelcase_keys_preserved_in_reaction_config_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        reactions: vec![ReactionConfig {
-            kind: "sse".to_string(),
-            id: "sse-reaction".to_string(),
-            queries: vec!["q1".to_string()],
-            auto_start: true,
-            config: serde_json::json!({
-                "ssePath": "/events",
-                "queryConfig": {
-                    "q1": { "format": "json" }
-                }
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            reactions: vec![ReactionConfig {
+                kind: "sse".to_string(),
+                id: "sse-reaction".to_string(),
+                queries: vec!["q1".to_string()],
+                auto_start: true,
+                config: serde_json::json!({
+                    "ssePath": "/events",
+                    "queryConfig": {
+                        "q1": { "format": "json" }
+                    }
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
-    let reaction = &loaded.reactions[0];
+    let reaction = &loaded.instances[0].reactions[0];
 
     assert!(
         reaction.config.get("ssePath").is_some(),
@@ -289,31 +313,35 @@ fn test_camelcase_keys_preserved_in_reaction_config_roundtrip() {
 fn test_mixed_static_secret_and_env_var_values_roundtrip() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": { "kind": "EnvironmentVariable", "name": "DB_HOST", "default": "localhost" },
-                "port": 5432,
-                "database": "mydb",
-                "user": { "kind": "EnvironmentVariable", "name": "DB_USER" },
-                "password": { "kind": "secret", "name": "DB_PASSWORD" },
-                "sslMode": "prefer",
-                "slotName": "replication_slot",
-                "tables": [
-                    { "name": "users", "keys": ["id"] },
-                    { "name": "orders", "keys": ["order_id"] }
-                ]
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": { "kind": "EnvironmentVariable", "name": "DB_HOST", "default": "localhost" },
+                    "port": 5432,
+                    "database": "mydb",
+                    "user": { "kind": "EnvironmentVariable", "name": "DB_USER" },
+                    "password": { "kind": "secret", "name": "DB_PASSWORD" },
+                    "sslMode": "prefer",
+                    "slotName": "replication_slot",
+                    "tables": [
+                        { "name": "users", "keys": ["id"] },
+                        { "name": "orders", "keys": ["order_id"] }
+                    ]
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
-    let source = &loaded.sources[0];
+    let source = &loaded.instances[0].sources[0];
 
     // Env var with default
     let host = source.config.get("host").unwrap();
@@ -353,23 +381,27 @@ fn test_mixed_static_secret_and_env_var_values_roundtrip() {
 fn test_password_field_preserved_not_stripped() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": "localhost",
-                "port": 5432,
-                "password": "my-secret-password"
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": "localhost",
+                    "port": 5432,
+                    "password": "my-secret-password"
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
-    let source = &loaded.sources[0];
+    let source = &loaded.instances[0].sources[0];
 
     // Password should be preserved, not stripped
     assert_eq!(
@@ -383,22 +415,29 @@ fn test_password_field_preserved_not_stripped() {
 fn test_password_as_secret_preserved() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![SourceConfig {
-            kind: "postgres".to_string(),
-            id: "pg-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: serde_json::json!({
-                "host": "localhost",
-                "password": { "kind": "secret", "name": "PG_PASSWORD" }
-            }),
-            identity_provider: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "pg-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: serde_json::json!({
+                    "host": "localhost",
+                    "password": { "kind": "secret", "name": "PG_PASSWORD" }
+                }),
+                identity_provider: None,
+            }],
+            ..Default::default()
         }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
-    let password = loaded.sources[0].config.get("password").unwrap();
+    let password = loaded.instances[0].sources[0]
+        .config
+        .get("password")
+        .unwrap();
 
     assert!(
         password.is_object(),
@@ -416,58 +455,62 @@ fn test_password_as_secret_preserved() {
 fn test_multiple_sources_and_reactions_all_preserve_config_values() {
     let config = DrasiServerConfig {
         persist_config: true,
-        sources: vec![
-            SourceConfig {
-                kind: "postgres".to_string(),
-                id: "source-1".to_string(),
-                auto_start: true,
-                bootstrap_provider: None,
-                config: serde_json::json!({
-                    "host": { "kind": "EnvironmentVariable", "name": "S1_HOST" },
-                    "password": { "kind": "secret", "name": "S1_PASS" }
-                }),
-                identity_provider: None,
-            },
-            SourceConfig {
-                kind: "http".to_string(),
-                id: "source-2".to_string(),
-                auto_start: false,
-                bootstrap_provider: None,
-                config: serde_json::json!({
-                    "endpoint": "https://api.example.com",
-                    "authHeader": { "kind": "secret", "name": "API_KEY" }
-                }),
-                identity_provider: None,
-            },
-        ],
-        reactions: vec![
-            ReactionConfig {
-                kind: "log".to_string(),
-                id: "reaction-1".to_string(),
-                queries: vec!["q1".to_string()],
-                auto_start: true,
-                config: serde_json::json!({"routes": {}}),
-                identity_provider: None,
-            },
-            ReactionConfig {
-                kind: "http".to_string(),
-                id: "reaction-2".to_string(),
-                queries: vec!["q1".to_string()],
-                auto_start: true,
-                config: serde_json::json!({
-                    "endpoint": { "kind": "EnvironmentVariable", "name": "WEBHOOK_URL" },
-                    "bearerToken": { "kind": "secret", "name": "WEBHOOK_TOKEN" }
-                }),
-                identity_provider: None,
-            },
-        ],
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![
+                SourceConfig {
+                    kind: "postgres".to_string(),
+                    id: "source-1".to_string(),
+                    auto_start: true,
+                    bootstrap_provider: None,
+                    config: serde_json::json!({
+                        "host": { "kind": "EnvironmentVariable", "name": "S1_HOST" },
+                        "password": { "kind": "secret", "name": "S1_PASS" }
+                    }),
+                    identity_provider: None,
+                },
+                SourceConfig {
+                    kind: "http".to_string(),
+                    id: "source-2".to_string(),
+                    auto_start: false,
+                    bootstrap_provider: None,
+                    config: serde_json::json!({
+                        "endpoint": "https://api.example.com",
+                        "authHeader": { "kind": "secret", "name": "API_KEY" }
+                    }),
+                    identity_provider: None,
+                },
+            ],
+            reactions: vec![
+                ReactionConfig {
+                    kind: "log".to_string(),
+                    id: "reaction-1".to_string(),
+                    queries: vec!["q1".to_string()],
+                    auto_start: true,
+                    config: serde_json::json!({"routes": {}}),
+                    identity_provider: None,
+                },
+                ReactionConfig {
+                    kind: "http".to_string(),
+                    id: "reaction-2".to_string(),
+                    queries: vec!["q1".to_string()],
+                    auto_start: true,
+                    config: serde_json::json!({
+                        "endpoint": { "kind": "EnvironmentVariable", "name": "WEBHOOK_URL" },
+                        "bearerToken": { "kind": "secret", "name": "WEBHOOK_TOKEN" }
+                    }),
+                    identity_provider: None,
+                },
+            ],
+            ..Default::default()
+        }],
         ..DrasiServerConfig::default()
     };
 
     let loaded = roundtrip_config(&config);
 
     // Source 1
-    let s1 = &loaded.sources[0];
+    let s1 = &loaded.instances[0].sources[0];
     assert_eq!(
         s1.config.get("host").unwrap().get("kind").unwrap(),
         "EnvironmentVariable"
@@ -478,7 +521,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
     );
 
     // Source 2
-    let s2 = &loaded.sources[1];
+    let s2 = &loaded.instances[0].sources[1];
     assert_eq!(
         s2.config.get("endpoint").unwrap(),
         "https://api.example.com"
@@ -489,7 +532,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
     );
 
     // Reaction 2
-    let r2 = &loaded.reactions[1];
+    let r2 = &loaded.instances[0].reactions[1];
     assert_eq!(
         r2.config.get("endpoint").unwrap().get("kind").unwrap(),
         "EnvironmentVariable"

@@ -47,10 +47,7 @@ pub use plugin_validation::{
 };
 pub use schema_validation::validate_component_configs;
 pub use types::{
-    default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency,
-    ResolvedInstanceConfig, TrustedIdentity,
+    default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, InstanceIdConfig,
+    PluginDependency, ResolvedInstanceConfig, TrustedIdentity,
 };
 pub use validation::{validate_config, ValidationError};
-
-// Re-export config enums from api::models for backward compatibility
-pub use crate::api::models::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};

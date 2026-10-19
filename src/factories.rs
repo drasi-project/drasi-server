@@ -32,7 +32,7 @@ use crate::api::models::{
     BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, TopLevelBootstrapProviderConfig,
     BUILTIN_PASSWORD_KIND,
 };
-use crate::config::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
+use crate::api::models::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
 
 use drasi_host_sdk::{ConfigResolverFn, SecretStoreValueResolverAdapter};

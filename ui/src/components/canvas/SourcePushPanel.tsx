@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Check, AlertTriangle } from "lucide-react";
+import { instancePath } from "@/api/paths";
 
 interface SourcePushPanelProps {
   sourceId: string;
@@ -58,8 +59,8 @@ export default function SourcePushPanel({
 
   // Proxy URL through drasi-server to avoid CORS
   const proxyUrl = instanceId
-    ? `/api/v1/instances/${instanceId}/sources/${sourceId}/push`
-    : `/api/v1/sources/${sourceId}/push`;
+    ? `/api/v1${instancePath(instanceId, "sources", sourceId, "push")}`
+    : undefined;
 
   const effectiveHost =
     host === "0.0.0.0" ? "localhost" : host;
@@ -78,6 +79,7 @@ export default function SourcePushPanel({
     setStatus("sending");
     setErrorMsg("");
     try {
+      if (!proxyUrl) throw new Error("Select an instance before sending source data.");
       const element = JSON.parse(payload);
       const body = { operation, element };
       const res = await fetch(proxyUrl, {
@@ -137,7 +139,7 @@ export default function SourcePushPanel({
       <div className="flex items-center gap-2 nodrag">
         <motion.button
           onClick={handleSend}
-          disabled={status === "sending"}
+          disabled={status === "sending" || !instanceId}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
                      bg-drasi-source text-white transition-all
                      hover:shadow-glow-source disabled:opacity-50"

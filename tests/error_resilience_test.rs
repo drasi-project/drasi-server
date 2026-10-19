@@ -4,7 +4,7 @@
 //! are requested, or dynamic loading encounters problems.
 
 use drasi_server::api::models::BootstrapProviderConfig;
-use drasi_server::config::{ReactionConfig, SourceConfig};
+use drasi_server::api::models::{ReactionConfig, SourceConfig};
 use drasi_server::factories::{create_reaction, create_source};
 use drasi_server::plugin_registry::PluginRegistry;
 use drasi_server::register_core_plugins;

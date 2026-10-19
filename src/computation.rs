@@ -445,18 +445,11 @@ async fn build_components_with_resources(
     validate_definition(config)?;
     for component in &config.definition.components {
         if let ComponentConstruction::Factory(specification) = &component.construction {
-            factories
-                .get(&specification.implementation)
-                .with_context(|| {
-                    format!(
-                        "component factory '{}' is not registered",
-                        specification.implementation.name
-                    )
-                })?
-                .validate(specification)
-                .with_context(|| {
+            if let Some(factory) = factories.get(&specification.implementation) {
+                factory.validate(specification).with_context(|| {
                     format!("invalid component '{}'", specification.descriptor.id())
                 })?;
+            }
         }
     }
     let services = core.computation_plugin_services()?;

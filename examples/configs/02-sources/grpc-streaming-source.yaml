@@ -34,7 +34,6 @@
 # Connect with a gRPC client to send streaming data to localhost:50051
 
 apiVersion: drasi.io/v1
-id: grpc-source-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -45,51 +44,53 @@ plugins:
   - ref: source/grpc
   - ref: reaction/log
 
-sources:
-  # gRPC source for high-performance streaming
-  - kind: grpc
-    id: grpc-stream
-    autoStart: true
-    host: "0.0.0.0"
-    port: 50051
-    timeoutMs: 10000
-
-queries:
-  # Track all streaming data
-  - id: stream-data
-    autoStart: true
-    query: |
-      MATCH (m:Message)
-      RETURN m.id AS MessageId, m.payload AS Payload, m.timestamp AS Timestamp
-    queryLanguage: Cypher
+instances:
+  - id: grpc-source-demo
     sources:
-      - sourceId: grpc-stream
+  # gRPC source for high-performance streaming
+      - kind: grpc
+        id: grpc-stream
+        autoStart: true
+        host: "0.0.0.0"
+        port: 50051
+        timeoutMs: 10000
+
+    queries:
+  # Track all streaming data
+      - id: stream-data
+        autoStart: true
+        query: |
+          MATCH (m:Message)
+          RETURN m.id AS MessageId, m.payload AS Payload, m.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: grpc-stream
 
   # Aggregate message statistics
-  - id: stream-stats
-    autoStart: true
-    query: |
-      MATCH (m:Message)
-      RETURN count(m) AS MessageCount
-    queryLanguage: Cypher
-    sources:
-      - sourceId: grpc-stream
+      - id: stream-stats
+        autoStart: true
+        query: |
+          MATCH (m:Message)
+          RETURN count(m) AS MessageCount
+        queryLanguage: Cypher
+        sources:
+          - sourceId: grpc-stream
 
-reactions:
-  - kind: log
-    id: stream-logger
-    queries:
-      - stream-data
-      - stream-stats
-    autoStart: true
-    routes:
-      stream-data:
-        added:
-          template: "[gRPC] Message {{after.MessageId}}: {{after.Payload}} ({{after.Timestamp}})"
-        updated:
-          template: "[gRPC] Message {{after.MessageId}} updated: {{after.Payload}}"
-      stream-stats:
-        added:
-          template: "[gRPC] Stats: {{after.MessageCount}} messages received"
-        updated:
-          template: "[gRPC] Stats: {{after.MessageCount}} messages total"
+    reactions:
+      - kind: log
+        id: stream-logger
+        queries:
+          - stream-data
+          - stream-stats
+        autoStart: true
+        routes:
+          stream-data:
+            added:
+              template: "[gRPC] Message {{after.MessageId}}: {{after.Payload}} ({{after.Timestamp}})"
+            updated:
+              template: "[gRPC] Message {{after.MessageId}} updated: {{after.Payload}}"
+          stream-stats:
+            added:
+              template: "[gRPC] Stats: {{after.MessageCount}} messages received"
+            updated:
+              template: "[gRPC] Stats: {{after.MessageCount}} messages total"

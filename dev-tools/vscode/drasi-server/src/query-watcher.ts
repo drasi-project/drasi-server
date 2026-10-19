@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { DrasiClient } from './drasi-client';
 import { queryResultsView } from './webview/query-results-view';
+import { parseQuerySseEvent, processSseBuffer } from './query-sse';
 
 export class QueryWatcher {
   private log: vscode.OutputChannel;
@@ -10,6 +11,7 @@ export class QueryWatcher {
   private queryId: string;
   private timer: NodeJS.Timeout | undefined;
   private streaming = false;
+  private stopped = false;
   private abortController: AbortController | undefined;
 
   constructor(queryId: string, extensionUri: vscode.Uri, drasiClient: DrasiClient) {
@@ -22,11 +24,10 @@ export class QueryWatcher {
   async start() {
     this.log.show();
     this.createResultsPanel();
+    await this.startStreaming();
+    if (this.stopped) return;
     await this.fetchAndRender();
-    if (await this.startStreaming()) {
-      return;
-    }
-    if (!this.streaming) {
+    if (!this.stopped) {
       this.timer = setInterval(() => {
         this.fetchAndRender();
       }, 5000);
@@ -36,9 +37,11 @@ export class QueryWatcher {
   private async fetchAndRender() {
     try {
       const results = await this.drasiClient.getQueryResults(this.queryId);
+      if (this.stopped) return;
       this.resultsPanel?.webview.postMessage({ kind: 'status', status: 'Watching' });
       this.resultsPanel?.webview.postMessage({ kind: 'results', results });
     } catch (error) {
+      if (this.stopped) return;
       const message = String(error);
       this.log.appendLine(message);
       this.resultsPanel?.webview.postMessage({ kind: 'error', message });
@@ -66,6 +69,8 @@ export class QueryWatcher {
   }
 
   stop() {
+    if (this.stopped) return;
+    this.stopped = true;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = undefined;
@@ -77,29 +82,30 @@ export class QueryWatcher {
     this.log.dispose();
   }
 
-  private async startStreaming(): Promise<boolean> {
+  private async startStreaming(): Promise<void> {
     let url: string;
     try {
       url = this.drasiClient.getQueryAttachUrl(this.queryId);
     } catch (error) {
       this.log.appendLine(String(error));
-      return false;
+      return;
     }
-    this.abortController = new AbortController();
+    const controller = new AbortController();
+    this.abortController = controller;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await fetch(url, {
         method: 'GET',
         headers: { Accept: 'text/event-stream' },
-        signal: this.abortController.signal,
+        signal: controller.signal,
       });
       if (!response.ok || !response.body) {
         this.log.appendLine(`Attach failed: ${response.status} ${response.statusText}`);
         this.streaming = false;
-        return false;
+        return;
       }
-      this.streaming = true;
-      this.resultsPanel?.webview.postMessage({ kind: 'status', status: 'Streaming' });
-      const reader = response.body.getReader();
+      this.resultsPanel?.webview.postMessage({ kind: 'status', status: 'Loading snapshot' });
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       while (true) {
@@ -108,50 +114,39 @@ export class QueryWatcher {
           break;
         }
         buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, '\n');
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary >= 0) {
-          const chunk = buffer.slice(0, boundary).trim();
-          buffer = buffer.slice(boundary + 2);
-          if (chunk) {
-            this.handleSseChunk(chunk);
-          }
-          boundary = buffer.indexOf('\n\n');
+        const parsed = processSseBuffer(buffer);
+        buffer = parsed.remaining;
+        for (const chunk of parsed.events) {
+          if (this.stopped) return;
+          this.handleSseChunk(chunk);
         }
       }
     } catch (error) {
-      if (!this.abortController?.signal.aborted) {
+      if (!controller.signal.aborted) {
         this.log.appendLine(`Attach stream error: ${error}`);
+        this.resultsPanel?.webview.postMessage({ kind: 'error', message: String(error) });
       }
-      return false;
     } finally {
+      controller.abort();
+      reader?.releaseLock();
       this.streaming = false;
       this.abortController = undefined;
     }
-    return true;
   }
 
   private handleSseChunk(chunk: string) {
-    const lines = chunk.split('\n');
-    for (const line of lines) {
-      // Skip comments (heartbeats)
-      if (line.startsWith(':')) {
-        continue;
-      }
-      if (!line.startsWith('data:')) {
-        continue;
-      }
-      const payload = line.replace(/^data:\s?/, '');
-      if (!payload) {
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(payload);
-        this.resultsPanel?.webview.postMessage({ kind: 'stream', payload: parsed, raw: payload });
-      } catch (error) {
-        this.resultsPanel?.webview.postMessage({ kind: 'raw', raw: payload });
-        this.log.appendLine(`Failed to parse stream payload: ${error}`);
-      }
+    const event = parseQuerySseEvent(chunk);
+    if (!event) return;
+    if (event.kind === 'snapshot') {
+      if (this.streaming) throw new Error('Duplicate query snapshot');
+      this.resultsPanel?.webview.postMessage({ kind: 'results', results: event.rows });
+      this.resultsPanel?.webview.postMessage({ kind: 'status', status: 'Streaming' });
+      this.streaming = true;
+    } else {
+      if (!this.streaming) throw new Error('Received query changes before the snapshot');
+      this.resultsPanel?.webview.postMessage({
+        kind: 'stream', payload: event.payload, raw: event.raw,
+      });
     }
   }
 }

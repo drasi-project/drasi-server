@@ -106,8 +106,6 @@ pub struct ComputationGraphConfig {
     #[serde(default)]
     #[schema(value_type = BTreeMap<String, Vec<String>>)]
     pub resource_dependencies: BTreeMap<ResourceId, Vec<ResourceId>>,
-    #[serde(default)]
-    pub allow_incomplete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -211,10 +209,6 @@ impl ComputationGraphConfig {
             self.default_pipe_capacity > 0,
             "defaultPipeCapacity must be positive"
         );
-        anyhow::ensure!(
-            !self.components.is_empty() || self.allow_incomplete,
-            "computation.graph requires components unless allowIncomplete is true"
-        );
         let mut components = BTreeSet::new();
         for component in &self.components {
             anyhow::ensure!(
@@ -286,7 +280,6 @@ impl ComputationGraphConfig {
     fn resolve(&self, factories: &FactoryRegistry) -> Result<ComputationConfig> {
         let resources = self.validate()?;
         let mut definition = drasi_lib::management::DesiredInstance::default().topology;
-        definition.allow_incomplete = self.allow_incomplete;
         for (id, recipe) in &resources {
             let ownership = match recipe {
                 ComputationResourceConfig::Middleware {}

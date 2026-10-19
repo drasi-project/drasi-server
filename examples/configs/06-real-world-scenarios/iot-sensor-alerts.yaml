@@ -37,7 +37,6 @@
 #     -d '{"id": "sensor-1", "type": "temperature", "value": 85, "unit": "F"}'
 
 apiVersion: drasi.io/v1
-id: iot-sensor-system
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -49,161 +48,163 @@ plugins:
   - ref: reaction/log
   - ref: reaction/sse
 
-sources:
-  # HTTP endpoint for sensor data ingestion
-  - kind: http
-    id: sensor-ingest
-    autoStart: true
-    host: "0.0.0.0"
-    port: 9000
-    timeoutMs: 30000
-
-queries:
-  # All sensor readings for dashboard
-  - id: all-readings
-    autoStart: true
-    query: |
-      MATCH (s:Sensor)
-      RETURN s.id AS SensorId,
-             s.type AS SensorType,
-             s.value AS Value,
-             s.unit AS Unit,
-             s.location AS Location
-    queryLanguage: Cypher
+instances:
+  - id: iot-sensor-system
     sources:
-      - sourceId: sensor-ingest
+  # HTTP endpoint for sensor data ingestion
+      - kind: http
+        id: sensor-ingest
+        autoStart: true
+        host: "0.0.0.0"
+        port: 9000
+        timeoutMs: 30000
+
+    queries:
+  # All sensor readings for dashboard
+      - id: all-readings
+        autoStart: true
+        query: |
+          MATCH (s:Sensor)
+          RETURN s.id AS SensorId,
+                 s.type AS SensorType,
+                 s.value AS Value,
+                 s.unit AS Unit,
+                 s.location AS Location
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-ingest
 
   # High temperature alerts (> 80F)
-  - id: high-temp-alerts
-    autoStart: true
-    query: |
-      MATCH (s:Sensor)
-      WHERE s.type = 'temperature' AND s.value > 80
-      RETURN s.id AS SensorId,
-             s.value AS Temperature,
-             s.location AS Location,
-             'HIGH_TEMPERATURE' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-ingest
+      - id: high-temp-alerts
+        autoStart: true
+        query: |
+          MATCH (s:Sensor)
+          WHERE s.type = 'temperature' AND s.value > 80
+          RETURN s.id AS SensorId,
+                 s.value AS Temperature,
+                 s.location AS Location,
+                 'HIGH_TEMPERATURE' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-ingest
 
   # Low temperature alerts (< 32F - freezing)
-  - id: freeze-alerts
-    autoStart: true
-    query: |
-      MATCH (s:Sensor)
-      WHERE s.type = 'temperature' AND s.value < 32
-      RETURN s.id AS SensorId,
-             s.value AS Temperature,
-             s.location AS Location,
-             'FREEZING' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-ingest
+      - id: freeze-alerts
+        autoStart: true
+        query: |
+          MATCH (s:Sensor)
+          WHERE s.type = 'temperature' AND s.value < 32
+          RETURN s.id AS SensorId,
+                 s.value AS Temperature,
+                 s.location AS Location,
+                 'FREEZING' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-ingest
 
   # High humidity alerts (> 70%)
-  - id: humidity-alerts
-    autoStart: true
-    query: |
-      MATCH (s:Sensor)
-      WHERE s.type = 'humidity' AND s.value > 70
-      RETURN s.id AS SensorId,
-             s.value AS Humidity,
-             s.location AS Location,
-             'HIGH_HUMIDITY' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-ingest
+      - id: humidity-alerts
+        autoStart: true
+        query: |
+          MATCH (s:Sensor)
+          WHERE s.type = 'humidity' AND s.value > 70
+          RETURN s.id AS SensorId,
+                 s.value AS Humidity,
+                 s.location AS Location,
+                 'HIGH_HUMIDITY' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-ingest
 
   # Sensor statistics
-  - id: sensor-stats
-    autoStart: true
-    query: |
-      MATCH (s:Sensor)
-      RETURN s.type AS SensorType,
-             count(s) AS SensorCount,
-             avg(s.value) AS AverageValue,
-             min(s.value) AS MinValue,
-             max(s.value) AS MaxValue
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-ingest
+      - id: sensor-stats
+        autoStart: true
+        query: |
+          MATCH (s:Sensor)
+          RETURN s.type AS SensorType,
+                 count(s) AS SensorCount,
+                 avg(s.value) AS AverageValue,
+                 min(s.value) AS MinValue,
+                 max(s.value) AS MaxValue
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-ingest
 
-reactions:
+    reactions:
   # Console logging for debugging
-  - kind: log
-    id: sensor-console
-    queries:
-      - all-readings
-      - high-temp-alerts
-      - freeze-alerts
-      - humidity-alerts
-    autoStart: true
-    routes:
-      all-readings:
-        added:
-          template: "[SENSOR] + {{after.SensorId}} ({{after.SensorType}}): {{after.Value}}{{after.Unit}} at {{after.Location}}"
-        updated:
-          template: "[SENSOR] ~ {{after.SensorId}}: {{after.Value}}{{after.Unit}}"
-      high-temp-alerts:
-        added:
-          template: "[ALERT] HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
-      freeze-alerts:
-        added:
-          template: "[ALERT] FREEZING: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
-      humidity-alerts:
-        added:
-          template: "[ALERT] HIGH HUMIDITY: Sensor {{after.SensorId}} at {{after.Humidity}}% ({{after.Location}}) - {{after.AlertType}}"
+      - kind: log
+        id: sensor-console
+        queries:
+          - all-readings
+          - high-temp-alerts
+          - freeze-alerts
+          - humidity-alerts
+        autoStart: true
+        routes:
+          all-readings:
+            added:
+              template: "[SENSOR] + {{after.SensorId}} ({{after.SensorType}}): {{after.Value}}{{after.Unit}} at {{after.Location}}"
+            updated:
+              template: "[SENSOR] ~ {{after.SensorId}}: {{after.Value}}{{after.Unit}}"
+          high-temp-alerts:
+            added:
+              template: "[ALERT] HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
+          freeze-alerts:
+            added:
+              template: "[ALERT] FREEZING: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
+          humidity-alerts:
+            added:
+              template: "[ALERT] HIGH HUMIDITY: Sensor {{after.SensorId}} at {{after.Humidity}}% ({{after.Location}}) - {{after.AlertType}}"
 
   # SSE for real-time dashboard
-  - kind: sse
-    id: dashboard-stream
-    queries:
-      - all-readings
-      - high-temp-alerts
-      - freeze-alerts
-      - humidity-alerts
-      - sensor-stats
-    autoStart: true
-    host: "0.0.0.0"
-    port: 8081
-    ssePath: "/sensors"
-    heartbeatIntervalMs: 15000
-    routes:
-      all-readings:
-        added:
-          template: '{"type": "reading", "sensorId": "{{after.SensorId}}", "sensorType": "{{after.SensorType}}", "value": {{after.Value}}, "unit": "{{after.Unit}}", "location": "{{after.Location}}"}'
-      high-temp-alerts:
-        added:
-          path: "/alerts"
-          template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
-      freeze-alerts:
-        added:
-          path: "/alerts"
-          template: '{"type": "alert", "severity": "critical", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
-      humidity-alerts:
-        added:
-          template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "humidity": {{after.Humidity}}, "location": "{{after.Location}}"}'
-      sensor-stats:
-        added:
-          template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
-        updated:
-          template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
+      - kind: sse
+        id: dashboard-stream
+        queries:
+          - all-readings
+          - high-temp-alerts
+          - freeze-alerts
+          - humidity-alerts
+          - sensor-stats
+        autoStart: true
+        host: "0.0.0.0"
+        port: 8081
+        ssePath: "/sensors"
+        heartbeatIntervalMs: 15000
+        routes:
+          all-readings:
+            added:
+              template: '{"type": "reading", "sensorId": "{{after.SensorId}}", "sensorType": "{{after.SensorType}}", "value": {{after.Value}}, "unit": "{{after.Unit}}", "location": "{{after.Location}}"}'
+          high-temp-alerts:
+            added:
+              path: "/alerts"
+              template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
+          freeze-alerts:
+            added:
+              path: "/alerts"
+              template: '{"type": "alert", "severity": "critical", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
+          humidity-alerts:
+            added:
+              template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "humidity": {{after.Humidity}}, "location": "{{after.Location}}"}'
+          sensor-stats:
+            added:
+              template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
+            updated:
+              template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
 
   # HTTP webhook for critical alerts
-  - kind: http
-    id: alert-webhook
-    queries:
-      - freeze-alerts
-    autoStart: true
-    baseUrl: "${ALERT_WEBHOOK_URL:-http://localhost:3000}"
-    timeoutMs: 5000
-    routes:
-      freeze-alerts:
-        added:
-          url: "/alerts/critical"
-          method: "POST"
-          body: '{"alert": "FREEZING_DETECTED", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}", "alertType": "{{after.AlertType}}", "priority": "critical"}'
-          headers:
-            Content-Type: "application/json"
-            X-Alert-Priority: "critical"
+      - kind: http
+        id: alert-webhook
+        queries:
+          - freeze-alerts
+        autoStart: true
+        baseUrl: "${ALERT_WEBHOOK_URL:-http://localhost:3000}"
+        timeoutMs: 5000
+        routes:
+          freeze-alerts:
+            added:
+              url: "/alerts/critical"
+              method: "POST"
+              body: '{"alert": "FREEZING_DETECTED", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}", "alertType": "{{after.AlertType}}", "priority": "critical"}'
+              headers:
+                Content-Type: "application/json"
+                X-Alert-Priority: "critical"

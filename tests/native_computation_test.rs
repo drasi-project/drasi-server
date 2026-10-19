@@ -44,7 +44,6 @@ use drasi_server::{
     plugin_orchestrator::PluginOrchestrator,
     plugin_registry::PluginRegistry,
 };
-use indexmap::IndexMap;
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
 use tower::ServiceExt;
@@ -379,7 +378,17 @@ async fn assert_clone_and_save_rejected(
         configuration_from_snapshot(&target.snapshot_computation_configuration().await?)?.is_none()
     );
     let path = directory.join("server.yaml");
-    std::fs::write(&path, "id: original\n")?;
+    std::fs::write(&path, "instances: [{id: original}]\n")?;
+    let mut original = original.clone();
+    let mut source_settings = original.instances.first().cloned().unwrap_or_default();
+    source_settings.id = drasi_server::models::ConfigValue::Static(source_id).into();
+    original.instances = vec![
+        source_settings,
+        drasi_server::config::DrasiLibInstanceConfig {
+            id: drasi_server::models::ConfigValue::Static("clone-target".into()).into(),
+            ..Default::default()
+        },
+    ];
     let persistence = ConfigPersistence::new(
         path.clone(),
         instances,
@@ -387,14 +396,15 @@ async fn assert_clone_and_save_rejected(
         8080,
         "info".into(),
         true,
-        IndexMap::new(),
-        IndexMap::new(),
-        None,
-        original,
-    );
+        &original,
+    )
+    .expect("valid instance settings");
     let error = persistence.save().await.unwrap_err();
     assert!(format!("{error:#}").contains(reason), "{error:#}");
-    assert_eq!(std::fs::read_to_string(path)?, "id: original\n");
+    assert_eq!(
+        std::fs::read_to_string(path)?,
+        "instances: [{id: original}]\n"
+    );
     source.shutdown().await?;
     target.shutdown().await?;
     Ok(())
@@ -574,6 +584,84 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
 }
 
 #[tokio::test]
+async fn loading_a_native_plugin_activates_existing_waiting_declarations() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let output = directory.path().join("late-factory.jsonl");
+    let mut config = definition(&output)?;
+    for node in &mut config.definition.components {
+        node.lifecycle.auto_start = true;
+    }
+    let core = core("late-factory").await?;
+    core.start().await?;
+    let instances = InstanceRegistry::new();
+    instances
+        .add("late-factory".into(), core.clone())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let mut registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut registry);
+    for kind in [MIDDLEWARE, ARITHMETIC, CAPTURE] {
+        registry.register_computation_plugin(component_plugin(kind))?;
+    }
+    let registry = Arc::new(RwLock::new(registry));
+    let orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
+        Arc::new(PluginLifecycleManager::new(registry.clone())),
+        directory.path().to_owned(),
+    ));
+    orchestrator.bind_instances(instances.clone()).await?;
+    let app = build_v1_router(instances.clone(), Arc::new(false), None, registry, None);
+    let (status, body) = request(
+        &app,
+        "POST",
+        "/instances/late-factory/computation/components",
+        &serde_json::to_string(&config)?,
+        "application/json",
+    )
+    .await
+    .context("declaring nodes before the native factory is loaded")?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counter = core.computation_component("counter")?;
+    assert!(counter.observed()?.waiting_for.iter().any(|waiting| {
+        matches!(waiting, DependencyWait::Factory { implementation }
+            if implementation.name.as_ref() == COUNTER)
+    }));
+    assert!(counter.observed()?.failure.is_none());
+    let library = artifact("drasi_computation_source_counter");
+    let filename = library
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("library filename")?;
+    std::fs::copy(&library, directory.path().join(filename))?;
+    let plugins = build_plugin_router(orchestrator, instances, Arc::new(false));
+    let (status, body) = request(
+        &plugins,
+        "POST",
+        "/load",
+        &json!({"filename":filename}).to_string(),
+        "application/json",
+    )
+    .await
+    .context("loading the deferred native factory through the plugin API")?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    tokio::time::timeout(DEADLINE, counter.wait_started())
+        .await
+        .with_context(|| format!("counter activation: {:?}", counter.observed()))??;
+    exact_output(&output).await.with_context(|| {
+        format!(
+            "waiting for exact captured output: {:#?}",
+            core.computation_control().map(|control| control.observed())
+        )
+    })?;
+    assert_eq!(
+        core.computation_component("counter")?.generation(),
+        counter.generation()
+    );
+    assert!(counter.observed()?.waiting_for.is_empty());
+    core.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn native_resource_only_configuration_can_be_inspected_and_removed() -> Result<()> {
     let core = core("resources").await?;
     let registry = InstanceRegistry::new();
@@ -670,18 +758,18 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     let path = directory.path().join("server.yaml");
     let original: DrasiServerConfig =
         serde_json::from_value(json!({"instances":[{"id":"first"},{"id":"second"}]}))?;
-    let persistence = Arc::new(ConfigPersistence::new(
-        path.clone(),
-        instances.clone(),
-        "127.0.0.1".into(),
-        8080,
-        "info".into(),
-        true,
-        IndexMap::new(),
-        IndexMap::new(),
-        None,
-        &original,
-    ));
+    let persistence = Arc::new(
+        ConfigPersistence::new(
+            path.clone(),
+            instances.clone(),
+            "127.0.0.1".into(),
+            8080,
+            "info".into(),
+            true,
+            &original,
+        )
+        .expect("valid instance settings"),
+    );
     let app = build_v1_router(
         instances.clone(),
         Arc::new(false),
@@ -831,7 +919,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         );
     }
     let saved = drasi_server::load_config_file(&path)?;
-    assert!(saved.computation.is_none());
+    assert!(serde_json::to_value(&saved)?.get("computation").is_none());
     assert_eq!(saved.instances.len(), 2);
     for instance in &saved.instances {
         assert_eq!(
@@ -893,23 +981,24 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         8080,
         "info".into(),
         true,
-        IndexMap::new(),
-        IndexMap::new(),
-        None,
         &saved,
-    );
+    )
+    .expect("valid instance settings");
     persistence
         .register_instance(saved.instances[0].clone())
-        .await;
+        .await?;
     remove_components(&first, &config).await?;
     persistence.save().await?;
-    assert!(drasi_server::load_config_file(&path)?.computation.is_none());
+    assert!(drasi_server::load_config_file(&path)?.instances[0]
+        .computation
+        .is_none());
     first.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn component_api_rejects_missing_factories_resources_and_read_only_mutations() -> Result<()> {
+async fn component_api_waits_for_factories_but_rejects_missing_recipes_and_read_only_mutations(
+) -> Result<()> {
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("test").await?;
@@ -934,19 +1023,32 @@ async fn component_api_rejects_missing_factories_resources_and_read_only_mutatio
     }
     let mut missing_resource = config.clone();
     missing_resource.definition.resource_configurations.clear();
-    for invalid in [missing_factory, missing_resource] {
-        let (status, body) = request(
-            &writable,
-            "POST",
-            "/instances/test/computation/components",
-            &serde_json::to_string(&invalid)?,
-            "application/json",
-        )
-        .await?;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert_eq!(body["code"], "INVALID_REQUEST");
-        assert!(core.computation_component("counter").is_err());
-    }
+    let (status, body) = request(
+        &writable,
+        "POST",
+        "/instances/test/computation/components",
+        &serde_json::to_string(&missing_resource)?,
+        "application/json",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_REQUEST");
+    assert!(core.computation_component("counter").is_err());
+    let (status, body) = request(
+        &writable,
+        "POST",
+        "/instances/test/computation/components",
+        &serde_json::to_string(&missing_factory)?,
+        "application/json",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counter = core.computation_component("counter")?.observed()?;
+    assert!(counter.waiting_for.iter().any(|waiting| {
+        matches!(waiting, DependencyWait::Factory { implementation }
+            if implementation.name.as_ref() == "not-installed")
+    }));
+    assert!(counter.failure.is_none());
     let read_only = build_v1_router(instances, Arc::new(true), None, plugins, None);
     for (method, path, payload) in [
         (
@@ -1143,7 +1245,10 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
         .contains_key(&resource("configuration")));
     assert!(configuration_from_snapshot(&snapshot).is_err());
     let original = DrasiServerConfig {
-        computation: Some(config.into()),
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            computation: Some(config.into()),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert_clone_and_save_rejected(
@@ -1206,6 +1311,7 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
                     capacity: 1,
                     source_rank: 0,
                     source_id: None,
+                    source_dispatch: None,
                     drop_when_full: false,
                 });
             }
@@ -1415,7 +1521,6 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         let specification =
             transaction.specification(&registry, resource("transformers"), resource("indexes"))?;
         let mut config = definition(&directory.path().join("unused.jsonl"))?;
-        config.definition.allow_incomplete = true;
         config.definition.relationships.clear();
         config.definition.components = vec![DesiredComponent {
             descriptor: specification.descriptor.clone(),
@@ -1713,34 +1818,39 @@ fn allowlist_precedes_dlopen_and_wrong_native_abi_never_falls_back() -> Result<(
 #[test]
 fn native_config_preserves_component_definitions_and_rejects_unknown_fields() -> Result<()> {
     let config = definition(Path::new("capture.jsonl"))?;
-    let server: DrasiServerConfig = serde_json::from_value(json!({"computation":config}))?;
+    let server: DrasiServerConfig =
+        serde_json::from_value(json!({"instances":[{"computation":config}]}))?;
     server.validate()?;
     let yaml = serde_yaml::to_string(&server)?;
     let restored: DrasiServerConfig = serde_yaml::from_str(&yaml)?;
     assert_eq!(
-        serde_json::to_value(&restored.computation)?,
-        serde_json::to_value(&server.computation)?
+        serde_json::to_value(&restored.instances[0].computation)?,
+        serde_json::to_value(&server.instances[0].computation)?
     );
     for invalid in [
         json!({"executionMode":"computationGraph"}),
         json!({"instances":[{"id":"test","executionMode":"computationGraph"}]}),
         json!({"computationGraph":[]}),
-        json!({"computation":{"definition":config.definition,"typo":true}}),
+        json!({"instances":[{"computation":{"definition":config.definition,"typo":true}}]}),
     ] {
         assert!(serde_json::from_value::<DrasiServerConfig>(invalid).is_err());
     }
-    let invalid: DrasiServerConfig =
-        serde_json::from_value(json!({"computation":config, "instances":[{"id":"test"}]}))?;
-    assert!(invalid.validate().is_err());
+    let invalid = serde_json::from_value::<DrasiServerConfig>(
+        json!({"computation":config, "instances":[{"id":"test"}]}),
+    );
+    assert!(invalid
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field `computation`"));
     let ordinary: DrasiServerConfig =
-        serde_json::from_value(json!({"sources":[{"kind":"mock","id":"legacy"}]}))?;
-    assert_eq!(ordinary.sources[0].kind, "mock");
-    assert!(ordinary.computation.is_none());
+        serde_json::from_value(json!({"instances":[{"sources":[{"kind":"mock","id":"source"}]}]}))?;
+    assert_eq!(ordinary.instances[0].sources[0].kind, "mock");
+    assert!(ordinary.instances[0].computation.is_none());
     Ok(())
 }
 
 #[test]
-fn plugin_aware_validation_checks_native_factory_availability() -> Result<()> {
+fn expanded_native_definitions_validate_before_all_factories_are_available() -> Result<()> {
     let directory = tempfile::tempdir()?;
     for name in [
         "drasi_computation_source_counter",
@@ -1756,25 +1866,25 @@ fn plugin_aware_validation_checks_native_factory_availability() -> Result<()> {
     }
     let graph = definition(Path::new("capture.jsonl"))?;
     let mut config = DrasiServerConfig {
-        computation: Some(graph.into()),
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            computation: Some(graph.into()),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let valid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
     assert_eq!(valid.plugins_loaded, 4);
     assert!(valid.config_errors.is_empty(), "{:?}", valid.config_errors);
     let drasi_server::computation::ComputationConfigInput::Definition(graph) =
-        config.computation.as_mut().unwrap()
+        config.instances[0].computation.as_mut().unwrap()
     else {
         panic!("expanded test definition");
     };
     if let ComponentConstruction::Factory(spec) = &mut graph.definition.components[0].construction {
         spec.implementation.name = "missing-native-factory".into();
     }
-    let invalid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
-    assert!(invalid.has_errors());
-    assert_eq!(invalid.config_errors[0].component_type, "computation");
-    assert!(invalid.config_errors[0].errors[0]
-        .message
-        .contains("missing-native-factory"));
+    let pending = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
+    assert!(!pending.has_errors(), "{:?}", pending.config_errors);
+    assert_eq!(pending.plugins_loaded, 4);
     Ok(())
 }

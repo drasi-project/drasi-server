@@ -122,7 +122,6 @@ async fn test_persistence_saves_complete_configuration() {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -149,9 +148,13 @@ async fn test_persistence_saves_complete_configuration() {
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
         persist_config: true,
-        sources: vec![source1, source2],
-        queries: vec![query],
-        reactions: vec![reaction],
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![source1, source2],
+            queries: vec![query],
+            reactions: vec![reaction],
+            ..Default::default()
+        }],
         ..DrasiServerConfig::default()
     };
 
@@ -176,30 +179,36 @@ async fn test_persistence_saves_complete_configuration() {
     assert!(loaded_config.persist_config);
 
     // Verify sources
-    assert_eq!(loaded_config.sources.len(), 2);
-    assert_eq!(loaded_config.sources[0].id(), "test-source-1");
-    assert!(loaded_config.sources[0].auto_start());
-    assert_eq!(loaded_config.sources[1].id(), "test-source-2");
-    assert!(!loaded_config.sources[1].auto_start());
+    assert_eq!(loaded_config.instances[0].sources.len(), 2);
+    assert_eq!(loaded_config.instances[0].sources[0].id(), "test-source-1");
+    assert!(loaded_config.instances[0].sources[0].auto_start());
+    assert_eq!(loaded_config.instances[0].sources[1].id(), "test-source-2");
+    assert!(!loaded_config.instances[0].sources[1].auto_start());
 
     // Verify queries
-    assert_eq!(loaded_config.queries.len(), 1);
-    assert_eq!(loaded_config.queries[0].id, "test-query-1");
+    assert_eq!(loaded_config.instances[0].queries.len(), 1);
+    assert_eq!(loaded_config.instances[0].queries[0].id, "test-query-1");
     assert_eq!(
-        loaded_config.queries[0].query,
+        loaded_config.instances[0].queries[0].query,
         "MATCH (n) RETURN n".to_string()
     );
-    assert_eq!(loaded_config.queries[0].sources.len(), 1);
+    assert_eq!(loaded_config.instances[0].queries[0].sources.len(), 1);
     assert_eq!(
-        loaded_config.queries[0].sources[0].source_id,
+        loaded_config.instances[0].queries[0].sources[0].source_id,
         "test-source-1".to_string()
     );
 
     // Verify reactions
-    assert_eq!(loaded_config.reactions.len(), 1);
-    assert_eq!(loaded_config.reactions[0].id(), "test-reaction-1");
-    assert_eq!(loaded_config.reactions[0].queries().len(), 1);
-    assert_eq!(loaded_config.reactions[0].queries()[0], "test-query-1");
+    assert_eq!(loaded_config.instances[0].reactions.len(), 1);
+    assert_eq!(
+        loaded_config.instances[0].reactions[0].id(),
+        "test-reaction-1"
+    );
+    assert_eq!(loaded_config.instances[0].reactions[0].queries().len(), 1);
+    assert_eq!(
+        loaded_config.instances[0].reactions[0].queries()[0],
+        "test-query-1"
+    );
 }
 
 #[tokio::test]
@@ -238,7 +247,11 @@ async fn test_persistence_atomic_write() {
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
         persist_config: true,
-        sources: vec![new_source],
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            sources: vec![new_source],
+            ..Default::default()
+        }],
         ..DrasiServerConfig::default()
     };
 
@@ -261,8 +274,8 @@ async fn test_persistence_atomic_write() {
         loaded_config.log_level,
         ConfigValue::Static("debug".to_string())
     );
-    assert_eq!(loaded_config.sources.len(), 1);
-    assert_eq!(loaded_config.sources[0].id(), "new-source");
+    assert_eq!(loaded_config.instances[0].sources.len(), 1);
+    assert_eq!(loaded_config.instances[0].sources[0].id(), "new-source");
 }
 
 #[tokio::test]
@@ -294,20 +307,21 @@ host: 127.0.0.1
 port: 8080
 logLevel: info
 persistConfig: true
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify
     let config = load_config_file(&config_path).expect("Failed to load YAML config");
     assert_eq!(config.host, ConfigValue::Static("127.0.0.1".to_string()));
-    assert_eq!(config.sources.len(), 1);
-    assert_eq!(config.sources[0].id(), "test-source");
+    assert_eq!(config.instances[0].sources.len(), 1);
+    assert_eq!(config.instances[0].sources[0].id(), "test-source");
 }
 
 #[test]
@@ -317,9 +331,10 @@ fn test_config_default_values() {
 
     // Write minimal YAML (using defaults)
     let yaml_content = r#"
-sources: []
-queries: []
-reactions: []
+instances:
+  - sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
@@ -350,7 +365,6 @@ fn test_multiple_queries_persist_correctly() {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -373,7 +387,6 @@ fn test_multiple_queries_persist_correctly() {
             pipeline: vec![],
         }],
         enable_bootstrap: false,
-        bootstrap_buffer_size: 5000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -390,7 +403,11 @@ fn test_multiple_queries_persist_correctly() {
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
-        queries: vec![query1, query2],
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            queries: vec![query1, query2],
+            ..Default::default()
+        }],
         ..DrasiServerConfig::default()
     };
 
@@ -402,13 +419,13 @@ fn test_multiple_queries_persist_correctly() {
     // Load and verify both queries are present
     let loaded_config = load_config_file(&config_path).expect("Failed to load config");
     assert_eq!(
-        loaded_config.queries.len(),
+        loaded_config.instances[0].queries.len(),
         2,
         "Both queries should be persisted"
     );
 
     // Verify first query
-    let q1 = loaded_config
+    let q1 = loaded_config.instances[0]
         .queries
         .iter()
         .find(|q| q.id == "query-1")
@@ -417,7 +434,7 @@ fn test_multiple_queries_persist_correctly() {
     assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
-    let q2 = loaded_config
+    let q2 = loaded_config.instances[0]
         .queries
         .iter()
         .find(|q| q.id == "query-2")
@@ -448,7 +465,6 @@ fn test_adding_query_preserves_existing_queries() {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -464,7 +480,11 @@ fn test_adding_query_preserves_existing_queries() {
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
-        queries: vec![query1.clone()],
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            queries: vec![query1.clone()],
+            ..Default::default()
+        }],
         ..DrasiServerConfig::default()
     };
 
@@ -489,7 +509,6 @@ fn test_adding_query_preserves_existing_queries() {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -499,7 +518,7 @@ fn test_adding_query_preserves_existing_queries() {
         bootstrap_timeout_secs: 300,
     };
 
-    loaded_config.queries.push(query2);
+    loaded_config.instances[0].queries.push(query2);
     loaded_config
         .save_to_file(&config_path)
         .expect("Failed to save updated config");
@@ -507,14 +526,14 @@ fn test_adding_query_preserves_existing_queries() {
     // Reload and verify both queries exist
     let final_config = load_config_file(&config_path).expect("Failed to load final config");
     assert_eq!(
-        final_config.queries.len(),
+        final_config.instances[0].queries.len(),
         2,
         "Both queries should be present after update"
     );
 
     // Verify the original query is still there
     assert!(
-        final_config
+        final_config.instances[0]
             .queries
             .iter()
             .any(|q| q.id == "existing-query"),
@@ -523,7 +542,10 @@ fn test_adding_query_preserves_existing_queries() {
 
     // Verify the new query was added
     assert!(
-        final_config.queries.iter().any(|q| q.id == "new-query"),
+        final_config.instances[0]
+            .queries
+            .iter()
+            .any(|q| q.id == "new-query"),
         "New query should be added"
     );
 }
@@ -539,37 +561,38 @@ host: 127.0.0.1
 port: 8080
 logLevel: info
 persistConfig: true
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-queries:
-  - id: first-query
-    autoStart: true
-    query: "MATCH (n:Node) RETURN n"
-    queryLanguage: Cypher
-    sources:
-      - sourceId: test-source
-  - id: second-query
-    autoStart: false
-    query: "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s"
-    queryLanguage: Cypher
-    sources:
-      - sourceId: test-source
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+    queries:
+      - id: first-query
+        autoStart: true
+        query: "MATCH (n:Node) RETURN n"
+        queryLanguage: Cypher
+        sources:
+          - sourceId: test-source
+      - id: second-query
+        autoStart: false
+        query: "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s"
+        queryLanguage: Cypher
+        sources:
+          - sourceId: test-source
+    reactions: []
 "#;
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify both queries are present
     let config = load_config_file(&config_path).expect("Failed to load config");
     assert_eq!(
-        config.queries.len(),
+        config.instances[0].queries.len(),
         2,
         "Both queries should be loaded from YAML"
     );
 
     // Verify first query
-    let q1 = config
+    let q1 = config.instances[0]
         .queries
         .iter()
         .find(|q| q.id == "first-query")
@@ -578,7 +601,7 @@ reactions: []
     assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
-    let q2 = config
+    let q2 = config.instances[0]
         .queries
         .iter()
         .find(|q| q.id == "second-query")
@@ -595,7 +618,7 @@ reactions: []
         .expect("Failed to save config");
     let reloaded_config = load_config_file(&config_path).expect("Failed to reload config");
     assert_eq!(
-        reloaded_config.queries.len(),
+        reloaded_config.instances[0].queries.len(),
         2,
         "Both queries should survive round-trip"
     );

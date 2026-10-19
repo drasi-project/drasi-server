@@ -644,7 +644,7 @@ const queryConfig = {
   autoStart: true
 };
 
-await fetch('http://localhost:8280/api/v1/queries', {
+await fetch('http://localhost:8280/api/v1/instances/trading-server/queries', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(queryConfig)
@@ -665,7 +665,7 @@ const reactionConfig = {
   heartbeatIntervalMs: 15000
 };
 
-await fetch('http://localhost:8280/api/v1/reactions', {
+await fetch('http://localhost:8280/api/v1/instances/trading-server/reactions', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(reactionConfig)
@@ -756,8 +756,8 @@ cd database
 
 ### Queries not updating
 
-1. Check sources are running: `curl http://localhost:8280/api/v1/sources`
-2. Check queries exist: `curl http://localhost:8280/api/v1/queries`
+1. Check sources are running: `curl http://localhost:8280/api/v1/instances/trading-server/sources`
+2. Check queries exist: `curl http://localhost:8280/api/v1/instances/trading-server/queries`
 3. Check SSE connection in browser DevTools (Network tab, filter by EventSource)
 
 ### Database reset

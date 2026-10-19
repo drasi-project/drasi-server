@@ -91,7 +91,7 @@ async fn assert_package_versions_and_component_startup(
     registry: Arc<RwLock<PluginRegistry>>,
 ) -> anyhow::Result<()> {
     use drasi_lib::{ComponentStatus, DrasiLib, Query};
-    use drasi_server::config::{ReactionConfig, SourceConfig};
+    use drasi_server::api::models::{ReactionConfig, SourceConfig};
     use drasi_server::factories::{create_reaction_locked, create_source_locked};
 
     {
@@ -644,7 +644,7 @@ async fn test_server_hot_reload_e2e() {
     // Write a minimal config with hotReloadPlugins enabled
     let config_path = temp_dir.path().join("server.yaml");
     let config_content = format!(
-        r#"id: hot-reload-e2e-test
+        r#"
 host: 127.0.0.1
 port: {port}
 logLevel: info
@@ -652,9 +652,11 @@ persistConfig: false
 hotReloadPlugins: true
 hotReloadDebounceMs: 200
 verifyPlugins: false
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: hot-reload-e2e-test
+    sources: []
+    queries: []
+    reactions: []
 "#
     );
     std::fs::write(&config_path, &config_content).expect("write config");
@@ -752,7 +754,6 @@ reactions: []
     );
 
     // Verify we can create a source using the hot-loaded plugin's kind
-    // Use the first instance's convenience routes
     let resp = client
         .get(format!("{base_url}/api/v1/plugins"))
         .send()
@@ -779,11 +780,13 @@ reactions: []
         "autoStart": false
     });
     let resp = client
-        .post(format!("{base_url}/api/v1/sources"))
+        .post(format!(
+            "{base_url}/api/v1/instances/hot-reload-e2e-test/sources"
+        ))
         .json(&create_source_body)
         .send()
         .await
-        .expect("POST /api/v1/sources");
+        .expect("POST instance source");
 
     // The source should be created successfully (201) or accepted
     assert!(

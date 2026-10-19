@@ -40,14 +40,8 @@
 //! - `POST /api/v1/instances/{instanceId}/reactions/{id}/start` - Start a reaction
 //! - `POST /api/v1/instances/{instanceId}/reactions/{id}/stop` - Stop a reaction
 //!
-//! ## Convenience Routes (First Instance)
-//!
-//! For backward compatibility and convenience, the first configured instance
-//! is also accessible via shortened routes:
-//!
-//! - `/api/v1/sources` - Sources of the first instance
-//! - `/api/v1/queries` - Queries of the first instance
-//! - `/api/v1/reactions` - Reactions of the first instance
+//! Instance IDs are required for component operations. An empty Server remains
+//! available through its health, instance-management, and plugin routes.
 
 pub mod handlers;
 pub mod openapi;

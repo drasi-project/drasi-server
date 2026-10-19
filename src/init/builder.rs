@@ -20,7 +20,7 @@ use drasi_lib::config::QueryLanguage;
 use drasi_server::api::models::{
     ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
 };
-use drasi_server::DrasiServerConfig;
+use drasi_server::{DrasiLibInstanceConfig, DrasiServerConfig};
 
 use super::prompts::ServerSettings;
 
@@ -30,8 +30,7 @@ pub fn build_config(
     sources: Vec<SourceConfig>,
     reactions: Vec<ReactionConfig>,
 ) -> DrasiServerConfig {
-    // Generate a unique server ID
-    let server_id = uuid::Uuid::new_v4().to_string();
+    let instance_id = uuid::Uuid::new_v4().to_string();
 
     // Create a sample query if we have sources
     let queries = if !sources.is_empty() {
@@ -45,7 +44,6 @@ pub fn build_config(
             query_language: QueryLanguage::GQL,
             auto_start: true,
             enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
                 source_id,
@@ -66,21 +64,13 @@ pub fn build_config(
     };
 
     DrasiServerConfig {
-        enable_archive: false,
         api_version: None,
-        id: ConfigValue::Static(server_id),
         host: ConfigValue::Static(server_settings.host),
         port: ConfigValue::Static(server_settings.port),
         log_level: ConfigValue::Static(server_settings.log_level),
         persist_config: true,
-        persist_index: server_settings.persist_index,
-        memory_budget_mib: None,
         enable_ui: true,     // Enable web UI by default
         solutions_dir: None, // Use default
-        state_store: server_settings.state_store,
-        secret_store: None,
-        default_priority_queue_capacity: None, // Use lib defaults
-        default_dispatch_buffer_capacity: None, // Use lib defaults
         plugin_registry: Some(server_settings.plugin_registry.clone()),
         auto_install_plugins: server_settings.auto_install_plugins,
         plugins: Vec::new(),
@@ -89,14 +79,15 @@ pub fn build_config(
         hot_reload_plugins: server_settings.hot_reload_plugins,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
-        sources,
-        queries,
-        reactions,
-        identity_providers: Vec::new(),
-        bootstrap_providers: Vec::new(),
-        computation: None,
-        configuration_store: None,
-        instances: vec![], // Empty = use single-instance mode
+        instances: vec![DrasiLibInstanceConfig {
+            id: ConfigValue::Static(instance_id).into(),
+            persist_index: server_settings.persist_index,
+            state_store: server_settings.state_store,
+            sources,
+            queries,
+            reactions,
+            ..Default::default()
+        }],
     }
 }
 
@@ -206,14 +197,14 @@ mod tests {
         assert!(config.persist_config);
 
         // Check sources and reactions are empty
-        assert!(config.sources.is_empty());
-        assert!(config.reactions.is_empty());
+        assert!(config.instances[0].sources.is_empty());
+        assert!(config.instances[0].reactions.is_empty());
 
         // Check no query is generated when no sources
-        assert!(config.queries.is_empty());
+        assert!(config.instances[0].queries.is_empty());
 
         // Check server ID is generated (UUID format)
-        let id = match &config.id {
+        let id = match config.instances[0].id.as_ref() {
             ConfigValue::Static(s) => s.clone(),
             _ => panic!("Expected static id"),
         };
@@ -228,17 +219,16 @@ mod tests {
         let config = build_config(settings, sources, vec![]);
 
         // Check source is included
-        assert_eq!(config.sources.len(), 1);
-        assert_eq!(config.sources[0].id(), "my-mock");
+        assert_eq!(config.instances[0].sources.len(), 1);
+        assert_eq!(config.instances[0].sources[0].id(), "my-mock");
 
         // Check a sample query is generated
-        assert_eq!(config.queries.len(), 1);
-        let query = &config.queries[0];
+        assert_eq!(config.instances[0].queries.len(), 1);
+        let query = &config.instances[0].queries[0];
         assert_eq!(query.id, "my-query");
         assert_eq!(query.query, "MATCH (n) RETURN n".to_string());
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
-        assert_eq!(query.bootstrap_buffer_size, 10000);
 
         // Check query subscribes to the source
         assert_eq!(query.sources.len(), 1);
@@ -255,14 +245,14 @@ mod tests {
         let config = build_config(settings, sources, vec![]);
 
         // Check all sources are included
-        assert_eq!(config.sources.len(), 2);
-        assert_eq!(config.sources[0].id(), "source-1");
-        assert_eq!(config.sources[1].id(), "source-2");
+        assert_eq!(config.instances[0].sources.len(), 2);
+        assert_eq!(config.instances[0].sources[0].id(), "source-1");
+        assert_eq!(config.instances[0].sources[1].id(), "source-2");
 
         // Query should subscribe to the first source
-        assert_eq!(config.queries.len(), 1);
+        assert_eq!(config.instances[0].queries.len(), 1);
         assert_eq!(
-            config.queries[0].sources[0].source_id,
+            config.instances[0].queries[0].sources[0].source_id,
             "source-1".to_string()
         );
     }
@@ -274,9 +264,9 @@ mod tests {
         let config = build_config(settings, vec![], reactions);
 
         // Check reactions are included
-        assert_eq!(config.reactions.len(), 2);
-        assert_eq!(config.reactions[0].id(), "log-1");
-        assert_eq!(config.reactions[1].id(), "sse-1");
+        assert_eq!(config.instances[0].reactions.len(), 2);
+        assert_eq!(config.instances[0].reactions[0].id(), "log-1");
+        assert_eq!(config.instances[0].reactions[1].id(), "sse-1");
     }
 
     #[test]
@@ -303,9 +293,9 @@ mod tests {
         assert_eq!(config.log_level, ConfigValue::Static("debug".to_string()));
 
         // Check components
-        assert_eq!(config.sources.len(), 1);
-        assert_eq!(config.reactions.len(), 1);
-        assert_eq!(config.queries.len(), 1);
+        assert_eq!(config.instances[0].sources.len(), 1);
+        assert_eq!(config.instances[0].reactions.len(), 1);
+        assert_eq!(config.instances[0].queries.len(), 1);
     }
 
     #[test]
@@ -317,7 +307,7 @@ mod tests {
         let config2 = build_config(settings2, vec![], vec![]);
 
         // Each call should generate a unique ID
-        assert_ne!(config1.id, config2.id);
+        assert_ne!(config1.instances[0].id, config2.instances[0].id);
     }
 
     // ==================== generate_yaml tests ====================
@@ -450,12 +440,18 @@ mod tests {
         assert_eq!(parsed_config.host, original_config.host);
         assert_eq!(parsed_config.port, original_config.port);
         assert_eq!(parsed_config.log_level, original_config.log_level);
-        assert_eq!(parsed_config.sources.len(), original_config.sources.len());
         assert_eq!(
-            parsed_config.reactions.len(),
-            original_config.reactions.len()
+            parsed_config.instances[0].sources.len(),
+            original_config.instances[0].sources.len()
         );
-        assert_eq!(parsed_config.queries.len(), original_config.queries.len());
+        assert_eq!(
+            parsed_config.instances[0].reactions.len(),
+            original_config.instances[0].reactions.len()
+        );
+        assert_eq!(
+            parsed_config.instances[0].queries.len(),
+            original_config.instances[0].queries.len()
+        );
     }
 
     #[test]
@@ -490,7 +486,7 @@ mod tests {
         let config = build_config(settings, vec![], vec![]);
 
         assert!(
-            !config.persist_index,
+            !config.instances[0].persist_index,
             "persist_index should be false when server settings has false"
         );
     }
@@ -511,7 +507,7 @@ mod tests {
         let config = build_config(settings, vec![], vec![]);
 
         assert!(
-            config.persist_index,
+            config.instances[0].persist_index,
             "persist_index should be true when server settings has true"
         );
     }
@@ -590,7 +586,7 @@ mod tests {
         let parsed_config: DrasiServerConfig = serde_yaml::from_str(&yaml_content).unwrap();
 
         assert!(
-            parsed_config.persist_index,
+            parsed_config.instances[0].persist_index,
             "Roundtrip should preserve persist_index: true"
         );
     }
@@ -623,7 +619,7 @@ mod tests {
         let parsed_config: DrasiServerConfig = serde_yaml::from_str(&yaml_content).unwrap();
 
         assert!(
-            !parsed_config.persist_index,
+            !parsed_config.instances[0].persist_index,
             "Roundtrip should preserve persist_index: false"
         );
     }
@@ -646,10 +642,10 @@ mod tests {
         let config = build_config(settings, sources, reactions);
 
         // Verify persist_index is set correctly even with sources and reactions
-        assert!(config.persist_index);
-        assert_eq!(config.sources.len(), 1);
-        assert_eq!(config.reactions.len(), 1);
-        assert_eq!(config.queries.len(), 1);
+        assert!(config.instances[0].persist_index);
+        assert_eq!(config.instances[0].sources.len(), 1);
+        assert_eq!(config.instances[0].reactions.len(), 1);
+        assert_eq!(config.instances[0].queries.len(), 1);
     }
 
     // ==================== hot_reload tests ====================

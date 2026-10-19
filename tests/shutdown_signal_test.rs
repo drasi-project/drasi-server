@@ -8,15 +8,25 @@ use tokio::net::TcpStream;
 use tokio::process::Command;
 use tokio::time::{interval, timeout};
 
-async fn assert_shutdown(signal: &str, repeat_signal: bool, stall_http: bool) -> Result<()> {
+async fn assert_shutdown(
+    signal: &str,
+    repeat_signal: bool,
+    stall_http: bool,
+    start_empty: bool,
+) -> Result<()> {
     let directory = tempfile::tempdir()?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
     let config_path = directory.path().join("server.yaml");
+    let instances = if start_empty {
+        "[]"
+    } else {
+        "[{id: shutdown-test}]"
+    };
     std::fs::write(
         &config_path,
-        format!("apiVersion: drasi.io/v1\nid: shutdown-test\nhost: 127.0.0.1\nport: {port}\nlogLevel: info\npersistConfig: false\nenableUi: false\nsources: []\nqueries: []\nreactions: []\n"),
+        format!("apiVersion: drasi.io/v1\nhost: 127.0.0.1\nport: {port}\nlogLevel: info\npersistConfig: false\nenableUi: false\ninstances: {instances}\n"),
     )?;
     let log_path = directory.path().join("server.log");
     let log_file = std::fs::File::create(&log_path)?;
@@ -50,6 +60,50 @@ async fn assert_shutdown(signal: &str, repeat_signal: bool, stall_http: bool) ->
     ready
         .context(format!("Server startup timed out:\n{startup_logs}"))?
         .context(format!("Server startup failed:\n{startup_logs}"))?;
+
+    if start_empty {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()?;
+        let base = format!("http://127.0.0.1:{port}/api/v1");
+        let response: serde_json::Value = client
+            .get(format!("{base}/instances"))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert_eq!(response["data"], serde_json::json!([]));
+        let response: serde_json::Value = client
+            .post(format!("{base}/instances"))
+            .json(&serde_json::json!({"id": "created-after-startup"}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert_eq!(response["success"], true);
+        let response: serde_json::Value = client
+            .get(format!("{base}/instances/created-after-startup/runtime"))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert_eq!(response["data"]["instanceId"], "created-after-startup");
+        assert_eq!(response["data"]["running"], true);
+        let response = client.get(format!("{base}/queries")).send().await?;
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+        let response: serde_json::Value = client
+            .get(format!("{base}/instances/created-after-startup/queries"))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert_eq!(response["data"], serde_json::json!([]));
+    }
 
     let mut pending_request = if repeat_signal || stall_http {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).await?;
@@ -127,20 +181,25 @@ async fn assert_shutdown(signal: &str, repeat_signal: bool, stall_http: bool) ->
 
 #[tokio::test]
 async fn sigterm_shuts_down_gracefully() -> Result<()> {
-    assert_shutdown("TERM", false, false).await
+    assert_shutdown("TERM", false, false, false).await
 }
 
 #[tokio::test]
 async fn sigint_shuts_down_gracefully() -> Result<()> {
-    assert_shutdown("INT", false, false).await
+    assert_shutdown("INT", false, false, false).await
 }
 
 #[tokio::test]
 async fn repeated_signals_only_run_cleanup_once() -> Result<()> {
-    assert_shutdown("TERM", true, false).await
+    assert_shutdown("TERM", true, false, false).await
 }
 
 #[tokio::test]
 async fn http_drain_timeout_is_not_graceful_success() -> Result<()> {
-    assert_shutdown("TERM", false, true).await
+    assert_shutdown("TERM", false, true, false).await
+}
+
+#[tokio::test]
+async fn empty_server_accepts_and_shuts_down_an_api_created_instance() -> Result<()> {
+    assert_shutdown("TERM", false, false, true).await
 }

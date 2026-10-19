@@ -72,7 +72,7 @@ export class DrasiYamlDiagnosticProvider {
           const valid = activeValidator(item.payload);
           if (!valid && activeValidator.errors) {
             for (const error of activeValidator.errors) {
-              if (error.keyword === 'additionalProperties') {
+              if (error.keyword === 'additionalProperties' && item.kindLabel !== 'config') {
                 continue;
               }
               if (item.kindLabel === 'config' && error.keyword === 'oneOf') {
@@ -142,6 +142,9 @@ export class DrasiYamlDiagnosticProvider {
         if (error.params.missingProperty) {
           message = `Missing required property: ${error.params.missingProperty}`;
         }
+        if (error.params.additionalProperty) {
+          message = `Unknown configuration property: ${error.params.additionalProperty}`;
+        }
       }
 
       if (kindLabel) {
@@ -167,20 +170,16 @@ function extractDrasiItems(document: any) {
 }
 
 function isConfigDocument(document: any) {
+  if (document.kind || document.query) {
+    return false;
+  }
   const keys = [
-    'sources',
-    'queries',
-    'reactions',
+    'apiVersion',
     'instances',
     'host',
     'port',
     'logLevel',
     'persistConfig',
-    'persistIndex',
-    'id',
-    'defaultPriorityQueueCapacity',
-    'defaultDispatchBufferCapacity',
-    'stateStore',
   ];
   return keys.some((key) => Object.prototype.hasOwnProperty.call(document, key));
 }
@@ -196,15 +195,5 @@ function findConfigSchema(schema: any) {
       $ref: '#/definitions/DrasiServerConfig',
     };
   }
-  if (!Array.isArray(schema.oneOf)) {
-    return undefined;
-  }
-  const configSchema = schema.oneOf.find((item: any) => item?.properties?.sources && item?.properties?.queries);
-  if (!configSchema) {
-    return undefined;
-  }
-  return {
-    ...schema,
-    oneOf: [configSchema],
-  };
+  return undefined;
 }

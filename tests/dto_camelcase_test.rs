@@ -26,7 +26,6 @@ fn test_query_config_dto_serializes_camelcase() {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 500,
         joins: None,
         priority_queue_capacity: Some(1000),
         dispatch_buffer_capacity: None,
@@ -49,8 +48,8 @@ fn test_query_config_dto_serializes_camelcase() {
         "enableBootstrap should exist"
     );
     assert!(
-        json.get("bootstrapBufferSize").is_some(),
-        "bootstrapBufferSize should exist"
+        json.get("bootstrapBufferSize").is_none(),
+        "removed bootstrapBufferSize must not be serialized"
     );
     assert!(
         json.get("priorityQueueCapacity").is_some(),

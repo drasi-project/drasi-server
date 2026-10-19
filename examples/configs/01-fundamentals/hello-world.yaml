@@ -31,7 +31,6 @@
 # - Log reaction prints results to console
 
 apiVersion: drasi.io/v1
-id: hello-world-server
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -47,39 +46,41 @@ plugins:
 #     (first reading per sensor = INSERT, subsequent = UPDATE, default sensorCount: 5)
 #   - { type: counter } - Counter nodes with sequential value
 #   - { type: generic } - Generic nodes with random value and message
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-    dataType:
-      type: sensorReading
-    intervalMs: 3000
+instances:
+  - id: hello-world-server
+    sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+        dataType:
+          type: sensorReading
+        intervalMs: 3000
 
 # A query that matches all data from the source
 # Note: The mock source with type: sensorReading generates SensorReading nodes
-queries:
-  - id: all-sensors
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
-    queryLanguage: Cypher
-    sources:
-      - sourceId: test-source
+    queries:
+      - id: all-sensors
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+        queryLanguage: Cypher
+        sources:
+          - sourceId: test-source
 
 # Log the query results to console
 # Template variables: query_name, after (for added/updated), before (for deleted/updated)
 # Access result fields with dot notation: {{after.FieldName}}
-reactions:
-  - kind: log
-    id: console-logger
-    queries:
-      - all-sensors
-    autoStart: true
-    defaultTemplate:
-      added:
-        template: "[+] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
-      updated:
-        template: "[~] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
-      deleted:
-        template: "[-] Sensor {{before.SensorId}} removed"
+    reactions:
+      - kind: log
+        id: console-logger
+        queries:
+          - all-sensors
+        autoStart: true
+        defaultTemplate:
+          added:
+            template: "[+] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
+          updated:
+            template: "[~] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
+          deleted:
+            template: "[-] Sensor {{before.SensorId}} removed"

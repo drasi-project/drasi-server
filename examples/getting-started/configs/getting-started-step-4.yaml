@@ -2,81 +2,79 @@
 #
 # Edit this file to customize your configuration.
 
-id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
 host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
-persistIndex: false
 enableUi: true
 pluginRegistry: ghcr.io/drasi-project
 autoInstallPlugins: true
 plugins:
-- ref: source/postgres
-- ref: bootstrap/postgres
-- ref: reaction/log
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: reaction/log
 verifyPlugins: true
 hotReloadPlugins: false
 hotReloadDebounceMs: 2000
-sources:
-- kind: postgres
-  id: my-postgres
-  autoStart: true
-  bootstrapProvider:
-    kind: postgres
-  database: getting_started
-  host: ${DB_HOST:-localhost}
-  password: drasi_password
-  port: 5432
-  publicationName: drasi_pub
-  slotName: drasi_slot
-  sslMode: prefer
-  tableKeys:
-  - keyColumns:
-    - MessageId
-    table: Message
-  tables:
-  - Message
-  user: drasi_user
-queries:
-- id: all-messages
-  autoStart: true
-  query: |
-    MATCH (m:Message)
-    RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
-  queryLanguage: GQL
-  middleware: []
-  sources:
-  - sourceId: my-postgres
-    nodes: []
-    relations: []
-    pipeline: []
-  enableBootstrap: true
-  bootstrapBufferSize: 10000
-  priorityQueueCapacity: 10000
-  dispatchBufferCapacity: 1000
-  outboxCapacity: 1000
-  bootstrapTimeoutSecs: 300
-- id: hello-world-senders
-  autoStart: true
-  query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
-  queryLanguage: Cypher
-  middleware: []
-  sources:
-  - sourceId: my-postgres
-    nodes: []
-    relations: []
-    pipeline: []
-  enableBootstrap: true
-  bootstrapBufferSize: 10000
-  outboxCapacity: 1000
-  bootstrapTimeoutSecs: 300
-reactions:
-- kind: log
-  id: log-reaction
-  queries:
-  - all-messages
-  - hello-world-senders
-  autoStart: true
-identityProviders: []
-instances: []
+instances:
+  - id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
+    persistIndex: false
+    sources:
+      - kind: postgres
+        id: my-postgres
+        autoStart: true
+        bootstrapProvider:
+          kind: postgres
+        database: getting_started
+        host: ${DB_HOST:-localhost}
+        password: drasi_password
+        port: 5432
+        publicationName: drasi_pub
+        slotName: drasi_slot
+        sslMode: prefer
+        tableKeys:
+          - keyColumns:
+              - MessageId
+            table: Message
+        tables:
+          - Message
+        user: drasi_user
+    queries:
+      - id: all-messages
+        autoStart: true
+        query: |
+          MATCH (m:Message)
+          RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
+        queryLanguage: GQL
+        middleware: []
+        sources:
+          - sourceId: my-postgres
+            nodes: []
+            relations: []
+            pipeline: []
+        enableBootstrap: true
+        priorityQueueCapacity: 10000
+        dispatchBufferCapacity: 1000
+        outboxCapacity: 1000
+        bootstrapTimeoutSecs: 300
+      - id: hello-world-senders
+        autoStart: true
+        query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
+        queryLanguage: Cypher
+        middleware: []
+        sources:
+          - sourceId: my-postgres
+            nodes: []
+            relations: []
+            pipeline: []
+        enableBootstrap: true
+        outboxCapacity: 1000
+        bootstrapTimeoutSecs: 300
+    reactions:
+      - kind: log
+        id: log-reaction
+        queries:
+          - all-messages
+          - hello-world-senders
+        autoStart: true
+    identityProviders: []

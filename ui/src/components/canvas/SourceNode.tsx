@@ -39,13 +39,13 @@ export default memo(function SourceNode({ data, id: nodeId }: NodeProps) {
   const Icon = ICON_MAP[d.kind] || Database;
   const canPush = PUSHABLE_KINDS.has(d.kind) && d.status === "Running";
   const expanded = !!d.expanded;
-  const { startSource, stopSource } = useApi();
+  const { startSource, stopSource } = useApi(d.instanceId);
 
   const handleStartStop = () => {
     if (d.status === "Running") {
-      stopSource(d.id, d.instanceId);
+      stopSource(d.id);
     } else if (d.status === "Stopped" || d.status === "Error") {
-      startSource(d.id, d.instanceId);
+      startSource(d.id);
     }
   };
 

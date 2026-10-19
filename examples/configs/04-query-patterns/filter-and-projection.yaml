@@ -32,7 +32,6 @@
 # Run with: cargo run -- --config examples/configs/04-query-patterns/filter-and-projection.yaml
 
 apiVersion: drasi.io/v1
-id: filter-projection-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -42,78 +41,80 @@ plugins:
   - ref: source/mock
   - ref: reaction/log
 
-sources:
-  # Generic mock data: value (int), message (string), timestamp
-  - kind: mock
-    id: data-source
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 2000
-
-queries:
-  # Working example: Numeric comparison with mock data
-  - id: positive-values
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.value > 0
-      RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
-    queryLanguage: Cypher
+instances:
+  - id: filter-projection-demo
     sources:
-      - sourceId: data-source
+  # Generic mock data: value (int), message (string), timestamp
+      - kind: mock
+        id: data-source
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 2000
+
+    queries:
+  # Working example: Numeric comparison with mock data
+      - id: positive-values
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.value > 0
+          RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: data-source
 
   # Working example: Negative value filter
-  - id: negative-values
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.value < 0
-      RETURN g.value AS Value, g.timestamp AS Timestamp
-    queryLanguage: Cypher
-    sources:
-      - sourceId: data-source
+      - id: negative-values
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.value < 0
+          RETURN g.value AS Value, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: data-source
 
   # Working example: String pattern matching
-  - id: message-pattern
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.message CONTAINS 'mock'
-      RETURN g.value AS Value, g.message AS Message
-    queryLanguage: Cypher
-    sources:
-      - sourceId: data-source
+      - id: message-pattern
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.message CONTAINS 'mock'
+          RETURN g.value AS Value, g.message AS Message
+        queryLanguage: Cypher
+        sources:
+          - sourceId: data-source
 
   # Working example: All values (no filter)
-  - id: all-values
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      RETURN g.value AS Value, g.message AS Message
-    queryLanguage: Cypher
-    sources:
-      - sourceId: data-source
+      - id: all-values
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          RETURN g.value AS Value, g.message AS Message
+        queryLanguage: Cypher
+        sources:
+          - sourceId: data-source
 
-reactions:
-  - kind: log
-    id: query-results
-    queries:
-      - positive-values
-      - negative-values
-      - message-pattern
-      - all-values
-    autoStart: true
-    routes:
-      positive-values:
-        added:
-          template: "[positive] Value={{after.Value}} at {{after.Timestamp}}"
-      negative-values:
-        added:
-          template: "[negative] Value={{after.Value}} at {{after.Timestamp}}"
-      message-pattern:
-        added:
-          template: "[pattern] Matched: {{after.Message}} (value={{after.Value}})"
-      all-values:
-        added:
-          template: "[all] Value={{after.Value}} Message={{after.Message}}"
+    reactions:
+      - kind: log
+        id: query-results
+        queries:
+          - positive-values
+          - negative-values
+          - message-pattern
+          - all-values
+        autoStart: true
+        routes:
+          positive-values:
+            added:
+              template: "[positive] Value={{after.Value}} at {{after.Timestamp}}"
+          negative-values:
+            added:
+              template: "[negative] Value={{after.Value}} at {{after.Timestamp}}"
+          message-pattern:
+            added:
+              template: "[pattern] Matched: {{after.Message}} (value={{after.Value}})"
+          all-values:
+            added:
+              template: "[all] Value={{after.Value}} Message={{after.Message}}"

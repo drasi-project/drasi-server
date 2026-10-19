@@ -40,7 +40,7 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
   const languageLabel = d.queryLanguage?.toLowerCase() === "gql" 
     ? "GQL Query" 
     : "Cypher Query";
-  const { startQuery, stopQuery } = useApi();
+  const { startQuery, stopQuery } = useApi(d.instanceId);
 
   // Only fetch/stream results when expanded and query is running
   const shouldFetchResults = expanded && d.status === "Running";
@@ -60,9 +60,9 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
 
   const handleStartStop = () => {
     if (d.status === "Running") {
-      stopQuery(d.id, d.instanceId);
+      stopQuery(d.id);
     } else if (d.status === "Stopped" || d.status === "Error") {
-      startQuery(d.id, d.instanceId);
+      startQuery(d.id);
     }
   };
 

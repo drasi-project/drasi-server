@@ -40,12 +40,7 @@ export function useInstances() {
   const urlRequestedId = useRef<string | undefined>(getUrlInstanceParam());
   const [requestedNotFound, setRequestedNotFound] = useState<string | undefined>(undefined);
 
-  const [selectedId, setSelectedIdState] = useState<string | undefined>(() => {
-    // If URL param is specified, defer selection until refresh validates it
-    const fromUrl = getUrlInstanceParam();
-    if (fromUrl) return undefined;
-    try { return localStorage.getItem(INSTANCE_KEY) ?? undefined; } catch { return undefined; }
-  });
+  const [selectedId, setSelectedIdState] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const initialLoad = useRef(true);
 
@@ -64,6 +59,14 @@ export function useInstances() {
       const data = await api.listInstances();
       setInstances(data);
 
+      if (data.length === 0) {
+        setSelectedIdState(undefined);
+        if (initialLoad.current) {
+          setRequestedNotFound(urlRequestedId.current);
+        }
+        initialLoad.current = false;
+      }
+
       if (initialLoad.current && data.length > 0) {
         const requested = urlRequestedId.current;
 
@@ -80,13 +83,12 @@ export function useInstances() {
           }
         } else {
           // No URL param — use localStorage or first instance
-          setSelectedIdState((prev) => {
-            if (prev && data.some((i) => i.id === prev)) return prev;
-            const first = data[0].id;
-            setUrlInstanceParam(first);
-            try { localStorage.setItem(INSTANCE_KEY, first); } catch { /* ignore */ }
-            return first;
-          });
+          let remembered: string | null = null;
+          try { remembered = localStorage.getItem(INSTANCE_KEY); } catch { /* ignore */ }
+          const selected = data.find((i) => i.id === remembered)?.id ?? data[0].id;
+          setSelectedIdState(selected);
+          setUrlInstanceParam(selected);
+          try { localStorage.setItem(INSTANCE_KEY, selected); } catch { /* ignore */ }
         }
         initialLoad.current = false;
       }

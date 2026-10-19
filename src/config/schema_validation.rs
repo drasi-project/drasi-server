@@ -368,8 +368,11 @@ mod tests {
         reactions: Vec<ReactionConfig>,
     ) -> DrasiServerConfig {
         DrasiServerConfig {
-            sources,
-            reactions,
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                sources,
+                reactions,
+                ..Default::default()
+            }],
             ..Default::default()
         }
     }

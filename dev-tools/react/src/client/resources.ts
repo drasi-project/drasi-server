@@ -131,7 +131,7 @@ function isQueryConfig(value: unknown): value is QueryConfig {
   return isRecord(value) && isIdentifier(value.id) && typeof value.query === 'string' &&
     (value.queryLanguage === 'Cypher' || value.queryLanguage === 'GQL') &&
     typeof value.autoStart === 'boolean' && typeof value.enableBootstrap === 'boolean' &&
-    isUnsignedInteger(value.bootstrapBufferSize) && isUnsignedInteger(value.outboxCapacity) &&
+    isUnsignedInteger(value.outboxCapacity) &&
     isUnsignedInteger(value.bootstrapTimeoutSecs) &&
     Array.isArray(value.middleware) && value.middleware.every(isMiddleware) &&
     Array.isArray(value.sources) && value.sources.every(isSource) &&

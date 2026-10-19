@@ -223,9 +223,14 @@ function buildUnionSchema(openapi: any) {
   const reactionRef = reactionUnion ? { $ref: '#/definitions/ReactionConfig' } : minimalReactionSchema();
   const queryRef = queryName ? { $ref: `#/definitions/${queryName}` } : minimalQuerySchema();
 
-  const configSchema = {
-    type: 'object',
+  const instanceDefinition = convertedDefinitions.DrasiLibInstanceConfig;
+  if (!convertedDefinitions.DrasiServerConfig || !instanceDefinition) {
+    throw new Error('Server OpenAPI must include DrasiServerConfig and DrasiLibInstanceConfig.');
+  }
+  convertedDefinitions.DrasiLibInstanceConfig = {
+    ...instanceDefinition,
     properties: {
+      ...instanceDefinition.properties,
       sources: {
         type: 'array',
         items: sourceRef,
@@ -238,51 +243,7 @@ function buildUnionSchema(openapi: any) {
         type: 'array',
         items: reactionRef,
       },
-      host: definitions['ConfigValueString'] ? { $ref: '#/definitions/ConfigValueString' } : { type: 'string' },
-      port: definitions['ConfigValueU16'] ? { $ref: '#/definitions/ConfigValueU16' } : { type: 'integer' },
-      logLevel: definitions['ConfigValueString'] ? { $ref: '#/definitions/ConfigValueString' } : { type: 'string' },
-      persistConfig: { type: 'boolean' },
-      persistIndex: { type: 'boolean' },
-      id: definitions['ConfigValueString'] ? { $ref: '#/definitions/ConfigValueString' } : { type: 'string' },
-      defaultPriorityQueueCapacity: definitions['ConfigValueUsize']
-        ? { $ref: '#/definitions/ConfigValueUsize' }
-        : { type: 'integer' },
-      defaultDispatchBufferCapacity: definitions['ConfigValueUsize']
-        ? { $ref: '#/definitions/ConfigValueUsize' }
-        : { type: 'integer' },
-      stateStore: definitions['StateStoreConfig'] ? { $ref: '#/definitions/StateStoreConfig' } : { type: 'object' },
-      instances: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            sources: {
-              type: 'array',
-              items: sourceRef,
-            },
-            queries: {
-              type: 'array',
-              items: queryRef,
-            },
-            reactions: {
-              type: 'array',
-              items: reactionRef,
-            },
-            id: definitions['ConfigValueString'] ? { $ref: '#/definitions/ConfigValueString' } : { type: 'string' },
-            persistIndex: { type: 'boolean' },
-            stateStore: definitions['StateStoreConfig'] ? { $ref: '#/definitions/StateStoreConfig' } : { type: 'object' },
-            defaultPriorityQueueCapacity: definitions['ConfigValueUsize']
-              ? { $ref: '#/definitions/ConfigValueUsize' }
-              : { type: 'integer' },
-            defaultDispatchBufferCapacity: definitions['ConfigValueUsize']
-              ? { $ref: '#/definitions/ConfigValueUsize' }
-              : { type: 'integer' },
-          },
-          additionalProperties: true,
-        },
-      },
     },
-    additionalProperties: true,
   };
 
   const resourceSchema = {
@@ -301,7 +262,7 @@ function buildUnionSchema(openapi: any) {
 
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
-    oneOf: [configSchema, resourceSchema, sourceRef, queryRef, reactionRef],
+    oneOf: [{ $ref: '#/definitions/DrasiServerConfig' }, resourceSchema, sourceRef, queryRef, reactionRef],
     definitions: {
       ...convertedDefinitions,
       ...(sourceUnion ? { SourceConfig: sourceUnion } : {}),

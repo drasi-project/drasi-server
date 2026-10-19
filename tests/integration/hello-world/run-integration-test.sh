@@ -116,14 +116,14 @@ test_health() {
 
 test_sources() {
   local resp
-  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/sources)
+  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/instances/hello-world-server/sources)
   echo "  Sources: $resp"
   echo "$resp" | grep -q "test-source"
 }
 
 test_queries() {
   local resp
-  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/queries)
+  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/instances/hello-world-server/queries)
   echo "  Queries: $resp"
   echo "$resp" | grep -q "all-sensors"
 }
@@ -134,7 +134,7 @@ test_query_results() {
   sleep 6
 
   local resp
-  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/queries/all-sensors/results)
+  resp=$(curl -sf http://localhost:$SERVER_PORT/api/v1/instances/hello-world-server/queries/all-sensors/results)
   echo "  Results: $resp"
   # Should contain at least one SensorId field
   echo "$resp" | grep -q "SensorId"

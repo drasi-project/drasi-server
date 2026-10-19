@@ -372,16 +372,16 @@ assert_endpoint() {
 
 log_step "Step 4: REST sanity checks"
 assert_endpoint "sources list contains postgres-messages" \
-  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/sources" \
+  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/instances/getting-started-server/sources" \
   '"postgres-messages"' || true
 assert_endpoint "queries list contains hello-world-from" \
-  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/queries" \
+  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/instances/getting-started-server/queries" \
   '"hello-world-from"' || true
 assert_endpoint "hello-world-from is configured" \
-  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/queries/hello-world-from" \
+  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/instances/getting-started-server/queries/hello-world-from" \
   '"id":"hello-world-from"' || true
 assert_endpoint "message-count is configured" \
-  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/queries/message-count" \
+  "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/instances/getting-started-server/queries/message-count" \
   '"id":"message-count"' || true
 
 # --- Step 5: CDC change-detection --------------------------------------------
@@ -394,11 +394,11 @@ docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 
   "INSERT INTO message (\"from\", message) VALUES ('${UNIQUE_FROM}', 'Hello World');" \
   >/dev/null
 
-log_info "Polling /api/v1/queries/hello-world-from/results for up to ${RESULT_TIMEOUT}s..."
+log_info "Polling getting-started-server query results for up to ${RESULT_TIMEOUT}s..."
 deadline=$(( $(date +%s) + RESULT_TIMEOUT ))
 matched=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  results=$(curl -fsS "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/queries/hello-world-from/results" || true)
+  results=$(curl -fsS "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/instances/getting-started-server/queries/hello-world-from/results" || true)
   if echo "$results" | grep -q "$UNIQUE_FROM"; then
     matched=1
     break

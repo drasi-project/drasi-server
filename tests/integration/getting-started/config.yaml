@@ -10,79 +10,80 @@ persistConfig: true
 autoInstallPlugins: false
 verifyPlugins: true
 
-id: integration-test-server
-
 plugins:
   - ref: source/postgres:0.2.12
   - ref: bootstrap/postgres:0.2.15
   - ref: reaction/log:0.2.9
 
-sources:
-  - kind: postgres
-    id: postgres-messages
-    autoStart: true
-    host: localhost
-    port: 5432
-    database: getting_started
-    user: drasi_user
-    password: drasi_password
-    sslMode: prefer
-    tables:
-      - message
-    slotName: drasi_integration_test_slot
-    publicationName: drasi_getting_started_pub
-    tableKeys:
-      - table: message
-        keyColumns:
-          - messageid
-    bootstrapProvider:
-      kind: postgres
-      host: localhost
-      port: 5432
-      database: getting_started
-      user: drasi_user
-      password: drasi_password
-      tables:
-        - message
-      slotName: drasi_integration_test_slot
-      publicationName: drasi_getting_started_pub
-      sslMode: prefer
-      tableKeys:
-        - table: message
-          keyColumns:
-            - messageid
+instances:
+  - id: integration-test-server
 
-queries:
-  - id: hello-world-from
-    autoStart: true
-    query: |
-      MATCH (m:message)
-      WHERE m.message = 'Hello World'
-      RETURN m.messageid AS MessageId, m.from AS MessageFrom
-    queryLanguage: Cypher
     sources:
-      - sourceId: postgres-messages
+      - kind: postgres
+        id: postgres-messages
+        autoStart: true
+        host: localhost
+        port: 5432
+        database: getting_started
+        user: drasi_user
+        password: drasi_password
+        sslMode: prefer
+        tables:
+          - message
+        slotName: drasi_integration_test_slot
+        publicationName: drasi_getting_started_pub
+        tableKeys:
+          - table: message
+            keyColumns:
+              - messageid
+        bootstrapProvider:
+          kind: postgres
+          host: localhost
+          port: 5432
+          database: getting_started
+          user: drasi_user
+          password: drasi_password
+          tables:
+            - message
+          slotName: drasi_integration_test_slot
+          publicationName: drasi_getting_started_pub
+          sslMode: prefer
+          tableKeys:
+            - table: message
+              keyColumns:
+                - messageid
 
-  - id: message-count
-    autoStart: true
-    query: |
-      MATCH (m:message)
-      RETURN m.message AS Message, count(m) AS Frequency
-    queryLanguage: Cypher
-    sources:
-      - sourceId: postgres-messages
-
-reactions:
-  - kind: log
-    id: log-all-queries
-    autoStart: true
     queries:
-      - hello-world-from
-      - message-count
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] + {{after}}"
-      updated:
-        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-      deleted:
-        template: "[{{query_name}}] - {{before}}"
+      - id: hello-world-from
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          WHERE m.message = 'Hello World'
+          RETURN m.messageid AS MessageId, m.from AS MessageFrom
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
+
+      - id: message-count
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          RETURN m.message AS Message, count(m) AS Frequency
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
+
+    reactions:
+      - kind: log
+        id: log-all-queries
+        autoStart: true
+        queries:
+          - hello-world-from
+          - message-count
+        defaultTemplate:
+          added:
+            template: "[{{query_name}}] + {{after}}"
+          updated:
+            template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+          deleted:
+            template: "[{{query_name}}] - {{before}}"

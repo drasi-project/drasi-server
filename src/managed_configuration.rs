@@ -59,6 +59,42 @@ pub struct ConfigurationStores {
 }
 
 impl ConfigurationStores {
+    pub async fn resolve_instance_ids(
+        &self,
+        config: &mut crate::config::DrasiServerConfig,
+    ) -> Result<()> {
+        let mut bindings: Vec<(usize, Arc<RedbConfigurationStore>)> = Vec::new();
+        for (index, instance) in config.instances.iter().enumerate() {
+            let Some(settings) = &instance.configuration_store else {
+                continue;
+            };
+            let provider = self.open(settings).await?;
+            for (previous, existing) in &bindings {
+                anyhow::ensure!(
+                    !Arc::ptr_eq(existing, &provider)
+                        || !instance.id.is_generated()
+                            && !config.instances[*previous].id.is_generated(),
+                    "Instances sharing a configurationStore must declare explicit IDs"
+                );
+            }
+            bindings.push((index, provider));
+        }
+        for (index, provider) in bindings {
+            let instance = &mut config.instances[index];
+            if !instance.id.is_generated() {
+                continue;
+            }
+            match provider.configured_instance_ids().await?.as_slice() {
+                [] => {}
+                [id] => instance.id = crate::api::models::ConfigValue::Static(id.clone()).into(),
+                _ => anyhow::bail!(
+                    "configurationStore contains multiple instances; specify an explicit ID instead of selecting the first"
+                ),
+            }
+        }
+        Ok(())
+    }
+
     pub async fn open(
         &self,
         config: &ConfigurationStoreConfig,

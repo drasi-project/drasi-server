@@ -38,7 +38,6 @@ path = "src/main.rs"
 # Drasi dependencies use the existing sibling checkout, including local edits.
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
 drasi-lib = { path = "../drasi-core/lib", features = [
-  "computation",
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",

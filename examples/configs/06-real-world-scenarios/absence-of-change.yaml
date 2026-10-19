@@ -34,7 +34,6 @@
 # Run with: cargo run -- --config examples/configs/06-real-world-scenarios/absence-of-change.yaml
 
 apiVersion: drasi.io/v1
-id: absence-detection-system
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -46,196 +45,198 @@ plugins:
   - ref: reaction/log
   - ref: reaction/sse
 
-sources:
-  - kind: http
-    id: activity-source
-    autoStart: true
-    host: "0.0.0.0"
-    port: 9000
-    timeoutMs: 30000
+instances:
+  - id: absence-detection-system
+    sources:
+      - kind: http
+        id: activity-source
+        autoStart: true
+        host: "0.0.0.0"
+        port: 9000
+        timeoutMs: 30000
 
-queries:
+    queries:
   # Pattern 1: User inactivity detection
   # Detects users who haven't been active recently
-  - id: inactive-users
-    autoStart: true
-    query: |
-      MATCH (u:UserSession)
-      WHERE u.is_inactive = true
-      RETURN u.user_id AS UserId,
-             u.last_activity AS LastActivity,
-             u.session_id AS SessionId,
-             'USER_INACTIVE' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: inactive-users
+        autoStart: true
+        query: |
+          MATCH (u:UserSession)
+          WHERE u.is_inactive = true
+          RETURN u.user_id AS UserId,
+                 u.last_activity AS LastActivity,
+                 u.session_id AS SessionId,
+                 'USER_INACTIVE' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
   # Pattern 2: Service heartbeat monitoring
   # Detects services that haven't sent heartbeats
-  - id: missing-heartbeats
-    autoStart: true
-    query: |
-      MATCH (s:Service)
-      WHERE s.heartbeat_overdue = true
-      RETURN s.service_id AS ServiceId,
-             s.service_name AS ServiceName,
-             s.last_heartbeat AS LastHeartbeat,
-             s.expected_interval AS ExpectedInterval,
-             'HEARTBEAT_MISSING' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: missing-heartbeats
+        autoStart: true
+        query: |
+          MATCH (s:Service)
+          WHERE s.heartbeat_overdue = true
+          RETURN s.service_id AS ServiceId,
+                 s.service_name AS ServiceName,
+                 s.last_heartbeat AS LastHeartbeat,
+                 s.expected_interval AS ExpectedInterval,
+                 'HEARTBEAT_MISSING' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
   # Pattern 3: SLA violation detection
   # Tickets not resolved within SLA window
-  - id: sla-breaches
-    autoStart: true
-    query: |
-      MATCH (t:Ticket)
-      WHERE t.status <> 'resolved' AND t.sla_breached = true
-      RETURN t.ticket_id AS TicketId,
-             t.priority AS Priority,
-             t.created_at AS CreatedAt,
-             t.sla_deadline AS Deadline,
-             t.assigned_to AS AssignedTo,
-             'SLA_BREACH' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: sla-breaches
+        autoStart: true
+        query: |
+          MATCH (t:Ticket)
+          WHERE t.status <> 'resolved' AND t.sla_breached = true
+          RETURN t.ticket_id AS TicketId,
+                 t.priority AS Priority,
+                 t.created_at AS CreatedAt,
+                 t.sla_deadline AS Deadline,
+                 t.assigned_to AS AssignedTo,
+                 'SLA_BREACH' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
   # Pattern 4: Stale data detection
   # Records that haven't been updated recently
-  - id: stale-records
-    autoStart: true
-    query: |
-      MATCH (r:DataRecord)
-      WHERE r.is_stale = true
-      RETURN r.record_id AS RecordId,
-             r.source AS Source,
-             r.last_updated AS LastUpdated,
-             r.freshness_threshold AS Threshold,
-             'STALE_DATA' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: stale-records
+        autoStart: true
+        query: |
+          MATCH (r:DataRecord)
+          WHERE r.is_stale = true
+          RETURN r.record_id AS RecordId,
+                 r.source AS Source,
+                 r.last_updated AS LastUpdated,
+                 r.freshness_threshold AS Threshold,
+                 'STALE_DATA' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
   # Pattern 5: Missing periodic events
   # Expected recurring events that didn't occur
-  - id: missing-events
-    autoStart: true
-    query: |
-      MATCH (e:ExpectedEvent)
-      WHERE e.is_overdue = true
-      RETURN e.event_type AS EventType,
-             e.expected_at AS ExpectedAt,
-             e.source AS Source,
-             e.last_occurrence AS LastOccurrence,
-             'MISSING_EVENT' AS AlertType
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: missing-events
+        autoStart: true
+        query: |
+          MATCH (e:ExpectedEvent)
+          WHERE e.is_overdue = true
+          RETURN e.event_type AS EventType,
+                 e.expected_at AS ExpectedAt,
+                 e.source AS Source,
+                 e.last_occurrence AS LastOccurrence,
+                 'MISSING_EVENT' AS AlertType
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
   # Summary: All active alerts
-  - id: active-alerts
-    autoStart: true
-    query: |
-      MATCH (a:Alert)
-      WHERE a.status = 'active'
-      RETURN a.alert_id AS AlertId,
-             a.type AS AlertType,
-             a.severity AS Severity,
-             a.created_at AS CreatedAt,
-             a.message AS Message
-    queryLanguage: Cypher
-    sources:
-      - sourceId: activity-source
+      - id: active-alerts
+        autoStart: true
+        query: |
+          MATCH (a:Alert)
+          WHERE a.status = 'active'
+          RETURN a.alert_id AS AlertId,
+                 a.type AS AlertType,
+                 a.severity AS Severity,
+                 a.created_at AS CreatedAt,
+                 a.message AS Message
+        queryLanguage: Cypher
+        sources:
+          - sourceId: activity-source
 
-reactions:
+    reactions:
   # Console logging for all absence detections
-  - kind: log
-    id: absence-logger
-    queries:
-      - inactive-users
-      - missing-heartbeats
-      - sla-breaches
-      - stale-records
-      - missing-events
-    autoStart: true
-    routes:
-      inactive-users:
-        added:
-          template: "[INACTIVITY] User {{after.UserId}} inactive - Session {{after.SessionId}}, last activity: {{after.LastActivity}} ({{after.AlertType}})"
-      missing-heartbeats:
-        added:
-          template: "[HEALTH] {{after.AlertType}}: Service {{after.ServiceId}} ({{after.ServiceName}}) - last: {{after.LastHeartbeat}}, expected: {{after.ExpectedInterval}}"
-      sla-breaches:
-        added:
-          template: "[SLA] {{after.AlertType}}: Ticket {{after.TicketId}} ({{after.Priority}}) assigned to {{after.AssignedTo}} - deadline: {{after.Deadline}}"
-      stale-records:
-        added:
-          template: "[DATA] {{after.AlertType}}: Record {{after.RecordId}} from {{after.Source}} - last updated: {{after.LastUpdated}} (threshold: {{after.Threshold}})"
-      missing-events:
-        added:
-          template: "[SCHEDULE] {{after.AlertType}}: {{after.EventType}} from {{after.Source}} - expected: {{after.ExpectedAt}}, last: {{after.LastOccurrence}}"
+      - kind: log
+        id: absence-logger
+        queries:
+          - inactive-users
+          - missing-heartbeats
+          - sla-breaches
+          - stale-records
+          - missing-events
+        autoStart: true
+        routes:
+          inactive-users:
+            added:
+              template: "[INACTIVITY] User {{after.UserId}} inactive - Session {{after.SessionId}}, last activity: {{after.LastActivity}} ({{after.AlertType}})"
+          missing-heartbeats:
+            added:
+              template: "[HEALTH] {{after.AlertType}}: Service {{after.ServiceId}} ({{after.ServiceName}}) - last: {{after.LastHeartbeat}}, expected: {{after.ExpectedInterval}}"
+          sla-breaches:
+            added:
+              template: "[SLA] {{after.AlertType}}: Ticket {{after.TicketId}} ({{after.Priority}}) assigned to {{after.AssignedTo}} - deadline: {{after.Deadline}}"
+          stale-records:
+            added:
+              template: "[DATA] {{after.AlertType}}: Record {{after.RecordId}} from {{after.Source}} - last updated: {{after.LastUpdated}} (threshold: {{after.Threshold}})"
+          missing-events:
+            added:
+              template: "[SCHEDULE] {{after.AlertType}}: {{after.EventType}} from {{after.Source}} - expected: {{after.ExpectedAt}}, last: {{after.LastOccurrence}}"
 
   # SSE for monitoring dashboard
-  - kind: sse
-    id: absence-dashboard
-    queries:
-      - inactive-users
-      - missing-heartbeats
-      - sla-breaches
-      - stale-records
-      - missing-events
-      - active-alerts
-    autoStart: true
-    host: "0.0.0.0"
-    port: 8081
-    ssePath: "/absence-alerts"
-    heartbeatIntervalMs: 10000
-    routes:
-      inactive-users:
-        added:
-          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "userId": "{{after.UserId}}", "sessionId": "{{after.SessionId}}", "lastActivity": "{{after.LastActivity}}"}'
-      missing-heartbeats:
-        added:
-          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
-      sla-breaches:
-        added:
-          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "createdAt": "{{after.CreatedAt}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
-      stale-records:
-        added:
-          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "recordId": "{{after.RecordId}}", "source": "{{after.Source}}", "lastUpdated": "{{after.LastUpdated}}", "threshold": "{{after.Threshold}}"}'
-      missing-events:
-        added:
-          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "eventType": "{{after.EventType}}", "expectedAt": "{{after.ExpectedAt}}", "source": "{{after.Source}}", "lastOccurrence": "{{after.LastOccurrence}}"}'
-      active-alerts:
-        added:
-          template: '{"type": "active_alert", "alertId": "{{after.AlertId}}", "alertType": "{{after.AlertType}}", "severity": "{{after.Severity}}", "createdAt": "{{after.CreatedAt}}", "message": "{{after.Message}}"}'
+      - kind: sse
+        id: absence-dashboard
+        queries:
+          - inactive-users
+          - missing-heartbeats
+          - sla-breaches
+          - stale-records
+          - missing-events
+          - active-alerts
+        autoStart: true
+        host: "0.0.0.0"
+        port: 8081
+        ssePath: "/absence-alerts"
+        heartbeatIntervalMs: 10000
+        routes:
+          inactive-users:
+            added:
+              template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "userId": "{{after.UserId}}", "sessionId": "{{after.SessionId}}", "lastActivity": "{{after.LastActivity}}"}'
+          missing-heartbeats:
+            added:
+              template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
+          sla-breaches:
+            added:
+              template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "createdAt": "{{after.CreatedAt}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
+          stale-records:
+            added:
+              template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "recordId": "{{after.RecordId}}", "source": "{{after.Source}}", "lastUpdated": "{{after.LastUpdated}}", "threshold": "{{after.Threshold}}"}'
+          missing-events:
+            added:
+              template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "eventType": "{{after.EventType}}", "expectedAt": "{{after.ExpectedAt}}", "source": "{{after.Source}}", "lastOccurrence": "{{after.LastOccurrence}}"}'
+          active-alerts:
+            added:
+              template: '{"type": "active_alert", "alertId": "{{after.AlertId}}", "alertType": "{{after.AlertType}}", "severity": "{{after.Severity}}", "createdAt": "{{after.CreatedAt}}", "message": "{{after.Message}}"}'
 
   # HTTP webhook for critical alerts
-  - kind: http
-    id: critical-absence-alerts
-    queries:
-      - missing-heartbeats
-      - sla-breaches
-    autoStart: true
-    baseUrl: "${ALERT_WEBHOOK_URL:-http://localhost:3000}"
-    timeoutMs: 5000
-    routes:
-      missing-heartbeats:
-        added:
-          url: "/alerts/health"
-          method: "POST"
-          body: '{"alert": "service_health", "severity": "critical", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
-          headers:
-            Content-Type: "application/json"
-            X-Alert-Severity: "critical"
-      sla-breaches:
-        added:
-          url: "/alerts/sla"
-          method: "POST"
-          body: '{"alert": "sla_breach", "severity": "high", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
-          headers:
-            Content-Type: "application/json"
-            X-Alert-Severity: "high"
+      - kind: http
+        id: critical-absence-alerts
+        queries:
+          - missing-heartbeats
+          - sla-breaches
+        autoStart: true
+        baseUrl: "${ALERT_WEBHOOK_URL:-http://localhost:3000}"
+        timeoutMs: 5000
+        routes:
+          missing-heartbeats:
+            added:
+              url: "/alerts/health"
+              method: "POST"
+              body: '{"alert": "service_health", "severity": "critical", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
+              headers:
+                Content-Type: "application/json"
+                X-Alert-Severity: "critical"
+          sla-breaches:
+            added:
+              url: "/alerts/sla"
+              method: "POST"
+              body: '{"alert": "sla_breach", "severity": "high", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
+              headers:
+                Content-Type: "application/json"
+                X-Alert-Severity: "high"

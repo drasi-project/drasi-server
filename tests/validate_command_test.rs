@@ -65,13 +65,14 @@ fn test_validate_minimal_valid_config() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -94,19 +95,20 @@ fn test_validate_config_with_mock_source() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-    dataType:
-      type: sensorReading
-    intervalMs: 5000
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+        dataType:
+          type: sensorReading
+        intervalMs: 5000
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -123,22 +125,23 @@ fn test_validate_config_with_query() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-queries:
-  - id: my-query
-    query: "MATCH (n) RETURN n"
-    queryLanguage: Cypher
-    autoStart: true
+instances:
+  - id: test-server
     sources:
-      - sourceId: test-source
-reactions: []
+      - kind: mock
+        id: test-source
+        autoStart: true
+    queries:
+      - id: my-query
+        query: "MATCH (n) RETURN n"
+        queryLanguage: Cypher
+        autoStart: true
+        sources:
+          - sourceId: test-source
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -154,17 +157,18 @@ fn test_validate_config_with_log_reaction() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources: []
-queries: []
-reactions:
-  - kind: log
-    id: test-log
-    queries: [my-query]
-    autoStart: true
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions:
+      - kind: log
+        id: test-log
+        queries: [my-query]
+        autoStart: true
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -180,20 +184,21 @@ fn test_validate_config_with_bootstrap_provider() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-    bootstrapProvider:
-      kind: scriptfile
-      filePaths:
-        - /data/init.jsonl
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+        bootstrapProvider:
+          kind: scriptfile
+          filePaths:
+            - /data/init.jsonl
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -212,16 +217,17 @@ fn test_validate_config_with_state_store() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-stateStore:
-  kind: redb
-  path: ./data/state.redb
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    stateStore:
+      kind: redb
+      path: ./data/state.redb
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -241,13 +247,14 @@ fn test_validate_rejects_snake_case_fields() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 log_level: info
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -269,14 +276,15 @@ fn test_validate_rejects_unknown_fields() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
 unknownField: someValue
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -295,13 +303,14 @@ fn test_validate_rejects_invalid_port() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 0
 logLevel: info
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -320,13 +329,14 @@ fn test_validate_rejects_invalid_log_level() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: invalid_level
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -345,18 +355,19 @@ fn test_validate_rejects_bootstrap_provider_type_instead_of_kind() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: test-source
-    autoStart: true
-    bootstrapProvider:
-      type: postgres
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources:
+      - kind: mock
+        id: test-source
+        autoStart: true
+        bootstrapProvider:
+          type: postgres
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -379,16 +390,17 @@ fn test_validate_rejects_source_with_snake_case_auto_start() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: test-source
-    auto_start: true
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources:
+      - kind: mock
+        id: test-source
+        auto_start: true
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -433,13 +445,14 @@ fn test_validate_config_with_env_var_syntax() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: ${SERVER_HOST:-0.0.0.0}
 port: ${SERVER_PORT:-8080}
 logLevel: info
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -462,13 +475,14 @@ fn test_validate_show_resolved_expands_defaults() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: ${DRASI_HOST:-localhost}
 port: 8080
 logLevel: info
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -492,34 +506,35 @@ fn test_validate_shows_correct_summary_counts() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources:
-  - kind: mock
-    id: source1
-    autoStart: true
-  - kind: mock
-    id: source2
-    autoStart: true
-queries:
-  - id: query1
-    query: "MATCH (n) RETURN n"
+instances:
+  - id: test-server
     sources:
-      - sourceId: source1
-  - id: query2
-    query: "MATCH (m) RETURN m"
-    sources:
-      - sourceId: source2
-  - id: query3
-    query: "MATCH (x) RETURN x"
-    sources:
-      - sourceId: source1
-reactions:
-  - kind: log
-    id: reaction1
-    queries: [query1]
+      - kind: mock
+        id: source1
+        autoStart: true
+      - kind: mock
+        id: source2
+        autoStart: true
+    queries:
+      - id: query1
+        query: "MATCH (n) RETURN n"
+        sources:
+          - sourceId: source1
+      - id: query2
+        query: "MATCH (m) RETURN m"
+        sources:
+          - sourceId: source2
+      - id: query3
+        query: "MATCH (x) RETURN x"
+        sources:
+          - sourceId: source1
+    reactions:
+      - kind: log
+        id: reaction1
+        queries: [query1]
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -581,24 +596,25 @@ fn test_validate_accepts_valid_handlebars_template() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources: []
-queries: []
-reactions:
-  - kind: log
-    id: test-log
-    queries: [my-query]
-    autoStart: true
-    defaultTemplate:
-      added:
-        template: "Added: {{json this}}"
-      updated:
-        template: "Updated: {{before}} -> {{after}}"
-      deleted:
-        template: "Deleted: {{json this}}"
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions:
+      - kind: log
+        id: test-log
+        queries: [my-query]
+        autoStart: true
+        defaultTemplate:
+          added:
+            template: "Added: {{json this}}"
+          updated:
+            template: "Updated: {{before}} -> {{after}}"
+          deleted:
+            template: "Deleted: {{json this}}"
 "#;
     fs::write(&config_path, config).unwrap();
 
@@ -616,20 +632,21 @@ fn test_validate_rejects_invalid_handlebars_template() {
     let config_path = temp_dir.path().join("config.yaml");
 
     let config = r#"
-id: test-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
-sources: []
-queries: []
-reactions:
-  - kind: log
-    id: test-log
-    queries: [my-query]
-    autoStart: true
-    defaultTemplate:
-      added:
-        template: "Added: {{unclosed"
+instances:
+  - id: test-server
+    sources: []
+    queries: []
+    reactions:
+      - kind: log
+        id: test-log
+        queries: [my-query]
+        autoStart: true
+        defaultTemplate:
+          added:
+            template: "Added: {{unclosed"
 "#;
     fs::write(&config_path, config).unwrap();
 

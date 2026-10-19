@@ -40,7 +40,6 @@
 #   events.onmessage = (e) => console.log(JSON.parse(e.data));
 
 apiVersion: drasi.io/v1
-id: sse-streaming-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -51,85 +50,87 @@ plugins:
   - ref: reaction/log
   - ref: reaction/sse
 
-sources:
+instances:
+  - id: sse-streaming-demo
+    sources:
   # Mock source generates SensorReading nodes with temperature, humidity, sensor_id
   # First reading per sensor = INSERT, subsequent = UPDATE
-  - kind: mock
-    id: live-data
-    autoStart: true
-    dataType:
-      type: sensorReading
-    intervalMs: 1000
+      - kind: mock
+        id: live-data
+        autoStart: true
+        dataType:
+          type: sensorReading
+        intervalMs: 1000
 
-queries:
-  - id: sensor-readings
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
-    queryLanguage: Cypher
-    sources:
-      - sourceId: live-data
-
-  - id: sensor-alerts
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      WHERE s.temperature > 27
-      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
-    queryLanguage: Cypher
-    sources:
-      - sourceId: live-data
-
-  - id: sensor-summary
-    autoStart: true
-    query: |
-      MATCH (s:SensorReading)
-      RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
-    queryLanguage: Cypher
-    sources:
-      - sourceId: live-data
-
-reactions:
-  # Console logging for debugging
-  - kind: log
-    id: console
     queries:
-      - sensor-readings
-      - sensor-alerts
-    autoStart: true
+      - id: sensor-readings
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+        queryLanguage: Cypher
+        sources:
+          - sourceId: live-data
+
+      - id: sensor-alerts
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          WHERE s.temperature > 27
+          RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
+        queryLanguage: Cypher
+        sources:
+          - sourceId: live-data
+
+      - id: sensor-summary
+        autoStart: true
+        query: |
+          MATCH (s:SensorReading)
+          RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
+        queryLanguage: Cypher
+        sources:
+          - sourceId: live-data
+
+    reactions:
+  # Console logging for debugging
+      - kind: log
+        id: console
+        queries:
+          - sensor-readings
+          - sensor-alerts
+        autoStart: true
 
   # SSE reaction for browser streaming
-  - kind: sse
-    id: live-stream
-    queries:
-      - sensor-readings
-      - sensor-alerts
-      - sensor-summary
-    autoStart: true
-    host: "0.0.0.0"
-    port: 8081
-    ssePath: "/events"
-    heartbeatIntervalMs: 15000
+      - kind: sse
+        id: live-stream
+        queries:
+          - sensor-readings
+          - sensor-alerts
+          - sensor-summary
+        autoStart: true
+        host: "0.0.0.0"
+        port: 8081
+        ssePath: "/events"
+        heartbeatIntervalMs: 15000
 
     # Per-query routes with specific field access
-    routes:
-      sensor-readings:
-        added:
-          template: '{"event": "add", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
-        updated:
-          template: '{"event": "update", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
-        deleted:
-          template: '{"event": "delete", "query": "sensor-readings", "sensorId": "{{before.SensorId}}"}'
-      sensor-alerts:
-        added:
-          path: "/alerts"
-          template: '{"alert": true, "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "status": "{{after.Status}}"}'
-        deleted:
-          path: "/alerts"
-          template: '{"alert": false, "sensorId": "{{before.SensorId}}", "status": "resolved"}'
-      sensor-summary:
-        added:
-          template: '{"event": "add", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'
-        updated:
-          template: '{"event": "update", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'
+        routes:
+          sensor-readings:
+            added:
+              template: '{"event": "add", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
+            updated:
+              template: '{"event": "update", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
+            deleted:
+              template: '{"event": "delete", "query": "sensor-readings", "sensorId": "{{before.SensorId}}"}'
+          sensor-alerts:
+            added:
+              path: "/alerts"
+              template: '{"alert": true, "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "status": "{{after.Status}}"}'
+            deleted:
+              path: "/alerts"
+              template: '{"alert": false, "sensorId": "{{before.SensorId}}", "status": "resolved"}'
+          sensor-summary:
+            added:
+              template: '{"event": "add", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'
+            updated:
+              template: '{"event": "update", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'

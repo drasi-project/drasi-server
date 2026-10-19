@@ -41,7 +41,6 @@
 # Run with: cargo run -- --config examples/configs/05-advanced-features/read-only-deployment.yaml
 
 apiVersion: drasi.io/v1
-id: read-only-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -50,67 +49,69 @@ logLevel: info
 persistConfig: false
 
 # Use in-memory indexes for stateless deployment
-persistIndex: false
-
 autoInstallPlugins: true
 plugins:
   - ref: source/mock
   - ref: reaction/log
   - ref: reaction/sse
 
-sources:
-  - kind: mock
-    id: readonly-source
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 2000
+instances:
+  - id: read-only-demo
+    persistIndex: false
 
-queries:
-  - id: production-query
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN n.id AS Id, n.status AS Status
-    queryLanguage: Cypher
     sources:
-      - sourceId: readonly-source
+      - kind: mock
+        id: readonly-source
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 2000
 
-  - id: monitoring-query
-    autoStart: true
-    query: |
-      MATCH (n)
-      RETURN count(n) AS TotalRecords
-    queryLanguage: Cypher
-    sources:
-      - sourceId: readonly-source
-
-reactions:
-  - kind: log
-    id: production-log
     queries:
-      - production-query
-      - monitoring-query
-    autoStart: true
-    routes:
-      production-query:
-        added:
-          template: "[PROD] production-query: + Id={{after.Id}} Status={{after.Status}}"
-        updated:
-          template: "[PROD] production-query: ~ Id={{after.Id}} Status={{after.Status}}"
-      monitoring-query:
-        added:
-          template: "[PROD] monitoring-query: + Total records={{after.TotalRecords}}"
-        updated:
-          template: "[PROD] monitoring-query: ~ Total records={{after.TotalRecords}}"
+      - id: production-query
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN n.id AS Id, n.status AS Status
+        queryLanguage: Cypher
+        sources:
+          - sourceId: readonly-source
+
+      - id: monitoring-query
+        autoStart: true
+        query: |
+          MATCH (n)
+          RETURN count(n) AS TotalRecords
+        queryLanguage: Cypher
+        sources:
+          - sourceId: readonly-source
+
+    reactions:
+      - kind: log
+        id: production-log
+        queries:
+          - production-query
+          - monitoring-query
+        autoStart: true
+        routes:
+          production-query:
+            added:
+              template: "[PROD] production-query: + Id={{after.Id}} Status={{after.Status}}"
+            updated:
+              template: "[PROD] production-query: ~ Id={{after.Id}} Status={{after.Status}}"
+          monitoring-query:
+            added:
+              template: "[PROD] monitoring-query: + Total records={{after.TotalRecords}}"
+            updated:
+              template: "[PROD] monitoring-query: ~ Total records={{after.TotalRecords}}"
 
   # SSE for external monitoring
-  - kind: sse
-    id: monitoring-stream
-    queries:
-      - monitoring-query
-    autoStart: true
-    host: "0.0.0.0"
-    port: 8081
-    ssePath: "/monitoring"
-    heartbeatIntervalMs: 30000
+      - kind: sse
+        id: monitoring-stream
+        queries:
+          - monitoring-query
+        autoStart: true
+        host: "0.0.0.0"
+        port: 8081
+        ssePath: "/monitoring"
+        heartbeatIntervalMs: 30000

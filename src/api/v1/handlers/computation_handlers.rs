@@ -72,6 +72,9 @@ pub struct ComputationComponentInfo {
     pub lifecycle: Option<String>,
     pub health: Option<String>,
     pub failure_phase: Option<String>,
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub waiting_for: Vec<drasi_lib::computation::v1::DependencyWait>,
+    pub waiting_reason: Option<String>,
 }
 
 /// Public inspection deliberately excludes configuration values and provider recipes.
@@ -262,6 +265,10 @@ pub async fn inspect_computation_graph(
                 failure_phase: observed
                     .and_then(|value| value.failure.as_ref())
                     .map(|failure| format!("{:?}", failure.phase)),
+                waiting_for: observed
+                    .map(|value| value.waiting_for.clone())
+                    .unwrap_or_default(),
+                waiting_reason: observed.and_then(|value| value.waiting_reason()),
             })
         })
         .collect::<Result<Vec<_>, serde_json::Error>>()

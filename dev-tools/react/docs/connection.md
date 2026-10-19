@@ -22,7 +22,7 @@ The request is `GET .../queries/{id}?view=full` or
 | `ComponentLinks` | `{ self: string, full: string }`; resource and `?view=full` links, normalized to encoded instance-scoped paths. |
 | `ComponentStatus` | `'Starting' \| 'Running' \| 'Stopping' \| 'Stopped' \| 'Error' \| 'Reconfiguring' \| 'Added' \| 'Removed'`. |
 | `QueryLanguage` | `'Cypher' \| 'GQL'`; the server must return an explicit value. |
-| `QueryConfig` | Required `id: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `sources: readonly QuerySource[]`, `enableBootstrap: boolean`, `bootstrapBufferSize: number`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
+| `QueryConfig` | Required `id: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `sources: readonly QuerySource[]`, `enableBootstrap: boolean`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
 | Optional `QueryConfig` fields | `joins?: readonly QueryJoin[]`, `priorityQueueCapacity?: number`, `dispatchBufferCapacity?: number`, `dispatchMode?: 'Channel'`, `storageBackend?: JsonValue`. Capacities/timeouts are nonnegative safe integers; absent fields do not acquire client defaults. |
 | `QuerySource` | `{ sourceId: string, pipeline: readonly string[], nodes: readonly string[], relations: readonly string[] }`. |
 | `QueryJoin` / `QueryJoinKey` | `{ id: string, keys: readonly QueryJoinKey[] }` / `{ label: string, property: string }`. Source and join ordering is retained. |

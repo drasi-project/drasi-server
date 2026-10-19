@@ -348,7 +348,7 @@ for (const entry of entries) {
     assert(object(original.config));
     const fields = [
       'id', 'autoStart', 'query', 'queryLanguage', 'middleware', 'sources', 'enableBootstrap',
-      'bootstrapBufferSize', 'joins', 'priorityQueueCapacity', 'dispatchBufferCapacity',
+      'joins', 'priorityQueueCapacity', 'dispatchBufferCapacity',
       'dispatchMode', 'storageBackend', 'outboxCapacity', 'bootstrapTimeoutSecs',
     ];
     const config = original.config;

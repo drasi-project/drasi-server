@@ -294,7 +294,6 @@ fn rejects_missing_wrong_or_distinct_catalog_dependencies() -> Result<()> {
 #[test]
 fn direct_native_queries_do_not_require_a_subscription_catalog() -> Result<()> {
     let mut config = configuration()?;
-    config.definition.allow_incomplete = true;
     config
         .definition
         .components
@@ -322,7 +321,6 @@ fn direct_native_queries_do_not_require_a_subscription_catalog() -> Result<()> {
 #[tokio::test(flavor = "current_thread")]
 async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
     let mut config = configuration()?;
-    config.definition.allow_incomplete = true;
     config
         .definition
         .components

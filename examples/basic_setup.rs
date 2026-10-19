@@ -47,7 +47,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -76,7 +75,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pipeline: vec![],
         }],
         enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
         joins: None,
         priority_queue_capacity: None,
         dispatch_buffer_capacity: None,
@@ -90,23 +88,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Note: Sources and reactions can be defined in the config file using the tagged enum format
     let config = drasi_server::DrasiServerConfig {
         api_version: None,
-        id: drasi_server::models::ConfigValue::Static(uuid::Uuid::new_v4().to_string()),
+
         host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         persist_config: true,
-        persist_index: false,                  // Use in-memory indexes (default)
-        enable_archive: false,                 // Disable temporal history (default)
-        memory_budget_mib: None,               // Use the RocksDB default when enabled
-        enable_ui: true,                       // Enable web UI (default)
-        state_store: None,                     // Use in-memory state store (default)
-        secret_store: None,                    // No secret store configured
-        default_priority_queue_capacity: None, // Use lib defaults
-        default_dispatch_buffer_capacity: None, // Use lib defaults
-        sources: vec![],                       // Add sources using SourceConfig enum
-        reactions: vec![],                     // Add reactions using ReactionConfig enum
-        queries: vec![available_drivers_query, pending_orders_query],
-        instances: vec![], // Empty = use legacy single-instance mode
+        // Use in-memory indexes (default)
+        // Disable temporal history (default)
+        // Use the RocksDB default when enabled
+        enable_ui: true, // Enable web UI (default)
+        // Use in-memory state store (default)
+        // No secret store configured
+        // Use lib defaults
+        // Use lib defaults
+        // Add sources using SourceConfig enum
+        // Add reactions using ReactionConfig enum
+
+        // Empty = use legacy single-instance mode
         plugin_registry: None,
         auto_install_plugins: false,
         plugins: vec![],
@@ -116,10 +114,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hot_reload_debounce_ms: 2000,
         solutions_dir: None, // Use default solutions directory
         cors_allowed_origins: vec![],
-        identity_providers: vec![],
-        bootstrap_providers: vec![],
-        computation: None,
-        configuration_store: None,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            id: drasi_server::models::ConfigValue::Static(uuid::Uuid::new_v4().to_string()).into(),
+            persist_index: false,
+            enable_archive: false,
+            memory_budget_mib: None,
+            state_store: None,
+            secret_store: None,
+            default_priority_queue_capacity: None,
+            default_dispatch_buffer_capacity: None,
+            sources: vec![],
+            reactions: vec![],
+            queries: vec![available_drivers_query, pending_orders_query],
+            identity_providers: vec![],
+            bootstrap_providers: vec![],
+            computation: None,
+            configuration_store: None,
+        }],
     };
 
     // Save configuration to file

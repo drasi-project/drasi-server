@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { subscribeComponentEvents } from "./useApi";
 import type { ComponentEvent } from "@/api/types";
 import type { EventEntry } from "@/components/events/EventPanel";
@@ -45,10 +45,10 @@ let idCounter = 0;
  */
 export function useComponentEventLog(instanceId?: string) {
   const [entries, setEntries] = useState<EventEntry[]>([]);
-  const instanceRef = useRef(instanceId);
-  instanceRef.current = instanceId;
 
   useEffect(() => {
+    setEntries([]);
+    if (!instanceId) return;
     const unsub = subscribeComponentEvents((event: ComponentEvent) => {
       // Skip internal components (prefixed with __)
       if (event.componentId.startsWith("__")) return;

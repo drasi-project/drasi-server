@@ -244,11 +244,11 @@ try {
     sslMode: 'prefer', bootstrapProvider: { kind: 'postgres' },
   };
   const config = {
-    apiVersion: 'drasi.io/v1', id: 'trading-server', host: native ? '127.0.0.1' : '0.0.0.0', port: restPort,
+    apiVersion: 'drasi.io/v1', host: native ? '127.0.0.1' : '0.0.0.0', port: restPort,
     logLevel: 'info', persistConfig: false, autoInstallPlugins: false, enableUi: false,
     verifyPlugins: true, pluginRegistry: 'ghcr.io/drasi-project',
     plugins: Object.keys(pluginPins).map(ref => ({ ref })),
-    sources: [
+    instances: [{ id: 'trading-server', sources: [
       { kind: 'http', id: 'price-feed', autoStart: true, host: native ? '127.0.0.1' : '0.0.0.0', port: pricePort, timeoutMs: 10000,
         bootstrapProvider: { kind: 'scriptfile', filePaths: [native ? join(runDir, 'prices.jsonl') : '/smoke/prices.jsonl'] } },
       { ...postgresConfig, id: 'postgres-stocks', tables: ['stocks', 'portfolio', 'watchlist'],
@@ -258,7 +258,7 @@ try {
         slotName: 'drasi_broker_slot', publicationName: 'drasi_broker_pub',
         tableKeys: [{ table: 'limit_orders', keyColumns: ['id'] }] },
     ],
-    queries: [], reactions: [],
+    queries: [], reactions: [] }],
   };
   await writeFile(join(runDir, 'server.yaml'), JSON.stringify(config, null, 2) + '\n');
   const dockerOptions = [
@@ -312,7 +312,7 @@ try {
     return healthy(`${rest}/health`);
   });
   await ready('all three real Trading sources', async () => {
-    const response = await fetch(`${rest}/api/v1/sources`, { signal: AbortSignal.timeout(1500) });
+    const response = await fetch(`${rest}/api/v1/instances/trading-server/sources`, { signal: AbortSignal.timeout(1500) });
     assert(response.ok, `Cannot inspect Trading sources: ${response.status}`);
     const json = await response.json();
     const sources = json.data ?? json;

@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import axios from "axios";
 import * as api from "@/api/client";
+import { instancePath, requireInstanceId } from "@/api/paths";
 import { removeNodeFromPersistedState } from "@/hooks/useCanvasPersistence";
 import type {
   SourceStatusResponse,
@@ -31,7 +32,7 @@ function isInternal(id: string): boolean {
 
 type Listener = (event: ComponentEvent) => void;
 
-export type ConnectionState = "connected" | "connecting" | "disconnected";
+export type ConnectionState = "connected" | "connecting" | "disconnected" | "unselected";
 type ConnectionListener = (state: ConnectionState) => void;
 
 interface SharedES {
@@ -42,10 +43,6 @@ interface SharedES {
 }
 
 const sharedSources = new Map<string, SharedES>();
-
-function getSharedKey(instanceId?: string): string {
-  return instanceId ?? "__default__";
-}
 
 function notifyConnectionState(shared: SharedES, state: ConnectionState) {
   shared.connectionState = state;
@@ -61,15 +58,13 @@ function notifyConnectionState(shared: SharedES, state: ConnectionState) {
  */
 export function subscribeComponentEvents(
   onEvent: Listener,
-  instanceId?: string,
+  instanceId: string,
 ): () => void {
-  const key = getSharedKey(instanceId);
+  const key = instanceId;
 
   let shared = sharedSources.get(key);
   if (!shared) {
-    const path = instanceId
-      ? `/api/v1/instances/${instanceId}/events`
-      : `/api/v1/events`;
+    const path = `/api/v1${instancePath(instanceId, "events")}`;
 
     const es = new EventSource(path);
     shared = { es, listeners: new Set(), connectionListeners: new Set(), connectionState: "connecting" };
@@ -123,17 +118,15 @@ export function subscribeComponentEvents(
  */
 export function subscribeConnectionState(
   onState: ConnectionListener,
-  instanceId?: string,
+  instanceId: string,
 ): () => void {
-  const key = getSharedKey(instanceId);
+  const key = instanceId;
 
   let shared = sharedSources.get(key);
   if (!shared) {
     // Create the EventSource if it doesn't exist yet
     // (subscribeComponentEvents creates it, but connection monitoring may start first)
-    const path = instanceId
-      ? `/api/v1/instances/${instanceId}/events`
-      : `/api/v1/events`;
+    const path = `/api/v1${instancePath(instanceId, "events")}`;
 
     const es = new EventSource(path);
     shared = { es, listeners: new Set(), connectionListeners: new Set(), connectionState: "connecting" };
@@ -181,34 +174,52 @@ export function subscribeConnectionState(
   };
 }
 
+function useCurrentInstance(instanceId?: string) {
+  const scope = useMemo(() => ({ instanceId }), [instanceId]);
+  const current = useRef(scope);
+  current.current = scope;
+  return useCallback(() => current.current === scope, [scope]);
+}
+
 export function useSources(instanceId?: string) {
+  const isCurrent = useCurrentInstance(instanceId);
   const [sources, setSources] = useState<SourceStatusResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   // One-time fetch for initial state (includes full config details)
   const refresh = useCallback(async () => {
+    if (!instanceId) {
+      setSources([]);
+      setLoading(false);
+      return;
+    }
     try {
       const data = await api.listSources(instanceId);
+      if (!isCurrent()) return;
       setSources(data.filter((s) => !isInternal(s.id)));
     } catch (e) {
+      if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
       if (axios.isAxiosError(e) && e.response?.status === 404) {
         setSources([]);
       }
       // Otherwise keep existing data
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   useEffect(() => {
+    setSources([]);
     setLoading(true);
     refresh();
   }, [refresh]);
 
   // SSE: apply status changes reactively
   useEffect(() => {
+    if (!instanceId) return;
     const unsub = subscribeComponentEvents((event) => {
+      if (!isCurrent()) return;
       if (event.componentType !== "Source") return;
       if (isInternal(event.componentId)) return;
 
@@ -220,11 +231,13 @@ export function useSources(instanceId?: string) {
       if (event.status === "Added") {
         // New source added — fetch full details then append
         api.getSource(event.componentId, instanceId).then((full) => {
+          if (!isCurrent()) return;
           setSources((prev) => {
             if (prev.some((s) => s.id === full.id)) return prev;
             return [...prev, full];
           });
         }).catch(() => {
+          if (!isCurrent()) return;
           // Append with minimal info; will be refined on next detail fetch
           setSources((prev) => {
             if (prev.some((s) => s.id === event.componentId)) return prev;
@@ -250,18 +263,18 @@ export function useSources(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   return {
     sources,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createSource>[0]) => {
-      await api.createSource(req, instanceId);
+      await api.createSource(req, requireInstanceId(instanceId));
       // SSE will deliver the Added event — no need to refresh
     },
     remove: async (id: string) => {
-      await api.deleteSource(id, instanceId);
+      await api.deleteSource(id, requireInstanceId(instanceId));
       // Clean up persisted canvas state for this node
       if (instanceId) {
         removeNodeFromPersistedState(instanceId, id);
@@ -269,41 +282,52 @@ export function useSources(instanceId?: string) {
       // SSE will deliver the Removed event
     },
     start: async (id: string) => {
-      await api.startSource(id, instanceId);
+      await api.startSource(id, requireInstanceId(instanceId));
       // SSE will deliver the Starting/Running event
     },
     stop: async (id: string) => {
-      await api.stopSource(id, instanceId);
+      await api.stopSource(id, requireInstanceId(instanceId));
       // SSE will deliver the Stopping/Stopped event
     },
   };
 }
 
 export function useQueries(instanceId?: string) {
+  const isCurrent = useCurrentInstance(instanceId);
   const [queries, setQueries] = useState<QueryConfigResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!instanceId) {
+      setQueries([]);
+      setLoading(false);
+      return;
+    }
     try {
       const data = await api.listQueries(instanceId);
+      if (!isCurrent()) return;
       setQueries(data.filter((q) => !isInternal(q.id)));
     } catch (e) {
+      if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
       if (axios.isAxiosError(e) && e.response?.status === 404) {
         setQueries([]);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   useEffect(() => {
+    setQueries([]);
     setLoading(true);
     refresh();
   }, [refresh]);
 
   useEffect(() => {
+    if (!instanceId) return;
     const unsub = subscribeComponentEvents((event) => {
+      if (!isCurrent()) return;
       if (event.componentType !== "Query") return;
       if (isInternal(event.componentId)) return;
 
@@ -314,11 +338,13 @@ export function useQueries(instanceId?: string) {
 
       if (event.status === "Added") {
         api.getQuery(event.componentId, instanceId).then((full) => {
+          if (!isCurrent()) return;
           setQueries((prev) => {
             if (prev.some((q) => q.id === full.id)) return prev;
             return [...prev, full];
           });
         }).catch(() => {
+          if (!isCurrent()) return;
           setQueries((prev) => {
             if (prev.some((q) => q.id === event.componentId)) return prev;
             return [...prev, {
@@ -342,56 +368,67 @@ export function useQueries(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   return {
     queries,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createQuery>[0]) => {
-      await api.createQuery(req, instanceId);
+      await api.createQuery(req, requireInstanceId(instanceId));
     },
     remove: async (id: string) => {
-      await api.deleteQuery(id, instanceId);
+      await api.deleteQuery(id, requireInstanceId(instanceId));
       // Clean up persisted canvas state for this node
       if (instanceId) {
         removeNodeFromPersistedState(instanceId, id);
       }
     },
     start: async (id: string) => {
-      await api.startQuery(id, instanceId);
+      await api.startQuery(id, requireInstanceId(instanceId));
     },
     stop: async (id: string) => {
-      await api.stopQuery(id, instanceId);
+      await api.stopQuery(id, requireInstanceId(instanceId));
     },
   };
 }
 
 export function useReactions(instanceId?: string) {
+  const isCurrent = useCurrentInstance(instanceId);
   const [reactions, setReactions] = useState<ReactionStatusResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!instanceId) {
+      setReactions([]);
+      setLoading(false);
+      return;
+    }
     try {
       const data = await api.listReactions(instanceId);
+      if (!isCurrent()) return;
       setReactions(data.filter((r) => !isInternal(r.id)));
     } catch (e) {
+      if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
       if (axios.isAxiosError(e) && e.response?.status === 404) {
         setReactions([]);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   useEffect(() => {
+    setReactions([]);
     setLoading(true);
     refresh();
   }, [refresh]);
 
   useEffect(() => {
+    if (!instanceId) return;
     const unsub = subscribeComponentEvents((event) => {
+      if (!isCurrent()) return;
       if (event.componentType !== "Reaction") return;
       if (isInternal(event.componentId)) return;
 
@@ -402,11 +439,13 @@ export function useReactions(instanceId?: string) {
 
       if (event.status === "Added") {
         api.getReaction(event.componentId, instanceId).then((full) => {
+          if (!isCurrent()) return;
           setReactions((prev) => {
             if (prev.some((r) => r.id === full.id)) return prev;
             return [...prev, full];
           });
         }).catch(() => {
+          if (!isCurrent()) return;
           setReactions((prev) => {
             if (prev.some((r) => r.id === event.componentId)) return prev;
             return [...prev, {
@@ -431,27 +470,27 @@ export function useReactions(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId]);
+  }, [instanceId, isCurrent]);
 
   return {
     reactions,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createReaction>[0]) => {
-      await api.createReaction(req, instanceId);
+      await api.createReaction(req, requireInstanceId(instanceId));
     },
     remove: async (id: string) => {
-      await api.deleteReaction(id, instanceId);
+      await api.deleteReaction(id, requireInstanceId(instanceId));
       // Clean up persisted canvas state for this node
       if (instanceId) {
         removeNodeFromPersistedState(instanceId, id);
       }
     },
     start: async (id: string) => {
-      await api.startReaction(id, instanceId);
+      await api.startReaction(id, requireInstanceId(instanceId));
     },
     stop: async (id: string) => {
-      await api.stopReaction(id, instanceId);
+      await api.stopReaction(id, requireInstanceId(instanceId));
     },
   };
 }
@@ -460,13 +499,13 @@ export function useReactions(instanceId?: string) {
  * Direct API access hook for components that need to call start/stop
  * without managing local state. SSE events will update the UI reactively.
  */
-export function useApi() {
+export function useApi(instanceId?: string) {
   return {
-    startSource: api.startSource,
-    stopSource: api.stopSource,
-    startQuery: api.startQuery,
-    stopQuery: api.stopQuery,
-    startReaction: api.startReaction,
-    stopReaction: api.stopReaction,
+    startSource: (id: string) => api.startSource(id, requireInstanceId(instanceId)),
+    stopSource: (id: string) => api.stopSource(id, requireInstanceId(instanceId)),
+    startQuery: (id: string) => api.startQuery(id, requireInstanceId(instanceId)),
+    stopQuery: (id: string) => api.stopQuery(id, requireInstanceId(instanceId)),
+    startReaction: (id: string) => api.startReaction(id, requireInstanceId(instanceId)),
+    stopReaction: (id: string) => api.stopReaction(id, requireInstanceId(instanceId)),
   };
 }

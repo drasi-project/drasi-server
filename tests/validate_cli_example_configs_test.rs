@@ -241,12 +241,13 @@ fn test_validate_rejects_missing_required_env_var() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-    password: "${THIS_VAR_DEFINITELY_DOES_NOT_EXIST}"
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+        password: "${THIS_VAR_DEFINITELY_DOES_NOT_EXIST}"
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -266,12 +267,13 @@ fn test_validate_accepts_env_var_with_default() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-    someField: "${NONEXISTENT_VAR:-fallback_value}"
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+        someField: "${NONEXISTENT_VAR:-fallback_value}"
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -287,14 +289,15 @@ fn test_validate_rejects_config_value_env_var_missing() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-    password:
-      kind: EnvironmentVariable
-      name: ABSOLUTELY_NOT_SET_VAR_12345
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+        password:
+          kind: EnvironmentVariable
+          name: ABSOLUTELY_NOT_SET_VAR_12345
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -314,15 +317,16 @@ fn test_validate_accepts_config_value_env_var_with_default() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-    password:
-      kind: EnvironmentVariable
-      name: ALSO_NOT_SET_VAR_67890
-      default: "fallback"
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+        password:
+          kind: EnvironmentVariable
+          name: ALSO_NOT_SET_VAR_67890
+          default: "fallback"
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -338,19 +342,20 @@ fn test_validate_ignores_handlebars_template_expressions() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-queries: []
-reactions:
-  - kind: log
-    id: my-log
-    queries:
-      - some-query
-    routes:
-      some-query:
-        added:
-          template: "Order ${{after.orderId}} total: ${{after.total}}"
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+    queries: []
+    reactions:
+      - kind: log
+        id: my-log
+        queries:
+          - some-query
+        routes:
+          some-query:
+            added:
+              template: "Order ${{after.orderId}} total: ${{after.total}}"
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -386,10 +391,11 @@ fn test_validate_rejects_source_missing_kind() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - id: my-source
-queries: []
-reactions: []
+instances:
+  - sources:
+      - id: my-source
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(
@@ -409,10 +415,11 @@ fn test_validate_rejects_source_missing_id() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(!success, "validate should fail when source is missing 'id'");
@@ -429,13 +436,14 @@ fn test_validate_reports_multiple_env_var_errors() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources:
-  - kind: mock
-    id: my-source
-    field_a: "${MISSING_VAR_AAA}"
-    field_b: "${MISSING_VAR_BBB}"
-queries: []
-reactions: []
+instances:
+  - sources:
+      - kind: mock
+        id: my-source
+        field_a: "${MISSING_VAR_AAA}"
+        field_b: "${MISSING_VAR_BBB}"
+    queries: []
+    reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(!success, "validate should fail with missing env vars");
@@ -452,11 +460,12 @@ fn test_validate_rejects_reaction_missing_queries() {
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
-sources: []
-queries: []
-reactions:
-  - kind: log
-    id: my-log
+instances:
+  - sources: []
+    queries: []
+    reactions:
+      - kind: log
+        id: my-log
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(

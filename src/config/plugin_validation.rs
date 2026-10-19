@@ -431,12 +431,11 @@ pub fn validate_with_plugins(
 
     // 4. Validate component configs against schemas
     let mut config_errors = validate_component_configs(config, &registry);
-    for graph in config.computation.iter().chain(
-        config
-            .instances
-            .iter()
-            .flat_map(|instance| &instance.computation),
-    ) {
+    for graph in config
+        .instances
+        .iter()
+        .flat_map(|instance| &instance.computation)
+    {
         let validation = (|| {
             let factories = crate::computation::native_factory_registry(&registry)?;
             let graph = graph.resolve(&factories)?;
@@ -479,48 +478,48 @@ pub fn validate_with_plugins(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Collect all sources from config (top-level + instances).
+/// Collect sources from explicitly configured instances.
 pub(crate) fn collect_all_sources(
     config: &DrasiServerConfig,
 ) -> Vec<crate::api::models::SourceConfig> {
-    let mut sources = config.sources.clone();
-    for inst in &config.instances {
-        sources.extend(inst.sources.clone());
-    }
-    sources
+    config
+        .instances
+        .iter()
+        .flat_map(|instance| instance.sources.iter().cloned())
+        .collect()
 }
 
-/// Collect all reactions from config (top-level + instances).
+/// Collect reactions from explicitly configured instances.
 pub(crate) fn collect_all_reactions(
     config: &DrasiServerConfig,
 ) -> Vec<crate::api::models::ReactionConfig> {
-    let mut reactions = config.reactions.clone();
-    for inst in &config.instances {
-        reactions.extend(inst.reactions.clone());
-    }
-    reactions
+    config
+        .instances
+        .iter()
+        .flat_map(|instance| instance.reactions.iter().cloned())
+        .collect()
 }
 
-/// Collect all identity providers from config (top-level + instances).
+/// Collect identity providers from explicitly configured instances.
 pub(crate) fn collect_all_identity_providers(
     config: &DrasiServerConfig,
 ) -> Vec<crate::api::models::IdentityProviderConfig> {
-    let mut providers = config.identity_providers.clone();
-    for inst in &config.instances {
-        providers.extend(inst.identity_providers.clone());
-    }
-    providers
+    config
+        .instances
+        .iter()
+        .flat_map(|instance| instance.identity_providers.iter().cloned())
+        .collect()
 }
 
-/// Collect all top-level bootstrap providers from config (top-level + instances).
+/// Collect named bootstrap providers from explicitly configured instances.
 pub(crate) fn collect_all_bootstrap_providers(
     config: &DrasiServerConfig,
 ) -> Vec<crate::api::models::TopLevelBootstrapProviderConfig> {
-    let mut providers = config.bootstrap_providers.clone();
-    for inst in &config.instances {
-        providers.extend(inst.bootstrap_providers.clone());
-    }
-    providers
+    config
+        .instances
+        .iter()
+        .flat_map(|instance| instance.bootstrap_providers.iter().cloned())
+        .collect()
 }
 
 // ===========================================================================
@@ -642,8 +641,11 @@ mod tests {
         reactions: Vec<ReactionConfig>,
     ) -> DrasiServerConfig {
         DrasiServerConfig {
-            sources,
-            reactions,
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                sources,
+                reactions,
+                ..Default::default()
+            }],
             ..Default::default()
         }
     }

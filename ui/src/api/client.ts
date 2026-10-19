@@ -1,4 +1,5 @@
 import axios from "axios";
+import { instancePath } from "./paths";
 import type {
   SourceStatusResponse,
   CreateSourceRequest,
@@ -63,7 +64,7 @@ export async function inspectComputation(
   instanceId: string,
   signal?: AbortSignal,
 ): Promise<ComputationInspection> {
-  return unwrap(await api.get(`/instances/${encodeURIComponent(instanceId)}/computation`, { signal }));
+  return unwrap(await api.get(instancePath(instanceId, "computation"), { signal }));
 }
 
 export async function createInstance(req: CreateInstanceRequest): Promise<void> {
@@ -75,17 +76,15 @@ export async function cloneInstance(
   sourceInstanceId: string,
 ): Promise<CloneInstanceResult> {
   return unwrap(
-    await api.post(`/instances/${targetInstanceId}/clone`, { sourceInstanceId }),
+    await api.post(instancePath(targetInstanceId, "clone"), { sourceInstanceId }),
   );
 }
 
 // Sources — fetch full view for each source to get kind/config
 export async function listSources(
-  instanceId?: string,
+  instanceId: string,
 ): Promise<SourceStatusResponse[]> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources`
-    : "/sources";
+  const path = instancePath(instanceId, "sources");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const summaries: any[] = unwrap(await api.get(path));
   // Filter out internal components (introspection source, etc.)
@@ -94,9 +93,7 @@ export async function listSources(
   const results = await Promise.all(
     visible.map(async (s) => {
       try {
-        const fullPath = instanceId
-          ? `/instances/${instanceId}/sources/${s.id}?view=full`
-          : `/sources/${s.id}?view=full`;
+        const fullPath = `${instancePath(instanceId, "sources", s.id)}?view=full`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const full: any = unwrap(await api.get(fullPath));
         return normalizeSource(full);
@@ -110,69 +107,55 @@ export async function listSources(
 
 export async function getSource(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<SourceStatusResponse> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources/${id}?view=full`
-    : `/sources/${id}?view=full`;
+  const path = `${instancePath(instanceId, "sources", id)}?view=full`;
   return normalizeSource(unwrap(await api.get(path)));
 }
 
 export async function createSource(
   req: CreateSourceRequest,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources`
-    : "/sources";
+  const path = instancePath(instanceId, "sources");
   await api.post(path, req);
 }
 
 export async function deleteSource(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources/${id}`
-    : `/sources/${id}`;
+  const path = instancePath(instanceId, "sources", id);
   await api.delete(path);
 }
 
 export async function startSource(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources/${id}/start`
-    : `/sources/${id}/start`;
+  const path = instancePath(instanceId, "sources", id, "start");
   await api.post(path);
 }
 
 export async function stopSource(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/sources/${id}/stop`
-    : `/sources/${id}/stop`;
+  const path = instancePath(instanceId, "sources", id, "stop");
   await api.post(path);
 }
 
 // Queries — fetch full view for each query to get config
 export async function listQueries(
-  instanceId?: string,
+  instanceId: string,
 ): Promise<QueryConfigResponse[]> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries`
-    : "/queries";
+  const path = instancePath(instanceId, "queries");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const summaries: any[] = unwrap(await api.get(path));
   const results = await Promise.all(
     summaries.map(async (q) => {
       try {
-        const fullPath = instanceId
-          ? `/instances/${instanceId}/queries/${q.id}?view=full`
-          : `/queries/${q.id}?view=full`;
+        const fullPath = `${instancePath(instanceId, "queries", q.id)}?view=full`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const full: any = unwrap(await api.get(fullPath));
         return normalizeQuery(full);
@@ -186,71 +169,57 @@ export async function listQueries(
 
 export async function getQuery(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<QueryConfigResponse> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries/${id}?view=full`
-    : `/queries/${id}?view=full`;
+  const path = `${instancePath(instanceId, "queries", id)}?view=full`;
   return normalizeQuery(unwrap(await api.get(path)));
 }
 
 export async function createQuery(
   req: CreateQueryRequest,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries`
-    : "/queries";
+  const path = instancePath(instanceId, "queries");
   await api.post(path, req);
 }
 
 export async function deleteQuery(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries/${id}`
-    : `/queries/${id}`;
+  const path = instancePath(instanceId, "queries", id);
   await api.delete(path);
 }
 
 export async function startQuery(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries/${id}/start`
-    : `/queries/${id}/start`;
+  const path = instancePath(instanceId, "queries", id, "start");
   await api.post(path);
 }
 
 export async function stopQuery(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries/${id}/stop`
-    : `/queries/${id}/stop`;
+  const path = instancePath(instanceId, "queries", id, "stop");
   await api.post(path);
 }
 
 export async function getQueryResults(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<QueryResultRow[]> {
-  const path = instanceId
-    ? `/instances/${instanceId}/queries/${id}/results`
-    : `/queries/${id}/results`;
+  const path = instancePath(instanceId, "queries", id, "results");
   return unwrap(await api.get(path));
 }
 
 // Reactions — fetch full view for each reaction to get kind/config
 export async function listReactions(
-  instanceId?: string,
+  instanceId: string,
 ): Promise<ReactionStatusResponse[]> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions`
-    : "/reactions";
+  const path = instancePath(instanceId, "reactions");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const summaries: any[] = unwrap(await api.get(path));
   // Filter out internal components (attach reactions, etc.)
@@ -258,9 +227,7 @@ export async function listReactions(
   const results = await Promise.all(
     visible.map(async (r) => {
       try {
-        const fullPath = instanceId
-          ? `/instances/${instanceId}/reactions/${r.id}?view=full`
-          : `/reactions/${r.id}?view=full`;
+        const fullPath = `${instancePath(instanceId, "reactions", r.id)}?view=full`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const full: any = unwrap(await api.get(fullPath));
         return normalizeReaction(full);
@@ -274,51 +241,41 @@ export async function listReactions(
 
 export async function getReaction(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<ReactionStatusResponse> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions/${id}?view=full`
-    : `/reactions/${id}?view=full`;
+  const path = `${instancePath(instanceId, "reactions", id)}?view=full`;
   return normalizeReaction(unwrap(await api.get(path)));
 }
 
 export async function createReaction(
   req: CreateReactionRequest,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions`
-    : "/reactions";
+  const path = instancePath(instanceId, "reactions");
   await api.post(path, req);
 }
 
 export async function deleteReaction(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions/${id}`
-    : `/reactions/${id}`;
+  const path = instancePath(instanceId, "reactions", id);
   await api.delete(path);
 }
 
 export async function startReaction(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions/${id}/start`
-    : `/reactions/${id}/start`;
+  const path = instancePath(instanceId, "reactions", id, "start");
   await api.post(path);
 }
 
 export async function stopReaction(
   id: string,
-  instanceId?: string,
+  instanceId: string,
 ): Promise<void> {
-  const path = instanceId
-    ? `/instances/${instanceId}/reactions/${id}/stop`
-    : `/reactions/${id}/stop`;
+  const path = instancePath(instanceId, "reactions", id, "stop");
   await api.post(path);
 }
 
@@ -344,7 +301,7 @@ export async function deploySolution(
   instanceId: string,
   req: SolutionDeployRequest,
 ): Promise<SolutionDeployResponse> {
-  return unwrap(await api.post(`/instances/${instanceId}/solutions`, req));
+  return unwrap(await api.post(instancePath(instanceId, "solutions"), req));
 }
 
 export async function deleteSolution(id: string): Promise<void> {
@@ -355,7 +312,7 @@ export async function createSolutionTemplate(
   instanceId: string,
   req: CreateSolutionTemplateRequest,
 ): Promise<CreateSolutionTemplateResponse> {
-  return unwrap(await api.post(`/instances/${instanceId}/catalog/solutions`, req));
+  return unwrap(await api.post(instancePath(instanceId, "catalog", "solutions"), req));
 }
 
 // Plugins

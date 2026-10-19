@@ -152,14 +152,15 @@ fn test_openapi_config_memory_budget_uses_config_value_schema() {
     let json = serde_json::to_value(&openapi).unwrap();
     let schemas = &json["components"]["schemas"];
 
-    for schema_name in ["DrasiServerConfig", "DrasiLibInstanceConfig"] {
-        let property = &schemas[schema_name]["properties"]["memoryBudgetMiB"];
-        let serialized = serde_json::to_string(property).unwrap();
-        assert!(
-            serialized.contains("#/components/schemas/ConfigValueUsize"),
-            "{schema_name}.memoryBudgetMiB should reference ConfigValueUsize, got: {property}"
-        );
-    }
+    assert!(schemas["DrasiServerConfig"]["properties"]
+        .get("memoryBudgetMiB")
+        .is_none());
+    let property = &schemas["DrasiLibInstanceConfig"]["properties"]["memoryBudgetMiB"];
+    let serialized = serde_json::to_string(property).unwrap();
+    assert!(
+        serialized.contains("#/components/schemas/ConfigValueUsize"),
+        "DrasiLibInstanceConfig.memoryBudgetMiB should reference ConfigValueUsize, got: {property}"
+    );
 }
 
 #[tokio::test]

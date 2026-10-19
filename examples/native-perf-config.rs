@@ -81,15 +81,15 @@ fn main() -> Result<()> {
     let mut config: DrasiServerConfig = serde_json::from_value(value.clone())?;
     config.validate()?;
     anyhow::ensure!(
-        config.instances.is_empty()
-            && config.computation.is_none()
-            && config.sources.len() == 1
-            && !config.queries.is_empty()
-            && !config.persist_index
-            && config.state_store.is_none(),
+        config.instances.len() == 1
+            && config.instances[0].computation.is_none()
+            && config.instances[0].sources.len() == 1
+            && !config.instances[0].queries.is_empty()
+            && !config.instances[0].persist_index
+            && config.instances[0].state_store.is_none(),
         "comparison requires one standard, in-memory instance with one network source"
     );
-    let source = &value["sources"][0];
+    let source = &value["instances"][0]["sources"][0];
     let transport = source["kind"].as_str().context("source kind")?;
     anyhow::ensure!(
         matches!(transport, "http" | "grpc"),
@@ -183,8 +183,6 @@ fn main() -> Result<()> {
                         QueryExecutionSettings::from_legacy_config(query),
                     )?),
                 ),
-                // Preserve outward metadata, not the old execution or plugin model.
-                ("runtime_compatibility".into(), literal(json!(true))),
             ]),
             dependencies: BTreeMap::from([("indexes".into(), vec![indexes.clone()])]),
         };
@@ -195,7 +193,7 @@ fn main() -> Result<()> {
                 EdgeDefinition::new(endpoint(source_id, "out")?, endpoint(&query.id, "in")?),
                 Box::new(BoundedPipeConfig { capacity }),
             );
-        let matches: Vec<_> = value["reactions"]
+        let matches: Vec<_> = value["instances"][0]["reactions"]
             .as_array()
             .context("reaction array")?
             .iter()
@@ -249,10 +247,10 @@ fn main() -> Result<()> {
         "extra reactions would change the measured work"
     );
     let graph = builder.build()?;
-    config.sources.clear();
-    config.queries.clear();
-    config.reactions.clear();
-    config.computation = Some(
+    config.instances[0].sources.clear();
+    config.instances[0].queries.clear();
+    config.instances[0].reactions.clear();
+    config.instances[0].computation = Some(
         ComputationConfig {
             definition: graph.definition,
         }

@@ -107,17 +107,21 @@ fn main() -> Result<()> {
     }
     let graph = builder.build()?;
     let config = DrasiServerConfig {
-        id: ConfigValue::Static("native-example".into()),
         host: ConfigValue::Static("127.0.0.1".into()),
         verify_plugins: false,
         enable_ui: false,
         persist_config: false,
-        computation: Some(
-            ComputationConfig {
-                definition: graph.definition,
-            }
-            .into(),
-        ),
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            id: ConfigValue::Static("native-example".into()).into(),
+            computation: Some(
+                ComputationConfig {
+                    definition: graph.definition,
+                }
+                .into(),
+            ),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     config.validate()?;

@@ -21,10 +21,11 @@ use tokio::sync::RwLock;
 use super::{persist_after_operation, wait_for_computation_creation};
 use crate::api::models::ConfigValue;
 use crate::api::models::{BootstrapProviderConfig, BootstrapProviderRef};
+use crate::api::models::{ReactionConfig, SourceConfig};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
-use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
+use crate::config::DrasiLibInstanceConfig;
 use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
@@ -203,7 +204,7 @@ pub async fn create_instance(
     // Persist configuration if enabled
     if let Some(persistence) = &config_persistence {
         let instance_config = DrasiLibInstanceConfig {
-            id: ConfigValue::Static(instance_id.clone()),
+            id: ConfigValue::Static(instance_id.clone()).into(),
             persist_index,
             enable_archive,
             memory_budget_mib: memory_budget_mib.map(ConfigValue::Static),
@@ -223,7 +224,10 @@ pub async fn create_instance(
             computation: None,
             configuration_store: request.configuration_store,
         };
-        persistence.register_instance(instance_config).await;
+        persistence
+            .register_instance(instance_config)
+            .await
+            .map_err(|error| super::persistence_error("registering instance settings", error))?;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
     }
 

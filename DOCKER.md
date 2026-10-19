@@ -272,6 +272,6 @@ Once running, the following endpoints are available:
 | `http://localhost:8080/health` | Health check |
 | `http://localhost:8080/api/v1/docs/` | API documentation (Swagger UI) |
 | `http://localhost:8080/api/v1/openapi.json` | OpenAPI spec |
-| `http://localhost:8080/api/v1/sources` | Source management |
-| `http://localhost:8080/api/v1/queries` | Query management |
-| `http://localhost:8080/api/v1/reactions` | Reaction management |
+| `http://localhost:8080/api/v1/instances/{instanceId}/sources` | Source management |
+| `http://localhost:8080/api/v1/instances/{instanceId}/queries` | Query management |
+| `http://localhost:8080/api/v1/instances/{instanceId}/reactions` | Reaction management |

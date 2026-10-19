@@ -1,5 +1,9 @@
 # Drasi Playground
 
+This example uses the explicitly configured `playground-server` instance.
+Management requests and HTTP source data injection use its scoped Server API;
+the built app does not depend on a development-only data proxy.
+
 An interactive web UI for experimenting with Drasi functionality. This example application provides a hands-on environment to explore Drasi's continuous query capabilities without any setup.
 
 ## Features
@@ -160,16 +164,16 @@ The playground interacts with Drasi Server through these endpoints:
 
 - `GET /health` - Health check
 - `GET /api/versions` - List available API versions
-- `GET /api/v1/sources` - List all sources
-- `POST /api/v1/sources` - Create a new source
-- `DELETE /api/v1/sources/{id}` - Delete a source
+- `GET /api/v1/instances/playground-server/sources` - List all sources
+- `POST /api/v1/instances/playground-server/sources` - Create a new source
+- `DELETE /api/v1/instances/playground-server/sources/{id}` - Delete a source
 - `POST /sources/{id}/events` - Inject data into source (direct to HTTP source port)
-- `GET /api/v1/queries` - List all queries
-- `POST /api/v1/queries` - Create a new query
-- `DELETE /api/v1/queries/{id}` - Delete a query
-- `GET /api/v1/queries/{id}/results` - Get query results
-- `GET /api/v1/reactions` - List all reactions
-- `POST /api/v1/reactions` - Create a new reaction
+- `GET /api/v1/instances/playground-server/queries` - List all queries
+- `POST /api/v1/instances/playground-server/queries` - Create a new query
+- `DELETE /api/v1/instances/playground-server/queries/{id}` - Delete a query
+- `GET /api/v1/instances/playground-server/queries/{id}/results` - Get query results
+- `GET /api/v1/instances/playground-server/reactions` - List all reactions
+- `POST /api/v1/instances/playground-server/reactions` - Create a new reaction
 
 ## Troubleshooting
 

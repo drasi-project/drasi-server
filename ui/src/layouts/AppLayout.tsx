@@ -21,6 +21,7 @@ export default function AppLayout({
     connected: { dot: "bg-drasi-running animate-pulse-glow", label: "Live" },
     connecting: { dot: "bg-amber-400 animate-pulse", label: "Connecting..." },
     disconnected: { dot: "bg-drasi-error", label: "Disconnected" },
+    unselected: { dot: "bg-drasi-border", label: "No instance selected" },
   }[connectionState];
 
   return (

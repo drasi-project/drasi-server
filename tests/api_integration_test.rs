@@ -157,6 +157,133 @@ struct TestComponentRegistry {
 }
 
 #[tokio::test]
+async fn component_routes_require_an_explicit_instance_id() {
+    let (router, core, _) = create_test_router_with_id("explicit-routes").await;
+    for path in ["/sources", "/queries", "/reactions", "/events"] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "{path} must not select the first instance"
+        );
+    }
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/instances/explicit-routes/queries")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/instances/absent/queries")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    core.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
+    let (router, core, _) = create_test_router_with_id("deferred-api").await;
+    let query_path = "/instances/deferred-api/queries";
+    let response = timeout(
+        Duration::from_secs(5),
+        router.clone().oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(query_path)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "id": "late-api-query",
+                        "query": "MATCH (n) RETURN n",
+                        "queryLanguage": "Cypher",
+                        "sources": [{"sourceId": "late-api-source"}],
+                        "autoStart": true,
+                        "enableBootstrap": false
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        ),
+    )
+    .await
+    .expect("declaration must not await source arrival")
+    .unwrap();
+    assert!(response.status().is_success(), "{response:?}");
+    let inspect = || async {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/instances/deferred-api/computation")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+    };
+    let inspection = inspect().await;
+    let query = inspection["data"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["id"] == "late-api-query")
+        .unwrap();
+    assert_eq!(query["realization"], "Blocked");
+    assert_eq!(query["failurePhase"], serde_json::Value::Null);
+    assert!(query["waitingFor"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!({
+            "kind": "component", "id": "late-api-source"
+        })));
+    assert!(query["waitingReason"]
+        .as_str()
+        .unwrap()
+        .contains("late-api-source"));
+    core.add_source_with_handle(create_mock_source("late-api-source"))
+        .await
+        .unwrap();
+    timeout(
+        Duration::from_secs(5),
+        core.computation_component("late-api-query")
+            .unwrap()
+            .wait_started(),
+    )
+    .await
+    .expect("dependency should start the query")
+    .unwrap();
+    let inspection = inspect().await;
+    let query = inspection["data"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["id"] == "late-api-query")
+        .unwrap();
+    assert_eq!(query["lifecycle"], "Running");
+    assert_eq!(query["waitingFor"], serde_json::json!([]));
+    assert_eq!(query["waitingReason"], serde_json::Value::Null);
+    core.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_health_endpoint() {
     let (router, _, _registry) = create_test_router().await;
 
@@ -793,7 +920,7 @@ async fn test_query_attach_not_found() {
 }
 
 #[tokio::test]
-async fn test_query_attach_creates_temporary_reaction() {
+async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_polled() {
     let (router, core, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
@@ -813,8 +940,14 @@ async fn test_query_attach_creates_temporary_reaction() {
     .await
     .expect("attach-reaction-test should auto-start");
 
-    // Count reactions before attach
-    let reactions_before = core.list_reactions().await.unwrap_or_default().len();
+    let reactions_before = core.list_reactions().await.unwrap();
+    let control = core.computation_control().unwrap();
+    let nodes_before = control
+        .observed()
+        .components
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
 
     // Start an attach stream request
     let response = router
@@ -831,16 +964,17 @@ async fn test_query_attach_creates_temporary_reaction() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // A temporary reaction should have been created
-    let reactions_after = core.list_reactions().await.unwrap_or_default();
-    assert!(reactions_after.len() > reactions_before);
-
-    // Verify the temporary reaction exists with __attach_ prefix
-    let attach_reaction = reactions_after
-        .iter()
-        .find(|(id, _)| id.starts_with("__attach_attach-reaction-test_"));
-    assert!(
-        attach_reaction.is_some(),
-        "Expected temporary attach reaction to be created"
+    assert_eq!(core.list_reactions().await.unwrap(), reactions_before);
+    assert_eq!(
+        control
+            .observed()
+            .components
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        nodes_before
     );
+    drop(response);
+    assert_eq!(core.list_reactions().await.unwrap(), reactions_before);
+    core.stop().await.unwrap();
 }

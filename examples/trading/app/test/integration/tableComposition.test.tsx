@@ -263,7 +263,7 @@ describe('Trading tutorial presentation', () => {
       expect(code).toBe([
         'id: watchlist-query', 'queryLanguage: Cypher', 'autoStart: true', '',
         'query: |', '  MATCH (n) RETURN n',
-        'enableBootstrap: true', 'bootstrapBufferSize: 10000',
+        'enableBootstrap: true',
       ].join('\n'));
     }
     expect(within(dialog).getByRole('tab', { name: 'Query Definition' }).getAttribute('aria-selected')).toBe('true');
@@ -322,7 +322,7 @@ describe('Trading tutorial presentation', () => {
       query: '  MATCH (a)\nRETURN a  ',
       sources: [{ sourceId: 'events', pipeline: ['parse'], nodes: ['A'], relations: ['R'] }, { sourceId: 'other', pipeline: [], nodes: [], relations: [] }],
       joins: [{ id: 'JOIN', keys: [{ label: 'A', property: 'id' }, { label: 'B', property: 'id' }] }],
-      middleware: [], enableBootstrap: true, bootstrapBufferSize: 100,
+      middleware: [], enableBootstrap: true,
       outboxCapacity: 10, bootstrapTimeoutSecs: 30, priorityQueueCapacity: 25,
       dispatchBufferCapacity: 15, dispatchMode: 'Channel', storageBackend: { kind: 'memory' },
     };
@@ -332,7 +332,7 @@ describe('Trading tutorial presentation', () => {
       '  - sourceId: events', '    pipeline: [parse]', '    nodes: [A]', '    relations: [R]',
       '  - sourceId: other', '', 'joins:', '  - id: JOIN', '    keys:',
       '      - label: A, property: id', '      - label: B, property: id',
-      'enableBootstrap: true', 'bootstrapBufferSize: 100', 'priorityQueueCapacity: 25',
+      'enableBootstrap: true', 'priorityQueueCapacity: 25',
       'dispatchBufferCapacity: 15', 'dispatchMode: Channel', '', 'storageBackend: {\n  "kind": "memory"\n}',
     ].join('\n'));
   });

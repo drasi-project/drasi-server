@@ -42,13 +42,13 @@ export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as ReactionNodeData;
   const Icon = ICON_MAP[d.kind] || Zap;
   const expanded = !!d.expanded;
-  const { startReaction, stopReaction } = useApi();
+  const { startReaction, stopReaction } = useApi(d.instanceId);
 
   const handleStartStop = () => {
     if (d.status === "Running") {
-      stopReaction(d.id, d.instanceId);
+      stopReaction(d.id);
     } else if (d.status === "Stopped" || d.status === "Error") {
-      startReaction(d.id, d.instanceId);
+      startReaction(d.id);
     }
   };
 

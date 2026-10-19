@@ -30,7 +30,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::api::models::BootstrapProviderConfig;
-use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
+use crate::api::models::SecretStoreConfig;
+use crate::config::DrasiServerConfig;
 use crate::factories::{
     build_bootstrap_provider_config_map, build_config_resolver_context,
     build_identity_provider_map, config_resolver_callback, create_reaction_locked,
@@ -56,6 +57,7 @@ pub struct DrasiServer {
     host: String,
     port: u16,
     config_file_path: Option<String>,
+    loaded_configuration: Option<DrasiServerConfig>,
     read_only: Arc<bool>,
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     plugin_orchestrator: Arc<PluginOrchestrator>,
@@ -66,8 +68,6 @@ pub struct DrasiServer {
 
 struct PreparedInstance {
     id_hint: Option<String>,
-    persist_index: bool,
-    enable_archive: bool,
     core: DrasiLib,
     /// Top-level bootstrap provider configs declared for this instance,
     /// keyed by provider id. Registered into the `InstanceRegistry` so
@@ -299,6 +299,11 @@ impl DrasiServer {
             .record_startup_plugins(&startup_plugin_records)
             .await;
 
+        let configuration_stores = crate::managed_configuration::ConfigurationStores::default();
+        configuration_stores
+            .resolve_instance_ids(&mut config)
+            .await?;
+
         // Start plugin hot-reload watcher if configured
         let start_watcher = || {
             if config.hot_reload_plugins {
@@ -393,7 +398,6 @@ impl DrasiServer {
         }
 
         let mut instances = Vec::new();
-        let configuration_stores = crate::managed_configuration::ConfigurationStores::default();
 
         // Check upfront that all required plugins are available before creating
         // any components. This reports ALL missing plugins at once rather than
@@ -608,8 +612,6 @@ impl DrasiServer {
 
                 instances.push(PreparedInstance {
                     id_hint: Some(instance.id),
-                    persist_index: instance.persist_index,
-                    enable_archive: instance.enable_archive,
                     core: core.clone(),
                     bootstrap_providers,
                 });
@@ -654,6 +656,7 @@ impl DrasiServer {
             cors_allowed_origins: config.cors_allowed_origins.clone(),
             watcher_handle,
             configuration_stores,
+            loaded_configuration: Some(config),
         })
     }
 
@@ -674,8 +677,6 @@ impl DrasiServer {
         Self {
             instances: vec![PreparedInstance {
                 id_hint: None,
-                persist_index: false,
-                enable_archive: false,
                 core,
                 bootstrap_providers: HashMap::new(),
             }],
@@ -690,12 +691,13 @@ impl DrasiServer {
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
             configuration_stores: Default::default(),
+            loaded_configuration: None,
         }
     }
 
     /// Create a DrasiServer from multiple pre-built cores (for builder multi-instance usage)
     pub fn from_cores(
-        cores: Vec<(DrasiLib, Option<String>, bool)>,
+        cores: Vec<(DrasiLib, Option<String>)>,
         enable_api: bool,
         enable_ui: bool,
         host: String,
@@ -704,10 +706,8 @@ impl DrasiServer {
     ) -> Self {
         let instances = cores
             .into_iter()
-            .map(|(core, id_hint, persist_index)| PreparedInstance {
+            .map(|(core, id_hint)| PreparedInstance {
                 id_hint,
-                persist_index,
-                enable_archive: false,
                 core,
                 bootstrap_providers: HashMap::new(),
             })
@@ -731,6 +731,7 @@ impl DrasiServer {
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
             configuration_stores: Default::default(),
+            loaded_configuration: None,
         }
     }
 
@@ -787,8 +788,6 @@ impl DrasiServer {
         info!("Initializing Drasi Server");
 
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
-        let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
-        let mut archive_settings: IndexMap<String, bool> = IndexMap::new();
         let mut bootstrap_providers_by_id: Vec<(String, HashMap<String, BootstrapProviderConfig>)> =
             Vec::new();
 
@@ -810,24 +809,15 @@ impl DrasiServer {
             info!("Starting ComputationGraph instance '{id}'");
             println!("  Instance '{id}': ComputationGraph");
             crate::managed_configuration::start_instance(&core).await?;
-            persist_settings.insert(id.clone(), instance.persist_index);
-            archive_settings.insert(id.clone(), instance.enable_archive);
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
             instance_map.insert(id, core);
         }
 
-        if instance_map.is_empty() {
-            return Err(anyhow::anyhow!(
-                "No DrasiLib instances configured for this server"
-            ));
-        }
-
-        // Wrap the instance map in Arc for sharing
-        let instances = Arc::new(instance_map);
-
-        // Create the instance registry from the map
-        let registry = InstanceRegistry::from_map((*instances).clone())
+        let registry = InstanceRegistry::from_map(instance_map)
             .with_configuration_stores(self.configuration_stores.clone());
+        self.plugin_orchestrator
+            .bind_instances(registry.clone())
+            .await?;
 
         // Record each instance's top-level bootstrap provider configs so the
         // source create/upsert handlers can resolve `bootstrapProvider: <id>`
@@ -840,8 +830,10 @@ impl DrasiServer {
         let (config_persistence, solutions_dir) = if let Some(config_file) = &self.config_file_path
         {
             if !*self.read_only {
-                // Need to reload config to check persist_config flag and get initial configs
-                let config = load_config_file(PathBuf::from(config_file))?;
+                let config = match &self.loaded_configuration {
+                    Some(config) => config.clone(),
+                    None => load_config_file(PathBuf::from(config_file))?,
+                };
                 let solutions_dir = config.solutions_dir.clone();
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
@@ -856,42 +848,8 @@ impl DrasiServer {
                         self.port,
                         resolved_settings.log_level,
                         true, // persist_config = true
-                        persist_settings.clone(),
-                        archive_settings.clone(),
-                        config.solutions_dir.clone(),
                         &config,
-                    ));
-                    // Register initial instance configs so save() preserves
-                    // per-instance settings (secret_store, state_store, etc.)
-                    let initial_instances: Vec<DrasiLibInstanceConfig> =
-                        if config.instances.is_empty() {
-                            vec![DrasiLibInstanceConfig {
-                                id: config.id.clone(),
-                                persist_index: config.persist_index,
-                                enable_archive: config.enable_archive,
-                                memory_budget_mib: config.memory_budget_mib.clone(),
-                                state_store: config.state_store.clone(),
-                                secret_store: config.secret_store.clone(),
-                                default_priority_queue_capacity: config
-                                    .default_priority_queue_capacity
-                                    .clone(),
-                                default_dispatch_buffer_capacity: config
-                                    .default_dispatch_buffer_capacity
-                                    .clone(),
-                                sources: config.sources.clone(),
-                                queries: config.queries.clone(),
-                                reactions: config.reactions.clone(),
-                                identity_providers: config.identity_providers.clone(),
-                                bootstrap_providers: config.bootstrap_providers.clone(),
-                                computation: config.computation.clone(),
-                                configuration_store: config.configuration_store.clone(),
-                            }]
-                        } else {
-                            config.instances.clone()
-                        };
-                    for inst in initial_instances {
-                        persistence.register_instance(inst).await;
-                    }
+                    )?);
 
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
@@ -913,7 +871,6 @@ impl DrasiServer {
         let mut api_task = if self.enable_api {
             let task = self
                 .start_api(
-                    instances.clone(),
                     registry.clone(),
                     config_persistence.clone(),
                     solutions_dir,
@@ -1053,7 +1010,6 @@ impl DrasiServer {
 
     async fn start_api(
         &self,
-        _instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
@@ -1230,7 +1186,7 @@ mod single_runtime_tests {
         };
         let specification = definition.specification(resource.clone()).unwrap();
         let topology: DesiredTopology = serde_json::from_value(serde_json::json!({
-            "version":1, "revision":0, "allow_incomplete":true,
+            "version":1, "revision":0,
             "components":[{
                 "descriptor":specification.descriptor, "role":specification.role, "completion":null,
                 "streams":{}, "lifecycle":LifecyclePolicy { auto_start: false }, "input_merge":InputMergePolicy::default(),
@@ -1247,8 +1203,11 @@ mod single_runtime_tests {
             definition: topology,
         };
         let config = crate::config::DrasiServerConfig {
-            id: crate::api::models::ConfigValue::Static("native-startup".into()),
-            computation: Some(graph_config.clone().into()),
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                id: crate::api::models::ConfigValue::Static("native-startup".into()).into(),
+                computation: Some(graph_config.clone().into()),
+                ..Default::default()
+            }],
             ..Default::default()
         };
         let directory = tempfile::tempdir().unwrap();
@@ -1286,18 +1245,28 @@ mod single_runtime_tests {
 
         let mut config = config;
         let crate::computation::ComputationConfigInput::Definition(graph) =
-            config.computation.as_mut().unwrap()
+            config.instances[0].computation.as_mut().unwrap()
         else {
             panic!("expanded test definition");
         };
         graph.definition.components[0].lifecycle.auto_start = true;
+        let occupied = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        config.host = crate::api::models::ConfigValue::Static("127.0.0.1".into());
+        config.port = crate::api::models::ConfigValue::Static(port);
         config.save_to_file(&path).unwrap();
-        let failed = DrasiServer::new(path, 8080, directory.path().join("plugins"), false, false)
+        let failed = DrasiServer::new(path, port, directory.path().join("plugins"), false, false)
             .await
             .unwrap();
         let core = failed.instances[0].core.clone();
-        let error = failed.run().await.unwrap_err();
-        assert!(error.to_string().contains("startup"), "{error:#}");
+        let error = tokio::time::timeout(std::time::Duration::from_secs(10), failed.run())
+            .await
+            .expect("occupied API address must fail promptly")
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::AddrInUse
+        );
         assert!(!core.is_running().await);
         assert!(
             core.start().await.is_err(),

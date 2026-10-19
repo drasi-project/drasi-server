@@ -1,15 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import * as api from "@/api/client";
+import { useState, useEffect, useCallback } from "react";
+import { instancePath } from "@/api/paths";
+import { subscribeQueryResults, type StreamPayload } from "@/api/query-results-stream";
 import type { QueryResultRow } from "@/api/types";
-
-interface StreamPayload {
-  results?: Array<{
-    type: "ADD" | "DELETE" | "UPDATE" | "aggregation" | "noop";
-    data?: QueryResultRow;
-    before?: QueryResultRow;
-    after?: QueryResultRow;
-  }>;
-}
 
 /**
  * Stable key for comparing rows (sorted JSON).
@@ -46,24 +38,21 @@ export function useQueryResults(
   error: string | null;
   streaming: boolean;
 } {
-  const [results, setResults] = useState<QueryResultRow[]>([]);
+  const [{ rows: results }, setResultState] = useState<{
+    rows: QueryResultRow[];
+    index: Map<string, number>;
+  }>({ rows: [], index: new Map() });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  // Map from stableKey → index for O(1) lookups during stream updates
-  const indexRef = useRef<Map<string, number>>(new Map());
 
   // Apply streaming updates to the results set
   const applyStreamUpdate = useCallback((payload: StreamPayload) => {
-    if (!payload?.results) return;
+    setResultState((prev) => {
+      const updated = [...prev.rows];
+      const index = new Map(prev.index);
 
-    setResults((prev) => {
-      const updated = [...prev];
-      const index = new Map(indexRef.current);
-
-      for (const entry of payload.results!) {
+      for (const entry of payload.results) {
         switch (entry.type) {
           case "ADD": {
             if (entry.data) {
@@ -130,44 +119,26 @@ export function useQueryResults(
         }
       }
 
-      indexRef.current = index;
-      return updated;
+      return { rows: updated, index };
     });
   }, []);
 
   useEffect(() => {
-    if (!queryId) {
-      setResults([]);
-      indexRef.current = new Map();
+    setResultState({ rows: [], index: new Map() });
+    if (!queryId || !instanceId) {
       setLoading(false);
       setError(null);
       setStreaming(false);
       return;
     }
 
-    // Cleanup previous connections
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-
     setLoading(true);
     setError(null);
     setStreaming(false);
 
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
-    // Fetch initial results
-    api
-      .getQueryResults(queryId, instanceId)
-      .then((data) => {
-        if (abortController.signal.aborted) return;
-        // Deduplicate and build index
+    const path = `/api/v1${instancePath(instanceId, "queries", queryId, "attach")}`;
+    return subscribeQueryResults(path, {
+      onSnapshot(data) {
         const seen = new Map<string, number>();
         const deduped: QueryResultRow[] = [];
         for (const row of data) {
@@ -177,53 +148,15 @@ export function useQueryResults(
             deduped.push(row);
           }
         }
-        indexRef.current = seen;
-        setResults(deduped);
-        setLoading(false);
-
-        // Start streaming
-        const path = instanceId
-          ? `/api/v1/instances/${instanceId}/queries/${queryId}/attach`
-          : `/api/v1/queries/${queryId}/attach`;
-        const es = new EventSource(path);
-        eventSourceRef.current = es;
-
-        es.onopen = () => {
-          if (!abortController.signal.aborted) {
-            setStreaming(true);
-          }
-        };
-
-        es.onmessage = (event) => {
-          if (abortController.signal.aborted) return;
-          try {
-            const payload: StreamPayload = JSON.parse(event.data);
-            applyStreamUpdate(payload);
-          } catch {
-            // Skip heartbeats and malformed events
-          }
-        };
-
-        es.onerror = () => {
-          // EventSource auto-reconnects; just update streaming state
-          if (!abortController.signal.aborted) {
-            setStreaming(false);
-          }
-        };
-      })
-      .catch((err) => {
-        if (abortController.signal.aborted) return;
-        setError(String(err));
-        setLoading(false);
-      });
-
-    return () => {
-      abortController.abort();
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
+        setResultState({ rows: deduped, index: seen });
+      },
+      onChange: applyStreamUpdate,
+      onStatus(status) {
+        setLoading(status.loading);
+        setStreaming(status.streaming);
+        setError(status.error);
+      },
+    });
   }, [queryId, instanceId, applyStreamUpdate]);
 
   return { results, loading, error, streaming };

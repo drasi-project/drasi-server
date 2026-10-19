@@ -28,6 +28,62 @@ use crate::api::models::{
 };
 use drasi_lib::config::QueryConfig;
 
+/// An instance ID retains whether it was supplied by configuration or generated
+/// for this load, so managed stores can restore their accepted identity.
+#[derive(Debug, Clone)]
+pub struct InstanceIdConfig {
+    value: ConfigValue<String>,
+    generated: bool,
+}
+
+impl InstanceIdConfig {
+    pub fn is_generated(&self) -> bool {
+        self.generated
+    }
+}
+
+impl AsRef<ConfigValue<String>> for InstanceIdConfig {
+    fn as_ref(&self) -> &ConfigValue<String> {
+        &self.value
+    }
+}
+
+impl From<ConfigValue<String>> for InstanceIdConfig {
+    fn from(value: ConfigValue<String>) -> Self {
+        Self {
+            value,
+            generated: false,
+        }
+    }
+}
+
+impl Default for InstanceIdConfig {
+    fn default() -> Self {
+        Self {
+            value: ConfigValue::Static(uuid::Uuid::new_v4().to_string()),
+            generated: true,
+        }
+    }
+}
+
+impl PartialEq for InstanceIdConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Serialize for InstanceIdConfig {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for InstanceIdConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        ConfigValue::<String>::deserialize(deserializer).map(Self::from)
+    }
+}
+
 /// Serde helper: returns `true` for use as `#[serde(default = "default_true")]`.
 fn default_true() -> bool {
     true
@@ -35,10 +91,8 @@ fn default_true() -> bool {
 
 /// DrasiServer configuration
 ///
-/// This is a self-contained configuration struct that includes all settings
-/// needed to run a DrasiServer. The `id`, `default_priority_queue_capacity`,
-/// `default_dispatch_buffer_capacity`, and `queries` fields are used to construct
-/// a DrasiLibConfig when creating a DrasiLib instance.
+/// Server-wide settings and explicit, independently configured DrasiLib instances.
+/// An empty instance list starts an empty server; it does not create a default.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(as = DrasiServerConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -46,9 +100,6 @@ pub struct DrasiServerConfig {
     /// API version marker for file identification (e.g., "drasi.io/v1")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_version: Option<String>,
-    /// Unique identifier for this server instance (defaults to UUID)
-    #[serde(default = "default_id")]
-    pub id: ConfigValue<String>,
     /// Server bind address
     #[serde(default = "default_host")]
     pub host: ConfigValue<String>,
@@ -61,23 +112,6 @@ pub struct DrasiServerConfig {
     /// Enable automatic persistence of API changes to config file
     #[serde(default = "default_persist_config")]
     pub persist_config: bool,
-    /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
-    #[serde(default = "default_persist_index")]
-    pub persist_index: bool,
-    /// Enable the archive index (element version history for past() functions)
-    /// on persistent queries. Default: false. Every element update is also
-    /// written to the archive when enabled, and the archive has no retention,
-    /// so leave this off unless queries use the past() functions.
-    #[serde(default = "default_enable_archive")]
-    pub enable_archive: bool,
-    /// Optional RocksDB memory budget for this instance, in MiB
-    #[serde(
-        default,
-        rename = "memoryBudgetMiB",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schema(value_type = Option<ConfigValueUsizeSchema>)]
-    pub memory_budget_mib: Option<ConfigValue<usize>>,
     /// Enable the web UI at /ui (default: true)
     #[serde(default = "default_enable_ui")]
     pub enable_ui: bool,
@@ -87,27 +121,6 @@ pub struct DrasiServerConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub solutions_dir: Option<String>,
-    /// Optional state store provider configuration for plugin state persistence
-    ///
-    /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
-    /// runtime state that survives restarts. If not set, an in-memory state
-    /// store is used (state is lost on restart).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state_store: Option<StateStoreConfig>,
-    /// Optional secret store plugin configuration for resolving ConfigValue::Secret references.
-    ///
-    /// When set, component configs can use `{ kind: Secret, name: "..." }` values
-    /// which are resolved at runtime by the configured secret store plugin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secret_store: Option<SecretStoreConfig>,
-    /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
-    /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_priority_queue_capacity: Option<ConfigValue<usize>>,
-    /// Default dispatch buffer capacity for sources and queries (default: 1000 if not specified)
-    /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
     #[serde(
         default = "default_plugin_registry",
@@ -141,32 +154,7 @@ pub struct DrasiServerConfig {
     /// Example: `["http://localhost:3000", "https://dashboard.example.com"]`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cors_allowed_origins: Vec<String>,
-    /// Source configurations (parsed into plugin instances)
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub sources: Vec<SourceConfig>,
-    /// Query configurations
-    #[serde(default)]
-    pub queries: Vec<QueryConfigDto>,
-    /// Reaction configurations (parsed into plugin instances)
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub reactions: Vec<ReactionConfig>,
-    /// Identity provider configurations (referenced by sources/reactions via `identityProvider: <id>`)
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub identity_providers: Vec<IdentityProviderConfig>,
-    /// Top-level bootstrap provider configurations referenced by sources via `bootstrapProvider: <id>`.
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
-    /// Native component declarations in the instance's ComputationGraph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub computation: Option<crate::computation::ComputationConfigInput>,
-    /// Optional encrypted, authoritative desired-state storage.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
-    /// Optional list of DrasiLib instances when running in multi-tenant mode
+    /// Explicit instances. Omitted or empty lists do not create an implicit instance.
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
 }
@@ -175,20 +163,12 @@ impl Default for DrasiServerConfig {
     fn default() -> Self {
         Self {
             api_version: None,
-            id: default_id(),
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
-            persist_index: false,
-            enable_archive: false,
-            memory_budget_mib: None,
             enable_ui: true,
             solutions_dir: None,
-            state_store: None,
-            secret_store: None,
-            default_priority_queue_capacity: None,
-            default_dispatch_buffer_capacity: None,
             plugin_registry: default_plugin_registry(),
             auto_install_plugins: false,
             plugins: Vec::new(),
@@ -197,20 +177,9 @@ impl Default for DrasiServerConfig {
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,
             cors_allowed_origins: Vec::new(),
-            sources: Vec::new(),
-            queries: Vec::new(),
-            reactions: Vec::new(),
-            identity_providers: Vec::new(),
-            bootstrap_providers: Vec::new(),
-            computation: None,
-            configuration_store: None,
             instances: Vec::new(),
         }
     }
-}
-
-fn default_id() -> ConfigValue<String> {
-    ConfigValue::Static(uuid::Uuid::new_v4().to_string())
 }
 
 fn default_host() -> ConfigValue<String> {
@@ -285,14 +254,15 @@ fn default_solutions_dir() -> Option<String> {
     None
 }
 
-/// Configuration for a single DrasiLib instance (multi-instance mode)
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+/// Configuration for one explicitly declared DrasiLib instance.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(as = DrasiLibInstanceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiLibInstanceConfig {
     /// Unique identifier for this DrasiLib instance
-    #[serde(default = "default_id")]
-    pub id: ConfigValue<String>,
+    #[serde(default)]
+    #[schema(value_type = ConfigValueStringSchema)]
+    pub id: InstanceIdConfig,
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
@@ -409,38 +379,13 @@ fn is_valid_hostname(hostname: &str) -> bool {
 }
 
 impl DrasiServerConfig {
-    pub fn instance_configurations(&self) -> Vec<DrasiLibInstanceConfig> {
-        if self.instances.is_empty() {
-            vec![DrasiLibInstanceConfig {
-                id: self.id.clone(),
-                persist_index: self.persist_index,
-                enable_archive: self.enable_archive,
-                memory_budget_mib: self.memory_budget_mib.clone(),
-                state_store: self.state_store.clone(),
-                secret_store: self.secret_store.clone(),
-                default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
-                default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
-                sources: self.sources.clone(),
-                queries: self.queries.clone(),
-                reactions: self.reactions.clone(),
-                identity_providers: self.identity_providers.clone(),
-                bootstrap_providers: self.bootstrap_providers.clone(),
-                computation: self.computation.clone(),
-                configuration_store: self.configuration_store.clone(),
-            }]
-        } else {
-            self.instances.clone()
-        }
-    }
-
-    /// Resolve configured DrasiLib instances, supporting single-instance and multi-instance layout.
+    /// Resolve only explicitly configured DrasiLib instances.
     pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
-        let raw_instances = self.instance_configurations();
         let mut seen = HashSet::new();
-        let mut resolved = Vec::with_capacity(raw_instances.len());
+        let mut resolved = Vec::with_capacity(self.instances.len());
 
-        for instance in raw_instances {
-            let id: String = mapper.resolve_typed(&instance.id)?;
+        for instance in &self.instances {
+            let id: String = mapper.resolve_typed(instance.id.as_ref())?;
             if seen.contains(&id) {
                 return Err(anyhow::anyhow!(
                     "Duplicate DrasiLib instance id detected: '{id}'"
@@ -542,31 +487,12 @@ impl DrasiServerConfig {
             });
         }
 
-        if resolved.is_empty() {
-            return Err(anyhow::anyhow!(
-                "At least one DrasiLib instance must be configured"
-            ));
-        }
-
         Ok(resolved)
     }
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         use crate::api::mappings::map_server_settings;
-
-        // Explicit instances are self-contained. Reject a root budget instead of
-        // silently ignoring a setting that operators rely on as a memory bound.
-        if !self.instances.is_empty() && self.memory_budget_mib.is_some() {
-            return Err(anyhow::anyhow!(
-                "Root memoryBudgetMiB cannot be used with explicit instances; \
-                 set memoryBudgetMiB on each persistent instance"
-            ));
-        }
-        anyhow::ensure!(
-            self.instances.is_empty() || self.computation.is_none(),
-            "Root computation configuration cannot be used with explicit instances; configure each instance"
-        );
 
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
@@ -614,11 +540,68 @@ impl DrasiServerConfig {
 mod tests {
     use super::*;
 
+    #[test]
+    fn missing_ids_are_generated_per_load_and_serialized_ids_are_explicit() {
+        let first: DrasiServerConfig = serde_json::from_str(r#"{"instances":[{}]}"#).unwrap();
+        let second: DrasiServerConfig = serde_json::from_str(r#"{"instances":[{}]}"#).unwrap();
+        assert!(first.instances[0].id.is_generated());
+        assert!(second.instances[0].id.is_generated());
+        assert_ne!(first.instances[0].id, second.instances[0].id);
+        let saved = serde_json::to_value(&first).unwrap();
+        let restored: DrasiServerConfig = serde_json::from_value(saved).unwrap();
+        assert!(!restored.instances[0].id.is_generated());
+        assert_eq!(restored.instances[0].id, first.instances[0].id);
+    }
+
+    #[test]
+    fn absent_and_empty_instance_lists_do_not_create_an_implicit_instance() {
+        for json in ["{}", r#"{"instances":[]}"#] {
+            let config: DrasiServerConfig = serde_json::from_str(json).unwrap();
+            config.validate().unwrap();
+            assert!(config
+                .resolved_instances(&DtoMapper::new())
+                .unwrap()
+                .is_empty());
+            let saved = serde_json::to_value(config).unwrap();
+            assert_eq!(saved["instances"], serde_json::json!([]));
+        }
+    }
+
+    #[test]
+    fn retired_root_instance_fields_are_rejected_instead_of_converted() {
+        for (field, value) in [
+            ("id", serde_json::json!("old-instance")),
+            ("persistIndex", serde_json::json!(false)),
+            ("enableArchive", serde_json::json!(false)),
+            ("memoryBudgetMiB", serde_json::json!(128)),
+            ("stateStore", serde_json::Value::Null),
+            ("secretStore", serde_json::Value::Null),
+            ("defaultPriorityQueueCapacity", serde_json::json!(16)),
+            ("defaultDispatchBufferCapacity", serde_json::json!(16)),
+            ("sources", serde_json::json!([])),
+            ("queries", serde_json::json!([])),
+            ("reactions", serde_json::json!([])),
+            ("identityProviders", serde_json::json!([])),
+            ("bootstrapProviders", serde_json::json!([])),
+            ("computation", serde_json::Value::Null),
+            ("configurationStore", serde_json::Value::Null),
+        ] {
+            let value = serde_json::json!({field: value, "instances": []});
+            let error = serde_json::from_value::<DrasiServerConfig>(value).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("unknown field `{field}`")),
+                "{error}"
+            );
+        }
+    }
+
     // ==================== persist_index tests ====================
 
     #[test]
     fn test_persist_index_default_is_false() {
-        let config = DrasiServerConfig::default();
+        let config = DrasiLibInstanceConfig::default();
         assert!(
             !config.persist_index,
             "persist_index should default to false"
@@ -628,15 +611,16 @@ mod tests {
     #[test]
     fn test_persist_index_deserialize_true() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
-            persistIndex: true
+            instances:
+              - id: test-server
+                persistIndex: true
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(
-            config.persist_index,
+            config.instances[0].persist_index,
             "persist_index should be true when explicitly set"
         );
     }
@@ -644,15 +628,16 @@ mod tests {
     #[test]
     fn test_persist_index_deserialize_false() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
-            persistIndex: false
+            instances:
+              - id: test-server
+                persistIndex: false
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(
-            !config.persist_index,
+            !config.instances[0].persist_index,
             "persist_index should be false when explicitly set"
         );
     }
@@ -660,30 +645,32 @@ mod tests {
     #[test]
     fn test_persist_index_defaults_when_omitted() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(
-            !config.persist_index,
+            !config.instances[0].persist_index,
             "persist_index should default to false when omitted from YAML"
         );
     }
 
     #[test]
     fn test_memory_budget_mib_defaults_to_none() {
-        let config = DrasiServerConfig::default();
+        let config = DrasiLibInstanceConfig::default();
         assert_eq!(config.memory_budget_mib, None);
     }
 
     #[test]
     fn test_memory_budget_mib_resolves_for_persistent_index() {
         let yaml = r#"
-            id: test-server
-            persistIndex: true
-            memoryBudgetMiB: 512
+            instances:
+              - id: test-server
+                persistIndex: true
+                memoryBudgetMiB: 512
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -696,9 +683,10 @@ mod tests {
     #[test]
     fn test_memory_budget_mib_supports_environment_defaults() {
         let yaml = r#"
-            id: test-server
-            persistIndex: true
-            memoryBudgetMiB: ${INDEX_MEMORY_MIB:-384}
+            instances:
+              - id: test-server
+                persistIndex: true
+                memoryBudgetMiB: ${INDEX_MEMORY_MIB:-384}
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -710,9 +698,10 @@ mod tests {
     #[test]
     fn test_memory_budget_mib_requires_persistent_index() {
         let yaml = r#"
-            id: test-server
-            persistIndex: false
-            memoryBudgetMiB: 512
+            instances:
+              - id: test-server
+                persistIndex: false
+                memoryBudgetMiB: 512
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -726,9 +715,10 @@ mod tests {
     #[test]
     fn test_memory_budget_mib_rejects_zero() {
         let yaml = r#"
-            id: test-server
-            persistIndex: true
-            memoryBudgetMiB: 0
+            instances:
+              - id: test-server
+                persistIndex: true
+                memoryBudgetMiB: 0
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -742,8 +732,11 @@ mod tests {
     #[test]
     fn test_memory_budget_mib_roundtrip() {
         let config = DrasiServerConfig {
-            persist_index: true,
-            memory_budget_mib: Some(ConfigValue::Static(768)),
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                persist_index: true,
+                memory_budget_mib: Some(ConfigValue::Static(768)),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -752,7 +745,7 @@ mod tests {
 
         assert!(yaml.contains("memoryBudgetMiB: 768"));
         assert_eq!(
-            deserialized.memory_budget_mib,
+            deserialized.instances[0].memory_budget_mib,
             Some(ConfigValue::Static(768))
         );
     }
@@ -778,26 +771,27 @@ mod tests {
     #[test]
     fn test_root_memory_budget_mib_rejected_with_explicit_instances() {
         let yaml = r#"
-            persistIndex: true
             memoryBudgetMiB: 512
             instances:
               - id: persistent
                 persistIndex: true
         "#;
 
-        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
-        let error = config.validate().unwrap_err();
-
+        let error = serde_yaml::from_str::<DrasiServerConfig>(yaml).unwrap_err();
         assert!(error
             .to_string()
-            .contains("Root memoryBudgetMiB cannot be used with explicit instances"));
+            .contains("unknown field `memoryBudgetMiB`"));
     }
 
     #[test]
     fn test_persist_index_serialization_roundtrip_true() {
         let config = DrasiServerConfig {
             api_version: None,
-            persist_index: true,
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                persist_index: true,
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -809,7 +803,7 @@ mod tests {
 
         let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
         assert!(
-            deserialized.persist_index,
+            deserialized.instances[0].persist_index,
             "Deserialized config should have persist_index = true"
         );
     }
@@ -818,14 +812,18 @@ mod tests {
     fn test_persist_index_serialization_roundtrip_false() {
         let config = DrasiServerConfig {
             api_version: None,
-            persist_index: false,
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                persist_index: false,
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
         let yaml = serde_yaml::to_string(&config).unwrap();
         let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
         assert!(
-            !deserialized.persist_index,
+            !deserialized.instances[0].persist_index,
             "Deserialized config should have persist_index = false"
         );
     }
@@ -833,21 +831,22 @@ mod tests {
     #[test]
     fn test_persist_index_with_other_settings() {
         let yaml = r#"
-            id: my-production-server
             host: 192.168.1.100
             port: 9090
             logLevel: debug
             persistConfig: false
-            persistIndex: true
-            sources: []
-            queries: []
-            reactions: []
+            instances:
+              - id: my-production-server
+                persistIndex: true
+                sources: []
+                queries: []
+                reactions: []
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
 
         // Verify persist_index is correctly parsed alongside other settings
-        assert!(config.persist_index);
+        assert!(config.instances[0].persist_index);
         assert!(!config.persist_config);
         match &config.log_level {
             ConfigValue::Static(level) => assert_eq!(level, "debug"),
@@ -888,12 +887,13 @@ mod tests {
     #[test]
     fn test_cors_allowed_origins_parsed_from_yaml() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             corsAllowedOrigins:
               - "http://localhost:3000"
               - "https://dashboard.example.com"
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -908,9 +908,10 @@ mod tests {
     #[test]
     fn test_cors_allowed_origins_omitted_is_empty() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -922,11 +923,12 @@ mod tests {
     #[test]
     fn test_config_validation_succeeds_with_persist_index() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             logLevel: info
-            persistIndex: true
+            instances:
+              - id: test-server
+                persistIndex: true
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -942,7 +944,11 @@ mod tests {
 
         let config = DrasiServerConfig {
             api_version: None,
-            persist_index: true,
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                persist_index: true,
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -960,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_state_store_default_is_none() {
-        let config = DrasiServerConfig::default();
+        let config = DrasiLibInstanceConfig::default();
         assert!(
             config.state_store.is_none(),
             "state_store should default to None"
@@ -970,31 +976,33 @@ mod tests {
     #[test]
     fn test_state_store_deserialize_redb() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
-            stateStore:
-              kind: redb
-              path: ./data/state.redb
+            instances:
+              - id: test-server
+                stateStore:
+                  kind: redb
+                  path: ./data/state.redb
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
-        assert!(config.state_store.is_some());
-        let state_store = config.state_store.unwrap();
+        assert!(config.instances[0].state_store.is_some());
+        let state_store = config.instances[0].state_store.as_ref().unwrap();
         assert_eq!(state_store.kind(), "redb");
     }
 
     #[test]
     fn test_state_store_defaults_when_omitted() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(
-            config.state_store.is_none(),
+            config.instances[0].state_store.is_none(),
             "state_store should default to None when omitted from YAML"
         );
     }
@@ -1003,7 +1011,11 @@ mod tests {
     fn test_state_store_serialization_roundtrip() {
         let config = DrasiServerConfig {
             api_version: None,
-            state_store: Some(StateStoreConfig::redb("./data/test.redb")),
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                state_store: Some(StateStoreConfig::redb("./data/test.redb")),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -1019,56 +1031,64 @@ mod tests {
 
         let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
         assert!(
-            deserialized.state_store.is_some(),
+            deserialized.instances[0].state_store.is_some(),
             "Deserialized config should have state_store"
         );
-        assert_eq!(deserialized.state_store.as_ref().unwrap().kind(), "redb");
+        assert_eq!(
+            deserialized.instances[0]
+                .state_store
+                .as_ref()
+                .unwrap()
+                .kind(),
+            "redb"
+        );
     }
 
     #[test]
     fn test_state_store_with_env_var_path() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
-            stateStore:
-              kind: redb
-              path: ${STATE_STORE_PATH:-./data/default.redb}
+            instances:
+              - id: test-server
+                stateStore:
+                  kind: redb
+                  path: ${STATE_STORE_PATH:-./data/default.redb}
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
-        assert!(config.state_store.is_some());
+        assert!(config.instances[0].state_store.is_some());
     }
 
     #[test]
     fn test_state_store_with_other_settings() {
         let yaml = r#"
-            id: my-production-server
             host: 192.168.1.100
             port: 9090
             logLevel: debug
             persistConfig: false
-            persistIndex: true
-            stateStore:
-              kind: redb
-              path: /var/lib/drasi/state.redb
-            sources: []
-            queries: []
-            reactions: []
+            instances:
+              - id: my-production-server
+                persistIndex: true
+                stateStore:
+                  kind: redb
+                  path: /var/lib/drasi/state.redb
+                sources: []
+                queries: []
+                reactions: []
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
 
         // Verify state_store is correctly parsed alongside other settings
-        assert!(config.state_store.is_some());
-        assert!(config.persist_index);
+        assert!(config.instances[0].state_store.is_some());
+        assert!(config.instances[0].persist_index);
         assert!(!config.persist_config);
     }
 
     #[test]
     fn test_state_store_in_instance_config() {
         let yaml = r#"
-            id: multi-instance-server
             host: 0.0.0.0
             port: 8080
             instances:
@@ -1104,12 +1124,13 @@ mod tests {
     #[test]
     fn test_resolved_instance_includes_state_store() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
-            stateStore:
-              kind: redb
-              path: ./data/state.redb
+            instances:
+              - id: test-server
+                stateStore:
+                  kind: redb
+                  path: ./data/state.redb
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -1124,13 +1145,14 @@ mod tests {
     #[test]
     fn test_config_validation_succeeds_with_state_store() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             logLevel: info
-            stateStore:
-              kind: redb
-              path: ./data/state.redb
+            instances:
+              - id: test-server
+                stateStore:
+                  kind: redb
+                  path: ./data/state.redb
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -1146,7 +1168,11 @@ mod tests {
 
         let config = DrasiServerConfig {
             api_version: None,
-            state_store: Some(StateStoreConfig::redb("./data/saved.redb")),
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                state_store: Some(StateStoreConfig::redb("./data/saved.redb")),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -1170,7 +1196,11 @@ mod tests {
 
         let config = DrasiServerConfig {
             api_version: None,
-            state_store: None,
+
+            instances: vec![crate::config::DrasiLibInstanceConfig {
+                state_store: None,
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
@@ -1200,7 +1230,6 @@ mod tests {
     #[test]
     fn test_plugin_registry_deserialization() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             pluginRegistry: ghcr.io/my-org
@@ -1209,6 +1238,8 @@ mod tests {
               - ref: source/postgres
               - ref: source/http:0.1.7
               - ref: ghcr.io/acme-corp/custom-source:1.0.0
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -1252,9 +1283,10 @@ mod tests {
     #[test]
     fn test_plugin_registry_omitted_in_yaml_uses_defaults() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
+            instances:
+              - id: test-server
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();

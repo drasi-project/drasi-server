@@ -33,8 +33,6 @@ port: ${SERVER_PORT:-8080}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-id: getting-started-server
-
 autoInstallPlugins: true
 plugins:
   - ref: source/postgres
@@ -48,87 +46,90 @@ plugins:
 # Sources define where data comes from. This example uses PostgreSQL with
 # logical replication for Change Data Capture (CDC).
 
-sources:
-  - kind: postgres
-    id: postgres-messages
-    autoStart: true
+instances:
+  - id: getting-started-server
+
+    sources:
+      - kind: postgres
+        id: postgres-messages
+        autoStart: true
 
     # PostgreSQL connection settings
     # Using environment variables for security
-    host: "${POSTGRES_HOST:-localhost}"
-    port: ${POSTGRES_PORT:-5432}
-    database: "${POSTGRES_DATABASE:-getting_started}"
-    user: "${POSTGRES_USER:-drasi_user}"
-    password: "${POSTGRES_PASSWORD}"
-    sslMode: prefer
+        host: "${POSTGRES_HOST:-localhost}"
+        port: ${POSTGRES_PORT:-5432}
+        database: "${POSTGRES_DATABASE:-getting_started}"
+        user: "${POSTGRES_USER:-drasi_user}"
+        password: "${POSTGRES_PASSWORD}"
+        sslMode: prefer
 
     # Tables to monitor for changes
-    tables:
-      - message
+        tables:
+          - message
 
     # Replication settings for CDC
-    slotName: drasi_getting_started_slot
-    publicationName: drasi_getting_started_pub
+        slotName: drasi_getting_started_slot
+        publicationName: drasi_getting_started_pub
 
     # Primary key configuration for change tracking
-    tableKeys:
-      - table: message
-        keyColumns:
-          - messageid
+        tableKeys:
+          - table: message
+            keyColumns:
+              - messageid
 
     # Bootstrap provider loads existing data on startup
-    bootstrapProvider:
-      kind: postgres
-      
-      
+        bootstrapProvider:
+          kind: postgres
+
+
 # =============================================================================
 # Queries
 # =============================================================================
 # Continuous queries that process incoming data in real-time.
 # These queries automatically update when source data changes.
 
-queries:
+    queries:
   # Query 1: hello-world-from
   # Filters for messages containing "Hello World" and returns the sender
   # Similar to the Platform tutorial's hello-world-from query
-  - id: hello-world-from
-    autoStart: true
-    query: |
-      MATCH (m:message {message: 'Hello World'})
-      RETURN m.messageid AS MessageId, m.from AS MessageFrom
-    queryLanguage: Cypher
-    sources:
-      - sourceId: postgres-messages
+      - id: hello-world-from
+        autoStart: true
+        query: |
+          MATCH (m:message {message: 'Hello World'})
+          RETURN m.messageid AS MessageId, m.from AS MessageFrom
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
 
   # Query 2: message-count
   # Aggregates messages by content and counts frequency
   # Cypher equivalent of the Platform tutorial's GQL aggregation query
-  - id: message-count
-    autoStart: true
-    query: |
-      MATCH (m:message)
-      RETURN m.message AS Message, count(m) AS Frequency
-    queryLanguage: Cypher
-    sources:
-      - sourceId: postgres-messages
+      - id: message-count
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          RETURN m.message AS Message, count(m) AS Frequency
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
 
   # Query 3: inactive-people
   # Identifies users who haven't sent a message in 20+ seconds
   # Uses drasi.trueLater for time-based triggering
-  - id: inactive-people
-    autoStart: true
-    query: |
-      MATCH (m:message)
-      WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
-      WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
-        OR drasi.trueLater(
-             LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
-             LastMessageTimestamp + duration({ seconds: 20 })
-           )
-      RETURN MessageFrom, LastMessageTimestamp
-    queryLanguage: Cypher
-    sources:
-      - sourceId: postgres-messages
+      - id: inactive-people
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
+          WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
+            OR drasi.trueLater(
+                 LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
+                 LastMessageTimestamp + duration({ seconds: 20 })
+               )
+          RETURN MessageFrom, LastMessageTimestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
 
 # =============================================================================
 # Reactions
@@ -136,37 +137,37 @@ queries:
 # Reactions define what happens when query results change.
 # This example uses two reactions: console logging and SSE streaming.
 
-reactions:
+    reactions:
   # Log Reaction - Console Output
   # Prints query results to the console with custom formatting
-  - kind: log
-    id: log-all-queries
-    autoStart: true
-    queries:
-      - hello-world-from
-      - message-count
-      - inactive-people
+      - kind: log
+        id: log-all-queries
+        autoStart: true
+        queries:
+          - hello-world-from
+          - message-count
+          - inactive-people
     # Default template configuration for all queries
     # Templates use handlebars syntax for formatting
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] + {{after}}"
-      updated:
-        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-      deleted:
-        template: "[{{query_name}}] - {{before}}"
+        defaultTemplate:
+          added:
+            template: "[{{query_name}}] + {{after}}"
+          updated:
+            template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+          deleted:
+            template: "[{{query_name}}] - {{before}}"
 
   # SSE Reaction - Real-time Browser Streaming
   # Streams query results to connected clients via Server-Sent Events
   # Access at: http://localhost:8081/events
-  - kind: sse
-    id: sse-stream
-    autoStart: true
-    queries:
-      - hello-world-from
-      - message-count
-      - inactive-people
-    host: "${SSE_HOST:-0.0.0.0}"
-    port: ${SSE_PORT:-8081}
-    ssePath: /events
-    heartbeatIntervalMs: 30000
+      - kind: sse
+        id: sse-stream
+        autoStart: true
+        queries:
+          - hello-world-from
+          - message-count
+          - inactive-people
+        host: "${SSE_HOST:-0.0.0.0}"
+        port: ${SSE_PORT:-8081}
+        ssePath: /events
+        heartbeatIntervalMs: 30000

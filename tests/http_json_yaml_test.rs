@@ -16,8 +16,8 @@
 //!
 //! These tests spin up a *real* HTTP server (bound to a TCP port) and exercise
 //! the REST API with both JSON and YAML request payloads, verifying that body-
-//! accepting routes (query, source, and reaction; convenience and instance-
-//! scoped) accept the two formats interchangeably based on the `Content-Type`
+//! accepting instance-scoped routes (query, source, and reaction) accept the
+//! two formats interchangeably based on the `Content-Type`
 //! header, default to JSON when no `Content-Type` is present, and reject
 //! malformed payloads and YAML anchor/alias expansion attacks.
 
@@ -39,8 +39,8 @@ use std::time::Duration;
 /// Build the production API router backed by a DrasiLib instance with a single
 /// mock source, then start a real HTTP server on an OS-assigned free port.
 ///
-/// Returns the base URL the server is listening on.
-async fn start_real_server() -> String {
+/// Returns the listening base URL and the explicitly registered instance ID.
+async fn start_real_server() -> (String, String) {
     let instance_id = format!("http-fmt-{}", uuid::Uuid::new_v4());
 
     let core = DrasiLib::builder()
@@ -99,7 +99,7 @@ async fn start_real_server() -> String {
         }
     }
 
-    base_url
+    (base_url, instance_id)
 }
 
 /// Asserts that a YAML request body was accepted and parsed by the `ConfigBody`
@@ -131,12 +131,12 @@ async fn assert_yaml_reached_handler(resp: reqwest::Response) {
 /// Creating a query with a JSON body (`Content-Type: application/json`) works.
 #[tokio::test]
 async fn test_create_query_with_json_payload() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = r#"{"id":"json-query","query":"MATCH (n) RETURN n"}"#;
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/json")
         .body(body)
         .send()
@@ -152,7 +152,9 @@ async fn test_create_query_with_json_payload() {
 
     // Verify it exists.
     let resp = client
-        .get(format!("{base_url}/api/v1/queries/json-query"))
+        .get(format!(
+            "{base_url}/api/v1/instances/{instance_id}/queries/json-query"
+        ))
         .send()
         .await
         .expect("GET query");
@@ -162,12 +164,12 @@ async fn test_create_query_with_json_payload() {
 /// Creating a query with a YAML body (`Content-Type: application/yaml`) works.
 #[tokio::test]
 async fn test_create_query_with_yaml_payload() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "id: yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
         .body(body)
         .send()
@@ -183,7 +185,9 @@ async fn test_create_query_with_yaml_payload() {
 
     // Verify it exists.
     let resp = client
-        .get(format!("{base_url}/api/v1/queries/yaml-query"))
+        .get(format!(
+            "{base_url}/api/v1/instances/{instance_id}/queries/yaml-query"
+        ))
         .send()
         .await
         .expect("GET query");
@@ -193,12 +197,12 @@ async fn test_create_query_with_yaml_payload() {
 /// The `text/yaml` media type is also recognised as YAML.
 #[tokio::test]
 async fn test_create_query_with_text_yaml_payload() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "id: text-yaml-query\nquery: \"MATCH (n) RETURN n\"\nautoStart: false\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "text/yaml; charset=utf-8")
         .body(body)
         .send()
@@ -216,13 +220,13 @@ async fn test_create_query_with_text_yaml_payload() {
 /// A malformed YAML body returns a structured 400 error.
 #[tokio::test]
 async fn test_invalid_yaml_payload_returns_400() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     // Not a mapping — cannot deserialize into QueryConfigDto.
     let body = "- just\n- a\n- list\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
         .body(body)
         .send()
@@ -234,11 +238,10 @@ async fn test_invalid_yaml_payload_returns_400() {
     assert_eq!(json["code"], "INVALID_REQUEST");
 }
 
-/// Sending a YAML body to an instance-scoped route works too, confirming the
-/// extractor is wired on both the convenience and instance-scoped handlers.
+/// An instance discovered through the global listing accepts YAML requests.
 #[tokio::test]
 async fn test_instance_scoped_route_accepts_yaml() {
-    let base_url = start_real_server().await;
+    let (base_url, expected_instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     // Discover the instance id.
@@ -254,6 +257,7 @@ async fn test_instance_scoped_route_accepts_yaml() {
         .as_str()
         .expect("instance id")
         .to_string();
+    assert_eq!(instance_id, expected_instance_id);
 
     let body = "id: instance-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
@@ -275,12 +279,12 @@ async fn test_instance_scoped_route_accepts_yaml() {
 /// The `application/x-yaml` media type is recognised as YAML.
 #[tokio::test]
 async fn test_create_query_with_application_x_yaml_payload() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "id: x-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/x-yaml")
         .body(body)
         .send()
@@ -298,12 +302,12 @@ async fn test_create_query_with_application_x_yaml_payload() {
 /// The `text/vnd.yaml` media type is recognised as YAML.
 #[tokio::test]
 async fn test_create_query_with_text_vnd_yaml_payload() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "id: vnd-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "text/vnd.yaml")
         .body(body)
         .send()
@@ -322,12 +326,12 @@ async fn test_create_query_with_text_vnd_yaml_payload() {
 /// default). A regression to a YAML default would break every headerless client.
 #[tokio::test]
 async fn test_missing_content_type_defaults_to_json() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = r#"{"id":"no-ct-query","query":"MATCH (n) RETURN n"}"#;
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         // reqwest's `.body()` does not set a Content-Type on its own.
         .body(body)
         .send()
@@ -345,12 +349,12 @@ async fn test_missing_content_type_defaults_to_json() {
 /// A malformed JSON body returns a structured 400 error (mirrors the YAML path).
 #[tokio::test]
 async fn test_invalid_json_payload_returns_400() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "{not valid json";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/json")
         .body(body)
         .send()
@@ -366,12 +370,12 @@ async fn test_invalid_json_payload_returns_400() {
 /// guarding against "billion laughs" expansion DoS.
 #[tokio::test]
 async fn test_yaml_anchor_alias_payload_rejected() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "id: &a anchor-query\nquery: *a\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/queries"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
         .body(body)
         .send()
@@ -387,12 +391,12 @@ async fn test_yaml_anchor_alias_payload_rejected() {
 /// the source resource, not just queries).
 #[tokio::test]
 async fn test_source_route_accepts_yaml() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "kind: mock\nid: yaml-source\nautoStart: false\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/sources"))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/sources"))
         .header("content-type", "application/yaml")
         .body(body)
         .send()
@@ -406,12 +410,14 @@ async fn test_source_route_accepts_yaml() {
 /// on the reaction resource).
 #[tokio::test]
 async fn test_reaction_route_accepts_yaml() {
-    let base_url = start_real_server().await;
+    let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
     let body = "kind: log\nid: yaml-reaction\nqueries: []\nautoStart: false\n";
     let resp = client
-        .post(format!("{base_url}/api/v1/reactions"))
+        .post(format!(
+            "{base_url}/api/v1/instances/{instance_id}/reactions"
+        ))
         .header("content-type", "application/yaml")
         .body(body)
         .send()

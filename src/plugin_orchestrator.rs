@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -81,6 +81,7 @@ pub struct PluginOrchestrator {
     /// Verification policy applied to all runtime loading paths.
     /// When `enabled == true`, plugins are verified before loading.
     verification_config: VerificationConfig,
+    instances: OnceLock<crate::instance_registry::InstanceRegistry>,
 }
 
 impl PluginOrchestrator {
@@ -95,6 +96,7 @@ impl PluginOrchestrator {
             plugin_ops: None,
             dir_mutex: Mutex::new(()),
             verification_config: VerificationConfig::default(),
+            instances: OnceLock::new(),
         }
     }
 
@@ -109,6 +111,7 @@ impl PluginOrchestrator {
             plugin_ops: None,
             dir_mutex: Mutex::new(()),
             verification_config: VerificationConfig::default(),
+            instances: OnceLock::new(),
         }
     }
 
@@ -128,6 +131,7 @@ impl PluginOrchestrator {
             plugin_ops: Some(plugin_ops),
             dir_mutex: Mutex::new(()),
             verification_config,
+            instances: OnceLock::new(),
         }
     }
 
@@ -144,6 +148,73 @@ impl PluginOrchestrator {
     /// Get a reference to the shared plugin registry.
     pub fn registry(&self) -> &Arc<RwLock<PluginRegistry>> {
         self.lifecycle.registry()
+    }
+
+    /// Connect runtime plugin availability to the server's existing instances.
+    /// Startup scanning can run before this registry exists.
+    pub async fn bind_instances(
+        &self,
+        instances: crate::instance_registry::InstanceRegistry,
+    ) -> anyhow::Result<()> {
+        let bound = self.instances.get_or_init(|| instances.clone());
+        anyhow::ensure!(
+            bound.same_instances(&instances),
+            "plugin orchestrator is already bound to another instance registry"
+        );
+        let plugins = self
+            .registry()
+            .read()
+            .await
+            .computation_plugins()
+            .cloned()
+            .collect();
+        Self::register_factories(bound, plugins).await
+    }
+
+    async fn publish_loaded_factories(&self, plugin_id: &str) -> anyhow::Result<()> {
+        let Some(instances) = self.instances.get() else {
+            return Ok(());
+        };
+        let plugins = self
+            .registry()
+            .read()
+            .await
+            .computation_plugins()
+            .filter(|plugin| {
+                drasi_host_sdk::plugin_registry::computation_plugin_id(plugin.metadata())
+                    == plugin_id
+            })
+            .cloned()
+            .collect();
+        Self::register_factories(instances, plugins).await
+    }
+
+    async fn register_factories(
+        instances: &crate::instance_registry::InstanceRegistry,
+        plugins: Vec<Arc<drasi_host_sdk::computation::NativePlugin>>,
+    ) -> anyhow::Result<()> {
+        let mut failures = Vec::new();
+        for (id, core) in instances.list().await {
+            for plugin in &plugins {
+                for factory in plugin.factories() {
+                    if let Err(error) = core.register_component_factory(factory.clone()).await {
+                        failures.push(anyhow::Error::from(error).context(format!(
+                            "instance '{id}', factory '{}'",
+                            factory.metadata().implementation.name
+                        )));
+                    }
+                }
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(drasi_lib::error::OperationFailures::new(
+                "plugin is loaded, but existing instances could not register its factories",
+                failures,
+            )
+            .into())
+        }
     }
 
     /// Subscribe to orchestrator-level plugin events.
@@ -352,11 +423,12 @@ impl PluginOrchestrator {
             .await
             .insert(plugin_id.clone(), info.clone());
         let _ = self.event_tx.send(PluginEvent::Loaded {
-            plugin_id,
+            plugin_id: plugin_id.clone(),
             version: info.plugin_version.clone(),
             kinds: info.kinds.clone(),
         });
 
+        self.publish_loaded_factories(&plugin_id).await?;
         Ok(info)
     }
 

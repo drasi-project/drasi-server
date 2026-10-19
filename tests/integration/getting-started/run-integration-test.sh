@@ -142,13 +142,13 @@ test_health_endpoint() {
 }
 
 test_sources_endpoint() {
-  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/sources)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/instances/integration-test-server/sources)
   echo "Sources response: $response"
   echo "$response" | grep -q "postgres-messages"
 }
 
 test_queries_endpoint() {
-  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/queries)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/instances/integration-test-server/queries)
   echo "Queries response: $response"
   echo "$response" | grep -q "hello-world-from"
 }
@@ -162,7 +162,7 @@ test_query_results() {
   # Bootstrap loads data into internal state, but doesn't trigger result emission
   # We verify queries exist and are configured correctly
 
-  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/queries/hello-world-from)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/instances/integration-test-server/queries/hello-world-from)
   echo "hello-world-from query config: $response"
 
   # Verify query exists (successful response with data)
@@ -182,7 +182,7 @@ test_query_results() {
 
 test_aggregation_results() {
   # Verify aggregation query exists and is configured
-  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/queries/message-count)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/instances/integration-test-server/queries/message-count)
   echo "message-count query config: $response"
 
   if ! echo "$response" | grep -q '"success":true'; then
@@ -212,7 +212,7 @@ EOF
   sleep 5
 
   # Verify the new message appears in query results
-  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/queries/hello-world-from/results)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/v1/instances/integration-test-server/queries/hello-world-from/results)
   echo "Updated hello-world-from results: $response"
   echo "$response" | grep -q "Alice"
 }

@@ -57,7 +57,7 @@ export class DrasiSSEClient {
             Object.entries(initialResults).forEach(([queryId, results]) => {
               const qr: QueryResult = {
                 query_id: queryId,
-                results: results.map(data => ({ data })),
+                results: results.map(data => ({ type: 'ADD', data })),
               };
               this.handleQueryResult(qr);
             });

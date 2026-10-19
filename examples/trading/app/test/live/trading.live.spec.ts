@@ -119,13 +119,13 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     expect(response.ok(), await response.text()).toBe(true);
   };
   try {
-    expect(await get('/api/v1/queries')).toEqual([]);
-    expect(await get('/api/v1/reactions')).toEqual([]);
+    expect(await get(`${instancePath}/queries`)).toEqual([]);
+    expect(await get(`${instancePath}/reactions`)).toEqual([]);
     await page.goto('/');
     await expect(page.getByText('Connected', { exact: true })).toBeVisible();
     await expect(page.getByRole('table')).toHaveCount(7);
     await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
-    await expect.poll(() => get('/api/v1/queries/portfolio-summary-query/results')).toEqual(
+    await expect.poll(() => get(`${instancePath}/queries/portfolio-summary-query/results`)).toEqual(
       [expect.objectContaining({ totalValue: 2000, totalCost: 1800, positionCount: 2 })],
     );
     observations.initialSummary = await panel(page, 'Portfolio').locator('.drasi-query-table__header-slot').innerText();
@@ -141,10 +141,10 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     expect(mutations.filter(item => item.url === `${instancePath}/reactions`)).toHaveLength(1);
     await get(`${instancePath}/queries/portfolio-summary-query?view=full`);
     await get(`${instancePath}/queries/watchlist-query?view=full`);
-    await get('/api/v1/reactions/sse-stream?view=full');
-    await get('/api/v1/queries/watchlist-query/results');
-    await get('/api/v1/queries/portfolio-query/results');
-    expect(await get('/api/v1/queries/portfolio-summary-query/results')).toEqual([
+    await get(`${instancePath}/reactions/sse-stream?view=full`);
+    await get(`${instancePath}/queries/watchlist-query/results`);
+    await get(`${instancePath}/queries/portfolio-query/results`);
+    expect(await get(`${instancePath}/queries/portfolio-summary-query/results`)).toEqual([
       expect.objectContaining({ totalValue: 2000, totalCost: 1800, positionCount: 2 }),
     ]);
 
@@ -197,7 +197,7 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     await expect(row(page, 'Watchlist', 'AAPL')).toContainText('$115.00');
     await expect(panel(page, 'Portfolio').getByText('Total Value', { exact: true })).toBeVisible();
     observations.reloadedSummary = await panel(page, 'Portfolio').locator('.drasi-query-table__header-slot').innerText();
-    expect(await get('/api/v1/queries/portfolio-summary-query/results')).toEqual([
+    expect(await get(`${instancePath}/queries/portfolio-summary-query/results`)).toEqual([
       expect.objectContaining({ totalValue: 2050, totalCost: 1800, positionCount: 2 }),
     ]);
     await expect.soft(panel(page, 'Portfolio').getByText('$2,050.00')).toBeVisible();
@@ -212,17 +212,17 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     await price(125);
     expect((await request.delete(`${endpoints.api}/api/watchlist/MSFT`)).ok()).toBe(true);
     // Wait for server-side processing, not an assumed fixed sleep or browser refresh.
-    await expect.poll(() => get('/api/v1/queries/portfolio-summary-query/results')).toEqual(
+    await expect.poll(() => get(`${instancePath}/queries/portfolio-summary-query/results`)).toEqual(
       [expect.objectContaining({ totalValue: 2150, totalCost: 1800, positionCount: 2 })],
     );
-    const settledSummary = await get('/api/v1/queries/portfolio-summary-query/results');
+    const settledSummary = await get(`${instancePath}/queries/portfolio-summary-query/results`);
     await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
     expect((await request.post(`${endpoints.control}/reconnect`)).ok()).toBe(true);
     await expect(page.getByText('Connected', { exact: true })).toBeVisible();
     await expectSymbols(page, 'Watchlist', ['AAPL']);
     await expect(row(page, 'Watchlist', 'AAPL')).toContainText('$125.00');
     observations.reconnectedSummary = await panel(page, 'Portfolio').locator('.drasi-query-table__header-slot').innerText();
-    await get('/api/v1/queries/watchlist-query/results');
+    await get(`${instancePath}/queries/watchlist-query/results`);
     expect(wire.length).toBeGreaterThan(0);
     expect(reconnectNavigations).toBe(0);
     expect(errors).toEqual([]);

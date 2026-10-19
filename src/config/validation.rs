@@ -39,12 +39,6 @@ pub fn validate_config(value: &serde_yaml::Value) -> Result<(), ValidationError>
     let mut errors = Vec::new();
 
     if let Some(map) = value.as_mapping() {
-        // Validate reactions (template syntax)
-        if let Some(reactions) = map.get("reactions") {
-            validate_reactions(reactions, &mut errors);
-        }
-
-        // Validate instances (nested reactions)
         if let Some(instances) = map.get("instances") {
             validate_instances(instances, &mut errors);
         }
@@ -237,13 +231,14 @@ mod tests {
     #[test]
     fn test_valid_config_passes() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries:
-                  - test-query
-                autoStart: true
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries:
+                      - test-query
+                    autoStart: true
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -254,19 +249,20 @@ mod tests {
     #[test]
     fn test_valid_template_passes() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "{{after.Name}} - {{after.Value}}"
-                  updated:
-                    template: "Changed from {{before.Value}} to {{after.Value}}"
-                  deleted:
-                    template: "Removed: {{before.Name}}"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "{{after.Name}} - {{after.Value}}"
+                      updated:
+                        template: "Changed from {{before.Value}} to {{after.Value}}"
+                      deleted:
+                        template: "Removed: {{before.Name}}"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -277,15 +273,16 @@ mod tests {
     #[test]
     fn test_template_unclosed_brace_rejected() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "{{after.Name"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "{{after.Name"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -304,15 +301,16 @@ mod tests {
     #[test]
     fn test_template_empty_expression_rejected() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "Value: {{}}"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "Value: {{}}"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -331,15 +329,16 @@ mod tests {
     #[test]
     fn test_template_unclosed_block_rejected() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "{{#if condition}}true branch"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "{{#if condition}}true branch"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -358,19 +357,20 @@ mod tests {
     #[test]
     fn test_http_body_template_validated() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: http
-                id: test-http
-                queries: [q1]
-                autoStart: true
-                baseUrl: "http://localhost"
-                routes:
-                  q1:
-                    added:
-                      url: "/api/events"
-                      method: "POST"
-                      body: '{"data": {{after.Name}'
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: http
+                    id: test-http
+                    queries: [q1]
+                    autoStart: true
+                    baseUrl: "http://localhost"
+                    routes:
+                      q1:
+                        added:
+                          url: "/api/events"
+                          method: "POST"
+                          body: '{"data": {{after.Name}'
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -389,19 +389,20 @@ mod tests {
     #[test]
     fn test_valid_http_body_template_passes() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: http
-                id: test-http
-                queries: [q1]
-                autoStart: true
-                baseUrl: "http://localhost"
-                routes:
-                  q1:
-                    added:
-                      url: "/api/events"
-                      method: "POST"
-                      body: '{"name": "{{after.Name}}", "value": {{after.Value}}}'
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: http
+                    id: test-http
+                    queries: [q1]
+                    autoStart: true
+                    baseUrl: "http://localhost"
+                    routes:
+                      q1:
+                        added:
+                          url: "/api/events"
+                          method: "POST"
+                          body: '{"name": "{{after.Name}}", "value": {{after.Value}}}'
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -415,16 +416,17 @@ mod tests {
     #[test]
     fn test_sse_template_validated() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: sse
-                id: test-sse
-                queries: [q1]
-                autoStart: true
-                routes:
-                  q1:
-                    added:
-                      template: "{{after.Name"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: sse
+                    id: test-sse
+                    queries: [q1]
+                    autoStart: true
+                    routes:
+                      q1:
+                        added:
+                          template: "{{after.Name"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -441,15 +443,16 @@ mod tests {
     fn test_template_with_helpers_passes() {
         // Handlebars allows unknown helpers (they just evaluate to empty at runtime)
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "{{#each items}}{{this}}{{/each}}"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "{{#each items}}{{this}}{{/each}}"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -463,19 +466,20 @@ mod tests {
     #[test]
     fn test_multiple_template_errors_all_reported() {
         let yaml = r#"
-            id: test-server
-            reactions:
-              - kind: log
-                id: test-log
-                queries: [q1]
-                autoStart: true
-                defaultTemplate:
-                  added:
-                    template: "{{after.Name"
-                  updated:
-                    template: "{{before"
-                  deleted:
-                    template: "{{}}"
+            instances:
+              - id: test-server
+                reactions:
+                  - kind: log
+                    id: test-log
+                    queries: [q1]
+                    autoStart: true
+                    defaultTemplate:
+                      added:
+                        template: "{{after.Name"
+                      updated:
+                        template: "{{before"
+                      deleted:
+                        template: "{{}}"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
@@ -498,10 +502,11 @@ mod tests {
     #[test]
     fn test_server_unknown_field_rejected() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             unknownField: value
+            instances:
+              - id: test-server
         "#;
 
         let result: Result<DrasiServerConfig, _> = serde_yaml::from_str(yaml);
@@ -516,10 +521,11 @@ mod tests {
     #[test]
     fn test_server_snake_case_log_level_rejected() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             log_level: info
+            instances:
+              - id: test-server
         "#;
 
         let result: Result<DrasiServerConfig, _> = serde_yaml::from_str(yaml);
@@ -534,10 +540,11 @@ mod tests {
     #[test]
     fn test_server_snake_case_persist_config_rejected() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             persist_config: true
+            instances:
+              - id: test-server
         "#;
 
         let result: Result<DrasiServerConfig, _> = serde_yaml::from_str(yaml);
@@ -656,12 +663,13 @@ mod tests {
     #[test]
     fn test_valid_server_config() {
         let yaml = r#"
-            id: test-server
             host: 0.0.0.0
             port: 8080
             logLevel: info
             persistConfig: true
-            persistIndex: false
+            instances:
+              - id: test-server
+                persistIndex: false
         "#;
 
         let result: Result<DrasiServerConfig, _> = serde_yaml::from_str(yaml);
@@ -680,7 +688,6 @@ mod tests {
             queryLanguage: Cypher
             autoStart: true
             enableBootstrap: true
-            bootstrapBufferSize: 10000
             priorityQueueCapacity: 5000
             dispatchBufferCapacity: 1000
             middleware: []

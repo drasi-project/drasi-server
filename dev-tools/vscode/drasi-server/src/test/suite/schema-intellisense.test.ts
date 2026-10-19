@@ -23,7 +23,7 @@ suite('Drasi schema mapping', () => {
     if (!fs.existsSync(schemaFile)) {
       fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
     }
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\n  - kind: mock\n    id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        id: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -45,7 +45,7 @@ suite('Drasi schema mapping', () => {
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\n  - kind: \n    id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: \n        id: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -105,7 +105,7 @@ suite('Drasi schema mapping', () => {
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\\n  - kind: mock\\n    id: demo\\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        id: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -133,16 +133,18 @@ suite('Drasi schema mapping', () => {
       schemaFile,
       [
         'apiVersion: drasi.io/v1',
-        'sources:',
-        '  - kind: postgres',
-        '    id: demo',
-        '    host: localhost',
-        '    port: 5432',
-        '    database: demo_db',
-        '    user: demo_user',
-        '    password: demo_pass',
-        '    bootstrapProvider:',
-        '      kind: postgres',
+        'instances:',
+        '  - id: main',
+        '    sources:',
+        '      - kind: postgres',
+        '        id: demo',
+        '        host: localhost',
+        '        port: 5432',
+        '        database: demo_db',
+        '        user: demo_user',
+        '        password: demo_pass',
+        '        bootstrapProvider:',
+        '          kind: postgres',
         '',
       ].join('\n'),
     );

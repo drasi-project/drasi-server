@@ -262,7 +262,7 @@ async fn dynamically_created_managed_instances_share_storage_not_acceptance_name
         assert_eq!(core.get_current_config().await?.id, id);
         let mut desired = DesiredInstance::default();
         if id == "managed-first" {
-            desired.topology.allow_incomplete = !desired.topology.allow_incomplete;
+            desired.topology.requirements = PipeRequirements::new([PipeCapability::Backpressure]);
         }
         let (status, body) = request(
             &app,
@@ -295,7 +295,7 @@ async fn dynamically_created_managed_instances_share_storage_not_acceptance_name
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn failed_managed_definitions_remain_visible_without_plaintext_yaml_or_status_secrets(
+async fn pending_managed_definitions_remain_visible_without_plaintext_yaml_or_status_secrets(
 ) -> Result<()> {
     const SECRET: &str = "secret-that-must-not-appear-in-public-status-or-yaml";
     let directory = tempfile::tempdir()?;
@@ -340,11 +340,17 @@ async fn failed_managed_definitions_remain_visible_without_plaintext_yaml_or_sta
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["state"], "failed");
+    assert_eq!(body["data"]["state"], "accepted");
+    let counter = core.computation_component("counter")?.observed()?;
+    assert!(counter.waiting_for.iter().any(|waiting| {
+        matches!(waiting, DependencyWait::Factory { implementation }
+            if implementation.name.as_ref() == "unavailable/native")
+    }));
+    assert!(counter.failure.is_none());
     assert!(!body.to_string().contains(SECRET));
     assert_eq!(core.desired_configuration()?.desired, desired);
     let original: DrasiServerConfig = serde_json::from_value(json!({
-        "id":"managed-native", "configurationStore":settings
+        "instances":[{"id":"managed-native", "configurationStore":settings}]
     }))?;
     let path = directory.path().join("server.yaml");
     let persistence = ConfigPersistence::new(
@@ -354,18 +360,16 @@ async fn failed_managed_definitions_remain_visible_without_plaintext_yaml_or_sta
         8080,
         "info".into(),
         true,
-        IndexMap::new(),
-        IndexMap::new(),
-        None,
         &original,
-    );
+    )
+    .expect("valid instance settings");
     persistence.save().await?;
     let yaml = std::fs::read_to_string(&path)?;
     assert!(!yaml.contains(SECRET));
     assert!(!yaml.contains("computation:"));
     let saved = drasi_server::load_config_file(path)?;
     assert_eq!(
-        serde_json::to_value(saved.configuration_store)?,
+        serde_json::to_value(&saved.instances[0].configuration_store)?,
         serde_json::to_value(Some(settings))?
     );
     core.shutdown().await?;

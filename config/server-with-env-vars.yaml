@@ -32,87 +32,85 @@ persistConfig: true
 # enableUi: "${ENABLE_UI:-true}"
 
 # Unique server identifier
-id: "${SERVER_ID:-drasi-server-1}"
+instances:
+  - id: "${SERVER_ID:-drasi-server-1}"
 
 # Data sources
-sources:
+    sources:
   # PostgreSQL source with CDC (Change Data Capture)
-  - kind: postgres
-    id: my-postgres-db
-    autoStart: true
-    
+      - kind: postgres
+        id: my-postgres-db
+        autoStart: true
+
     # Connection details - all use environment variables for security
-    host: "${DB_HOST}"
-    port: "${DB_PORT:-5432}"
-    database: "${DB_NAME}"
-    user: "${DB_USER}"
-    password: "${DB_PASSWORD}"  # NEVER hardcode passwords!
-    
+        host: "${DB_HOST}"
+        port: "${DB_PORT:-5432}"
+        database: "${DB_NAME}"
+        user: "${DB_USER}"
+        password: "${DB_PASSWORD}" # NEVER hardcode passwords!
     # Optional: SSL configuration
     # ssl_mode: "${DB_SSL_MODE:-prefer}"
-    
     # Bootstrap provider uses the parent source's connection details
-    bootstrapProvider:
-      kind: postgres
+        bootstrapProvider:
+          kind: postgres
 
   # HTTP source for receiving events
-  - kind: http
-    id: webhook-receiver
-    autoStart: true
-    host: "${WEBHOOK_HOST:-0.0.0.0}"
-    port: "${WEBHOOK_PORT:-9000}"
+      - kind: http
+        id: webhook-receiver
+        autoStart: true
+        host: "${WEBHOOK_HOST:-0.0.0.0}"
+        port: "${WEBHOOK_PORT:-9000}"
 
 # Continuous queries
-queries:
-  - id: high-value-orders
-    query: |
-      MATCH (o:Order)
-      WHERE o.total > 1000
-      RETURN o.id AS order_id, o.total AS total, o.customer AS customer
-    queryLanguage: Cypher
-    autoStart: true
-    enableBootstrap: true
-    
-    sources:
-      - sourceId: my-postgres-db
+    queries:
+      - id: high-value-orders
+        query: |
+          MATCH (o:Order)
+          WHERE o.total > 1000
+          RETURN o.id AS order_id, o.total AS total, o.customer AS customer
+        queryLanguage: Cypher
+        autoStart: true
+        enableBootstrap: true
+
+        sources:
+          - sourceId: my-postgres-db
 
 # Reactions (where to send query results)
-reactions:
+    reactions:
   # Log reaction for debugging
-  - kind: log
-    id: log-high-value-orders
-    queries:
-      - high-value-orders
-    autoStart: true
+      - kind: log
+        id: log-high-value-orders
+        queries:
+          - high-value-orders
+        autoStart: true
 
   # HTTP webhook reaction
-  - kind: http
-    id: notify-high-value-orders
-    queries:
-      - high-value-orders
-    autoStart: true
-    
+      - kind: http
+        id: notify-high-value-orders
+        queries:
+          - high-value-orders
+        autoStart: true
+
     # Webhook URL - uses environment variable
-    baseUrl: "${WEBHOOK_URL}"
+        baseUrl: "${WEBHOOK_URL}"
     # Optional: Authentication token
     # token: "${API_TOKEN}"
-    
     # Routes define per-query endpoints
-    routes:
-      high-value-orders:
-        added:
-          url: "/notifications/high-value"
-          method: "POST"
-          body: '{"orderId": "{{after.order_id}}", "total": {{after.total}}}'
-    
+        routes:
+          high-value-orders:
+            added:
+              url: "/notifications/high-value"
+              method: "POST"
+              body: '{"orderId": "{{after.order_id}}", "total": {{after.total}}}'
+
   # Server-Sent Events (SSE) for real-time updates
-  - kind: sse
-    id: sse-high-value-orders
-    queries:
-      - high-value-orders
-    autoStart: true
-    host: "${SSE_HOST:-0.0.0.0}"
-    port: "${SSE_PORT:-8081}"
+      - kind: sse
+        id: sse-high-value-orders
+        queries:
+          - high-value-orders
+        autoStart: true
+        host: "${SSE_HOST:-0.0.0.0}"
+        port: "${SSE_PORT:-8081}"
 
 # Example: Running the server with environment variables
 #

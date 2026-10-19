@@ -16,22 +16,23 @@
 
 # Clean up all dynamically created queries and reactions
 
-echo "Cleaning up all queries and reactions..."
+set -euo pipefail
 
-BASE_URL="http:#localhost:8280"
+BASE_URL="${DRASI_SERVER_URL:-http://localhost:8280}"
+INSTANCE_ID="${DRASI_INSTANCE_ID:-trading-server}"
+INSTANCE_PATH="$(jq -rn --arg id "$INSTANCE_ID" '$id | @uri')"
+API_URL="${BASE_URL%/}/api/v1/instances/${INSTANCE_PATH}"
+echo "Cleaning up queries and reactions in instance '$INSTANCE_ID'..."
 
-# Delete all queries
-QUERIES=$(curl -s "$BASE_URL/api/v1/queries" | jq -r '.data[]?.id')
-for query in $QUERIES; do
-    echo "Deleting query: $query"
-    curl -X DELETE "$BASE_URL/api/v1/queries/$query" 2>/dev/null
-done
-
-# Delete all reactions
-REACTIONS=$(curl -s "$BASE_URL/api/v1/reactions" | jq -r '.data[]?.id')
-for reaction in $REACTIONS; do
-    echo "Deleting reaction: $reaction"
-    curl -X DELETE "$BASE_URL/api/v1/reactions/$reaction" 2>/dev/null
+for kind in reactions queries; do
+    response="$(curl -fsS "$API_URL/$kind")"
+    jq -e '.success == true and (.data | type == "array")' <<<"$response" >/dev/null
+    while IFS= read -r id; do
+        encoded_id="$(jq -rn --arg id "$id" '$id | @uri')"
+        echo "Deleting $kind/$id"
+        result="$(curl -fsS -X DELETE "$API_URL/$kind/$encoded_id")"
+        jq -e '.success == true' <<<"$result" >/dev/null
+    done < <(jq -r '.data[].id' <<<"$response")
 done
 
 echo "Cleanup complete!"

@@ -168,15 +168,16 @@ async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
 #[test]
 fn test_persist_index_config_deserialization_true() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
-        persistIndex: true
+        instances:
+          - id: test-server
+            persistIndex: true
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
     assert!(
-        config.persist_index,
+        config.instances[0].persist_index,
         "persist_index should be true when explicitly set"
     );
 }
@@ -185,15 +186,16 @@ fn test_persist_index_config_deserialization_true() {
 #[test]
 fn test_persist_index_config_deserialization_false() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
-        persistIndex: false
+        instances:
+          - id: test-server
+            persistIndex: false
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
     assert!(
-        !config.persist_index,
+        !config.instances[0].persist_index,
         "persist_index should be false when explicitly set"
     );
 }
@@ -202,14 +204,15 @@ fn test_persist_index_config_deserialization_false() {
 #[test]
 fn test_persist_index_config_default() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
+        instances:
+          - id: test-server
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
     assert!(
-        !config.persist_index,
+        !config.instances[0].persist_index,
         "persist_index should default to false when not specified in config"
     );
 }
@@ -218,20 +221,21 @@ fn test_persist_index_config_default() {
 #[test]
 fn test_persist_index_with_full_config() {
     let yaml = r#"
-        id: production-server
         host: 0.0.0.0
         port: 9090
         logLevel: debug
         persistConfig: true
-        persistIndex: true
-        sources: []
-        queries: []
-        reactions: []
+        instances:
+          - id: production-server
+            persistIndex: true
+            sources: []
+            queries: []
+            reactions: []
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
 
-    assert!(config.persist_index);
+    assert!(config.instances[0].persist_index);
     assert!(config.persist_config);
 
     match &config.port {
@@ -245,7 +249,11 @@ fn test_persist_index_with_full_config() {
 fn test_persist_index_serialization_roundtrip() {
     let original = DrasiServerConfig {
         api_version: None,
-        persist_index: true,
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            persist_index: true,
+            ..Default::default()
+        }],
         ..Default::default()
     };
 
@@ -260,7 +268,7 @@ fn test_persist_index_serialization_roundtrip() {
         serde_yaml::from_str(&yaml).expect("Failed to deserialize config");
 
     assert!(
-        deserialized.persist_index,
+        deserialized.instances[0].persist_index,
         "Deserialized config should have persist_index = true"
     );
 }

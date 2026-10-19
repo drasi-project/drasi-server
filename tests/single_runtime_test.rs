@@ -33,7 +33,6 @@ use drasi_server::{
     DrasiServerBuilder,
 };
 use drasi_source_application::{ApplicationSource, ApplicationSourceConfig, PropertyMapBuilder};
-use indexmap::IndexMap;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
@@ -74,7 +73,7 @@ async fn request(app: &Router, method: &str, path: &str, body: Value) -> (Status
 
 #[test]
 fn configuration_has_no_runtime_selector_and_preserves_instance_settings() {
-    let config: DrasiServerConfig = serde_yaml::from_str("id: default").unwrap();
+    let config: DrasiServerConfig = serde_yaml::from_str("instances: [{id: configured}]").unwrap();
     assert!(!serde_yaml::to_string(&config)
         .unwrap()
         .contains("executionMode"));
@@ -162,7 +161,7 @@ async fn builder_uses_graph_for_all_construction_paths() {
 }
 
 #[tokio::test]
-async fn api_creation_and_default_routes_preserve_instance_isolation() {
+async fn api_creation_and_explicit_routes_preserve_instance_isolation() {
     let registry = InstanceRegistry::new();
     registry
         .add(
@@ -194,11 +193,12 @@ async fn api_creation_and_default_routes_preserve_instance_isolation() {
         body["data"],
         json!({"instanceId":"created", "runtime":"computationGraph", "running":true})
     );
-    assert_eq!(registry.get_default().await.unwrap().0, "existing");
+    assert_eq!(registry.list_ids().await, ["existing", "created"]);
 
     let removed = registry.remove("existing").await.unwrap();
     removed.shutdown().await.unwrap();
-    assert_eq!(registry.get_default().await.unwrap().0, "created");
+    assert!(registry.get("existing").await.is_none());
+    assert!(registry.get("created").await.is_some());
     let (status, body) = request(&app, "POST", "/api/v1/instances", json!({"id":"next"})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(registry.list_ids().await, ["created", "next"]);
@@ -371,7 +371,7 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     let (status, body) = request(
         &app,
         "POST",
-        "/api/v1/queries",
+        "/api/v1/instances/test/queries",
         json!({
             "id":"selected", "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.value AS value",
             "queryLanguage":"Cypher", "sources":[{"sourceId":"input"}],
@@ -426,8 +426,13 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     .expect("query change reaches ordinary reaction through the graph");
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let (status, body) =
-                request(&app, "GET", "/api/v1/queries/selected/results", Value::Null).await;
+            let (status, body) = request(
+                &app,
+                "GET",
+                "/api/v1/instances/test/queries/selected/results",
+                Value::Null,
+            )
+            .await;
             assert_eq!(status, StatusCode::OK, "{body}");
             if body["data"] == json!([{"value":42}]) {
                 break;
@@ -461,7 +466,6 @@ async fn persistence_and_reload_preserve_single_and_multi_instance_settings() {
     let registry = InstanceRegistry::new();
     registry.add("existing".into(), core.clone()).await.unwrap();
     let original: DrasiServerConfig = serde_json::from_value(json!({
-        "id":"server",
         "enableUi":false,
         "verifyPlugins":false,
         "corsAllowedOrigins":["https://dashboard.example.com"],
@@ -472,24 +476,29 @@ async fn persistence_and_reload_preserve_single_and_multi_instance_settings() {
         }],
     }))
     .unwrap();
-    let persistence = Arc::new(ConfigPersistence::new(
-        path.clone(),
-        registry.clone(),
-        "127.0.0.1".into(),
-        8080,
-        "info".into(),
-        true,
-        IndexMap::new(),
-        IndexMap::new(),
-        None,
-        &original,
-    ));
+    let persistence = Arc::new(
+        ConfigPersistence::new(
+            path.clone(),
+            registry.clone(),
+            "127.0.0.1".into(),
+            8080,
+            "info".into(),
+            true,
+            &original,
+        )
+        .expect("valid instance settings"),
+    );
     persistence
         .register_instance(original.instances[0].clone())
-        .await;
+        .await
+        .unwrap();
     persistence.save().await.unwrap();
     let saved = drasi_server::load_config_file(&path).unwrap();
-    assert!(saved.instances.is_empty(), "one instance uses root fields");
+    assert_eq!(
+        saved.instances.len(),
+        1,
+        "single-instance saves retain the instance list"
+    );
     assert!(!saved.enable_ui);
     assert!(!saved.verify_plugins);
     assert_eq!(saved.cors_allowed_origins, original.cors_allowed_origins);

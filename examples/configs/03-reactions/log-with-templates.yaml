@@ -34,7 +34,6 @@
 # Run with: cargo run -- --config examples/configs/03-reactions/log-with-templates.yaml
 
 apiVersion: drasi.io/v1
-id: log-templates-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -44,78 +43,80 @@ plugins:
   - ref: source/mock
   - ref: reaction/log
 
-sources:
-  # Generic mock data generates: value (int), message (string), timestamp
-  - kind: mock
-    id: events
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 2000
-
-queries:
-  # Simulated "alerts" - negative values are alerts
-  - id: alerts
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.value < 0
-      RETURN g.value AS AlertValue, g.message AS Message, g.timestamp AS Timestamp
-    queryLanguage: Cypher
+instances:
+  - id: log-templates-demo
     sources:
-      - sourceId: events
+  # Generic mock data generates: value (int), message (string), timestamp
+      - kind: mock
+        id: events
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 2000
+
+    queries:
+  # Simulated "alerts" - negative values are alerts
+      - id: alerts
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.value < 0
+          RETURN g.value AS AlertValue, g.message AS Message, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: events
 
   # Simulated "metrics" - positive values are metrics
-  - id: metrics
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.value >= 0
-      RETURN g.value AS MetricValue, g.timestamp AS Timestamp
-    queryLanguage: Cypher
-    sources:
-      - sourceId: events
+      - id: metrics
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.value >= 0
+          RETURN g.value AS MetricValue, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: events
 
   # All events with full data
-  - id: all-events
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
-    queryLanguage: Cypher
-    sources:
-      - sourceId: events
+      - id: all-events
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: events
 
-reactions:
-  - kind: log
-    id: formatted-output
-    queries:
-      - alerts
-      - metrics
-      - all-events
-    autoStart: true
+    reactions:
+      - kind: log
+        id: formatted-output
+        queries:
+          - alerts
+          - metrics
+          - all-events
+        autoStart: true
 
     # Default template for all queries - uses specific field access
-    defaultTemplate:
-      added:
-        template: "[INFO] {{query_name}}: value={{after.Value}} message={{after.Message}}"
-      updated:
-        template: "[INFO] {{query_name}} updated: value={{after.Value}}"
-      deleted:
-        template: "[INFO] {{query_name}}: removed value={{before.Value}}"
+        defaultTemplate:
+          added:
+            template: "[INFO] {{query_name}}: value={{after.Value}} message={{after.Message}}"
+          updated:
+            template: "[INFO] {{query_name}} updated: value={{after.Value}}"
+          deleted:
+            template: "[INFO] {{query_name}}: removed value={{before.Value}}"
 
     # Per-query overrides using routes
-    routes:
+        routes:
       # Special formatting for alerts (negative values)
-      alerts:
-        added:
-          template: "[ALERT] ⚠ Value={{after.AlertValue}} at {{after.Timestamp}}"
-        deleted:
-          template: "[ALERT] ✓ Alert cleared (was {{before.AlertValue}})"
+          alerts:
+            added:
+              template: "[ALERT] ⚠ Value={{after.AlertValue}} at {{after.Timestamp}}"
+            deleted:
+              template: "[ALERT] ✓ Alert cleared (was {{before.AlertValue}})"
 
       # Custom format for metrics (positive values)
-      metrics:
-        added:
-          template: "[METRIC] + value={{after.MetricValue}} at {{after.Timestamp}}"
-        updated:
-          template: "[METRIC] ~ value={{after.MetricValue}}"
+          metrics:
+            added:
+              template: "[METRIC] + value={{after.MetricValue}} at {{after.Timestamp}}"
+            updated:
+              template: "[METRIC] ~ value={{after.MetricValue}}"

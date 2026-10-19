@@ -20,7 +20,6 @@ use serde_json::{json, Value};
 
 fn input() -> Value {
     json!({"graph": {
-        "allowIncomplete": true,
         "resources": {
             "indexes": {"kind": "memoryIndexes"},
             "results": {"kind": "queryCatalog"}
@@ -50,6 +49,16 @@ fn factories() -> Result<FactoryRegistry> {
 fn resolve(value: Value, factories: &FactoryRegistry) -> Result<ComputationConfig> {
     let input: ComputationConfigInput = serde_json::from_value(value)?;
     Ok(input.resolve(factories)?.into_owned())
+}
+
+#[test]
+fn removed_completeness_switch_is_rejected() {
+    for field in ["allowIncomplete", "allow_incomplete"] {
+        let mut value = input();
+        value["graph"][field] = true.into();
+        let error = serde_json::from_value::<ComputationConfigInput>(value).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
 }
 
 #[test]
@@ -102,11 +111,11 @@ fn readable_graph_uses_actual_contracts_and_round_trips_as_an_expanded_definitio
 }
 
 #[test]
-fn root_and_per_instance_input_are_supported_without_runtime_selectors() -> Result<()> {
-    let root: DrasiServerConfig = serde_json::from_value(json!({
-        "id": "readable", "computation": input()
+fn explicit_instances_accept_computation_without_runtime_selectors() -> Result<()> {
+    let single: DrasiServerConfig = serde_json::from_value(json!({
+        "instances": [{"id": "readable", "computation": input()}]
     }))?;
-    root.validate()?;
+    single.validate()?;
     let instances: DrasiServerConfig = serde_json::from_value(json!({
         "instances": [
             {"id": "first", "computation": input()},
@@ -114,11 +123,14 @@ fn root_and_per_instance_input_are_supported_without_runtime_selectors() -> Resu
         ]
     }))?;
     instances.validate()?;
-    let mixed: DrasiServerConfig = serde_json::from_value(json!({
+    let mixed = serde_json::from_value::<DrasiServerConfig>(json!({
         "computation": input(), "instances": [{"id": "first"}]
-    }))?;
-    assert!(mixed.validate().is_err());
-    let validation = drasi_server::config::validate_with_plugins(&root, None);
+    }));
+    assert!(mixed
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field `computation`"));
+    let validation = drasi_server::config::validate_with_plugins(&single, None);
     assert!(
         validation.config_errors.is_empty(),
         "{:?}",
@@ -140,8 +152,9 @@ fn validator_reports_computation_components_for_both_input_formats() -> Result<(
         ),
     ] {
         let path = directory.path().join(format!("{name}.yaml"));
-        let config: DrasiServerConfig =
-            serde_json::from_value(json!({"id": "readable", "computation": computation}))?;
+        let config: DrasiServerConfig = serde_json::from_value(
+            json!({"instances": [{"id": "readable", "computation": computation}]}),
+        )?;
         std::fs::write(&path, serde_yaml::to_string(&config)?)?;
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"))
             .arg("--config")
@@ -251,8 +264,9 @@ fn invalid_components_resources_connections_and_catalogs_are_rejected() -> Resul
     }
     let mut bad = input();
     bad["graph"]["components"][0]["config"]["unexpected"] = json!(true);
-    let root: DrasiServerConfig = serde_json::from_value(json!({"computation": bad}))?;
-    assert!(drasi_server::config::validate_with_plugins(&root, None).has_errors());
+    let config: DrasiServerConfig =
+        serde_json::from_value(json!({"instances":[{"computation": bad}]}))?;
+    assert!(drasi_server::config::validate_with_plugins(&config, None).has_errors());
     Ok(())
 }
 

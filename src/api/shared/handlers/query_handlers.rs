@@ -33,11 +33,8 @@ use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
-use drasi_reaction_application::subscription::SubscriptionOptions;
-use drasi_reaction_application::ApplicationReaction;
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
-use uuid::Uuid;
 
 /// List all queries for an instance
 pub async fn list_queries(
@@ -383,7 +380,7 @@ pub async fn get_query_results(
     }
 }
 
-/// Attach to a running query and stream results as NDJSON.
+/// Attach to a running query and stream native query results as SSE.
 pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -392,50 +389,35 @@ pub async fn attach_query_stream(
         .await
         .map_err(ErrorResponse::from)?;
 
-    let reaction_id = format!("__attach_{}_{}", id, Uuid::new_v4());
-    let (reaction, handle) = ApplicationReaction::builder(reaction_id.clone())
-        .with_queries(vec![id.clone()])
-        .with_auto_start(false)
-        .build();
-    let component = core.add_reaction_with_handle(reaction).await.map_err(|e| {
-        ErrorResponse::new(
-            error_codes::INTERNAL_ERROR,
-            format!("Failed to add attach reaction: {e}"),
-        )
-    })?;
-
-    if let Err(e) = component.start().await {
-        let _ = core.remove_reaction(&reaction_id, true).await;
-        return Err(ErrorResponse::new(
-            error_codes::INTERNAL_ERROR,
-            format!("Failed to start attach reaction: {e}"),
-        ));
-    }
-
-    let options = SubscriptionOptions::default().with_query_filter(vec![id.clone()]);
-    let subscription = match handle.subscribe_with_options(options).await {
-        Ok(subscription) => subscription,
-        Err(e) => {
-            let _ = core.remove_reaction(&reaction_id, true).await;
-            return Err(ErrorResponse::new(
+    let subscription = core
+        .subscribe_query_results(&id)
+        .await
+        .map_err(ErrorResponse::from)?;
+    let snapshot = Event::default()
+        .event("snapshot")
+        .json_data(subscription.snapshot.to_vec())
+        .map_err(|error| {
+            ErrorResponse::new(
                 error_codes::INTERNAL_ERROR,
-                format!("Failed to subscribe to attach reaction: {e}"),
-            ));
-        }
-    };
+                format!("Failed to serialize query snapshot: {error}"),
+            )
+        })?;
+    let stream = subscription.stream;
 
-    let stream = subscription.into_stream();
-    let cleanup_core = core.clone();
-    let cleanup_id = reaction_id.clone();
-
-    // Create an async stream that yields query results and cleans up on drop
     let sse_stream = async_stream::stream! {
-        let mut stream = stream;
-        let _cleanup = AttachCleanupGuard::new(cleanup_core, cleanup_id);
-
+        yield Ok(snapshot);
+        futures_util::pin_mut!(stream);
         while let Some(result) = stream.next().await {
-            if let Ok(json) = serde_json::to_string(&result) {
-                yield Ok(Event::default().data(json));
+            let result = match result {
+                Ok(result) => result,
+                Err(error) => {
+                    log::warn!("Query '{id}' attachment ended: {error}");
+                    break;
+                }
+            };
+            match super::sse_event(result.as_ref()) {
+                Some(event) => yield event,
+                None => break,
             }
         }
     };
@@ -445,27 +427,4 @@ pub async fn attach_query_stream(
             .interval(std::time::Duration::from_secs(15))
             .text("heartbeat"),
     ))
-}
-
-/// Guard that cleans up the attach reaction when dropped.
-struct AttachCleanupGuard {
-    core: Arc<drasi_lib::DrasiLib>,
-    reaction_id: String,
-}
-
-impl AttachCleanupGuard {
-    fn new(core: Arc<drasi_lib::DrasiLib>, reaction_id: String) -> Self {
-        Self { core, reaction_id }
-    }
-}
-
-impl Drop for AttachCleanupGuard {
-    fn drop(&mut self) {
-        let core = self.core.clone();
-        let id = self.reaction_id.clone();
-        tokio::spawn(async move {
-            let _ = core.remove_reaction(&id, true).await;
-            log::debug!("Cleaned up attach reaction: {id}");
-        });
-    }
 }

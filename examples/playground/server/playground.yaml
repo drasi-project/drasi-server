@@ -13,7 +13,6 @@
 # limitations under the License.
 
 apiVersion: drasi.io/v1
-id: playground-server
 host: 0.0.0.0
 port: 8380
 logLevel: info
@@ -38,6 +37,8 @@ plugins:
   - ref: bootstrap/postgres
   - ref: bootstrap/scriptfile
   - ref: bootstrap/mssql
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: playground-server
+    sources: []
+    queries: []
+    reactions: []

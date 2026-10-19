@@ -38,7 +38,6 @@
 # View performance reports in the console output.
 
 apiVersion: drasi.io/v1
-id: profiler-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -49,66 +48,68 @@ plugins:
   - ref: reaction/log
   - ref: reaction/profiler
 
-sources:
+instances:
+  - id: profiler-demo
+    sources:
   # Fast-generating source for performance testing
   # Generic mock data: value (int), message (string), timestamp
-  - kind: mock
-    id: high-volume
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 100
+      - kind: mock
+        id: high-volume
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 100
 
-queries:
+    queries:
   # Simple pass-through query
-  - id: simple-query
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      RETURN g.value AS Value, g.message AS Message
-    queryLanguage: Cypher
-    sources:
-      - sourceId: high-volume
+      - id: simple-query
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          RETURN g.value AS Value, g.message AS Message
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-volume
 
   # Filtered query (positive values only)
-  - id: filtered-query
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      WHERE g.value > 0
-      RETURN g.value AS Value, g.timestamp AS Timestamp
-    queryLanguage: Cypher
-    sources:
-      - sourceId: high-volume
+      - id: filtered-query
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          WHERE g.value > 0
+          RETURN g.value AS Value, g.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-volume
 
   # Aggregation query (more compute intensive)
-  - id: aggregation-query
-    autoStart: true
-    query: |
-      MATCH (g:Generic)
-      RETURN count(g) AS Count, avg(g.value) AS Average
-    queryLanguage: Cypher
-    sources:
-      - sourceId: high-volume
+      - id: aggregation-query
+        autoStart: true
+        query: |
+          MATCH (g:Generic)
+          RETURN count(g) AS Count, avg(g.value) AS Average
+        queryLanguage: Cypher
+        sources:
+          - sourceId: high-volume
 
-reactions:
+    reactions:
   # Profiler reaction for performance analysis
-  - kind: profiler
-    id: performance-profiler
-    queries:
-      - simple-query
-      - filtered-query
-      - aggregation-query
-    autoStart: true
-    windowSize: 200
-    reportIntervalSecs: 30
+      - kind: profiler
+        id: performance-profiler
+        queries:
+          - simple-query
+          - filtered-query
+          - aggregation-query
+        autoStart: true
+        windowSize: 200
+        reportIntervalSecs: 30
 
   # Optional: Log reaction to see actual results
-  - kind: log
-    id: sample-output
-    queries:
-      - aggregation-query
-    autoStart: true
-    defaultTemplate:
-      updated:
-        template: "[STATS] Count={{after.Count}} Average={{after.Average}}"
+      - kind: log
+        id: sample-output
+        queries:
+          - aggregation-query
+        autoStart: true
+        defaultTemplate:
+          updated:
+            template: "[STATS] Count={{after.Count}} Average={{after.Average}}"

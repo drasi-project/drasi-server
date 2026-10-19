@@ -116,6 +116,9 @@ You'll see an empty canvas with options to add components.
 
 **Using the Web UI:**
 
+Create an instance named `main` in the instance picker before adding components.
+An omitted or empty `instances` list starts an empty Server.
+
 1. Click **+ Add** in the top toolbar
 2. Select **Source** → **Mock** → Fill in:
    - ID: `sensor-feed`
@@ -144,29 +147,29 @@ port: 8080
 logLevel: info
 enableUi: true
 
-sources:
-  - kind: mock
-    id: sensor-feed
-    autoStart: true
-    dataType:
-      type: sensorReading
-      sensorCount: 5
-    intervalMs: 3000
-
-queries:
-  - id: high-temp
-    query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
-    queryLanguage: Cypher
+instances:
+  - id: main
     sources:
-      - sourceId: sensor-feed
-    autoStart: true
-
-reactions:
-  - kind: log
-    id: temp-logger
+      - kind: mock
+        id: sensor-feed
+        autoStart: true
+        dataType:
+          type: sensorReading
+          sensorCount: 5
+        intervalMs: 3000
     queries:
-      - high-temp
-    autoStart: true
+      - id: high-temp
+        query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
+        queryLanguage: Cypher
+        sources:
+          - sourceId: sensor-feed
+        autoStart: true
+    reactions:
+      - kind: log
+        id: temp-logger
+        queries:
+          - high-temp
+        autoStart: true
 ```
 
 Then start the server:
@@ -179,19 +182,19 @@ cargo run -- --config config/server.yaml
 **Check component status via API:**
 ```bash
 # List all sources
-curl http://localhost:8080/api/v1/sources
+curl http://localhost:8080/api/v1/instances/main/sources
 
 # Check query status
-curl http://localhost:8080/api/v1/queries/high-temp
+curl http://localhost:8080/api/v1/instances/main/queries/high-temp
 
 # Get current query results
-curl http://localhost:8080/api/v1/queries/high-temp/results
+curl http://localhost:8080/api/v1/instances/main/queries/high-temp/results
 ```
 
 **Watch real-time events:**
 ```bash
 # Stream all component events (SSE)
-curl -N http://localhost:8080/api/v1/events
+curl -N http://localhost:8080/api/v1/instances/main/events
 ```
 
 **In the Web UI:**
@@ -438,8 +441,9 @@ instance; it does not mean every source, query, and reaction is ready.
 
 #### Native computation components
 
-Declare an optional `computation` section at the root for a single instance, or
-on each entry in `instances`. **Use `computation.graph` when writing a solution
+Declare an optional `computation` section on an entry in `instances`, never at
+the Server root. The following snippets show instance settings.
+**Use `computation.graph` when writing a solution
 configuration.** List components by ID and factory `kind`, provide their settings,
 declare shared resources, and connect component names:
 
@@ -635,7 +639,20 @@ of every node. Inspect realization and lifecycle state after adding components.
 Built-in native queries also appear under the ordinary `/queries` routes.
 Configuration and status are available while stopped; results require the query
 to be running. A connected query-results outlet enables ordinary reactions and
-`/queries/{id}/attach` streaming. Pipeline queries support the ordinary query
+`/queries/{id}/attach` streaming. Attachment is an SSE connection directly to the
+existing native result catalogue, not a temporary reaction or graph mutation.
+Every connection begins with a named `snapshot` event containing a JSON array of
+current rows, followed by ordinary message events containing `QueryResult` changes
+strictly after that snapshot's sequence. Reconnects also begin with a fresh
+snapshot: clients replace their rows rather than retaining potentially stale
+state or issuing a separate, racing initial-results request. Channel delivery
+uses the configured bounded backpressure; Broadcast gaps replay from retained
+query history. Unavailable history, query replacement/removal or instance shutdown
+ends the stream with a logged error rather than silently skipping data. This is
+a result-view subscription, not a durable consumer or confirmation of effects.
+Disconnect unregisters the reader synchronously, including responses whose bodies
+were never polled.
+Pipeline queries support the ordinary query
 DELETE route, including dependent-consumer protection and owned-state cleanup.
 Source and reaction PUT routes retain their behavior when those components
 feed or consume pipeline queries. Arbitrary native topology changes use
@@ -675,13 +692,24 @@ Percent-encode namespaced kinds in schema URLs, for example:
 With `persistConfig: true` (the default) and a writable configuration file, an API
 change saves graph-backed configuration without an engine selector. Per-instance
 index, state-store, capacity, and plugin settings retain their existing meanings.
-Use `persistConfig: false` if API changes should not be saved.
+Use `persistConfig: false` if API changes should not be saved to YAML.
+
+`configurationStore` is a separate, per-instance authority for managed desired
+definitions. An uninitialized stored instance is seeded from the file once.
+After that, accepted definitions (including an empty definition) are loaded from
+the store; later file seeds do not overwrite them. An omitted instance ID is
+generated on the first load and recovered from that store on subsequent starts.
+Without `configurationStore`, an omitted ID is generated afresh on each file load
+unless a YAML save has written it explicitly. Store paths, keys, and Server-wide
+bootstrap settings still come from the file, which must remain syntactically
+valid. Shared stores require explicit instance IDs to avoid ambiguous selection.
 
 Successful create/upsert responses acknowledge an added graph node, not completed
 initialization or activation. Inspect component status, events, and errors for
 readiness; explicit start operations wait for startup and report failures. Clone
 and solution deployment retain added nodes and report creation/start health
-instead of rolling back prior nodes. Restart to apply configuration-file changes.
+instead of rolling back prior nodes. Restart to apply unmanaged file changes;
+update managed definitions through the managed configuration API.
 No stored-state migration is performed.
 
 Core library documentation:
@@ -865,7 +893,9 @@ Instances are isolated processing environments, each with its own sources, queri
 
 ### Default Behavior
 
-When you start Drasi Server, it creates one default instance. The Web UI and convenience API routes operate on this instance automatically.
+An absent or empty `instances` list starts an empty Server. Create an instance
+through the API or Web UI, or declare one in the file. Components are always
+addressed through an explicit instance ID; there is no default-instance route.
 
 ### Creating Instances
 
@@ -934,7 +964,8 @@ All component routes support instance-specific access:
 /api/v1/instances/{instanceId}/clone      # POST - clone from another instance
 ```
 
-The convenience routes (`/api/v1/sources`, etc.) operate on the first/default instance.
+Unscoped component URLs return 404. Use the selected instance's URL for every
+component operation and SSE subscription.
 
 ---
 
@@ -1171,20 +1202,34 @@ The single [execution engine](#execution-engine) needs no configuration selector
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `id` | string | (auto-generated UUID) | Unique server identifier |
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
-| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instance-key>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
-| `memoryBudgetMiB` | integer | RocksDB provider default | Optional shared RocksDB memory budget, in MiB, for all query databases in the instance. Requires `persistIndex: true`. Set it at the root only in single-instance mode; with explicit `instances`, set it on each persistent instance. |
-| `stateStore` | object | (none) | State store provider for plugin state persistence |
-| `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
-| `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 | `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
 | `verifyPlugins` | boolean | `true` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
+| `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
+
+### Instance Settings
+
+These settings belong inside an `instances` entry, even for a single instance.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | string | generated UUID | Instance identity; managed stores preserve generated IDs across restarts. |
+| `persistIndex` | boolean | `false` | Register RocksDB as the default query index backend under `./data/<instance-key>/index`. |
+| `enableArchive` | boolean | `false` | Enable historical index reads. |
+| `memoryBudgetMiB` | integer | RocksDB provider default | Shared RocksDB memory budget for this instance; requires `persistIndex: true`. |
+| `stateStore` | object | none | Plugin state persistence. |
+| `secretStore` | object | none | Instance secret resolution. |
+| `configurationStore` | object | none | Managed desired-configuration persistence, separate from `persistConfig`. |
+| `defaultPriorityQueueCapacity` | integer | `10000` | Default query/reaction event queue capacity. |
+| `defaultDispatchBufferCapacity` | integer | `1000` | Default event dispatch capacity. |
+| `sources`, `queries`, `reactions` | arrays | `[]` | Ordinary graph-backed component declarations. |
+| `identityProviders`, `bootstrapProviders` | arrays | `[]` | Providers scoped to this instance. |
+| `computation` | object | none | Native computation declarations. |
 
 > **Note**: In the `persistIndex` data path, `<instance-key>` is `id-` followed
 > by the lowercase hexadecimal encoding of the instance ID.
@@ -1198,30 +1243,31 @@ The single [execution engine](#execution-engine) needs no configuration selector
 
 ```yaml
 apiVersion: drasi.io/v1
-id: my-server
 host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
-persistIndex: true
-memoryBudgetMiB: 512
 pluginRegistry: ghcr.io/drasi-project
 verifyPlugins: true  # optional: verify plugin signatures via Sigstore (Fulcio + Rekor)
 # trustedIdentities:  # optional: restrict to specific signers
 #   - issuer: "https://accounts.google.com"
 #     subjectPattern: "release@example.com"
 
-stateStore:
-  kind: redb
-  path: ./data/state.redb
-
 plugins:
   - ref: source/postgres:0.1.8
   - ref: reaction/sse
 
-sources: []
-queries: []
-reactions: []
+instances:
+  - id: my-server
+    persistIndex: true
+    memoryBudgetMiB: 512
+    stateStore:
+      kind: redb
+      path: ./data/state.redb
+
+    sources: []
+    queries: []
+    reactions: []
 ```
 
 > **Write-ahead log (always on):** Every instance maintains a durable
@@ -1261,9 +1307,10 @@ plugins:
   # HTTP download
   - ref: https://releases.example.com/libdrasi_reaction_custom.so
 
-sources: []
-queries: []
-reactions: []
+instances:
+  - sources: []
+    queries: []
+    reactions: []
 ```
 
 Install all declared plugins:
@@ -1280,7 +1327,7 @@ drasi-server plugin install --from-config --locked
 
 ### State Store Configuration
 
-State stores allow plugins (Sources, Bootstrap Providers, Reactions) to persist runtime state that survives server restarts. If not configured, an in-memory state store is used (state is lost on restart).
+State stores allow plugins (Sources, Bootstrap Providers, Reactions) to persist runtime state that survives server restarts. If not configured, an in-memory state store is used (state is lost on restart). Add the following settings inside an `instances` entry.
 
 #### REDB State Store
 
@@ -1300,6 +1347,9 @@ stateStore:
 ---
 
 ### Sources
+
+Source, query, and reaction configuration snippets below show the contents of an
+`instances` entry, not a complete Server document.
 
 Sources connect to data systems and stream changes to queries. Each source type has specific configuration fields.
 
@@ -1726,7 +1776,6 @@ queries:
       - sourceId: orders-db
     autoStart: true
     enableBootstrap: true
-    bootstrapBufferSize: 10000
 ```
 
 | Field | Type | Default | Description |
@@ -1737,8 +1786,7 @@ queries:
 | `sources` | array | (required) | Source subscriptions |
 | `autoStart` | boolean | `false` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
-| `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
-| `priorityQueueCapacity` | integer | (global) | Override queue capacity for this query |
+| `priorityQueueCapacity` | integer | (global) | Override input queue capacity, including live events queued during bootstrap |
 | `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
 | `storageBackend` | string or object | (instance default) | Index backend for this query. See [Per-Query Index Backend](#per-query-index-backend). |
 | `joins` | array | (none) | Synthetic join definitions |
@@ -2104,11 +2152,12 @@ apiVersion: drasi.io/v1
 host: ${SERVER_HOST:-0.0.0.0}
 port: ${SERVER_PORT:-8080}
 
-sources:
-  - kind: postgres
-    id: production-db
-    host: ${DB_HOST}
-    password: ${DB_PASSWORD}  # Required - fails if not set
+instances:
+  - sources:
+      - kind: postgres
+        id: production-db
+        host: ${DB_HOST}
+        password: ${DB_PASSWORD} # Required - fails if not set
 ```
 
 **Syntax:**
@@ -2129,7 +2178,7 @@ When no `Content-Type` is provided, the body is parsed as JSON.
 
 ```bash
 # Create a query using a YAML body
-curl -X POST http://localhost:8080/api/v1/queries \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
   -H "Content-Type: application/yaml" \
   --data-binary $'id: high-values\nquery: "MATCH (n) WHERE n.value > 75 RETURN n"\nautoStart: true'
 ```
@@ -2159,10 +2208,10 @@ curl -X POST http://localhost:8080/api/v1/instances \
 
 ```bash
 # List all sources
-curl http://localhost:8080/api/v1/sources
+curl http://localhost:8080/api/v1/instances/{instanceId}/sources
 
 # Create a mock source
-curl -X POST http://localhost:8080/api/v1/sources \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/sources \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "mock",
@@ -2173,17 +2222,17 @@ curl -X POST http://localhost:8080/api/v1/sources \
   }'
 
 # Get source details
-curl http://localhost:8080/api/v1/sources/test-source
+curl http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source
 
 # Start/stop source
-curl -X POST http://localhost:8080/api/v1/sources/test-source/start
-curl -X POST http://localhost:8080/api/v1/sources/test-source/stop
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/start
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/stop
 
 # Delete source
-curl -X DELETE http://localhost:8080/api/v1/sources/test-source
+curl -X DELETE http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source
 
 # Push data to HTTP source (via proxy to avoid CORS)
-curl -X POST http://localhost:8080/api/v1/sources/http-source/push \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/sources/http-source/push \
   -H "Content-Type: application/json" \
   -d '{"nodes": [{"id": "n1", "labels": ["Item"], "properties": {"name": "test"}}]}'
 ```
@@ -2192,10 +2241,10 @@ curl -X POST http://localhost:8080/api/v1/sources/http-source/push \
 
 ```bash
 # List all queries
-curl http://localhost:8080/api/v1/queries
+curl http://localhost:8080/api/v1/instances/{instanceId}/queries
 
 # Create a query
-curl -X POST http://localhost:8080/api/v1/queries \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
   -H "Content-Type: application/json" \
   -d '{
     "id": "high-values",
@@ -2206,10 +2255,10 @@ curl -X POST http://localhost:8080/api/v1/queries \
   }'
 
 # Get query details
-curl http://localhost:8080/api/v1/queries/high-values
+curl http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values
 
 # Get current query results
-curl http://localhost:8080/api/v1/queries/high-values/results
+curl http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values/results
 
 # Example response:
 # {
@@ -2220,21 +2269,21 @@ curl http://localhost:8080/api/v1/queries/high-values/results
 # }
 
 # Start/stop query
-curl -X POST http://localhost:8080/api/v1/queries/high-values/start
-curl -X POST http://localhost:8080/api/v1/queries/high-values/stop
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values/start
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values/stop
 
 # Delete query
-curl -X DELETE http://localhost:8080/api/v1/queries/high-values
+curl -X DELETE http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values
 ```
 
 ### Reactions API
 
 ```bash
 # List all reactions
-curl http://localhost:8080/api/v1/reactions
+curl http://localhost:8080/api/v1/instances/{instanceId}/reactions
 
 # Create a log reaction
-curl -X POST http://localhost:8080/api/v1/reactions \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "log",
@@ -2244,7 +2293,7 @@ curl -X POST http://localhost:8080/api/v1/reactions \
   }'
 
 # Create an HTTP webhook reaction
-curl -X POST http://localhost:8080/api/v1/reactions \
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "http",
@@ -2263,14 +2312,14 @@ curl -X POST http://localhost:8080/api/v1/reactions \
   }'
 
 # Get reaction details
-curl http://localhost:8080/api/v1/reactions/my-logger
+curl http://localhost:8080/api/v1/instances/{instanceId}/reactions/my-logger
 
 # Start/stop reaction
-curl -X POST http://localhost:8080/api/v1/reactions/my-logger/start
-curl -X POST http://localhost:8080/api/v1/reactions/my-logger/stop
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions/my-logger/start
+curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions/my-logger/stop
 
 # Delete reaction
-curl -X DELETE http://localhost:8080/api/v1/reactions/my-logger
+curl -X DELETE http://localhost:8080/api/v1/instances/{instanceId}/reactions/my-logger
 ```
 
 ### SSE Events Stream
@@ -2279,7 +2328,7 @@ Subscribe to real-time component events:
 
 ```bash
 # Stream all component events (sources, queries, reactions)
-curl -N http://localhost:8080/api/v1/events
+curl -N http://localhost:8080/api/v1/instances/{instanceId}/events
 
 # Example events:
 # data: {"type":"SourceStatusChanged","sourceId":"test-source","status":"Running"}
@@ -2296,26 +2345,26 @@ Source/Query/Reaction adapters keep their existing log labels. The
 
 ```bash
 # Get source events (paginated)
-curl http://localhost:8080/api/v1/sources/test-source/events
+curl http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/events
 
 # Stream source events (SSE)
-curl -N http://localhost:8080/api/v1/sources/test-source/events/stream
+curl -N http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/events/stream
 
 # Get source logs
-curl http://localhost:8080/api/v1/sources/test-source/logs
+curl http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/logs
 
 # Stream source logs (SSE)
-curl -N http://localhost:8080/api/v1/sources/test-source/logs/stream
+curl -N http://localhost:8080/api/v1/instances/{instanceId}/sources/test-source/logs/stream
 
 # Same endpoints available for queries and reactions:
-# /api/v1/queries/{id}/events
-# /api/v1/queries/{id}/events/stream
-# /api/v1/queries/{id}/logs
-# /api/v1/queries/{id}/logs/stream
-# /api/v1/reactions/{id}/events
-# /api/v1/reactions/{id}/events/stream
-# /api/v1/reactions/{id}/logs
-# /api/v1/reactions/{id}/logs/stream
+# /api/v1/instances/{instanceId}/queries/{id}/events
+# /api/v1/instances/{instanceId}/queries/{id}/events/stream
+# /api/v1/instances/{instanceId}/queries/{id}/logs
+# /api/v1/instances/{instanceId}/queries/{id}/logs/stream
+# /api/v1/instances/{instanceId}/reactions/{id}/events
+# /api/v1/instances/{instanceId}/reactions/{id}/events/stream
+# /api/v1/instances/{instanceId}/reactions/{id}/logs
+# /api/v1/instances/{instanceId}/reactions/{id}/logs/stream
 ```
 
 ### Solution Templates API
@@ -2356,8 +2405,8 @@ curl http://localhost:8080/api/v1/instances/production/queries
 curl http://localhost:8080/api/v1/instances/production/reactions
 curl -N http://localhost:8080/api/v1/instances/production/events
 
-# Convenience routes operate on the first/default instance
-curl http://localhost:8080/api/v1/sources  # Same as /instances/{first}/sources
+# Replace the placeholder with the instance selected from GET /api/v1/instances
+curl http://localhost:8080/api/v1/instances/{instanceId}/sources
 ```
 
 ### Response Format
@@ -2671,7 +2720,6 @@ A production-ready setup monitoring PostgreSQL changes and sending webhooks.
 
 ```yaml
 apiVersion: drasi.io/v1
-id: production-pipeline
 host: 0.0.0.0
 port: 8080
 logLevel: info
@@ -2679,89 +2727,91 @@ persistConfig: true
 enableUi: true
 
 # Persist state across restarts
-stateStore:
-  kind: redb
-  path: ${DATA_DIR:-./data}/state.redb
+instances:
+  - id: production-pipeline
+    stateStore:
+      kind: redb
+      path: ${DATA_DIR:-./data}/state.redb
 
-sources:
-  - kind: postgres
-    id: orders-db
-    autoStart: true
-    host: ${DB_HOST}
-    port: ${DB_PORT:-5432}
-    database: ${DB_NAME}
-    user: ${DB_USER}
-    password: ${DB_PASSWORD}
-    tables: [orders, customers, products]
-    slotName: drasi_orders_slot
-    publicationName: drasi_orders_pub
-    sslMode: ${DB_SSL_MODE:-prefer}
-    tableKeys:
-      - table: orders
-        keyColumns: [id]
-      - table: customers
-        keyColumns: [customer_id]
-    bootstrapProvider:
-      kind: postgres
-      host: ${DB_HOST}
-      port: ${DB_PORT:-5432}
-      database: ${DB_NAME}
-      user: ${DB_USER}
-      password: ${DB_PASSWORD}
-      tables: [orders, customers, products]
-
-queries:
-  - id: high-value-orders
-    query: |
-      MATCH (o:orders)
-      WHERE o.total > ${ORDER_THRESHOLD:-1000}
-      RETURN o.id, o.customer_id, o.total, o.status
-    queryLanguage: Cypher
     sources:
-      - sourceId: orders-db
-    autoStart: true
-    enableBootstrap: true
+      - kind: postgres
+        id: orders-db
+        autoStart: true
+        host: ${DB_HOST}
+        port: ${DB_PORT:-5432}
+        database: ${DB_NAME}
+        user: ${DB_USER}
+        password: ${DB_PASSWORD}
+        tables: [orders, customers, products]
+        slotName: drasi_orders_slot
+        publicationName: drasi_orders_pub
+        sslMode: ${DB_SSL_MODE:-prefer}
+        tableKeys:
+          - table: orders
+            keyColumns: [id]
+          - table: customers
+            keyColumns: [customer_id]
+        bootstrapProvider:
+          kind: postgres
+          host: ${DB_HOST}
+          port: ${DB_PORT:-5432}
+          database: ${DB_NAME}
+          user: ${DB_USER}
+          password: ${DB_PASSWORD}
+          tables: [orders, customers, products]
 
-  - id: new-customers
-    query: |
-      MATCH (c:customers)
-      WHERE c.created_at > datetime() - duration('P7D')
-      RETURN c.customer_id, c.email, c.created_at
-    queryLanguage: Cypher
-    sources:
-      - sourceId: orders-db
-    autoStart: true
-
-reactions:
-  - kind: http
-    id: order-webhook
     queries:
-      - high-value-orders
-    autoStart: true
-    baseUrl: ${WEBHOOK_BASE_URL}
-    token: ${WEBHOOK_TOKEN}
-    timeoutMs: 10000
-    routes:
-      high-value-orders:
-        added:
-          url: /api/orders/high-value
-          method: POST
-          headers:
-            Content-Type: application/json
-          body: '{"event": "high_value_order", "order_id": "{{after.id}}", "total": {{after.total}}}'
-        updated:
-          url: /api/orders/updated
-          method: POST
-        deleted:
-          url: /api/orders/cancelled
-          method: POST
+      - id: high-value-orders
+        query: |
+          MATCH (o:orders)
+          WHERE o.total > ${ORDER_THRESHOLD:-1000}
+          RETURN o.id, o.customer_id, o.total, o.status
+        queryLanguage: Cypher
+        sources:
+          - sourceId: orders-db
+        autoStart: true
+        enableBootstrap: true
 
-  - kind: log
-    id: debug-logger
-    queries:
-      - high-value-orders
-      - new-customers
-    autoStart: true
+      - id: new-customers
+        query: |
+          MATCH (c:customers)
+          WHERE c.created_at > datetime() - duration('P7D')
+          RETURN c.customer_id, c.email, c.created_at
+        queryLanguage: Cypher
+        sources:
+          - sourceId: orders-db
+        autoStart: true
+
+    reactions:
+      - kind: http
+        id: order-webhook
+        queries:
+          - high-value-orders
+        autoStart: true
+        baseUrl: ${WEBHOOK_BASE_URL}
+        token: ${WEBHOOK_TOKEN}
+        timeoutMs: 10000
+        routes:
+          high-value-orders:
+            added:
+              url: /api/orders/high-value
+              method: POST
+              headers:
+                Content-Type: application/json
+              body: '{"event": "high_value_order", "order_id": "{{after.id}}", "total": {{after.total}}}'
+            updated:
+              url: /api/orders/updated
+              method: POST
+            deleted:
+              url: /api/orders/cancelled
+              method: POST
+
+      - kind: log
+        id: debug-logger
+        queries:
+          - high-value-orders
+          - new-customers
+        autoStart: true
 ```
 
 ### Example 2: Multi-Instance Setup
@@ -2843,114 +2893,115 @@ port: 8080
 logLevel: info
 enableUi: true
 
-sources:
+instances:
+  - sources:
   # GitHub webhook source
-  - kind: http
-    id: github-events
-    autoStart: true
-    host: 0.0.0.0
-    port: 9000
-    webhooks:
-      errorBehavior: reject
-      cors:
-        allowOrigins: ["*"]
-      routes:
-        - path: /github/webhook
-          methods: [POST]
-          auth:
-            signature:
-              type: hmac-sha256
-              secretEnv: GITHUB_WEBHOOK_SECRET
-              header: X-Hub-Signature-256
-              prefix: "sha256="
-          mappings:
+      - kind: http
+        id: github-events
+        autoStart: true
+        host: 0.0.0.0
+        port: 9000
+        webhooks:
+          errorBehavior: reject
+          cors:
+            allowOrigins: ["*"]
+          routes:
+            - path: /github/webhook
+              methods: [POST]
+              auth:
+                signature:
+                  type: hmac-sha256
+                  secretEnv: GITHUB_WEBHOOK_SECRET
+                  header: X-Hub-Signature-256
+                  prefix: "sha256="
+              mappings:
             # Push events
-            - when:
-                header: X-GitHub-Event
-                equals: push
-              elementType: node
-              operation: insert
-              template:
-                id: "commit-{{payload.head_commit.id}}"
-                labels: ["Commit", "GitHubEvent"]
-                properties:
-                  sha: "{{payload.head_commit.id}}"
-                  message: "{{payload.head_commit.message}}"
-                  author: "{{payload.head_commit.author.name}}"
-                  repo: "{{payload.repository.full_name}}"
-                  branch: "{{payload.ref}}"
+                - when:
+                    header: X-GitHub-Event
+                    equals: push
+                  elementType: node
+                  operation: insert
+                  template:
+                    id: "commit-{{payload.head_commit.id}}"
+                    labels: ["Commit", "GitHubEvent"]
+                    properties:
+                      sha: "{{payload.head_commit.id}}"
+                      message: "{{payload.head_commit.message}}"
+                      author: "{{payload.head_commit.author.name}}"
+                      repo: "{{payload.repository.full_name}}"
+                      branch: "{{payload.ref}}"
             # Pull request events
-            - when:
-                header: X-GitHub-Event
-                equals: pull_request
-              elementType: node
-              operationFrom: "$.action"
-              operationMap:
-                opened: insert
-                closed: delete
-                synchronize: update
-              template:
-                id: "pr-{{payload.pull_request.id}}"
-                labels: ["PullRequest", "GitHubEvent"]
-                properties:
-                  number: "{{payload.pull_request.number}}"
-                  title: "{{payload.pull_request.title}}"
-                  author: "{{payload.pull_request.user.login}}"
-                  state: "{{payload.pull_request.state}}"
+                - when:
+                    header: X-GitHub-Event
+                    equals: pull_request
+                  elementType: node
+                  operationFrom: "$.action"
+                  operationMap:
+                    opened: insert
+                    closed: delete
+                    synchronize: update
+                  template:
+                    id: "pr-{{payload.pull_request.id}}"
+                    labels: ["PullRequest", "GitHubEvent"]
+                    properties:
+                      number: "{{payload.pull_request.number}}"
+                      title: "{{payload.pull_request.title}}"
+                      author: "{{payload.pull_request.user.login}}"
+                      state: "{{payload.pull_request.state}}"
 
   # Stripe webhook source
-  - kind: http
-    id: stripe-events
-    autoStart: true
-    host: 0.0.0.0
-    port: 9001
-    webhooks:
-      routes:
-        - path: /stripe/webhook
-          methods: [POST]
-          auth:
-            signature:
-              type: hmac-sha256
-              secretEnv: STRIPE_WEBHOOK_SECRET
-              header: Stripe-Signature
-          mappings:
-            - when:
-                field: "$.type"
-                contains: "payment_intent"
-              elementType: node
-              operationFrom: "$.type"
-              operationMap:
-                payment_intent.created: insert
-                payment_intent.succeeded: update
-                payment_intent.canceled: delete
-              template:
-                id: "payment-{{payload.data.object.id}}"
-                labels: ["Payment", "StripeEvent"]
-                properties:
-                  amount: "{{payload.data.object.amount}}"
-                  currency: "{{payload.data.object.currency}}"
-                  status: "{{payload.data.object.status}}"
+      - kind: http
+        id: stripe-events
+        autoStart: true
+        host: 0.0.0.0
+        port: 9001
+        webhooks:
+          routes:
+            - path: /stripe/webhook
+              methods: [POST]
+              auth:
+                signature:
+                  type: hmac-sha256
+                  secretEnv: STRIPE_WEBHOOK_SECRET
+                  header: Stripe-Signature
+              mappings:
+                - when:
+                    field: "$.type"
+                    contains: "payment_intent"
+                  elementType: node
+                  operationFrom: "$.type"
+                  operationMap:
+                    payment_intent.created: insert
+                    payment_intent.succeeded: update
+                    payment_intent.canceled: delete
+                  template:
+                    id: "payment-{{payload.data.object.id}}"
+                    labels: ["Payment", "StripeEvent"]
+                    properties:
+                      amount: "{{payload.data.object.amount}}"
+                      currency: "{{payload.data.object.currency}}"
+                      status: "{{payload.data.object.status}}"
 
-queries:
-  - id: new-commits
-    query: "MATCH (c:Commit) RETURN c ORDER BY c.timestamp DESC"
-    sources:
-      - sourceId: github-events
-    autoStart: true
-
-  - id: large-payments
-    query: "MATCH (p:Payment) WHERE p.amount > 10000 RETURN p"
-    sources:
-      - sourceId: stripe-events
-    autoStart: true
-
-reactions:
-  - kind: log
-    id: event-logger
     queries:
-      - new-commits
-      - large-payments
-    autoStart: true
+      - id: new-commits
+        query: "MATCH (c:Commit) RETURN c ORDER BY c.timestamp DESC"
+        sources:
+          - sourceId: github-events
+        autoStart: true
+
+      - id: large-payments
+        query: "MATCH (p:Payment) WHERE p.amount > 10000 RETURN p"
+        sources:
+          - sourceId: stripe-events
+        autoStart: true
+
+    reactions:
+      - kind: log
+        id: event-logger
+        queries:
+          - new-commits
+          - large-payments
+        autoStart: true
 ```
 
 ### Example 4: Environment-Variable-Heavy Configuration
@@ -2962,53 +3013,54 @@ Demonstrating extensive use of environment variables for different environments.
 # Run with: source .env && cargo run -- --config config/server.yaml
 
 apiVersion: drasi.io/v1
-id: "${SERVER_ID:-drasi-${ENVIRONMENT:-dev}}"
 host: "${SERVER_HOST:-0.0.0.0}"
 port: "${SERVER_PORT:-8080}"
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: true   # Boolean fields don't support env var substitution
-persistIndex: false
 enableUi: true
 
 # Capacity tuning via env vars
-defaultPriorityQueueCapacity: "${QUEUE_CAPACITY:-10000}"
-defaultDispatchBufferCapacity: "${BUFFER_CAPACITY:-1000}"
+instances:
+  - id: "${SERVER_ID:-drasi-${ENVIRONMENT:-dev}}"
+    persistIndex: false
+    defaultPriorityQueueCapacity: "${QUEUE_CAPACITY:-10000}"
+    defaultDispatchBufferCapacity: "${BUFFER_CAPACITY:-1000}"
 
-stateStore:
-  kind: redb
-  path: "${STATE_STORE_PATH:-./data/state.redb}"
+    stateStore:
+      kind: redb
+      path: "${STATE_STORE_PATH:-./data/state.redb}"
 
-sources:
-  - kind: postgres
-    id: main-db
-    autoStart: true  # Boolean fields don't support env var substitution
-    host: "${DB_HOST}"
-    port: "${DB_PORT:-5432}"
-    database: "${DB_NAME}"
-    user: "${DB_USER}"
-    password: "${DB_PASSWORD}"
-    sslMode: "${DB_SSL_MODE:-prefer}"
-    tables: ["${DB_TABLES:-orders,customers}"]
-    slotName: "${DB_SLOT_NAME:-drasi_slot}"
-    publicationName: "${DB_PUB_NAME:-drasi_publication}"
-    bootstrapProvider:
-      kind: postgres
-
-queries:
-  - id: monitored-changes
-    query: "${MAIN_QUERY:-MATCH (n) RETURN n}"
-    queryLanguage: Cypher
     sources:
-      - sourceId: main-db
-    autoStart: true
-    enableBootstrap: true
+      - kind: postgres
+        id: main-db
+        autoStart: true # Boolean fields don't support env var substitution
+        host: "${DB_HOST}"
+        port: "${DB_PORT:-5432}"
+        database: "${DB_NAME}"
+        user: "${DB_USER}"
+        password: "${DB_PASSWORD}"
+        sslMode: "${DB_SSL_MODE:-prefer}"
+        tables: ["${DB_TABLES:-orders,customers}"]
+        slotName: "${DB_SLOT_NAME:-drasi_slot}"
+        publicationName: "${DB_PUB_NAME:-drasi_publication}"
+        bootstrapProvider:
+          kind: postgres
 
-reactions:
-  - kind: log  # Enum fields don't support env var substitution
-    id: main-reaction
     queries:
-      - monitored-changes
-    autoStart: true
+      - id: monitored-changes
+        query: "${MAIN_QUERY:-MATCH (n) RETURN n}"
+        queryLanguage: Cypher
+        sources:
+          - sourceId: main-db
+        autoStart: true
+        enableBootstrap: true
+
+    reactions:
+      - kind: log # Enum fields don't support env var substitution
+        id: main-reaction
+        queries:
+          - monitored-changes
+        autoStart: true
 ```
 
 **Corresponding .env file:**
@@ -3077,19 +3129,19 @@ persistConfig: true  # Default - saves API changes to config file
 **Checklist:**
 1. **Check source status:**
    ```bash
-   curl http://localhost:8080/api/v1/sources/my-source
+   curl http://localhost:8080/api/v1/instances/{instanceId}/sources/my-source
    # Should show "status": "Running"
    ```
 
 2. **Verify query is started:**
    ```bash
-   curl http://localhost:8080/api/v1/queries/my-query
+   curl http://localhost:8080/api/v1/instances/{instanceId}/queries/my-query
    # Should show "status": "Running"
    ```
 
 3. **Check query subscription references correct source:**
    ```bash
-   curl http://localhost:8080/api/v1/queries/my-query
+   curl http://localhost:8080/api/v1/instances/{instanceId}/queries/my-query
    # Check "sources" array contains correct sourceId
    ```
 
@@ -3209,7 +3261,7 @@ RUST_LOG=info,drasi_server=debug,drasi_lib=trace cargo run
 
 ```bash
 # Force delete
-curl -X DELETE http://localhost:8080/api/v1/sources/stuck-source
+curl -X DELETE http://localhost:8080/api/v1/instances/{instanceId}/sources/stuck-source
 
 # Restart server
 docker compose restart drasi-server

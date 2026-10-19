@@ -228,7 +228,7 @@ impl DrasiServerBuilder {
         let mut cores = Vec::new();
         for builder in self.core_builders {
             let core = builder.build().await?;
-            cores.push((core, None, false));
+            cores.push((core, None));
         }
 
         // Create the full server with optional features

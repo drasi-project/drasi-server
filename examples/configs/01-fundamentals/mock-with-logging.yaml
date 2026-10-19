@@ -30,7 +30,6 @@
 # - Access fields with dot notation: {{after.FieldName}}
 
 apiVersion: drasi.io/v1
-id: mock-logging-demo
 host: "0.0.0.0"
 port: 8080
 logLevel: info
@@ -40,37 +39,39 @@ plugins:
   - ref: source/mock
   - ref: reaction/log
 
-sources:
-  # Generic mock data generates nodes with: value (int), message (string), timestamp
-  - kind: mock
-    id: data-generator
-    autoStart: true
-    dataType:
-      type: generic
-    intervalMs: 3000
-
-queries:
-  - id: track-all-changes
-    autoStart: true
-    query: |
-      MATCH (n:Generic)
-      RETURN n.value AS Value, n.message AS Message, n.timestamp AS Timestamp
-    queryLanguage: Cypher
+instances:
+  - id: mock-logging-demo
     sources:
-      - sourceId: data-generator
+  # Generic mock data generates nodes with: value (int), message (string), timestamp
+      - kind: mock
+        id: data-generator
+        autoStart: true
+        dataType:
+          type: generic
+        intervalMs: 3000
 
-reactions:
-  - kind: log
-    id: formatted-logger
     queries:
-      - track-all-changes
-    autoStart: true
+      - id: track-all-changes
+        autoStart: true
+        query: |
+          MATCH (n:Generic)
+          RETURN n.value AS Value, n.message AS Message, n.timestamp AS Timestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: data-generator
+
+    reactions:
+      - kind: log
+        id: formatted-logger
+        queries:
+          - track-all-changes
+        autoStart: true
     # Custom templates for different event types
     # Access query result fields with dot notation: {{after.FieldName}}
-    defaultTemplate:
-      added:
-        template: "[ADD] {{query_name}} | Value: {{after.Value}} | Message: {{after.Message}}"
-      updated:
-        template: "[UPDATE] {{query_name}} | Value: {{after.Value}} (was {{before.Value}})"
-      deleted:
-        template: "[DELETE] {{query_name}} | Removed value: {{before.Value}}"
+        defaultTemplate:
+          added:
+            template: "[ADD] {{query_name}} | Value: {{after.Value}} | Message: {{after.Message}}"
+          updated:
+            template: "[UPDATE] {{query_name}} | Value: {{after.Value}} (was {{before.Value}})"
+          deleted:
+            template: "[DELETE] {{query_name}} | Removed value: {{before.Value}}"

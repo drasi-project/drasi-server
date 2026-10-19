@@ -132,34 +132,39 @@ async fn test_drasi_server_builder_with_state_store_provider() -> Result<()> {
 #[test]
 fn test_state_store_config_deserialization() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
-        stateStore:
-          kind: redb
-          path: ./data/state.redb
+        instances:
+          - id: test-server
+            stateStore:
+              kind: redb
+              path: ./data/state.redb
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
     assert!(
-        config.state_store.is_some(),
+        config.instances[0].state_store.is_some(),
         "state_store should be present"
     );
-    assert_eq!(config.state_store.as_ref().unwrap().kind(), "redb");
+    assert_eq!(
+        config.instances[0].state_store.as_ref().unwrap().kind(),
+        "redb"
+    );
 }
 
 /// Test that state_store defaults to None when not specified
 #[test]
 fn test_state_store_config_default() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
+        instances:
+          - id: test-server
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
     assert!(
-        config.state_store.is_none(),
+        config.instances[0].state_store.is_none(),
         "state_store should default to None when not specified in config"
     );
 }
@@ -168,25 +173,29 @@ fn test_state_store_config_default() {
 #[test]
 fn test_state_store_with_full_config() {
     let yaml = r#"
-        id: production-server
         host: 0.0.0.0
         port: 9090
         logLevel: debug
         persistConfig: true
-        persistIndex: true
-        stateStore:
-          kind: redb
-          path: /var/lib/drasi/state.redb
-        sources: []
-        queries: []
-        reactions: []
+        instances:
+          - id: production-server
+            persistIndex: true
+            stateStore:
+              kind: redb
+              path: /var/lib/drasi/state.redb
+            sources: []
+            queries: []
+            reactions: []
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
 
-    assert!(config.state_store.is_some());
-    assert_eq!(config.state_store.as_ref().unwrap().kind(), "redb");
-    assert!(config.persist_index);
+    assert!(config.instances[0].state_store.is_some());
+    assert_eq!(
+        config.instances[0].state_store.as_ref().unwrap().kind(),
+        "redb"
+    );
+    assert!(config.instances[0].persist_index);
     assert!(config.persist_config);
 
     match &config.port {
@@ -200,7 +209,11 @@ fn test_state_store_with_full_config() {
 fn test_state_store_serialization_roundtrip() {
     let original = DrasiServerConfig {
         api_version: None,
-        state_store: Some(StateStoreConfig::redb("./data/test.redb")),
+
+        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
+            state_store: Some(StateStoreConfig::redb("./data/test.redb")),
+            ..Default::default()
+        }],
         ..Default::default()
     };
 
@@ -219,10 +232,17 @@ fn test_state_store_serialization_roundtrip() {
         serde_yaml::from_str(&yaml).expect("Failed to deserialize config");
 
     assert!(
-        deserialized.state_store.is_some(),
+        deserialized.instances[0].state_store.is_some(),
         "Deserialized config should have state_store"
     );
-    assert_eq!(deserialized.state_store.as_ref().unwrap().kind(), "redb");
+    assert_eq!(
+        deserialized.instances[0]
+            .state_store
+            .as_ref()
+            .unwrap()
+            .kind(),
+        "redb"
+    );
 }
 
 /// Test that state store file is created when REDB provider is used
@@ -333,23 +353,23 @@ async fn test_redb_provider_isolation() -> Result<()> {
 #[test]
 fn test_state_store_with_env_var_path() {
     let yaml = r#"
-        id: test-server
         host: 127.0.0.1
         port: 8080
-        stateStore:
-          kind: redb
-          path: ${STATE_STORE_PATH:-./data/default.redb}
+        instances:
+          - id: test-server
+            stateStore:
+              kind: redb
+              path: ${STATE_STORE_PATH:-./data/default.redb}
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
-    assert!(config.state_store.is_some());
+    assert!(config.instances[0].state_store.is_some());
 }
 
 /// Test multi-instance config with different state stores
 #[test]
 fn test_multi_instance_state_store_config() {
     let yaml = r#"
-        id: multi-instance-server
         host: 0.0.0.0
         port: 8080
         instances:

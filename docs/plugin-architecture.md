@@ -236,6 +236,20 @@ Native runtime IDs are family/version-qualified: `computation:<id>@<version>`.
 The same plugin may supply several factories; its own package version is not the
 ABI version or a factory's configuration version.
 
+Native component inspection includes `waitingFor` and `waitingReason` for
+unavailable dependencies. Expanded component definitions can be accepted before
+their factory is loaded; loading that native plugin supplies the factory to
+existing instances and resumes eligible nodes. This uses the same graph owner
+and does not restart failed components or override an explicit stop.
+Readable `graph` shorthand still needs factory metadata to describe its ports
+and schema; it does not guess an unknown plugin's interface. Host resource
+declarations still require explicit, reconstructible recipes.
+
+Embedding hosts that create a `PluginOrchestrator` directly must call
+`bind_instances` with their instance registry. Normal Server startup does this
+before serving requests. The binding also covers filesystem-watcher loads and
+seeds factories loaded before the instances existed.
+
 ### Durable desired configuration
 
 Configuration persistence is optional and separate from message/state recovery.
