@@ -82,7 +82,7 @@ def probe(url, default_startup, timeout):
     while True:
         try:
             return check_api(get, default_startup)
-        except (URLError, TimeoutError, AssertionError) as error:
+        except (URLError, ConnectionError, TimeoutError, AssertionError) as error:
             if time.monotonic() >= deadline:
                 raise
             print(f"Waiting for smoke assertions: {error}", file=sys.stderr)

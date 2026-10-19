@@ -2,7 +2,9 @@
 # Licensed under the Apache License, Version 2.0.
 
 import copy
+from http.client import RemoteDisconnected
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -365,6 +367,57 @@ class SmokeAssertionsTests(unittest.TestCase):
 
     def test_real_response_shapes_pass(self):
         self.assertEqual(len(assert_api.check_api(self.responses().__getitem__)["checks"]), 5)
+
+    def test_probe_retries_connection_errors_and_rechecks_all_assertions(self):
+        for error in (ConnectionResetError("Connection reset by peer"),
+                      RemoteDisconnected("Remote end closed connection without response"),
+                      ConnectionAbortedError("Connection aborted"),
+                      BrokenPipeError("Broken pipe")):
+            for failing_path in ("/health", "/api/v1/queries/all-sensors/results"):
+                with self.subTest(error=type(error).__name__, path=failing_path):
+                    responses = self.responses()
+                    urls = []
+                    failed = False
+
+                    def get(url, timeout):
+                        nonlocal failed
+                        self.assertEqual(timeout, 5)
+                        path = url.removeprefix("http://localhost:8080")
+                        urls.append(path)
+                        if path == failing_path and not failed:
+                            failed = True
+                            raise error
+                        return io.BytesIO(json.dumps(responses[path]).encode())
+
+                    with patch.object(assert_api, "urlopen", side_effect=get), \
+                            patch.object(assert_api.time, "monotonic", return_value=0), \
+                            patch.object(assert_api.time, "sleep") as sleep, \
+                            patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                        result = assert_api.probe("http://localhost:8080", False, 120)
+                    self.assertEqual(result["checks"],
+                                     ["health", "source", "query", "results", "plugins"])
+                    self.assertEqual(urls.count("/health"), 2)
+                    self.assertEqual(urls[-len(responses):], list(responses))
+                    sleep.assert_called_once_with(2)
+                    self.assertIn(str(error), stderr.getvalue())
+
+    def test_probe_fails_when_connection_resets_persist_until_deadline(self):
+        with patch.object(assert_api, "urlopen",
+                          side_effect=ConnectionResetError("Connection reset by peer")) as get, \
+                patch.object(assert_api.time, "monotonic", side_effect=[0, 0, 120]), \
+                patch.object(assert_api.time, "sleep") as sleep, \
+                patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaisesRegex(ConnectionResetError, "Connection reset by peer"):
+                assert_api.probe("http://localhost:8080", False, 120)
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(2)
+
+    def test_probe_does_not_retry_malformed_json(self):
+        with patch.object(assert_api, "urlopen", return_value=io.BytesIO(b"not JSON")), \
+                patch.object(assert_api.time, "sleep") as sleep:
+            with self.assertRaises(json.JSONDecodeError):
+                assert_api.probe("http://localhost:8080", False, 120)
+        sleep.assert_not_called()
 
     def test_default_startup_requires_all_shipped_components_running(self):
         responses = self.responses()

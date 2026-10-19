@@ -189,6 +189,10 @@ Native amd64 and arm64 runners pull the recorded digests in separate jobs.
 They first run the shipped entrypoint, user and default command without mounts,
 then run the hello-world configuration with the same entrypoint and user.
 Neither test installs missing runtime libraries or switches to root.
+Readiness probing retries refused, reset or closed connections within the existing
+120-second window: Docker can expose the host port before plugin installation
+finishes and the API starts listening. Persistent failures still fail the check,
+and container logs are retained; a transient connection is not a passing result.
 All seven release binaries and both images share health, running-source,
 query and nonempty numeric-result assertions. Runtime evidence records loaded
 plugin versions, ABI and binary hashes; the hello-world plugins are version
