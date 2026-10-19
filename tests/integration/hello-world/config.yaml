@@ -10,8 +10,8 @@ autoInstallPlugins: true
 verifyPlugins: false
 
 plugins:
-  - ref: source/mock
-  - ref: reaction/log
+  - ref: source/mock:0.2.12
+  - ref: reaction/log:0.2.9
 
 sources:
   - kind: mock

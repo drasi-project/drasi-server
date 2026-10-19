@@ -83,6 +83,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libjq1 \
     libonig5 \
+    libstdc++6 \
+    libgcc-s1 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r drasi && useradd -r -g drasi drasi
@@ -96,7 +98,8 @@ COPY --from=builder /app/target/release/drasi-server /usr/local/bin/drasi-server
 COPY --from=ui-builder /app/ui/dist /app/ui/dist
 
 # Create config directory with proper permissions
-RUN mkdir -p /app/config && chown -R drasi:drasi /app
+RUN mkdir -p /app/config /usr/local/bin/plugins \
+    && chown -R drasi:drasi /app /usr/local/bin/plugins
 
 # Copy default config (will be overridden by volume mount)
 COPY --chown=drasi:drasi config/server-docker.yaml /app/config/server.yaml
