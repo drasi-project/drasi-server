@@ -59,12 +59,12 @@ sources:
     port: ${POSTGRES_PORT:-5432}
     database: "${POSTGRES_DATABASE:-getting_started}"
     user: "${POSTGRES_USER:-drasi_user}"
-    password: "${POSTGRES_PASSWORD}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
     sslMode: prefer
 
     # Tables to monitor for changes
     tables:
-      - message
+      - Message
 
     # Replication settings for CDC
     slotName: drasi_getting_started_slot
@@ -72,7 +72,7 @@ sources:
 
     # Primary key configuration for change tracking
     tableKeys:
-      - table: message
+      - table: Message
         keyColumns:
           - messageid
 
@@ -94,7 +94,7 @@ queries:
   - id: hello-world-from
     autoStart: true
     query: |
-      MATCH (m:message {message: 'Hello World'})
+      MATCH (m:Message {message: 'Hello World'})
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
     queryLanguage: Cypher
     sources:
@@ -106,7 +106,7 @@ queries:
   - id: message-count
     autoStart: true
     query: |
-      MATCH (m:message)
+      MATCH (m:Message)
       RETURN m.message AS Message, count(m) AS Frequency
     queryLanguage: Cypher
     sources:
@@ -118,7 +118,7 @@ queries:
   - id: inactive-people
     autoStart: true
     query: |
-      MATCH (m:message)
+      MATCH (m:Message)
       WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
       WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
         OR drasi.trueLater(
