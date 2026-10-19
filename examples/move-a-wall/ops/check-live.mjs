@@ -22,6 +22,20 @@ async function rows(query) {
   assertSceneFields(result);
   return result;
 }
+async function assertNativeSnapshot(query) {
+  const expected = await rows(query);
+  const response = await fetch(`http://127.0.0.1:8422/snapshot/${query}`,{signal:AbortSignal.timeout(5000)});
+  assert.equal(response.status,200,`native snapshot for ${query}`);
+  assert.match(response.headers.get('content-type') ?? '',/application\/json/);
+  for (const header of ['x-drasi-query-sequence','x-drasi-query-generation']) {
+    assert.match(response.headers.get(header) ?? '',/^\d+$/,`${query}: ${header}`);
+  }
+  const actual = await response.json();
+  assert.ok(Array.isArray(actual),'native snapshots must stream a JSON row array');
+  assertSceneFields(actual);
+  const ordered = values => values.map(value => JSON.stringify(value)).sort();
+  assert.deepEqual(ordered(actual),ordered(expected),`${query}: SSE and Server must read the same query catalogue`);
+}
 async function state() {
   const input = await rows('scene-inputs');
   const records = input.flatMap(row => row.objects.map(JSON.parse));
@@ -90,6 +104,8 @@ try {
   }
   await command({action:'reset'});
   await until(async () => (await rows('affected-journeys')).length === 0,'clear fixture');
+  await assertNativeSnapshot('affected-journeys');
+  assert.equal((await fetch('http://127.0.0.1:8422/snapshot/foreign',{signal:AbortSignal.timeout(5000)})).status,404);
   const baseline = await state();
   const wall = baseline.entities.find(e => e.id === 'wall');
   const moved = {...wall,shape:{kind:'obstacle',vertices:[[10,4.5],[13,4.5],[13,5.5],[10,5.5]]}};
@@ -98,6 +114,7 @@ try {
   const affected = (await rows('affected-journeys'))[0];
   assert.deepEqual([affected.cart,affected.task,affected.destination,affected.obstacle],['Ada','Deliver packaging','Packing station','Movable wall']);
   assert.equal(affected.id,'journey-ada/wall');
+  await assertNativeSnapshot('affected-journeys');
   const noOp = await command({action:'put',entity:moved});
   assert.equal(noOp,revision,'identical input must not advance revision');
   const bad = await fetch('http://127.0.0.1:8423/commands',{method:'POST',headers:{'Content-Type':'application/json','X-Wall-Command':'1'},
@@ -108,13 +125,16 @@ try {
   assert.equal(malformed.status,409,'unsupported self-intersecting polygon must be rejected');
   await command({action:'put',entity:{...moved,name:'Renamed wall'}});
   await until(async () => (await rows('affected-journeys')).some(r => r.id === 'journey-ada/wall' && r.obstacle === 'Renamed wall'),'same-key impact update');
+  await assertNativeSnapshot('affected-journeys');
   await command({action:'put',entity:{...moved,id:'wall-two',name:'Second barrier'}});
   await until(async () => (await rows('affected-journeys')).length === 2,'multiple causes');
   await command({action:'delete',id:'wall'});
   await until(async () => (await rows('affected-journeys')).length === 1,'one cause remains');
   assert.equal((await rows('affected-journeys'))[0].obstacle,'Second barrier');
+  await assertNativeSnapshot('affected-journeys');
   await command({action:'put',entity:{...moved,id:'wall-two',name:'Second barrier',active:false}});
   await until(async () => (await rows('affected-journeys')).length === 0,'inactive obstacle filtered');
+  await assertNativeSnapshot('affected-journeys');
   const context = (await rows('geometry-context')).flatMap(row => row.objects.map(JSON.parse));
   assert.ok(!context.some(r => r.entity?.id === 'wall-two'),'upstream CQ must exclude inactive obstacle');
   await command({action:'reset'});
@@ -137,8 +157,11 @@ try {
       changes.some(change => change.type === 'UPDATE' && change.before?.id === 'journey-ada/wall' && change.before.obstacle === 'Movable wall' && change.after?.id === 'journey-ada/wall' && change.after.obstacle === 'Renamed wall') &&
       changes.some(change => change.type === 'DELETE' && change.data?.id === 'journey-ada/wall' && change.data.obstacle === 'Renamed wall');
   },'actual stock SSE ADD, stable-key UPDATE and DELETE with enriched rows');
+  for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
+    await assertNativeSnapshot(query);
+  }
   await mkdir(new URL('../artifacts/',import.meta.url),{recursive:true});
   await writeFile(new URL('../artifacts/sse-changes.json',import.meta.url),JSON.stringify(impactChanges(),null,2));
-  console.log('PASS: stock server topology, input revisions, actual context filtering, native geometry, enriched query results, SSE, retract/reset, malformed and stale commands.');
+  console.log('PASS: stock server topology, input revisions, actual context filtering, native geometry, enriched query results, SSE, scoped native snapshots, retract/reset, malformed and stale commands.');
   console.log(`Captured ${events.length} bytes from the actual SSE reaction; fixture restored.`);
 } finally { stop.abort(); await consume; if (streamFailure) throw streamFailure; }

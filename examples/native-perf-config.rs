@@ -1,10 +1,14 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Convert a standard HTTP/gRPC Server perf configuration to a native graph.
-//! Usage: native-perf-config <native-network-library> <adapter-config.json> <capacity>
+//! Convert an HTTP/gRPC Server workload to the instance's native graph.
+//! Usage: native-perf-config <native-plugin-directory> <server-config.json-or-yaml> <capacity>
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use drasi_host_sdk::computation::{NativeFactory, NativePlugin};
@@ -32,39 +36,115 @@ fn literal(value: Value) -> ConfigurationValue {
     ConfigurationValue::Literal(value)
 }
 
+fn network_factory(directory: &Path, transport: &str, role: &str) -> Result<Arc<NativeFactory>> {
+    anyhow::ensure!(
+        directory.is_dir(),
+        "expected the directory containing the independent native libraries"
+    );
+    let package = format!("drasi_computation_{role}_{transport}");
+    let path = directory.join(format!(
+        "{}{package}{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX
+    ));
+    let plugin = drasi_host_sdk::computation::load(&path)
+        .with_context(|| format!("load {}", path.display()))?;
+    factory(&plugin, &format!("drasi.network/{transport}-{role}"))
+}
+
+fn failure_policy(reaction: &Value) -> Result<&'static str> {
+    match reaction.get("recoveryPolicy").and_then(Value::as_str) {
+        None | Some("strict") => Ok("strict"),
+        Some("auto_skip_gap") => Ok("skip"),
+        Some(other) => anyhow::bail!("unsupported reaction recoveryPolicy {other}"),
+    }
+}
+
+fn copy_fields(input: &Value, output: &mut Value, fields: &[&str]) {
+    for field in fields {
+        if let Some(value) = input.get(*field).filter(|value| !value.is_null()) {
+            output[*field] = value.clone();
+        }
+    }
+}
+
 fn http_sink_config(reaction: &Value, query_id: &str) -> Result<Value> {
-    anyhow::ensure!(
-        reaction.get("adaptive").is_none() && reaction.get("token").is_none(),
-        "adaptive batching and authentication need a separate comparison profile"
-    );
-    let headers = json!({"Content-Type":"application/json","X-Query-Sequence":query_id});
-    let call = json!({"method":"POST","url":"/reaction","headers":headers});
-    let expected_templates = json!({
-        "routes": BTreeMap::from([(query_id, json!({
-            "added": call, "updated": call, "deleted": call,
-        }))]),
-    });
-    anyhow::ensure!(
-        reaction.get("outputTemplates") == Some(&expected_templates),
-        "HTTP comparison requires the standard /reaction routes without custom body templates or headers"
-    );
-    Ok(json!({
+    let mut config = json!({
         "queryId": query_id,
-        "url": format!("{}/reaction", reaction["baseUrl"].as_str().context("HTTP baseUrl")?.trim_end_matches('/')),
-        "headers": headers,
-        "timeoutMs": reaction["timeoutMs"],
-        "maxRetries": 3,
-        "failurePolicy": "skip",
-    }))
+        "baseUrl": "http://localhost",
+        "timeoutMs": 5000,
+        "maxRetries": 2,
+        "failurePolicy": failure_policy(reaction)?,
+    });
+    copy_fields(
+        reaction,
+        &mut config,
+        &[
+            "baseUrl",
+            "token",
+            "timeoutMs",
+            "outputTemplates",
+            "adaptive",
+            "batchEndpoint",
+        ],
+    );
+    Ok(config)
+}
+
+fn grpc_sink_config(reaction: &Value, query_id: &str) -> Result<Value> {
+    let mut config = json!({
+        "queryId": query_id, "endpoint":"grpc://localhost:50052", "timeoutMs":5000,
+        "maxRetries":3, "connectionRetryAttempts":5, "initialConnectionTimeoutMs":10000,
+        "failurePolicy":failure_policy(reaction)?,
+    });
+    copy_fields(
+        reaction,
+        &mut config,
+        &[
+            "endpoint",
+            "metadata",
+            "timeoutMs",
+            "maxRetries",
+            "connectionRetryAttempts",
+            "initialConnectionTimeoutMs",
+            "outputFormat",
+            "outputTemplates",
+        ],
+    );
+    if reaction
+        .get("batching")
+        .is_some_and(|value| !value.is_null())
+    {
+        anyhow::ensure!(
+            reaction.get("batchSize").is_none() && reaction.get("batchFlushTimeoutMs").is_none(),
+            "batching cannot be combined with flat batch settings"
+        );
+        config["batching"] = reaction["batching"].clone();
+    } else {
+        config["batchSize"] = reaction.get("batchSize").cloned().unwrap_or(json!(100));
+        config["batchFlushTimeoutMs"] = reaction
+            .get("batchFlushTimeoutMs")
+            .cloned()
+            .unwrap_or(json!(1000));
+    }
+    Ok(config)
+}
+
+fn validated_specification(
+    factory: &NativeFactory,
+    id: ComponentId,
+    config: Value,
+) -> Result<ComponentSpecification> {
+    // Bundled native constructors are configuration-only; validate the real
+    // typed settings, not just the catalogue's shallow object-field schema.
+    drop(factory.create_component(id.clone(), config.clone())?);
+    factory.specification(id, config)
 }
 
 #[allow(clippy::print_stdout)]
 fn main() -> Result<()> {
     let mut args = std::env::args_os().skip(1);
-    let library = PathBuf::from(
-        args.next()
-            .context("expected native network library path")?,
-    );
+    let libraries = PathBuf::from(args.next().context("expected native plugin directory")?);
     let input = PathBuf::from(args.next().context("expected adapter Server JSON path")?);
     let capacity: usize = args
         .next()
@@ -77,7 +157,7 @@ fn main() -> Result<()> {
         capacity > 0 && args.next().is_none(),
         "expected one nonzero queue capacity"
     );
-    let value: Value = serde_json::from_slice(&std::fs::read(input)?)?;
+    let value: Value = serde_yaml::from_slice(&std::fs::read(input)?)?;
     let mut config: DrasiServerConfig = serde_json::from_value(value.clone())?;
     config.validate()?;
     anyhow::ensure!(
@@ -96,25 +176,42 @@ fn main() -> Result<()> {
         "unsupported comparison transport"
     );
     anyhow::ensure!(
-        source.get("adaptiveEnabled").and_then(Value::as_bool) != Some(true)
-            && source.get("durability").is_none()
-            && source.get("bootstrapProvider").is_none(),
-        "adaptive batching, source durability and bootstrap-provider comparisons require a separate profile"
+        source.get("durability").is_none_or(Value::is_null)
+            && source.get("bootstrapProvider").is_none_or(Value::is_null),
+        "source durability and coordinated bootstrap require explicit native resource bindings"
     );
     let source_id = source["id"].as_str().context("source ID")?;
-    let plugin = drasi_host_sdk::computation::load(library)?;
-    let source_factory = factory(&plugin, &format!("drasi.network/{transport}-source"))?;
-    let sink_factory = factory(&plugin, &format!("drasi.network/{transport}-sink"))?;
-    let source_config = json!({
+    let source_factory = network_factory(&libraries, transport, "source")?;
+    let sink_factory = network_factory(&libraries, transport, "sink")?;
+    let mut source_config = json!({
         "stream": source_id,
         "sourceId": source_id,
-        "host": source["host"],
-        "port": source["port"],
+        "host": "0.0.0.0",
+        "port": if transport=="http" {9000} else {50051},
         "ingressCapacity": capacity,
-        "timeoutMs": source["timeoutMs"],
+        "timeoutMs": if transport=="http" {10000} else {5000},
     });
-    let source_spec =
-        source_factory.specification(ComponentId::try_new(source_id)?, source_config)?;
+    copy_fields(source, &mut source_config, &["host", "port", "timeoutMs"]);
+    if transport == "http" {
+        copy_fields(
+            source,
+            &mut source_config,
+            &[
+                "webhooks",
+                "adaptiveEnabled",
+                "adaptiveMaxBatchSize",
+                "adaptiveMinBatchSize",
+                "adaptiveMaxWaitMs",
+                "adaptiveMinWaitMs",
+                "adaptiveWindowSecs",
+            ],
+        );
+    }
+    let source_spec = validated_specification(
+        &source_factory,
+        ComponentId::try_new(source_id)?,
+        source_config,
+    )?;
     let indexes = ResourceId::try_new("indexes")?;
     let query_factory = Arc::new(ContinuousQueryFactory::default());
     let mut builder = ComponentBatch::builder()
@@ -212,25 +309,15 @@ fn main() -> Result<()> {
         let native_config = if transport == "http" {
             http_sink_config(reaction, &query.id)?
         } else {
-            anyhow::ensure!(
-                reaction["batchSize"] == 1,
-                "native comparison requires gRPC batchSize=1"
-            );
-            json!({
-                "queryId": query.id,
-                "endpoint": reaction["endpoint"],
-                "metadata": reaction["metadata"],
-                "timeoutMs": reaction["timeoutMs"],
-                "maxRetries": reaction["maxRetries"],
-                "connectionRetryAttempts": reaction["connectionRetryAttempts"],
-                "initialConnectionTimeoutMs": reaction["initialConnectionTimeoutMs"],
-                "batchSize": 1,
-                "batchFlushTimeoutMs": reaction["batchFlushTimeoutMs"],
-            })
+            grpc_sink_config(reaction, &query.id)?
         };
         builder = builder
             .component(
-                sink_factory.specification(ComponentId::try_new(reaction_id)?, native_config)?,
+                validated_specification(
+                    &sink_factory,
+                    ComponentId::try_new(reaction_id)?,
+                    native_config,
+                )?,
                 sink_factory.clone(),
             )
             .connect(
@@ -239,7 +326,7 @@ fn main() -> Result<()> {
             );
     }
     anyhow::ensure!(
-        value["reactions"]
+        value["instances"][0]["reactions"]
             .as_array()
             .context("reaction array")?
             .len()
@@ -250,6 +337,8 @@ fn main() -> Result<()> {
     config.instances[0].sources.clear();
     config.instances[0].queries.clear();
     config.instances[0].reactions.clear();
+    config.auto_install_plugins = false;
+    config.plugins.clear();
     config.instances[0].computation = Some(
         ComputationConfig {
             definition: graph.definition,
@@ -280,27 +369,43 @@ mod tests {
 
     #[test]
     fn standard_http_profile_preserves_endpoint_headers_and_delivery_settings() {
-        assert_eq!(
-            http_sink_config(&reaction(), "query").expect("standard HTTP profile"),
-            json!({
-                "queryId":"query", "url":"http://127.0.0.1:9001/reaction",
-                "headers":{"Content-Type":"application/json","X-Query-Sequence":"query"},
-                "timeoutMs":60000, "maxRetries":3, "failurePolicy":"skip",
-            }),
-        );
+        let original = reaction();
+        let native = http_sink_config(&original, "query").expect("HTTP settings");
+        assert_eq!(native["outputTemplates"], original["outputTemplates"]);
+        assert_eq!(native["baseUrl"], original["baseUrl"]);
+        assert_eq!(native["maxRetries"], 2);
+        assert_eq!(native["failurePolicy"], "strict");
     }
 
     #[test]
-    fn unsupported_http_behavior_is_not_silently_dropped() {
-        for field in ["method", "url", "headers", "template"] {
-            let mut changed = reaction();
-            changed["outputTemplates"]["routes"]["query"]["added"][field] = json!("changed");
-            assert!(http_sink_config(&changed, "query").is_err(), "{field}");
+    fn native_http_configuration_preserves_templates_auth_and_adaptive_options() {
+        let mut original = reaction();
+        original["token"] = json!("test-only-token");
+        original["adaptive"] = json!({"adaptiveMinBatchSize":2,"adaptiveMaxBatchSize":100});
+        original["batchEndpoint"] = json!("/reaction/batch");
+        original["recoveryPolicy"] = json!("auto_skip_gap");
+        original["outputTemplates"]["routes"]["query"]["added"]["template"] =
+            json!("{{json after}}");
+        let native = http_sink_config(&original, "query").expect("HTTP settings");
+        for field in ["token", "adaptive", "batchEndpoint", "outputTemplates"] {
+            assert_eq!(native[field], original[field], "{field}");
         }
-        for field in ["adaptive", "token"] {
-            let mut changed = reaction();
-            changed[field] = json!("unsupported");
-            assert!(http_sink_config(&changed, "query").is_err(), "{field}");
-        }
+        assert_eq!(native["failurePolicy"], "skip");
+    }
+
+    #[test]
+    fn native_grpc_configuration_preserves_fixed_and_adaptive_batch_contracts() {
+        let fixed = json!({"batchSize":32,"batchFlushTimeoutMs":15,"outputFormat":"proto"});
+        let native = grpc_sink_config(&fixed, "query").expect("fixed");
+        assert_eq!(native["batchSize"], 32);
+        assert_eq!(native["batchFlushTimeoutMs"], 15);
+        assert_eq!(native["outputFormat"], "proto");
+        let adaptive = json!({"batching":{"mode":"adaptive","adaptiveMaxBatchSize":100},
+            "outputTemplates":{"defaultTemplate":{"added":{"template":"{{json after}}"}}}});
+        let native = grpc_sink_config(&adaptive, "query").expect("adaptive");
+        assert_eq!(native["batching"], adaptive["batching"]);
+        assert_eq!(native["outputTemplates"], adaptive["outputTemplates"]);
+        assert!(native.get("batchSize").is_none());
+        assert!(grpc_sink_config(&json!({"batching":{},"batchSize":1}), "query").is_err());
     }
 }

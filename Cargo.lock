@@ -1183,6 +1183,7 @@ dependencies = [
  "drasi-computation-plugin-abi",
  "drasi-core-types",
  "futures-core",
+ "futures-util",
  "rmp-serde",
  "serde",
  "serde_bytes",
@@ -1328,6 +1329,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "toml",
  "tracing",
  "url",
@@ -1401,6 +1403,7 @@ dependencies = [
  "drasi-query-ast",
  "drasi-query-cypher",
  "drasi-query-gql",
+ "drasi-reaction-common",
  "fnv",
  "futures",
  "im",
@@ -1508,6 +1511,13 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "drasi-reaction-common"
+version = "0.11.3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

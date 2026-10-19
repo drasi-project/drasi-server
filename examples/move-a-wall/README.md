@@ -160,6 +160,14 @@ The Server uses its built-in `drasi/continuous-query` factories, declared
 each query's `out` port also connects to the outlet's `in` port. The example's
 `geo` dependency supplies the geometry calculation.
 
+The `wall-query-snapshots` resource grants the native SSE sink read-only access
+to that same catalogue for the five declared queries, with at most 16 concurrent
+readers and a five-second readiness timeout. For example,
+`http://127.0.0.1:8422/snapshot/affected-journeys` streams the current rows as a
+JSON array and includes query sequence/generation headers. This adds no result
+cache or query executor. It is a point-in-time read, not an atomic snapshot/live
+subscription; the UI's existing Server snapshot/subscription flow is unchanged.
+
 ### Ports and query roles
 
 | Component | Input | Output / role |

@@ -19,6 +19,20 @@ instances:
             kind: memoryIndexes
           wall-query-catalog:
             kind: queryCatalog
+          wall-query-snapshots:
+            kind: nativeQuerySnapshots
+            catalog: wall-query-catalog
+            queries:
+              - scene-inputs
+              - geometry-context
+              - obstructions
+              - affected-journeys
+              - geometry-status
+            timeoutMs: 5000
+            maxReaders: 16
+
+        resourceDependencies:
+          wall-query-snapshots: [wall-query-catalog]
 
         components:
           - id: scene
@@ -128,6 +142,8 @@ instances:
           - id: wall-ui
             kind: drasi.network/sse-sink
             version: "1"
+            resources:
+              query_snapshots: wall-query-snapshots
             config:
               host: 127.0.0.1
               port: 8422

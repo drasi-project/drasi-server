@@ -29,5 +29,20 @@ The existing binary names are retained without duplicating library packages:
 embedded version; the native plugin remains independently buildable with
 `--features dynamic-plugin --lib`.
 
+The embedded PostgreSQL input statically registers Core's
+`drasi-computation-source-postgres` and `drasi-computation-bootstrap-postgres`
+definitions through `NativePlugin::from_definition`. These use the same native
+factories and operation boundaries as separately loaded libraries, inside the
+existing DrasiLib instance's single graph. The bootstrap and CDC source bind the
+actual database query's progress owner; its committed position carries the
+dedicated slot identity, database/schema binding and LSN. There is no separate
+PostgreSQL service, graph or private checkpoint store.
+
+This is not a state-transparent rollout onto a pre-migration installation.
+Completed PostgreSQL positions without the managed-slot ownership field fail
+explicitly rather than guessing a slot or resnapshotting. Preserve the existing
+slot, query state and receipts until an explicit transition is selected. Do not
+reset/reseed the demo or delete retained state to bypass this failure.
+
 The [embedded development guide](../embedded/README.md#operations-diagnostics-and-development)
 documents commands for building and exercising these assets.

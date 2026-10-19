@@ -1147,6 +1147,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-bootstrap-postgres"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core-types",
+ "drasi-postgres-common",
+ "futures",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-computation-bridge-common"
 version = "0.11.3"
 dependencies = [
@@ -1208,6 +1227,7 @@ dependencies = [
  "drasi-computation-plugin-abi",
  "drasi-core-types",
  "futures-core",
+ "futures-util",
  "rmp-serde",
  "serde",
  "serde_bytes",
@@ -1240,6 +1260,22 @@ dependencies = [
  "drasi-core",
  "drasi-lib",
  "futures-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "drasi-computation-source-postgres"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core-types",
+ "drasi-postgres-common",
+ "log",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -1353,6 +1389,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "toml",
  "tracing",
  "url",
@@ -1426,6 +1463,7 @@ dependencies = [
  "drasi-query-ast",
  "drasi-query-cypher",
  "drasi-query-gql",
+ "drasi-reaction-common",
  "fnv",
  "futures",
  "im",
@@ -1497,12 +1535,27 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "byteorder",
+ "bytes",
  "chrono",
- "drasi-core",
+ "drasi-computation-contracts",
+ "drasi-core-types",
+ "hmac 0.12.1",
  "log",
+ "md5",
+ "native-tls",
+ "openssl",
  "ordered-float",
+ "pbkdf2",
+ "postgres-native-tls",
+ "postgres-types",
+ "rand 0.8.8",
  "rust_decimal",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tokio-postgres",
  "uuid",
 ]
 
@@ -1533,6 +1586,13 @@ dependencies = [
  "peg",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "drasi-reaction-common"
+version = "0.11.3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -1607,44 +1667,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "drasi-source-postgres"
-version = "0.2.12"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "byteorder",
- "bytes",
- "chrono",
- "drasi-core",
- "drasi-lib",
- "drasi-plugin-sdk",
- "drasi-postgres-common",
- "futures",
- "hmac 0.12.1",
- "log",
- "md5",
- "native-tls",
- "openssl",
- "ordered-float",
- "pbkdf2",
- "postgres-native-tls",
- "postgres-types",
- "prost-types",
- "rand 0.8.8",
- "rust_decimal",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tokio",
- "tokio-postgres",
- "tokio-stream",
- "tracing",
- "utoipa",
- "uuid",
 ]
 
 [[package]]
@@ -2189,8 +2211,10 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "drasi-computation-bootstrap-postgres",
  "drasi-computation-contracts",
  "drasi-computation-plugin-sdk",
+ "drasi-computation-source-postgres",
  "drasi-core",
  "drasi-core-types",
  "drasi-host-sdk",
@@ -2199,7 +2223,6 @@ dependencies = [
  "drasi-middleware",
  "drasi-server",
  "drasi-source-application",
- "drasi-source-postgres",
  "futures-util",
  "gpu-contracts",
  "gpu-control",
@@ -3996,18 +4019,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "postgres-derive"
-version = "0.4.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d9d9089bb0ce62f4b5d52a0be0f4acfb35738b979380670d3dea85fe38d6ddd"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "postgres-native-tls"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4046,7 +4057,6 @@ dependencies = [
  "bytes",
  "chrono",
  "fallible-iterator",
- "postgres-derive",
  "postgres-protocol",
  "serde_core",
  "serde_json",
@@ -4808,7 +4818,6 @@ dependencies = [
  "borsh",
  "bytes",
  "num-traits",
- "postgres-types",
  "rand 0.8.8",
  "rand 0.9.5",
  "serde",

@@ -1,16 +1,15 @@
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
+use drasi_computation_plugin_sdk::Scope;
+use drasi_computation_source_postgres::{
+    PostgresSourceConfig, PostgresTransactionConfig, SslMode, TableKeyConfig,
+};
 use drasi_core::middleware::MiddlewareTypeRegistry;
+use drasi_host_sdk::computation::NativePlugin;
 use drasi_index_rocksdb::{
     computation::RocksDbComputationProvider, RocksDbMemoryBudget, RocksIndexOptions,
 };
 use drasi_lib::computation::v1::*;
-use drasi_source_postgres::{
-    config::{PostgresSourceConfig, SslMode, TableKeyConfig},
-    native::{
-        PostgresTransactionConfig, PostgresTransactionSource, PostgresTransactionSourceFactory,
-    },
-};
 use gpu_native::inputs::{self, DATABASE_QUERY};
 use serde_json::{json, Value};
 use sqlx::{
@@ -120,12 +119,23 @@ pub fn components(
         catalog.graph_id(),
         super::id(DATABASE_QUERY)?,
     )?);
-    let (_, snapshot) = PostgresTransactionSource::coordinated(
-        super::id("postgres")?,
-        StreamId::try_new("postgres/out")?,
-        settings.clone(),
-        progress.clone(),
-    )?;
+    let postgres = NativePlugin::from_definition(drasi_computation_source_postgres::plugin()?)?;
+    let bootstrap_plugin =
+        NativePlugin::from_definition(drasi_computation_bootstrap_postgres::plugin()?)?;
+    let snapshot = bootstrap_plugin
+        .bootstrap_factories()
+        .first()
+        .context("native PostgreSQL bootstrap factory is missing")?
+        .create_provider(
+            super::id(DATABASE_QUERY)?,
+            json!({"source": "postgres", "stream": "postgres/out", "settings": settings}),
+            Some(Scope {
+                instance_id: super::INSTANCE.into(),
+                graph_id: catalog.graph_id().into(),
+                generation: 1,
+            }),
+            Some(progress.clone()),
+        )?;
     let provider = Arc::new(RocksDbComputationProvider::new(
         path,
         RocksIndexOptions::new(
@@ -134,7 +144,11 @@ pub fn components(
             RocksDbMemoryBudget::from_total_budget_bytes(64 << 20)?,
         ),
     ));
-    let source_factory = Arc::new(PostgresTransactionSourceFactory::default());
+    let source_factory = postgres
+        .factories()
+        .first()
+        .context("native PostgreSQL source factory is missing")?
+        .clone();
     let query_factory = FactoryRegistry::standard()
         .get(
             &ContinuousQueryFactory::default()
@@ -146,17 +160,15 @@ pub fn components(
     let ids = [
         "gpu-db-indexes",
         "gpu-db-progress",
-        "gpu-db-bootstrap",
         "gpu-db-secrets",
         "gpu-db-middleware",
         "gpu-db-catalog",
     ]
     .map(ResourceId::try_new);
-    let [indexes, progress_id, bootstrap, secrets, middleware_id, catalog_id] = ids;
-    let (indexes, progress_id, bootstrap, secrets, middleware_id, catalog_id) = (
+    let [indexes, progress_id, secrets, middleware_id, catalog_id] = ids;
+    let (indexes, progress_id, secrets, middleware_id, catalog_id) = (
         indexes?,
         progress_id?,
-        bootstrap?,
         secrets?,
         middleware_id?,
         catalog_id?,
@@ -178,11 +190,6 @@ pub fn components(
                 ResourceRole::Checkpoint,
                 Arc::new(QuerySourceProgressResource(progress)),
             ),
-        ),
-        (
-            bootstrap.clone(),
-            ResourceRole::Bootstrap,
-            ResourceHandle::new(ResourceRole::Bootstrap, snapshot.clone()),
         ),
         (
             secrets.clone(),
@@ -256,7 +263,9 @@ pub fn components(
     batch = batch
         .component(
             ComponentSpecification {
-                descriptor: PostgresTransactionSource::describe(super::id("postgres")?)?,
+                descriptor: source_factory
+                    .metadata()
+                    .descriptor(super::id("postgres")?)?,
                 role: ComponentRole::Source,
                 completion: None,
                 implementation: source_factory.descriptor().implementation.clone(),
@@ -279,10 +288,10 @@ pub fn components(
                         },
                     ),
                 ]),
-                dependencies: BTreeMap::from([
-                    ("source_progress".into(), vec![progress_id.clone()]),
-                    ("snapshot".into(), vec![bootstrap]),
-                ]),
+                dependencies: BTreeMap::from([(
+                    "source_progress".into(),
+                    vec![progress_id.clone()],
+                )]),
             },
             source_factory,
         )

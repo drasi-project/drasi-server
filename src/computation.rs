@@ -20,8 +20,8 @@ use drasi_core::computation::ComputationIndexProvider;
 use drasi_host_sdk::{
     computation::NativeBootstrapFactories,
     management::{
-        HostConfigurationResolver, NativeBootstrapConfig, NativeConsumerConfig, QosRecoveryConfig,
-        SharedQosConfig,
+        HostConfigurationResolver, NativeBootstrapConfig, NativeConsumerConfig,
+        NativeQuerySnapshotsConfig, QosRecoveryConfig, SharedQosConfig,
     },
 };
 use drasi_lib::{
@@ -82,6 +82,7 @@ pub enum ComputationResourceConfig {
     SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
     NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
+    NativeQuerySnapshots(#[schema(value_type = serde_json::Value)] NativeQuerySnapshotsConfig),
     Middleware {},
     QueryMiddleware {},
     TransactionalTransformers {},
@@ -121,7 +122,7 @@ impl ComputationResourceConfig {
             | Self::RocksdbIndexes { .. }
             | Self::SharedStorage { .. }
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
-            Self::QueryCatalog {} => ResourceRole::QueryCatalog,
+            Self::QueryCatalog {} | Self::NativeQuerySnapshots(_) => ResourceRole::QueryCatalog,
             Self::NativeBootstrap(_) => ResourceRole::Bootstrap,
             Self::SourceProgress { .. } => ResourceRole::Checkpoint,
             Self::Middleware {} | Self::QueryMiddleware {} => ResourceRole::Middleware,
@@ -211,6 +212,8 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         } else if let ComputationResourceConfig::NativeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
+        } else if let ComputationResourceConfig::NativeQuerySnapshots(config) = &recipe {
+            config.validate(resource, &dependencies)?;
         } else {
             anyhow::ensure!(
                 dependencies.is_empty(),
@@ -565,6 +568,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                 ComputationResourceConfig::NativeConsumer(config) => {
                     config.validate_dependencies(resource, &dependencies)?
                 }
+                ComputationResourceConfig::NativeQuerySnapshots(config) => {
+                    config.validate(resource, &dependencies)?
+                }
                 _ => {}
             }
         }
@@ -632,6 +638,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                 .resolve(instance, graph, resource, dependencies, &self.bootstraps)
                 .await;
         }
+        if let ComputationResourceConfig::NativeQuerySnapshots(config) = recipe {
+            return config.resolve(graph, resource, dependencies);
+        }
         anyhow::ensure!(
             dependencies.is_empty(),
             "this server recipe does not accept resource dependencies"
@@ -696,6 +705,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             }
             ComputationResourceConfig::NativeBootstrap(_) => {
                 unreachable!("native bootstrap resolved with dependencies")
+            }
+            ComputationResourceConfig::NativeQuerySnapshots(_) => {
+                unreachable!("native query snapshots resolved with dependencies")
             }
             ComputationResourceConfig::Middleware {} => ResourceHandle::new(
                 ResourceRole::Middleware,

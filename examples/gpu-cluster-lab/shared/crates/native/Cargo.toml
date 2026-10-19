@@ -16,7 +16,8 @@ dynamic-plugin = []
 query-isolation = ["dep:drasi-source-application", "dep:drasi-core", "dep:drasi-lib", "dep:drasi-middleware"]
 runtime = [
     "dep:axum", "dep:drasi-server", "dep:drasi-host-sdk",
-    "dep:drasi-source-postgres", "dep:drasi-index-rocksdb",
+    "dep:drasi-computation-source-postgres", "dep:drasi-computation-bootstrap-postgres",
+    "dep:drasi-index-rocksdb",
     "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
     "dep:sqlx",
     "dep:drasi-core", "dep:drasi-lib", "dep:drasi-middleware",
@@ -54,7 +55,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"
 axum = { version = "0.7", optional = true }
 drasi-server = { path = "../../../../..", optional = true }
 drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false, optional = true }
-drasi-source-postgres = { path = "../../../../../../drasi-core/components/sources/postgres", optional = true }
+drasi-computation-source-postgres = { path = "../../../../../../drasi-core/components/computation-plugins/sources/postgres", optional = true }
+drasi-computation-bootstrap-postgres = { path = "../../../../../../drasi-core/components/computation-plugins/bootstrappers/postgres", optional = true }
 drasi-index-rocksdb = { path = "../../../../../../drasi-core/components/indexes/rocksdb", features = ["computation"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }

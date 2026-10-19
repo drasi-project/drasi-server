@@ -101,6 +101,115 @@ fn declare(topology: &mut DesiredTopology, name: &str, role: ResourceRole, recip
         .insert(resource(name), recipe);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn native_query_snapshot_recipe_retains_exact_catalogue_scope_and_roundtrips() -> Result<()> {
+    let mut topology = DesiredInstance::default().topology;
+    declare(
+        &mut topology,
+        "catalog",
+        ResourceRole::QueryCatalog,
+        json!({"kind":"queryCatalog"}),
+    );
+    declare(
+        &mut topology,
+        "snapshots",
+        ResourceRole::QueryCatalog,
+        json!({
+            "kind":"nativeQuerySnapshots",
+            "catalog":"catalog",
+            "queries":["q"],
+            "timeoutMs":1000,
+            "maxReaders":2
+        }),
+    );
+    topology.resource_dependencies.insert(
+        resource("snapshots"),
+        BTreeMap::from([(resource("catalog"), ResourceRole::QueryCatalog)]),
+    );
+    let config = ComputationConfig {
+        definition: topology,
+    };
+    validate_definition(&config)?;
+    let json = serde_json::to_value(&config)?;
+    let json_roundtrip: ComputationConfig = serde_json::from_value(json.clone())?;
+    validate_definition(&json_roundtrip)?;
+    let yaml_roundtrip: ComputationConfig = serde_yaml::from_str(&serde_yaml::to_string(&config)?)?;
+    assert_eq!(serde_json::to_value(&yaml_roundtrip)?, json);
+    validate_definition(&yaml_roundtrip)?;
+    let resolver = ServerManagementResources::new(&PluginRegistry::new(), None)?;
+    let catalog_spec = &config.definition.resources[0];
+    let snapshot_spec = &config.definition.resources[1];
+    let catalog = resolver
+        .resolve(
+            INSTANCE,
+            &config.definition.graph_id,
+            catalog_spec,
+            &config.definition.resource_configurations[&catalog_spec.id],
+        )
+        .await?;
+    let dependencies = BTreeMap::from([(catalog_spec.id.clone(), catalog)]);
+    let recipe = &config.definition.resource_configurations[&snapshot_spec.id];
+    let resolved = resolver
+        .resolve_with_dependencies(
+            INSTANCE,
+            &config.definition.graph_id,
+            snapshot_spec,
+            recipe,
+            &dependencies,
+        )
+        .await?;
+    assert_eq!(
+        resolved
+            .get::<drasi_host_sdk::computation::NativeQuerySnapshotsResource>()?
+            .graph_id(),
+        config.definition.graph_id,
+    );
+    assert!(resolver
+        .resolve_with_dependencies(INSTANCE, "foreign", snapshot_spec, recipe, &dependencies,)
+        .await
+        .is_err());
+    assert!(resolver
+        .resolve(INSTANCE, &config.definition.graph_id, snapshot_spec, recipe)
+        .await
+        .is_err());
+    let wrong_type = BTreeMap::from([(
+        catalog_spec.id.clone(),
+        ResourceHandle::new(ResourceRole::QueryCatalog, Arc::new("not a catalogue")),
+    )]);
+    assert!(resolver
+        .resolve_with_dependencies(
+            INSTANCE,
+            &config.definition.graph_id,
+            snapshot_spec,
+            recipe,
+            &wrong_type,
+        )
+        .await
+        .is_err());
+    let mut invalid = config.clone();
+    invalid.definition.resource_dependencies.clear();
+    assert!(validate_definition(&invalid).is_err());
+    for update in [
+        json!({"queries":[]}),
+        json!({"queries":["q","q"]}),
+        json!({"timeoutMs":0}),
+        json!({"maxReaders":0}),
+        json!({"maxReaders":1025}),
+    ] {
+        let mut invalid = config.clone();
+        invalid
+            .definition
+            .resource_configurations
+            .get_mut(&resource("snapshots"))
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .extend(update.as_object().unwrap().clone());
+        assert!(validate_definition(&invalid).is_err());
+    }
+    Ok(())
+}
+
 fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
     let mut topology = DesiredInstance::default().topology;
     let indexes = resource("indexes");
