@@ -9,6 +9,11 @@ logLevel: info
 persistConfig: true
 persistIndex: false
 enableUi: true  # Enable the web UI at /ui (default: true)
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock:0.2.12
+  - ref: reaction/log:0.2.9
+  - ref: reaction/http:0.3.5
 
 sources:
   - id: vehicle-location-source
@@ -66,9 +71,9 @@ reactions:
     autoStart: true
     kind: http
     baseUrl: http://localhost:9000
-    routes:
-      available-drivers-query:
-        added:
-          url: /notifications
-          method: POST
-
+    outputTemplates:
+      routes:
+        available-drivers-query:
+          added:
+            url: /notifications
+            method: POST

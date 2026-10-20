@@ -20,25 +20,46 @@ on:
       tag:
         description: 'Version Tag (optional, defaults to version from Cargo.toml)'
         required: false
+        type: string
+        default: ''
       image_prefix:
         description: 'Image Prefix (defaults to ghcr.io/<repo-owner>)'
         required: false
+        type: string
         default: ''
       dry_run:
-        description: 'Dry run — build everything but skip publish/release steps'
+        description: 'Rehearse using test images; skip all official image/tag/release writes'
         required: false
         type: boolean
         default: false
-  schedule:
-    - cron: '0 8 * * 1' # Weekly Monday 08:00 UTC dry-run
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: 'Exact committed candidate to build and test'
+        required: true
+        type: string
+      base_sha:
+        description: 'Baseline revision used to prepare the candidate'
+        required: true
+        type: string
+      candidate_kind:
+        description: 'Candidate classification recorded in test evidence'
+        required: true
+        type: string
+      dry_run:
+        description: 'Reusable checks never publish official images or releases'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
-  id-token: write
   contents: read
-  packages: write
 
 env:
   IMAGE_NAME: drasi-server
+  CANDIDATE_KIND: ${{ inputs.candidate_kind || 'release' }}
+  ARTIFACT_PREFIX: ${{ format('{0}-{1}', inputs.candidate_kind || 'release', github.run_attempt) }}
+  STAGING_IMAGE: ghcr.io/${{ github.repository_owner }}/drasi-server-test
   # Resolved image prefix: use the user-provided value if set, otherwise default
   # to ghcr.io/<repo-owner> so forks publish to their own namespace by default.
   IMAGE_PREFIX: ${{ inputs.image_prefix != '' && inputs.image_prefix || format('ghcr.io/{0}', github.repository_owner) }}
@@ -50,32 +71,76 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+      stage_tag: ${{ steps.version.outputs.stage_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          persist-credentials: false
 
-      - name: Determine version
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Record immutable candidate and version
         id: version
+        env:
+          VERSION_TAG: ${{ inputs.tag }}
+          BASE_SHA: ${{ inputs.base_sha }}
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "Using provided tag: ${{ inputs.tag }}"
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            # Extract version from Cargo.toml
-            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-            TAG="${VERSION}"
-            echo "Using version from Cargo.toml: ${TAG}"
-            echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          fi
+          python3 scripts/release.py candidate --kind "$CANDIDATE_KIND" \
+            --base-sha "$BASE_SHA" --tag "$VERSION_TAG" --output candidate.json
+          {
+            echo "## $CANDIDATE_KIND candidate"
+            echo '```json'
+            cat candidate.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+          path: candidate.json
+          if-no-files-found: error
+
+  validate-candidate:
+    name: Validate committed dependency graph
+    needs: determine-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
+      - name: Validate final committed manifests and lockfiles
+        env:
+          JQ_LIB_DIR: /usr/lib/x86_64-linux-gnu
+        run: |
+          python3 scripts/plugin_origin.py mode
+          cargo metadata --locked --format-version 1 --manifest-path examples/sse-cli/Cargo.toml > /dev/null
+          cargo check --workspace --locked
+          git diff --exit-code
 
   # Build all Linux binaries on a single runner using cross (the whole point of cross)
   build-linux:
     name: Build Linux binaries
     runs-on: ubuntu-latest
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -128,28 +193,28 @@ jobs:
       - name: Upload x86_64-linux-gnu
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-x86_64-linux-gnu
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-x86_64-linux-gnu
           path: drasi-server-x86_64-linux-gnu
           if-no-files-found: error
 
       - name: Upload aarch64-linux-gnu
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-aarch64-linux-gnu
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-aarch64-linux-gnu
           path: drasi-server-aarch64-linux-gnu
           if-no-files-found: error
 
       - name: Upload x86_64-linux-musl
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-x86_64-linux-musl
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-x86_64-linux-musl
           path: drasi-server-x86_64-linux-musl
           if-no-files-found: error
 
       - name: Upload aarch64-linux-musl
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-aarch64-linux-musl
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-aarch64-linux-musl
           path: drasi-server-aarch64-linux-musl
           if-no-files-found: error
 
@@ -157,8 +222,9 @@ jobs:
   build-macos:
     name: Build macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -172,6 +238,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -198,7 +267,7 @@ jobs:
           ./configure --host=x86_64-apple-darwin --prefix="$X86_PREFIX" \
             CC="clang -arch x86_64" CFLAGS="-arch x86_64" \
             --enable-static --disable-shared
-          make -j$(sysctl -n hw.ncpu) && make install
+          make -j"$(sysctl -n hw.ncpu)" && make install
 
           # Build jq for x86_64 (with oniguruma)
           git clone --depth 1 https://github.com/jqlang/jq.git /tmp/jq
@@ -209,7 +278,7 @@ jobs:
             CC="clang -arch x86_64" CFLAGS="-arch x86_64" \
             --with-oniguruma="$X86_PREFIX" \
             --enable-static --disable-shared --disable-maintainer-mode
-          make -j$(sysctl -n hw.ncpu) && make install
+          make -j"$(sysctl -n hw.ncpu)" && make install
 
           echo "x86_64 static libs installed to $X86_PREFIX:"
           ls -la "$X86_PREFIX/lib/"
@@ -226,8 +295,9 @@ jobs:
             export PKG_CONFIG_PATH="$X86_PREFIX/lib/pkgconfig"
             export CFLAGS_x86_64_apple_darwin="-arch x86_64"
           else
-            export JQ_LIB_DIR="$(brew --prefix jq)/lib"
-            export ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
+            JQ_LIB_DIR="$(brew --prefix jq)/lib"
+            ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
+            export JQ_LIB_DIR ONIG_LIB_DIR
           fi
 
           cargo build --locked --release --target ${{ matrix.target }} --bin drasi-server
@@ -246,7 +316,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-${{ matrix.artifact_suffix }}
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-${{ matrix.artifact_suffix }}
           path: drasi-server-${{ matrix.artifact_suffix }}
           if-no-files-found: error
 
@@ -254,10 +324,13 @@ jobs:
   build-windows-msvc:
     name: Build Windows MSVC (x86_64)
     runs-on: windows-latest
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -293,7 +366,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-server-x86_64-windows-msvc
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-x86_64-windows-msvc
           path: drasi-server-x86_64-windows-msvc.exe
           if-no-files-found: error
 
@@ -303,10 +376,13 @@ jobs:
   build-sse-cli-linux:
     name: Build SSE CLI Linux binaries
     runs-on: ubuntu-latest
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -336,7 +412,7 @@ jobs:
             echo "========================================="
 
             rustup target add "${TARGET}"
-            cross build --release --target "${TARGET}" --manifest-path examples/sse-cli/Cargo.toml
+            cross build --locked --release --target "${TARGET}" --manifest-path examples/sse-cli/Cargo.toml
 
             SRC="examples/sse-cli/target/${TARGET}/release/drasi-sse-cli"
             if [[ -f "$SRC" ]]; then
@@ -356,28 +432,28 @@ jobs:
       - name: Upload x86_64-linux-gnu
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-x86_64-linux-gnu
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-x86_64-linux-gnu
           path: drasi-sse-cli-x86_64-linux-gnu
           if-no-files-found: error
 
       - name: Upload aarch64-linux-gnu
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-aarch64-linux-gnu
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-aarch64-linux-gnu
           path: drasi-sse-cli-aarch64-linux-gnu
           if-no-files-found: error
 
       - name: Upload x86_64-linux-musl
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-x86_64-linux-musl
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-x86_64-linux-musl
           path: drasi-sse-cli-x86_64-linux-musl
           if-no-files-found: error
 
       - name: Upload aarch64-linux-musl
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-aarch64-linux-musl
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-aarch64-linux-musl
           path: drasi-sse-cli-aarch64-linux-musl
           if-no-files-found: error
 
@@ -385,8 +461,9 @@ jobs:
   build-sse-cli-macos:
     name: Build SSE CLI macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -400,6 +477,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -411,7 +491,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cargo build --release --target ${{ matrix.target }} --manifest-path examples/sse-cli/Cargo.toml
+          cargo build --locked --release --target ${{ matrix.target }} --manifest-path examples/sse-cli/Cargo.toml
 
           SRC_BINARY="examples/sse-cli/target/${{ matrix.target }}/release/drasi-sse-cli"
           ARTIFACT_NAME="drasi-sse-cli-${{ matrix.artifact_suffix }}"
@@ -428,7 +508,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-${{ matrix.artifact_suffix }}
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-${{ matrix.artifact_suffix }}
           path: drasi-sse-cli-${{ matrix.artifact_suffix }}
           if-no-files-found: error
 
@@ -436,10 +516,13 @@ jobs:
   build-sse-cli-windows:
     name: Build SSE CLI Windows (x86_64)
     runs-on: ubuntu-latest
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -453,7 +536,7 @@ jobs:
       - name: Build binary
         run: |
           rustup target add x86_64-pc-windows-gnu
-          cross build --release --target x86_64-pc-windows-gnu --manifest-path examples/sse-cli/Cargo.toml
+          cross build --locked --release --target x86_64-pc-windows-gnu --manifest-path examples/sse-cli/Cargo.toml
 
           SRC_BINARY="examples/sse-cli/target/x86_64-pc-windows-gnu/release/drasi-sse-cli.exe"
           ARTIFACT_NAME="drasi-sse-cli-x86_64-windows.exe"
@@ -470,16 +553,20 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
-          name: drasi-sse-cli-x86_64-windows
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-sse-cli-x86_64-windows
           path: drasi-sse-cli-x86_64-windows.exe
           if-no-files-found: error
 
   # Build Docker images for Linux platforms
   build-docker:
-    name: Build Docker ${{ matrix.platform }}
+    name: Stage Docker ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    needs: determine-version
+    needs: [determine-version, validate-candidate]
+    permissions:
+      contents: read
+      packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: linux/amd64
@@ -491,43 +578,192 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push platform-specific image
-        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
+      - name: Build once into the dedicated test package
         env:
-          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
-          DOCKER_TAG_VERSION: ${{ needs.determine-version.outputs.tag }}-${{ matrix.suffix }}
-          DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
+          STAGE_TAG: ${{ needs.determine-version.outputs.stage_tag }}-${{ matrix.suffix }}
+          CANDIDATE_SHA: ${{ needs.determine-version.outputs.sha }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          make docker-build
+          docker buildx build . --platform "$PLATFORM" --push \
+            --provenance=mode=min \
+            --label "org.opencontainers.image.revision=$CANDIDATE_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$STAGING_IMAGE:$STAGE_TAG" --metadata-file image.json \
+            --cache-from type=gha --cache-to type=gha,mode=max
+          DIGEST=$(jq -er '."containerimage.digest"' image.json)
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf '%s@%s\n' "$STAGING_IMAGE" "$DIGEST" > image-reference.txt
+          echo "Staged $CANDIDATE_SHA: \`$STAGING_IMAGE@$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-image-${{ matrix.suffix }}
+          path: |
+            image-reference.txt
+            image.json
+          if-no-files-found: error
 
-      - name: Build platform-specific image (dry run)
-        if: ${{ github.event_name == 'schedule' || inputs.dry_run }}
-        env:
-          IMAGE_PREFIX: local
-          DOCKER_TAG_VERSION: dry-run-${{ matrix.suffix }}
-          DOCKERX_OPTS: --platform ${{ matrix.platform }} --cache-from type=gha --cache-to type=gha,mode=max --load
-        run: |
-          make docker-build
-
-  # Create multi-arch manifest
-  create-manifest:
-    name: Create Multi-Arch Manifest
-    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
+  test-containers:
+    name: Smoke pulled image (${{ matrix.arch }})
     needs: [determine-version, build-docker]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-image-${{ matrix.arch }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test default startup and hello-world on exact pulled digest
+        env:
+          CANDIDATE_SHA: ${{ needs.determine-version.outputs.sha }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          IMAGE=$(cat image-reference.txt)
+          bash scripts/smoke-release-container.sh "$IMAGE" "$CANDIDATE_SHA" "$ARCH" runtime
+          python3 scripts/release.py record --candidate candidate.json \
+            --type container --target "$ARCH" --image "$IMAGE" \
+            --runtime runtime/runtime.json --default-runtime runtime/default.json \
+            --output "container-$ARCH.json"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-evidence-container-${{ matrix.arch }}
+          path: container-${{ matrix.arch }}.json
+          if-no-files-found: error
+      - name: Preserve runtime logs, including failures
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-container-logs-${{ matrix.arch }}
+          path: runtime/
+          if-no-files-found: warn
+
+  assemble-assets:
+    name: Assemble and validate all release assets
+    needs: [determine-version, build-linux, build-macos, build-windows-msvc, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ${{ env.ARTIFACT_PREFIX }}-drasi-*
+          path: artifacts
+      - run: |
+          python3 scripts/release.py assets --candidate candidate.json \
+            --artifacts artifacts --directory release-assets --output assets.json
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-assets
+          path: release-assets/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-evidence-assets
+          path: assets.json
+          if-no-files-found: error
+
+  release-gate:
+    name: Require complete same-candidate release evidence
+    if: always()
+    needs: [determine-version, validate-candidate, build-linux, build-macos, build-windows-msvc, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows, build-docker, test-binaries, test-containers, assemble-assets]
+    runs-on: ubuntu-latest
+    env:
+      REQUIRED_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha || github.sha }}
+          persist-credentials: false
+      - name: Reject failed, cancelled, skipped or missing jobs
+        run: python3 scripts/release.py check-jobs --needs "$REQUIRED_RESULTS"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ${{ env.ARTIFACT_PREFIX }}-evidence-*
+          path: evidence
+          merge-multiple: true
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-assets
+          path: release-assets
+      - name: Bind runtime evidence and all asset hashes to this candidate
+        run: |
+          python3 scripts/release.py gate --candidate candidate.json \
+            --needs "$REQUIRED_RESULTS" --evidence evidence --assets release-assets \
+            --staging-image "$STAGING_IMAGE" --output approval.json
+          {
+            echo "## Approved $CANDIDATE_KIND candidate"
+            echo '```json'
+            cat approval.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-approval
+          path: approval.json
+          if-no-files-found: error
+
+  create-manifest:
+    name: Promote tested images and multiarch manifest
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && inputs.candidate_kind == '' && inputs.candidate_sha == '' && needs.release-gate.result == 'success' }}
+    needs: [determine-version, release-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-approval
+      - uses: docker/setup-buildx-action@v4
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -535,65 +771,30 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push manifest list
+      - name: Promote only the tested digests without rebuilding
         run: |
-          docker buildx imagetools create -t ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }} \
-            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
-            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
-
-      - name: Create and push 'latest' tag
-        run: |
-          docker buildx imagetools create -t ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
-            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
-
-      - name: Generate summary
-        run: |
-          echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Tags Created" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-windows-msvc.exe\` (Windows x86_64 MSVC)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### SSE CLI Binaries" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-aarch64-apple-darwin\` (macOS ARM64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-x86_64-apple-darwin\` (macOS x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Examples" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-examples.zip\`" >> $GITHUB_STEP_SUMMARY          echo "- \`drasi-sse-cli-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
+          python3 scripts/release.py promote --candidate candidate.json \
+            --approval approval.json --staging-image "$STAGING_IMAGE" \
+            --image "$IMAGE_PREFIX/$IMAGE_NAME" --output publication.json
+          {
+            echo "## Published tested image digests"
+            echo '```json'
+            cat publication.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-publication
+          path: publication.json
+          if-no-files-found: error
 
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
     name: Test ${{ matrix.artifact_suffix }}
-    needs: [build-linux, build-macos, build-windows-msvc]
+    needs: [determine-version, build-linux, build-macos, build-windows-msvc]
     runs-on: ${{ matrix.runner }}
+    env:
+      PYTHON: python
     strategy:
       fail-fast: false
       matrix:
@@ -631,11 +832,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
 
       - name: Download binary artifact
         uses: actions/download-artifact@v5
         with:
-          name: drasi-server-${{ matrix.artifact_suffix }}
+          name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-${{ matrix.artifact_suffix }}
           path: bin
 
       - name: Run hello-world smoke test (Unix)
@@ -647,6 +859,7 @@ jobs:
           # Plugins are auto-installed at server startup (autoInstallPlugins: true
           # in the test config) from the default OCI registry.
           SERVER_BINARY="$BINARY" \
+            SMOKE_REPORT="$(pwd)/runtime.json" \
             tests/integration/hello-world/run-integration-test.sh
 
       - name: Run hello-world smoke test (Alpine/musl)
@@ -656,10 +869,12 @@ jobs:
           docker run --rm \
             -v "$(pwd)/bin:/bin-artifacts" \
             -v "$(pwd)/tests:/tests" \
+            -v "$(pwd):/workspace" -w /workspace \
             alpine:latest \
             sh -c "
-              apk add --no-cache bash curl libstdc++ libgcc &&
+              apk add --no-cache bash curl python3 libstdc++ libgcc &&
               SERVER_BINARY=/bin-artifacts/${{ matrix.binary_name }} \
+                SMOKE_REPORT=/workspace/runtime.json \
                 bash /tests/integration/hello-world/run-integration-test.sh
             "
 
@@ -686,7 +901,24 @@ jobs:
           # Plugins are auto-installed at server startup (autoInstallPlugins: true
           # in the test config) from the default OCI registry.
           SERVER_BINARY="$BINARY_PATH" \
+            SMOKE_REPORT="$(pwd)/runtime.json" \
             tests/integration/hello-world/run-integration-test.sh
+
+      - name: Record tested binary and loaded plugin identities
+        shell: bash
+        env:
+          TARGET: ${{ matrix.artifact_suffix }}
+          BINARY: bin/${{ matrix.binary_name }}
+        run: |
+          python scripts/release.py record --candidate candidate.json --type binary \
+            --target "$TARGET" --binary "$BINARY" --runtime runtime.json \
+            --output "binary-$TARGET.json"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-evidence-binary-${{ matrix.artifact_suffix }}
+          path: binary-${{ matrix.artifact_suffix }}.json
+          if-no-files-found: error
 
       - name: Show server logs on failure
         if: failure()
@@ -708,46 +940,37 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
-    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
-    needs: [determine-version, create-manifest, test-binaries, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows]
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && inputs.candidate_kind == '' && inputs.candidate_sha == '' && needs.release-gate.result == 'success' }}
+    needs: [determine-version, release-gate, create-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.determine-version.outputs.tag }}
+      CANDIDATE_SHA: ${{ needs.determine-version.outputs.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-version.outputs.sha }}
+          persist-credentials: false
 
-      - name: Download drasi-server artifacts
+      - name: Download already checked release assets
         uses: actions/download-artifact@v5
         with:
-          path: artifacts
-          pattern: drasi-server-*
-          merge-multiple: false
+          name: ${{ env.ARTIFACT_PREFIX }}-assets
+          path: release-assets
 
-      - name: Download drasi-sse-cli artifacts
-        uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v5
         with:
-          path: artifacts
-          pattern: drasi-sse-cli-*
-          merge-multiple: false
-
-      - name: Zip examples folder
+          name: ${{ env.ARTIFACT_PREFIX }}-candidate
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-approval
+      - name: Verify approved asset bytes before any release writes
         run: |
-          zip -r "drasi-server-examples.zip" examples/ \
-            -x 'examples/sse-cli/target/*' \
-            -x 'examples/trading/target/*'
-          echo "✓ Created drasi-server-examples.zip"
-          ls -lh "drasi-server-examples.zip"
-
-      - name: Prepare release assets
-        id: prepare
-        run: |
-          mkdir -p release-assets
-          find artifacts -type f -exec cp {} release-assets/ \;
-          cp drasi-server-examples.zip release-assets/
-          ls -lh release-assets/
-          ASSET_COUNT=$(ls -1 release-assets/ | wc -l)
-          echo "asset_count=${ASSET_COUNT}" >> $GITHUB_OUTPUT
+          python3 scripts/release.py verify-assets --candidate candidate.json \
+            --approval approval.json --assets release-assets
 
       - name: Create release notes
         run: |
@@ -797,18 +1020,18 @@ jobs:
           ## Docker Images
 
           Multi-arch Docker images are available at:
-          - `${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}`
-          - `${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest`
 
           Supported architectures: `linux/amd64`, `linux/arm64`
           NOTES_EOF
+          # shellcheck disable=SC2016
+          printf '\n- `%s/%s:%s`\n- `%s/%s:latest`\n\nCandidate: `%s`\n' \
+            "$IMAGE_PREFIX" "$IMAGE_NAME" "$TAG" "$IMAGE_PREFIX" "$IMAGE_NAME" \
+            "$CANDIDATE_SHA" >> release-notes.md
 
       - name: Create or update versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ needs.determine-version.outputs.tag }}"
-
           # Mark versions carrying a -preview suffix (e.g. 1.4.0-preview.1) as
           # GitHub pre-releases; everything else is published as a full release.
           if [[ "$TAG" == *-preview* ]]; then
@@ -827,6 +1050,7 @@ jobs:
               release-assets/* \
               --repo ${{ github.repository }} \
               --title "Release ${TAG}" \
+              --target "$CANDIDATE_SHA" \
               --notes-file release-notes.md \
               --prerelease="${PRERELEASE}"
           fi
@@ -835,8 +1059,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ needs.determine-version.outputs.tag }}"
-
           # Delete existing 'latest' release and tag if they exist
           if gh release view "latest" --repo ${{ github.repository }} 2>/dev/null; then
             echo "Deleting existing 'latest' release..."
@@ -848,16 +1070,16 @@ jobs:
             release-assets/* \
             --repo ${{ github.repository }} \
             --title "Latest Release (${TAG})" \
+            --target "$CANDIDATE_SHA" \
             --notes-file release-notes.md \
             --prerelease
 
       - name: Update summary
         run: |
-          TAG="${{ needs.determine-version.outputs.tag }}"
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## GitHub Releases Published :tada:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Versioned: [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG})" >> $GITHUB_STEP_SUMMARY
-          echo "- Latest: [\`latest\`](https://github.com/${{ github.repository }}/releases/tag/latest) (points to ${TAG})" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Total assets: ${{ steps.prepare.outputs.asset_count }}" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## GitHub Releases Published"
+            echo "- Versioned: [\`${TAG}\`](https://github.com/$GITHUB_REPOSITORY/releases/tag/${TAG})"
+            echo "- Latest: [\`latest\`](https://github.com/$GITHUB_REPOSITORY/releases/tag/latest)"
+            echo "Candidate: \`$CANDIDATE_SHA\`"
+            echo "Total validated assets: 15"
+          } >> "$GITHUB_STEP_SUMMARY"

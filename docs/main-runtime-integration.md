@@ -102,6 +102,146 @@ snapshot is retained for still-unmigrated consumers and requires separate cleanu
 approval. Host audit warnings, embedded-plugin audit coverage, publisher and human
 assistive-technology limitations remain explicit.
 
+## Release rehearsal and publication gates
+
+[Nightly](../.github/workflows/nightly.yml) is a standalone workflow, following
+the short prepare-then-release-check pattern used by drasi-core. It runs at
+08:00 UTC daily and supports manual dispatch:
+
+```text
+Prepare dependency-upgrade candidate -> Test candidate release -> Nightly result
+```
+
+There is **one upgraded candidate and one full build/test pass**, not two copies
+of the release matrix. Nightly calls [Build and Release](../.github/workflows/release.yaml)
+directly with `dry_run: true`. Build and Release contains the shared jobs and
+also remains the normal manual production/dry-run entry point. There are no
+intermediate workflow wrappers or nightly mode switches in the release UI.
+
+Scheduled Nightly runs resolve fresh `main`; manual runs use the selected
+branch's exact commit. Preparation records that baseline SHA and uses the same
+[dependency-update helper](../scripts/update-release-dependencies.sh) as
+[Version Bump](../.github/workflows/version-bump.yaml): upgrade all direct
+`drasi-*` requirements, including workspace dev/build dependencies, refresh their
+lock entries, bump only `drasi-server`, and reconcile the workspace lockfile
+without a general dependency upgrade.
+
+The experiment commits all changed Cargo manifests/lockfiles to a unique
+`automation/release-rehearsal/<run-id>-<attempt>` branch before testing. It
+never writes `main` or `automation/version-bump`. Checks are invoked explicitly;
+they do not depend on a token-authored push triggering another workflow.
+These diagnostic branches are retained; automatic cleanup/recovery is not
+part of the workflow. Preparation and release-check outcomes are reported
+separately. A dependency-upgrade failure does **not** establish the health of the
+unchanged baseline, which is recorded but not separately tested by Nightly.
+Use a separate Build and Release dry run for locked-baseline health. The reviewed
+plugin-origin policy is not relaxed to make nightly upgrades pass.
+
+Every build, test, asset and publication job checks out the recorded candidate
+SHA. Candidate evidence includes the baseline SHA, run/attempt, both Cargo
+lockfile hashes, resolved Drasi package versions/checksums and reviewed native
+plugin ABI. All server and independent SSE CLI builds use `--locked`.
+The [Git attributes](../.gitattributes) force `Cargo.lock` files to LF on every
+platform, including the independent CLI lockfile. This keeps candidate hashes
+identical even when Windows Git uses `core.autocrlf=true`; the integrity check
+still compares raw bytes and rejects actual lockfile changes. Without this rule,
+the Windows smoke job could pass its runtime checks and then fail while recording
+evidence solely because checkout converted LF to CRLF.
+The SSE CLI lockfile correction from
+[`0347dee1`](https://github.com/drasi-project/drasi-server/commit/0347dee15dc0ab0e66ffcca08d83599509aae6f1)
+is included without other changes from that commit, addressing the locked-build
+input described in [#181](https://github.com/drasi-project/drasi-server/issues/181).
+
+### Manual runs
+
+Choose **Nightly -> Run workflow** and select a branch, or use:
+
+```bash
+gh workflow run nightly.yml --repo drasi-project/drasi-server --ref <branch>
+gh run list --repo drasi-project/drasi-server --workflow nightly.yml --limit 5
+```
+
+**First-time setup:** GitHub requires `nightly.yml` on the repository's default
+branch before it can be manually dispatched. Pushing this new file only to a
+feature branch is not enough. Land the standalone workflow through normal review
+first; it can then be dispatched on branches containing it. No push trigger or
+release-entrypoint workaround is added.
+
+To check an unchanged branch without the dependency-upgrade step:
+
+```bash
+gh workflow run release.yaml --repo drasi-project/drasi-server --ref <branch> -f dry_run=true
+```
+
+For a fork, substitute its repository name in these commands. Nightly creates
+canary images and an isolated upgrade branch, but never official image tags,
+Git tags or GitHub Releases, and never updates `main` or the version-bump PR branch.
+
+### Test staging is not official publication
+
+Production, manual `dry_run`, and Nightly's upgraded candidate build images once
+into `ghcr.io/<owner>/drasi-server-test`, using unique
+`run-<id>-<attempt>-<kind>-<sha>-<architecture>` tags. Thus a dry run requires
+test-package write permission and network access; it is not a no-push build.
+The official `image_prefix` input does not redirect test publication.
+
+Native amd64 and arm64 runners pull the recorded digests in separate jobs.
+They first run the shipped entrypoint, user and default command without mounts,
+then run the hello-world configuration with the same entrypoint and user.
+Neither test installs missing runtime libraries or switches to root.
+Readiness probing retries refused, reset or closed connections within the existing
+120-second window: Docker can expose the host port before plugin installation
+finishes and the API starts listening. Persistent failures still fail the check,
+and container logs are retained; a transient connection is not a passing result.
+All seven release binaries and both images share health, running-source,
+query and nonempty numeric-result assertions. Runtime evidence records loaded
+plugin versions, ABI and binary hashes; the hello-world plugins are version
+pinned. Its existing signature-verification exemption remains limited to
+that smoke configuration. The shipped default configuration keeps verification
+enabled, explicitly installs the reviewed plugins, and uses the HTTP plugin's
+current `outputTemplates.routes` schema. The runtime image supplies C++/GCC
+libraries and a plugin directory writable by its non-root user.
+
+Asset assembly always runs, including rehearsals. It requires exactly seven
+server files, seven SSE CLI files and `drasi-server-examples.zip`, all nonempty.
+Examples are archived from the candidate commit, not the working directory:
+untracked files, local build output and local credentials cannot leak into the
+archive. Archive paths, duplicates, CRCs, file inventory and sizes are checked
+against the committed examples. Asset hashes must match the tested binaries.
+
+### Fail-closed production gate
+
+The always-evaluated release gate requires every named build/validation/test job
+to finish with `success`, all seven binary reports, both container reports and
+the asset report. Missing, failed, cancelled or unexpectedly skipped work fails
+the gate. Reports and approvals must match the SHA, run and attempt; another
+nightly cannot approve a production release. Artifacts are attempt-scoped:
+use **Re-run all jobs**, not partial reruns that mix evidence across attempts.
+
+Only a direct **Build and Release** manual dispatch with `dry_run=false` enables
+official promotion. Reusable calls must supply a candidate SHA and kind;
+publication guards require both inputs to be absent, so even a manual Nightly
+call cannot enter the official publication jobs. Nightly also explicitly passes
+`dry_run: true`, the reusable default. A successful same-candidate gate is required
+before any official image, GitHub Release or tag writes. Production still supports the
+existing version override, image prefix, preview releases and `latest` behavior.
+The gate is part of that production run, not a dependency on a prior nightly.
+Promotion copies the tested digests without rebuilding, verifies the
+architecture tags preserve those digests, then verifies the version/`latest`
+multiarch indexes contain exactly the tested amd64 and arm64 manifests and their
+BuildKit provenance manifests. Test staging retains BuildKit's minimal provenance.
+GitHub Release uploads reuse the checked asset bytes and new tags target the
+recorded commit. Candidate, runtime, approval and publication artifacts and
+job summaries provide source/digest/result evidence.
+
+Local regression coverage is included in `make test-tooling`: injected
+binary/container failures, cancellations and skips block every promotion write;
+missing assets, malformed archives, stale evidence and wrong digests are
+rejected. Workflow syntax can also be checked with `actionlint`. Real
+seven-platform builds, registry promotion and both pulled-image runtime tests
+require GitHub Actions; these local checks are not a substitute for a successful
+rehearsal before official release.
+
 ## Historical September 22 temporary source selection (superseded)
 
 The approved normal merge of #119

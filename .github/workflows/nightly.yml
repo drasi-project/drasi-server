@@ -1,0 +1,123 @@
+# Copyright 2026 The Drasi Authors.
+# Licensed under the Apache License, Version 2.0.
+
+name: Nightly
+run-name: "Nightly (${{ github.ref_name }})"
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-candidate:
+    name: Prepare dependency-upgrade candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      base_sha: ${{ steps.baseline.outputs.sha }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || github.sha }}
+      - id: baseline
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Rehearsal baseline: \`$SHA\` (scheduled runs resolve fresh main; manual runs use the selected commit)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - name: Install cargo-edit
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: cargo install cargo-edit --locked
+      - name: Apply the real version-bump policy
+        env:
+          MODE: bump
+          BUMP: patch
+        run: bash scripts/update-release-dependencies.sh
+      - name: Commit all dependency changes on an isolated branch
+        id: commit
+        env:
+          BASE_SHA: ${{ steps.baseline.outputs.sha }}
+        run: |
+          set -euo pipefail
+          BRANCH="automation/release-rehearsal/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$BRANCH"
+          # Stage every changed manifest/lockfile; reject any other mutation.
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import PurePosixPath
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", "-z"], text=True).split("\0")
+          paths = [path for path in changed if path]
+          if not paths or any(PurePosixPath(path).name not in ("Cargo.toml", "Cargo.lock") for path in paths):
+              raise SystemExit("Expected only manifest/lockfile candidate changes")
+          subprocess.run(["git", "add", "--", *paths], check=True)
+          PY
+          git -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -m "test: rehearse dependency update from $BASE_SHA"
+          SHA=$(git rev-parse HEAD)
+          git push origin "HEAD:refs/heads/$BRANCH"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "Dependency experiment: \`$SHA\`"
+            echo "Baseline commit: \`$BASE_SHA\`"
+            echo "Isolated branch: \`$BRANCH\` (not the version-bump PR branch)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve failed preparation diagnostics
+        if: failure()
+        run: git --no-pager diff -- '**/Cargo.toml' '**/Cargo.lock' Cargo.toml Cargo.lock
+
+  release-checks:
+    name: Test candidate release
+    needs: prepare-candidate
+    permissions:
+      # Called workflow permissions are checked statically, including its
+      # publication jobs, which remain disabled for this candidate.
+      contents: write
+      packages: write
+    # Explicit invocation: GITHUB_TOKEN pushes do not trigger another workflow.
+    uses: ./.github/workflows/release.yaml
+    with:
+      candidate_sha: ${{ needs.prepare-candidate.outputs.sha }}
+      base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}
+      candidate_kind: upgrade
+      dry_run: true
+
+  summary:
+    name: Nightly result
+    if: always()
+    needs: [prepare-candidate, release-checks]
+    runs-on: ubuntu-latest
+    env:
+      PREPARATION_RESULT: ${{ needs.prepare-candidate.result }}
+      CHECKS_RESULT: ${{ needs.release-checks.result }}
+      BASE_SHA: ${{ needs.prepare-candidate.outputs.base_sha }}
+      CANDIDATE_SHA: ${{ needs.prepare-candidate.outputs.sha }}
+    steps:
+      - run: |
+          {
+            echo "## Nightly release rehearsal"
+            echo "Baseline: \`$BASE_SHA\` (recorded, not separately tested)"
+            echo "Candidate: \`$CANDIDATE_SHA\`"
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| Dependency upgrade | $PREPARATION_RESULT |"
+            echo "| Release checks | $CHECKS_RESULT |"
+            echo ""
+            echo "An upgrade failure does not establish the health of the locked baseline."
+            echo "Use a separate Build and Release dry run to check the locked baseline."
+            echo "No official image tags, Git tags, Releases or main were changed."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$PREPARATION_RESULT" != success || "$CHECKS_RESULT" != success ]]; then
+            echo "::error::Nightly did not complete every required stage successfully"
+            exit 1
+          fi
