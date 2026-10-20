@@ -5,6 +5,8 @@
 
 // Synthetic, deliberately small fixtures. These are NOT recorded server results.
 import type { Stock as ApiStock } from '../../../src/services/TradingApi';
+import nativeComputation from '../../../public/native-computation.json';
+import { ALL_QUERIES } from '../../../src/services/queries';
 
 export const FIXED_TIME = '2026-01-15T12:00:00.000Z';
 
@@ -80,6 +82,7 @@ export class SyntheticTrading {
   instanceId = 'trading-server';
   reactionStatus = 'Running';
   reaction: FixtureRow | null = null;
+  nativeTopology: typeof nativeComputation.definition | null = null;
   stocks = structuredClone(STOCKS);
   watchlist = new Set(['AAPL', 'MSFT']);
   positions = structuredClone(POSITIONS);
@@ -205,6 +208,23 @@ export class SyntheticTrading {
       path = `/api/v1${instance[2]}`;
     } else if (path.startsWith('/api/v1/')) {
       throw new Error(`Unscoped resource request: ${path}`);
+    }
+    if (path === '/api/v1/computation/configuration' && method === 'GET') {
+      return ok({
+        version: 1, instance: { sources: [], queries: [] },
+        native_components: this.nativeTopology ? { topology: this.nativeTopology } : null,
+      });
+    }
+    if (path === '/api/v1/computation/components' && method === 'POST') {
+      if (this.nativeTopology || this.queries.size) return { status: 409, body: { code: 'DUPLICATE_RESOURCE' } };
+      if (JSON.stringify(body) !== JSON.stringify(nativeComputation)) {
+        return { status: 400, body: { code: 'INVALID_REQUEST' } };
+      }
+      this.nativeTopology = structuredClone(nativeComputation.definition);
+      for (const { id, query, sources, joins } of ALL_QUERIES) {
+        this.queries.set(id, { id, query, sources, joins, queryLanguage: 'Cypher', autoStart: true });
+      }
+      return ok({ revision: 1 });
     }
     if (path === '/api/v1/queries' && method === 'POST') {
       const fields = ['id', 'query', 'sources', 'joins', 'queryLanguage', 'autoStart'];

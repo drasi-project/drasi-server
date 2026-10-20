@@ -20,9 +20,33 @@ Sends price updates to Drasi HTTP Source using direct format
 """
 
 import random
+import json
+import os
 import time
 import requests
 from datetime import datetime
+from pathlib import Path
+
+
+def wait_for_queries(server_url, instance_id, query_ids):
+    """HTTP snapshots have no replay cursor: initialize every owner before live prices."""
+    url = f"{server_url}/api/v1/instances/{instance_id}/queries"
+    while True:
+        try:
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            body = response.json()
+            if body.get('success') is not True or not isinstance(body.get('data'), list):
+                raise ValueError('Invalid query readiness response')
+            states = {query['id']: query['status'] for query in body['data']}
+            failed = [query for query in query_ids if states.get(query) in ('Error', 'Failed')]
+            if failed:
+                raise RuntimeError(f"Trading queries failed: {', '.join(failed)}")
+            if all(states.get(query) == 'Running' for query in query_ids):
+                return
+        except requests.RequestException as error:
+            print(f"Waiting for Trading query initialization: {error}", flush=True)
+        time.sleep(1)
 
 def generate_price_update(symbol, base_price, volatility=0.02):
     """Generate a realistic price update"""
@@ -62,18 +86,25 @@ def send_price_to_http_source(http_url, source_id, price_data):
     url = f"{http_url}/sources/{source_id}/events"
     
     try:
-        response = requests.post(url, json=event)
+        response = requests.post(url, json=event, timeout=10)
         if response.status_code == 200:
             print(f"✓ Sent price update for {price_data['symbol']}: ${price_data['price']}")
         else:
             print(f"✗ Failed to send {price_data['symbol']}: {response.status_code} - {response.text}")
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"✗ Error sending {price_data['symbol']}: {e}")
 
 def main():
     # Configuration
-    http_source_url = "http://localhost:9100"
+    http_source_url = os.getenv('TRADING_PRICE_SOURCE_URL', 'http://localhost:9100')
     source_id = "price-feed"
+    server_url = os.getenv('DRASI_SERVER_URL', 'http://localhost:8280')
+    instance_id = os.getenv('DRASI_INSTANCE_ID', 'trading-server')
+    bundle = json.loads((Path(__file__).parents[1] / 'app/public/native-computation.json').read_text())
+    query_ids = [node['descriptor']['id'] for node in bundle['definition']['components']
+                 if node['role'] == 'Query']
+    if not query_ids:
+        raise ValueError('Generate the native Trading bundle before starting prices')
     
     # Stock symbols with base prices - all 50 stocks from the database
     stocks = {
@@ -146,6 +177,8 @@ def main():
     print(f"Generating prices for {len(stocks)} stocks")
     print("-" * 50)
     
+    print("Waiting for the app to initialize all native query owners...", flush=True)
+    wait_for_queries(server_url, instance_id, query_ids)
     # Send initial prices for all stocks
     print("Sending initial prices...")
     for symbol, base_price in stocks.items():
@@ -158,6 +191,7 @@ def main():
     
     try:
         while True:
+            wait_for_queries(server_url, instance_id, query_ids)
             # Pick a random subset of stocks to update
             num_updates = random.randint(3, 8)
             symbols_to_update = random.sample(list(stocks.keys()), num_updates)

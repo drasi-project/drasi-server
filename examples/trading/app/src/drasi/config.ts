@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Copyright 2025 The Drasi Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,9 +28,20 @@ import {
   type QueryConfig, type QuerySource, type ResultRow, type RouteUnidentified,
 } from '@drasi/react/client';
 import { ALL_QUERIES } from '@/services/queries';
+import nativeComputation from '../../public/native-computation.json';
+
+/** Generated from ALL_QUERIES and actual native factory metadata, never hand-authored ports. */
+export const TRADING_NATIVE_COMPUTATION = nativeComputation;
 
 /** Base URL of the Drasi Server REST API used by the Trading example. */
-export const DRASI_SERVER_URL = 'http://localhost:8280';
+function environment(name: string): string | undefined {
+  return import.meta.env?.[name] ?? (typeof process === 'undefined' ? undefined : process.env[name]);
+}
+const ssePort = Number(environment('VITE_TRADING_SSE_PORT') ?? 8281);
+if (!Number.isInteger(ssePort) || ssePort <= 0 || ssePort > 65535) {
+  throw new DrasiError('INVALID_CONFIGURATION');
+}
+export const DRASI_SERVER_URL = environment('VITE_DRASI_SERVER_URL') ?? 'http://localhost:8280';
 
 /** App-owned creation/comparison fields, not the complete server read DTO. */
 export type TradingQueryDefinition =
@@ -49,8 +61,8 @@ export const TRADING_QUERY_IDS = TRADING_QUERIES.map(query => query.id);
 export const TRADING_REACTION = {
   id: 'sse-stream',
   kind: 'sse',
-  host: '0.0.0.0',
-  port: 8281,
+  host: environment('VITE_TRADING_SSE_HOST') ?? '0.0.0.0',
+  port: ssePort,
   ssePath: '/events',
   heartbeatIntervalMs: 15000,
 };
@@ -58,7 +70,7 @@ export const TRADING_REACTION = {
 /** The browser URL is not the reaction's server bind address. */
 export const TRADING_STREAM = {
   id: TRADING_REACTION.id,
-  endpoint: 'http://localhost:8281/events',
+  endpoint: environment('VITE_TRADING_SSE_URL') ?? `http://localhost:${ssePort}/events`,
 };
 
 /**

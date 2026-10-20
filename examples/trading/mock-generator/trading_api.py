@@ -21,6 +21,8 @@ Demonstrates end-to-end data flow through Drasi:
 """
 
 import os
+import json
+from pathlib import Path
 from datetime import datetime, date
 from flask import Flask, jsonify, request, send_from_directory
 from flask.json.provider import DefaultJSONProvider
@@ -53,6 +55,35 @@ DB_CONFIG = {
 def get_db_connection():
     """Get a database connection."""
     return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
+
+@app.route('/api/initial-prices', methods=['GET'])
+def initial_prices():
+    """Expose the existing bounded seed data to the native HTTP bootstrap."""
+    path = Path(__file__).with_name('initial-prices.jsonl')
+    with path.open('rb') as handle:
+        contents = handle.read(256 * 1024 + 1)
+    if len(contents) > 256 * 1024:
+        raise ValueError('Initial-price file exceeds the bootstrap fixture limit')
+    items = []
+    identifiers = set()
+    lines = contents.splitlines()
+    for index, line in enumerate(lines):
+        event = json.loads(line)
+        if index == 0 and event['kind'] == 'Header':
+            continue
+        if index == len(lines) - 1 and event['kind'] == 'Finish':
+            continue
+        if (event['kind'] != 'Node' or event['labels'] != ['stock_prices']
+                or not isinstance(event['id'], str) or event['id'] in identifiers
+                or not isinstance(event['properties'], dict)):
+            raise ValueError('Invalid initial-price node')
+        identifiers.add(event['id'])
+        items.append({'id': event['id'], 'properties': event['properties']})
+    if not items or len(items) > 256:
+        raise ValueError('Invalid initial-price count')
+    response = jsonify({'items': items})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 # ============================================================================
 # Stocks API - Read-only list of available stocks
@@ -533,4 +564,4 @@ if __name__ == '__main__':
     port = int(os.getenv('TRADING_API_PORT', '9200'))
     print(f"Starting Trading API server on port {port}")
     print(f"Database: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host=os.getenv('TRADING_API_HOST', '0.0.0.0'), port=port, debug=False)

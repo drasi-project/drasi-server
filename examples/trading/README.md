@@ -99,21 +99,27 @@ flowchart TB
 
 ## Quick Start
 
-There are three ways to run the Trading Demo:
+This native configuration requires a matching local Server/Core/plugin build.
+Registry fallback is deliberately disabled until the matching native libraries
+are published. It preserves the usual demo ports and existing database data.
 
-### Option 1: Dev Container (Recommended)
+### Option 1: Dev Container
 
-Open this repository in VS Code and select **"Reopen in Container"** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`). When prompted, choose **"Drasi Server - Trading Demo"**. Post-create prepares the exact compatible sibling engine, builds this checkout and its Web UI, and installs the preserved signed plugins. Once ready, run `bash examples/trading/start-demo.sh` and open **http://localhost:5273**.
+Open this repository in VS Code and select **"Reopen in Container"**, then
+**"Drasi Server - Trading Demo"**. The container still needs the matching local
+native build below; the older registry-based post-create recipe is not native
+Trading qualification. Do not mix its installed legacy PostgreSQL libraries
+with this configuration.
 
 ### Option 2: GitHub Codespaces
 
-Click **Code → Codespaces → New codespace** on the repository's GitHub page. Select the **"Drasi Server - Trading Demo"** dev container configuration. After the source-backed setup completes, run `bash examples/trading/start-demo.sh`. Open the forwarded port **5273** from the Ports tab.
+Select the Trading dev container in Codespaces, prepare the matching local native
+build below, then run `start-demo.sh --plugin-source local`. Open forwarded port
+**5273**. An old registry-only preparation is not a substitute for that build.
 
-Both routes use the same source/plugin preparation as local startup, not an
-arbitrary latest release or an empty UI placeholder. The unpublished
-[engine prerequisite](../../docs/engine-prerequisite.md) does not modify any
-published binary. Existing mismatched core checkouts or conflicting plugin pins
-fail without being overwritten.
+Both routes must use the same Cargo-selected local Core checkout and the five
+matching libraries. Existing mismatched checkouts or stale binaries fail rather
+than being overwritten or silently replaced by registry artifacts.
 
 ### Option 3: Run Locally
 
@@ -127,40 +133,38 @@ fail without being overwritten.
 #### One-Command Start
 
 ```bash
-# From the examples/trading directory
-./start-demo.sh
+# From the Server root, after preparing the existing Node/Python dependencies:
+./examples/trading/build-local-plugins.sh
+./examples/trading/start-demo.sh --plugin-source local
 ```
 
 This script:
 1. Starts PostgreSQL with sample data (50 stocks, 8 portfolio positions)
-2. Builds this checkout and its Web UI with the exact sibling engine and compatible signed plugins, then starts Drasi Server with sources configured
-3. Installs dependencies and starts the React app
-4. Starts the Python price generator
+2. Checks the matched native build and starts the Trading API, including initial prices
+3. Starts an empty Drasi instance; the app installs its complete native source/query group
+4. Starts the React app and gated Python price generator
 
 **Open http://localhost:5273** to see the live trading dashboard.
 
-By default, the script installs compatible signed plugins from GHCR. To test
-changes from a local `drasi-core` checkout, first enable and update the existing
-`[patch.crates-io]` entries in the Drasi Server `Cargo.toml`, then run:
+The current workspace already selects the sibling Core through path dependencies.
+The build script uses Cargo's actual dependency origins, not the mere presence of
+a directory. It builds the Server, native PG/HTTP source and bootstrap libraries,
+the existing SSE output adapter, and the canonical configuration generator.
 
 ```bash
 ./examples/trading/build-local-plugins.sh
 ./examples/trading/start-demo.sh --plugin-source local
 ```
 
-The build script uses `cargo metadata` to discover the patched checkout. It
-rebuilds Drasi Server and only the five plugins used by this example, validates
-their FFI ABI and target, and installs them into an isolated
+The build script uses `cargo metadata` to discover the selected checkout. It
+validates the native factory metadata and plugin ABI/target and installs into an isolated
 `examples/trading/plugins/local` directory. Local mode never falls back to
 GHCR. If the server, either checkout, or any plugin changes afterward, rerun the
 build script.
 
-To return to published plugins, restore the reviewed registry Cargo graph and
-lockfile, then use the normal command with no options:
-
-```bash
-./examples/trading/start-demo.sh
-```
+`--plugin-source local` is the startup default. `--plugin-source registry` fails
+explicitly for this unpublished native configuration; it does not install old
+PostgreSQL/scriptfile plugins as a fallback.
 
 To stop everything:
 ```bash
@@ -186,35 +190,57 @@ This starts PostgreSQL with:
 #### Step 2: Build and Start Drasi Server
 
 ```bash
-# From drasi-server root directory
-bash scripts/prepare-trading.sh
+# From the Server root; build matching libraries first.
+export DRASI_PG_POSTGRES_STOCKS_SETTINGS="$(
+  target/release/examples/native-postgres settings \
+    examples/trading/server/trading-native-recipe.json postgres-stocks
+)"
+export DRASI_PG_POSTGRES_BROKER_SETTINGS="$(
+  target/release/examples/native-postgres settings \
+    examples/trading/server/trading-native-recipe.json postgres-broker
+)"
+export DRASI_HTTP_PRICE_FEED_SETTINGS="$(
+  target/release/examples/native-postgres settings \
+    examples/trading/server/trading-native-recipe.json price-feed
+)"
+export DRASI_HTTP_PRICE_FEED_HOST=0.0.0.0 DRASI_HTTP_PRICE_FEED_PORT=9100
 ./target/release/drasi-server \
     --config examples/trading/server/trading-sources-only.yaml \
-    --plugins-dir examples/trading/plugins/registry
+    --plugins-dir examples/trading/plugins/local --skip-verification
 ```
 
-The `--plugins-dir` flag points at an example-specific directory that holds
-only the five plugins this demo uses (`source/http`, `source/postgres`,
-`bootstrap/scriptfile`, `bootstrap/postgres`, `reaction/sse`).
-`prepare-trading.sh` installs the reviewed signed, digest-pinned registry set
-before startup. The normal startup
-uses a `registry` subdirectory so plugins built from a sibling `drasi-core`
-checkout cannot be reused accidentally with an ABI-incompatible server.
-`--plugin-source local` instead uses the separately validated `local`
-subdirectory produced by `build-local-plugins.sh` as both its plugin directory
-and local registry. The two modes never share plugin binaries or consult GHCR
-for local-mode plugins. Default mode requires the reviewed registry Cargo graph;
-it will not silently switch to local mode when patches are active.
+Start `python3 mock-generator/trading_api.py` before opening the React app.
+Its `/api/initial-prices` endpoint serves the existing bounded 50-price JSONL
+seed to native HTTP bootstrap. `TRADING_SNAPSHOT_URL` overrides that endpoint.
+PostgreSQL connection overrides are the existing `POSTGRES_HOST`, `POSTGRES_PORT`,
+`POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD`. The configured publications
+and slots must already exist; startup checks them without resetting anything.
 
-Preparation installs the SSE plugin but does not create any queries or
-reactions; the app still performs its existing automatic setup. Registry-SDK
-mode verifies signatures. Deliberate matching local-SDK development requires
-both `--plugin-source local` and matching Cargo-resolved origins, never merely
-the existence of `../drasi-core`.
+The local directory contains `drasi-computation-source-postgres`,
+`drasi-computation-bootstrap-postgres`, `drasi-computation-source-http`,
+`drasi-computation-bootstrap-http` and `drasi-reaction-sse`. The Server starts with
+an empty instance, not unowned running PostgreSQL producers. The app installs:
 
-The server starts with two sources pre-configured:
-- `postgres-stocks`: CDC source monitoring stocks and portfolio tables
-- `price-feed`: HTTP source receiving real-time price updates
+- `postgres-stocks`: one shared source for the stock/portfolio/watchlist query owners
+- `postgres-broker`: one shared source for the real order-query owners
+- `price-feed`: one native HTTP source for live prices
+
+All three run in the same DrasiLib ComputationGraph. `consumerProgress` binds the
+actual PostgreSQL consumer owners; each query retains its own snapshot boundary.
+Mixed queries use `compositeBootstrap` to initialize both PG and HTTP, without a
+fake source/query or omission of initial prices.
+
+The app's `public/native-computation.json` is generated from the actual loaded
+factory metadata and `src/services/queries.ts`. It uses canonical
+`computation.definition` because it binds secret configuration resources.
+Do not hand-copy ports/schemas, inline credentials or add a readable-graph
+reference syntax. Regenerate after changing query definitions or factories:
+
+```bash
+cd examples/trading/app
+node --import tsx scripts/export-native-recipe.ts \
+  ../../../target/release/examples/native-postgres ../plugins/local
+```
 
 #### Step 3: Start the React Application
 
@@ -226,14 +252,18 @@ npm run dev
 
 At startup the app automatically:
 1. Resolves the demo's single instance and attempts a read-only connection
-2. On typed missing/stopped-resource errors, creates/starts only the 11 known
-   Trading queries and SSE reaction, waits for readiness, and retries once
+2. On a typed eligible error, preflights the known definitions, then installs the
+   complete native bundle with one canonical batch-create call and creates the SSE reaction
 3. Reuses existing running resources without redundant writes
 
 No manual query/reaction setup is needed. `TradingProvider` owns this behavior;
 the reusable package is connect-only. On a multi-instance server configure
 `<TradingProvider instanceId="your-instance">` explicitly instead of guessing
 the first instance. The normal REST/SSE URLs remain 8280/8281.
+Partial or conflicting existing groups fail explicitly; the app never silently
+adds a late query at the current WAL head. Membership changes require an explicit
+group replacement. Setup reads the privileged canonical configuration endpoint
+to compare actual references and recipes, not just matching query names.
 
 #### Step 4: Start the Price Generator
 
@@ -243,7 +273,14 @@ pip install -r requirements.txt
 python3 simple_price_generator.py
 ```
 
-Watch the React app update in real-time as prices change!
+The generator waits for every actual query owner to be Running before sending
+prices. HTTP initialization has no atomic replay boundary: this ordering is not
+a durable HTTP recovery protocol. `DRASI_SERVER_URL`, `DRASI_INSTANCE_ID` and
+`TRADING_PRICE_SOURCE_URL` override its endpoints.
+
+The app preserves its normal ports; isolated runs can set `VITE_DRASI_SERVER_URL`,
+`VITE_TRADING_SSE_HOST`, `VITE_TRADING_SSE_PORT` and `VITE_TRADING_SSE_URL`.
+`TRADING_API_HOST`/`TRADING_API_PORT` configure the Python API.
 
 ### Regression checks
 
@@ -251,6 +288,14 @@ See [Testing and behavior baseline](TESTING.md) for executable app integration
 tests, deterministic browser/visual fixtures, clean tarball consumption and
 real-server smoke prerequisites. These test-only ports and fixtures do not
 change the startup commands or URLs above.
+
+For the native path, use the fresh, loopback-only proof in
+[`../postgres/README.md`](../postgres/README.md). It invokes the actual app setup,
+real Trading API and native factories, verifies joined snapshots, live price/PG
+changes, aggregation and rollback behavior, observes real SSE, and removes only
+its own container/processes/state. The host-side mixed bootstrap proof additionally
+checks concurrent PG writes during held HTTP initialization, feedback fencing,
+memory restart and actual child retirement on both Tokio runtimes.
 
 ## How It Works
 
@@ -367,8 +412,9 @@ Before writing, Trading checks existing known definitions: exact query text
 (ignoring outer whitespace), explicit **Cypher**, ordered source subscriptions
 and joins, plus reaction kind/membership/host/port/path/heartbeat settings.
 Conflict, malformed data, auth, unknown instance and network failures stop setup;
-it never overwrites resources or manages sources/plugins. Query POST bodies are
-projected explicitly from the app definitions, omitting the app-only `description`.
+it never overwrites resources or installs plugins. It compares the generated
+native source/query/resource contracts and installs them only as a complete
+group. Query definitions omit the app-only `description` metadata.
 All writes use the resolved instance. Successful initial read-only connections
 do not run this desired-definition preflight or reconcile deployment settings.
 
@@ -620,36 +666,18 @@ Full API documentation, usage, styling, and build instructions are in
 
 ## Code Examples
 
-### Creating a Query
+### Installing the query group
 
-```typescript
-const queryConfig = {
-  id: 'my-query',
-  query: `
-    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-    WHERE sp.price > 100
-    RETURN s.symbol, sp.price
-  `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
-  joins: [{
-    id: 'HAS_PRICE',
-    keys: [
-      { label: 'stocks', property: 'symbol' },
-      { label: 'stock_prices', property: 'symbol' }
-    ]
-  }],
-  autoStart: true
-};
+Edit the real declarations in `app/src/services/queries.ts` and regenerate the
+canonical bundle as shown above. The app preflights the entire bundle and posts
+it to `/api/v1/instances/trading-server/computation/components`, then waits for
+its real owners to be Running. Do not add an individual PostgreSQL consumer via
+the ordinary query-create route: that cannot update the fixed source membership
+or supply its composed snapshot boundary.
 
-await fetch('http://localhost:8280/api/v1/instances/trading-server/queries', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(queryConfig)
-});
-```
+An already installed group's membership is not automatically replaced by app
+setup. Use an explicit, stopped/reconciled group replacement and preserve its
+required initialization and WAL coverage; never substitute one source per query.
 
 ### Creating an SSE Reaction
 
@@ -657,10 +685,10 @@ await fetch('http://localhost:8280/api/v1/instances/trading-server/queries', {
 const reactionConfig = {
   kind: 'sse',
   id: 'my-stream',
-  queries: ['my-query'],
+  queries: ['portfolio-query'],
   autoStart: true,
   host: '0.0.0.0',
-  port: 8281,
+  port: 8282,
   ssePath: '/events',
   heartbeatIntervalMs: 15000
 };
@@ -733,7 +761,9 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 
 | File | Purpose |
 |------|---------|
-| `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
+| `server/trading-sources-only.yaml` | Empty Server instance awaiting the app-owned native bundle |
+| `server/trading-native-recipe.json` | Generation input and environment-backed connection settings |
+| `app/public/native-computation.json` | Generated canonical native group; no resolved secrets |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
 | `build-local-plugins.sh` | Builds and validates a matched local server/plugin set |
@@ -749,10 +779,10 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 
 ### "Replication slot already exists"
 
-```bash
-cd database
-./clean-replication.sh
-```
+Inspect slot database/plugin identity, retained WAL, publication coverage and
+active readers. The shared factories use the configured live slot; they never
+drop/recreate it. Do not run a replication-clean/reset script to suppress a
+binding or initialization error.
 
 ### Queries not updating
 
@@ -760,13 +790,13 @@ cd database
 2. Check queries exist: `curl http://localhost:8280/api/v1/instances/trading-server/queries`
 3. Check SSE connection in browser DevTools (Network tab, filter by EventSource)
 
-### Database reset
+### Existing database and recovery
 
-```bash
-cd database
-docker-compose down -v
-docker-compose up -d
-```
+Keep the volume, slots and retained data intact. Diagnose a failed consumer or
+binding before an explicit operator-controlled recovery. Use the isolated proof
+instead of resetting a demo installation. Native schema discovery is still a
+separate migration gap; these memory-consumer checks do not qualify cold restart
+with undrained persistent input pipes.
 
 ### Port conflicts
 

@@ -10,7 +10,7 @@ import { DrasiClient, DrasiError, useDrasiClient, useDrasiQuery, type EventSourc
 import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from '../../src/drasi/ensureTradingResources';
 import { TradingProvider } from '../../src/drasi/TradingProvider';
 import { tradingQueryOptions } from '../../src/drasi/queryOptions';
-import { DRASI_SERVER_URL, TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, TRADING_STREAM } from '../../src/drasi/config';
+import { DRASI_SERVER_URL, TRADING_NATIVE_COMPUTATION, TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, TRADING_STREAM } from '../../src/drasi/config';
 import { SyntheticTrading } from '../fixtures/synthetic/trading';
 
 const base = '/api/v1/instances/trading-server';
@@ -22,6 +22,7 @@ const missing = () => new DrasiError('QUERY_NOT_FOUND', {
 
 function setup(present = false, backend = new SyntheticTrading()) {
   if (present) {
+    backend.nativeTopology = structuredClone(TRADING_NATIVE_COMPUTATION.definition);
     for (const query of TRADING_QUERIES) backend.queries.set(query.id, { ...query, autoStart: true });
     backend.reaction = { ...TRADING_REACTION, queries: TRADING_QUERY_IDS, autoStart: true };
   }
@@ -47,14 +48,12 @@ function setup(present = false, backend = new SyntheticTrading()) {
 afterEach(() => vi.useRealTimers());
 
 describe('app-owned setup using the built package', () => {
-  it('creates the exact known bundle in order, omitting app-only description metadata', async () => {
+  it('creates one canonical shared-source/query bundle before the output reaction', async () => {
     const { run, backend, writes } = setup();
     await run();
-    expect(writes().map(request => request.body?.id)).toEqual([...TRADING_QUERY_IDS, TRADING_REACTION.id]);
+    expect(writes().map(request => request.path)).toEqual([`${base}/computation/components`, `${base}/reactions`]);
     expect(writes().every(request => request.path.startsWith(base))).toBe(true);
-    expect(writes().slice(0, 11).map(request => request.body)).toEqual(
-      TRADING_QUERIES.map(query => ({ ...query, autoStart: true })),
-    );
+    expect(writes()[0].body).toEqual(TRADING_NATIVE_COMPUTATION);
     expect(writes().every(request => !('description' in request.body!))).toBe(true);
     expect([...backend.queries.keys()]).toEqual(TRADING_QUERY_IDS);
   });
@@ -63,17 +62,23 @@ describe('app-owned setup using the built package', () => {
     const { run, writes, fetcher } = setup(true);
     await run();
     expect(writes()).toEqual([]);
-    expect(fetcher).toHaveBeenCalledTimes(12);
+    expect(fetcher).toHaveBeenCalledTimes(13);
   });
 
-  it('repairs partial setup, starting each stopped resource only once', async () => {
+  it('rejects partial group membership without silently recreating a query at the current WAL head', async () => {
     const { run, backend, writes } = setup(true);
     backend.queries.delete('portfolio-query');
+    await expect(run()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE' });
+    expect(writes()).toEqual([]);
+  });
+
+  it('starts existing stopped query owners and output without rebuilding their group', async () => {
+    const { run, backend, writes } = setup(true);
     backend.queryStatuses.set('watchlist-query', 'Stopped');
     backend.reactionStatus = 'Stopped';
     await run();
     expect(writes().map(request => request.path)).toEqual([
-      `${base}/queries/watchlist-query/start`, `${base}/queries`, `${base}/reactions/sse-stream/start`,
+      `${base}/queries/watchlist-query/start`, `${base}/reactions/sse-stream/start`,
     ]);
   });
 
@@ -99,7 +104,7 @@ describe('app-owned setup using the built package', () => {
   it('shares one bounded setup under concurrent consumers', async () => {
     const { run, writes } = setup();
     await Promise.all([run(), run(), run()]);
-    expect(writes()).toHaveLength(12);
+    expect(writes()).toHaveLength(2);
   });
 
   it('converges after concurrent-tab 409 responses by reading the winning definitions', async () => {
@@ -113,9 +118,9 @@ describe('app-owned setup using the built package', () => {
       return response;
     });
     await Promise.all([first.run(), second.run()]);
-    expect(statuses).toContain(409);
+    expect(statuses.every(status => status === 200 || status === 201 || status === 409)).toBe(true);
     expect(first.backend.queries.size).toBe(11);
-    expect(first.writes().length).toBeLessThanOrEqual(24);
+    expect(first.writes().length).toBeLessThanOrEqual(4);
     expect(first.writes().some(request => request.path.endsWith('/start'))).toBe(false);
   });
 
@@ -149,6 +154,42 @@ describe('app-owned setup using the built package', () => {
     expect(writes()).toEqual([]);
     expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
+
+  it('accepts an exact native group installed by another client before a 409', async () => {
+    const { run, backend, fetcher, writes } = setup();
+    const original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/computation/components')) {
+        backend.handle({
+          method: 'POST', path: `${base}/computation/components`,
+          body: TRADING_NATIVE_COMPUTATION,
+        });
+        return json({ code: 'DUPLICATE_RESOURCE' }, 409);
+      }
+      return original(input, init);
+    });
+    await run();
+    expect(backend.queries.size).toBe(11);
+    expect(writes()).toHaveLength(2);
+  });
+
+  it.each(['source-factory', 'feedback-owner', 'bootstrap-order'] as const)(
+    'rejects a changed native %s contract without mutation', async kind => {
+      const { run, backend, writes } = setup(true);
+      const topology = backend.nativeTopology!;
+      if (kind === 'source-factory') {
+        topology.components.find(node => node.descriptor.id === 'postgres-stocks')!
+          .construction.Factory.implementation.name = 'drasi.postgres/changes';
+      } else if (kind === 'feedback-owner') {
+        topology.resource_configurations['postgres-stocks-consumers'].consumers['watchlist-query'] =
+          'portfolio-query-progress';
+      } else {
+        topology.resource_configurations['watchlist-query-bootstrap'].providers.reverse();
+      }
+      await expect(run()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE' });
+      expect(writes()).toEqual([]);
+    },
+  );
 
   it.each(['text', 'language', 'source-order', 'join', 'reaction-port', 'unusable'] as const)(
     'preflights %s conflicts before writing any partial resources', async kind => {
@@ -217,7 +258,7 @@ describe('app-owned setup using the built package', () => {
     expect(taskSignal?.aborted).toBe(false);
     resume();
     await second;
-    expect(writes()).toHaveLength(12);
+    expect(writes()).toHaveLength(2);
   });
 
   it('aborts underlying work when the last consumer cancels', async () => {
@@ -238,19 +279,20 @@ describe('app-owned setup using the built package', () => {
     expect(() => run(aborted.signal)).toThrow();
   });
 
-  it('retains partial success and resumes without recreating a committed query after cancellation', async () => {
+  it('retains the entire admitted native bundle after cancellation and only creates the missing reaction on retry', async () => {
     const { run, fetcher, backend, writes } = setup();
     const controller = new AbortController(), original = fetcher.getMockImplementation()!;
     fetcher.mockImplementation(async (input, init) => {
       const response = await original(input, init);
-      if (init?.method === 'POST' && backend.queries.size === 1) controller.abort();
+      if (init?.method === 'POST' && String(input).endsWith('/computation/components')) controller.abort();
       return response;
     });
     await expect(run(controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(writes()).toHaveLength(1);
+    expect(backend.queries.size).toBe(11);
     fetcher.mockImplementation(original);
     await run();
-    expect(writes()).toHaveLength(12);
+    expect(writes()).toHaveLength(2);
   });
 
   it('bounds readiness polling to 60 seconds with no duplicate starts', async () => {
@@ -315,7 +357,10 @@ describe('app-owned setup using the built package', () => {
       vi.useFakeTimers();
       const { run, backend, fetcher } = setup(true);
       if (kind === 'query') {
-        if (operation === 'create') backend.queries.delete(id);
+        if (operation === 'create') {
+          backend.queries.clear();
+          backend.nativeTopology = null;
+        }
         else backend.queryStatuses.set(id, 'Stopped');
       } else if (operation === 'create') backend.reaction = null;
       else backend.reactionStatus = 'Stopped';
@@ -346,7 +391,8 @@ describe('app-owned setup using the built package', () => {
       const writes = fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
       expect(writes).toHaveLength(1);
       expect(new URL(String(writes[0][0])).pathname).toBe(
-        `${base}/${kind === 'query' ? 'queries' : 'reactions'}${operation === 'start' ? `/${id}/start` : ''}`,
+        kind === 'query' && operation === 'create' ? `${base}/computation/components` :
+          `${base}/${kind === 'query' ? 'queries' : 'reactions'}${operation === 'start' ? `/${id}/start` : ''}`,
       );
       expect(vi.getTimerCount()).toBe(0);
     });
@@ -355,7 +401,10 @@ describe('app-owned setup using the built package', () => {
       vi.useFakeTimers();
       const { run, backend, fetcher } = setup(true);
       if (kind === 'query') {
-        if (operation === 'create') backend.queries.delete(id);
+        if (operation === 'create') {
+          backend.queries.clear();
+          backend.nativeTopology = null;
+        }
         else backend.queryStatuses.set(id, 'Stopped');
       } else if (operation === 'create') backend.reaction = null;
       else backend.reactionStatus = 'Stopped';
@@ -394,7 +443,10 @@ describe('app-owned setup using the built package', () => {
       try {
         const { run, backend, fetcher } = setup(true);
         const id = kind === 'query' ? 'watchlist-query' : 'sse-stream';
-        if (kind === 'query') backend.queries.delete(id);
+        if (kind === 'query') {
+          backend.queries.clear();
+          backend.nativeTopology = null;
+        }
         else backend.reaction = null;
         const original = fetcher.getMockImplementation()!;
         fetcher.mockImplementation((input, init) => {
@@ -598,12 +650,12 @@ describe('Trading instance and provider lifecycle', () => {
       <Probe />
     </TradingProvider></StrictMode>);
     await screen.findByText('Ready');
-    expect(writes()).toHaveLength(12);
+    expect(writes()).toHaveLength(2);
     expect(sources).toHaveLength(1);
     fetcher.mockImplementation(async () => json({ code: 'FORBIDDEN' }, 403));
     act(() => sources[0].onerror?.(new Event('error')));
     await screen.findByText('true:FORBIDDEN');
-    expect(writes()).toHaveLength(12);
+    expect(writes()).toHaveLength(2);
     rendered.unmount();
     expect(sources[0].close).toHaveBeenCalledOnce();
   });

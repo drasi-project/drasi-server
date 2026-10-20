@@ -20,6 +20,11 @@ from test_plugin_origin import fixture, package, plugin_origin, replace_package
 
 
 ROOT = Path(__file__).resolve().parent.parent
+NATIVE_TRADING_CRATES = {
+    "drasi-computation-source-http", "drasi-computation-source-postgres",
+    "drasi-computation-bootstrap-http", "drasi-computation-bootstrap-postgres",
+    "drasi-reaction-sse",
+}
 sys.modules["plugin_origin"] = plugin_origin
 SPEC = importlib.util.spec_from_file_location(
     "install_plugins", ROOT / "scripts/install_plugins.py",
@@ -268,6 +273,11 @@ if sys.argv[1].endswith("plugin_origin.py"):
     if os.environ.get("FAIL_ORIGIN") == "1":
         sys.exit(17)
     print(os.environ["SELECTED_SDK"] if sys.argv[-1] == "local-workspace" else os.environ["POLICY_MODE"])
+elif sys.argv[1] == "-c" and sys.argv[-1] == "import requests, flask, flask_cors, psycopg2":
+    pass
+elif sys.argv[1].endswith("trading_api.py"):
+    import time
+    time.sleep(30)
 elif sys.argv[1] in ("-", "-c"):
     os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 """)
@@ -359,9 +369,13 @@ if "metadata" in sys.argv:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("consumes registry SDKs", result.stderr)
 
-    def test_default_trading_startup_keeps_registry_verification_and_rejects_local_graph(self):
-        for mode in ("registry", "local"):
-            with self.subTest(mode=mode):
+    def test_native_trading_start_requires_local_origin_and_never_registry_fallback(self):
+        for mode, arguments, message in (
+            ("registry", [], "Requested local plugins, but Cargo resolves registry"),
+            ("local", ["--plugin-source", "registry"], "registry fallback is not supported"),
+            ("local", [], "Local trading plugins have not been prepared"),
+        ):
+            with self.subTest(mode=mode, arguments=arguments):
                 self.log.write_text("")
                 trading = self.root / "examples/trading"
                 (trading / "database").mkdir(parents=True, exist_ok=True)
@@ -381,7 +395,7 @@ with open(os.environ["POLICY_LOG"], "a") as log:
 sys.exit(42)
 """)
                 result = subprocess.run(
-                    ["bash", str(trading / "start-demo.sh")], cwd=self.root, env=environment,
+                    ["bash", str(trading / "start-demo.sh"), *arguments], cwd=self.root, env=environment,
                     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
                 )
                 self.assertNotEqual(result.returncode, 0, "Fixture server deliberately refuses to run")
@@ -389,29 +403,10 @@ sys.exit(42)
                 server_calls = [event for event in events if event[0] == "server"]
                 installs = [event for event in events if any("install_plugins.py" in arg for arg in event)]
                 builds = [event[-1] for event in events if event[0] == "make"]
-                if mode == "registry":
-                    self.assertEqual(len(server_calls), 1, result.stdout + result.stderr)
-                    self.assertIn("build-release", builds)
-                    self.assertEqual(len(installs), 1)
-                    self.assertNotIn("build-local-plugins", builds)
-                    self.assertNotIn("--skip-verification", server_calls[0])
-                    self.assertEqual(
-                        Path(server_calls[0][server_calls[0].index("--config") + 1]),
-                        trading / "server/trading-sources-only.yaml",
-                    )
-                    self.assertEqual(
-                        Path(server_calls[0][server_calls[0].index("--plugins-dir") + 1]),
-                        trading / "plugins/registry",
-                    )
-                    self.assertEqual(
-                        Path(installs[0][installs[0].index("--plugins-dir") + 1]).resolve(),
-                        (trading / "plugins/registry").resolve(),
-                    )
-                else:
-                    self.assertIn("Requested registry plugins, but Cargo resolves local", result.stderr)
-                    self.assertEqual(server_calls, [])
-                    self.assertEqual(installs, [])
-                    self.assertEqual(builds, [])
+                self.assertIn(message, result.stdout + result.stderr)
+                self.assertEqual(server_calls, [])
+                self.assertEqual(installs, [])
+                self.assertEqual(builds, [])
                 self.assertFalse((self.root / "target/release/plugins").exists())
 
     def local_trading_fixture(self):
@@ -419,11 +414,22 @@ sys.exit(42)
         trading = self.root / "examples/trading"
         (trading / "server").mkdir(parents=True)
         (trading / "database").mkdir()
+        (trading / "mock-generator").mkdir()
+        (trading / "mock-generator/trading_api.py").write_text("# fixture process\n")
+        (trading / "app/scripts").mkdir(parents=True)
+        shutil.copyfile(
+            ROOT / "examples/trading/app/scripts/export-native-recipe.ts",
+            trading / "app/scripts/export-native-recipe.ts",
+        )
         for name in ("start-demo.sh", "build-local-plugins.sh"):
             shutil.copyfile(ROOT / "examples/trading" / name, trading / name)
         shutil.copyfile(
             ROOT / "examples/trading/server/trading-sources-only.yaml",
             trading / "server/trading-sources-only.yaml",
+        )
+        shutil.copyfile(
+            ROOT / "examples/trading/server/trading-native-recipe.json",
+            trading / "server/trading-native-recipe.json",
         )
         shutil.copyfile(ROOT / "scripts/plugin_origin.py", self.root / "scripts/plugin_origin.py")
         core = self.root.parent / "selected-core"
@@ -451,11 +457,35 @@ with open(os.environ["POLICY_LOG"], "a") as log:
 if "metadata" in sys.argv:
     print(os.environ["CORE_METADATA" if "--no-deps" in sys.argv else "SERVER_METADATA"])
 elif "build" in sys.argv:
+    if "--example" in sys.argv:
+        assert sys.argv[sys.argv.index("--example") + 1] == "native-postgres"
+        output = Path(os.environ["CARGO_TARGET_DIR"]) / "release/examples/native-postgres"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("#!" + sys.executable + "\\nimport json,sys\\nassert sys.argv[1] == 'settings'\\nprint(json.dumps({}))\\n")
+        output.chmod(0o755)
+        sys.exit(0)
     name = sys.argv[sys.argv.index("-p") + 1].replace("-", "_")
     prefix, extension = ("", "dll") if sys.platform == "win32" else ("lib", "dylib" if sys.platform == "darwin" else "so")
     output = Path(os.environ["SELECTED_SDK"]) / "target/release"
     output.mkdir(parents=True, exist_ok=True)
     (output / f"{prefix}{name}.{extension}").write_bytes(b"fixture-only plugin")
+""")
+        executable(self.bin / "node", f"""
+import json, os, sys
+from pathlib import Path
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["node", *sys.argv[1:]]) + "\\n")
+assert sys.argv[1:4] == ["--import", "tsx", "scripts/export-native-recipe.ts"]
+assert Path(sys.argv[3]).is_file()
+assert Path(sys.argv[4]).is_file()
+prefix, suffix = ("", ".dll") if sys.platform == "win32" else ("lib", ".dylib" if sys.platform == "darwin" else ".so")
+expected = {{prefix + name.replace("-", "_") + suffix for name in {sorted(NATIVE_TRADING_CRATES)!r}}}
+assert {{path.name for path in Path(sys.argv[5]).iterdir()}} == expected
+if os.environ.get("FAIL_GENERATION") == "1":
+    raise SystemExit("native metadata generation failed")
+output = Path("public/native-computation.json")
+output.parent.mkdir(exist_ok=True)
+output.write_text(json.dumps({{"fixture": "generated from the complete native library set"}}))
 """)
         executable(self.root / "target/release/drasi-server", """
 import json, os, sys
@@ -471,9 +501,18 @@ elif "validate" in sys.argv:
 else:
     sys.exit(42)
 """)
+        executable(self.bin / "docker-compose", """
+import json,os,sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["compose", *sys.argv[1:]]) + "\\n")
+if "psql" in sys.argv:
+    missing = os.environ.get("MISSING_SLOT") == "1" and "drasi_broker_slot" in sys.argv[-1]
+    print("0" if missing else "1")
+""")
         for tool, body in (
-            ("docker", "pass\n"), ("docker-compose", "print('fixture-ready')\n"),
-            ("curl", "print('200')\n"), ("sleep", "import time; time.sleep(0.1)\n"),
+            ("docker", "pass\n"),
+            ("curl", "import sys\nprint('503' if sys.argv[-1] == 'http://localhost:8280/health' else '200')\n"),
+            ("sleep", "import time; time.sleep(0.1)\n"),
         ):
             executable(self.bin / tool, body)
         for repository in (self.root, core):
@@ -513,12 +552,16 @@ else:
         self.assertIn("drasi-ffi-primitives", manifest["resolved_versions"])
         self.assertEqual(manifest["ffi_abi"], "0.14.0")
         builds = [event for event in self.commands() if event[:2] == ["cargo", "build"]]
-        self.assertEqual(len(builds), 5)
+        self.assertEqual(len(builds), 6)
+        library_builds = [event for event in builds if "-p" in event]
         self.assertEqual(
-            {event[event.index("-p") + 1] for event in builds},
-            {"drasi-" + kind.replace("/", "-") for kind in installer.VERSIONS},
+            {event[event.index("-p") + 1] for event in library_builds},
+            NATIVE_TRADING_CRATES,
         )
         self.assertTrue(all("--locked" in event for event in builds))
+        self.assertEqual(len([event for event in builds if "--example" in event]), 1)
+        self.assertTrue((trading / "app/public/native-computation.json").is_file())
+        self.assertEqual(len([event for event in self.commands() if event[0] == "node"]), 1)
         result = self.start_local_fixture(trading)
         self.assertNotEqual(result.returncode, 0, "Fixture server deliberately refuses to run")
         events = self.commands()
@@ -528,9 +571,12 @@ else:
         self.assertIn(str(trading / "plugins/local"), launches[0])
         self.assertFalse(any(event[0] in ("cargo", "make") for event in events))
         self.assertFalse(any("install_plugins.py" in arg for event in events for arg in event))
-        config = (trading / "logs/trading-sources-local.yaml").read_text()
-        self.assertIn("autoInstallPlugins: true", config)
-        self.assertIn(f'pluginRegistry: "{(trading / "plugins/local").resolve()}"', config)
+        config = (trading / "server/trading-sources-only.yaml").read_text()
+        self.assertIn("autoInstallPlugins: false", config)
+        self.assertIn("sources: []", config)
+        self.assertIn("plugins: []", config)
+        self.assertFalse((trading / "logs/trading-sources-local.yaml").exists())
+        self.assertFalse(any("pg_drop_replication_slot" in arg for event in events for arg in event))
 
     def test_local_start_rejects_stale_or_incomplete_artifacts_without_rebuilding(self):
         trading, core = self.local_trading_fixture()
@@ -572,6 +618,31 @@ else:
         self.assertIn("rejected the local plugin set", result.stderr)
         self.assertEqual(json.loads((trading / "plugins/local/local-build.json").read_text()), manifest)
         self.assertEqual([path.name for path in (trading / "plugins").iterdir()], ["local"])
+
+    def test_native_generation_failure_preserves_the_installed_library_set(self):
+        trading, _ = self.local_trading_fixture()
+        manifest = self.build_local_fixture(trading)
+        self.environment["FAIL_GENERATION"] = "1"
+        result = subprocess.run(
+            ["bash", str(trading / "build-local-plugins.sh")],
+            cwd=self.root, env=self.environment, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native metadata generation failed", result.stderr)
+        self.assertEqual(json.loads((trading / "plugins/local/local-build.json").read_text()), manifest)
+        self.assertEqual([path.name for path in (trading / "plugins").iterdir()], ["local"])
+
+    def test_native_start_refuses_missing_configured_slots_without_repair(self):
+        trading, _ = self.local_trading_fixture()
+        self.build_local_fixture(trading)
+        result = self.start_local_fixture(trading, MISSING_SLOT="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Configured slot drasi_broker_slot is missing", result.stderr)
+        self.assertFalse(any(event[0] == "server" and "validate" not in event for event in self.commands()))
+        sql = [event[-1] for event in self.commands() if event[0] == "compose" and "psql" in event]
+        self.assertTrue(sql)
+        self.assertTrue(all(statement.startswith("SELECT count(*)") for statement in sql))
 
     def test_explicit_local_request_rejects_registry_graph_before_build_or_install(self):
         self.source_stubs()
@@ -663,48 +734,93 @@ with open(os.environ["POLICY_LOG"], "a") as log:
                     expected,
                 )
 
-    def test_getting_started_local_plugins_require_selected_sdk_not_a_sibling(self):
-        self.source_stubs()
-        selected = self.root / "selected-sdk"
-        selected_plugins = selected / "target/release/plugins"
-        selected_plugins.mkdir(parents=True)
+    def test_getting_started_proof_uses_only_selected_artifacts_and_isolated_cases(self):
+        scripts = self.root / "examples/getting-started/scripts"
+        scripts.mkdir(parents=True)
+        shutil.copyfile(ROOT / "examples/getting-started/scripts/run-end-to-end.sh",
+                        scripts / "run-end-to-end.sh")
+        selected = self.root / "chosen-target"
         unrelated = self.root.parent / "drasi-core/target/release/plugins"
         unrelated.mkdir(parents=True)
-        for directory in (selected_plugins, unrelated):
-            for name in ("source_postgres", "bootstrap_postgres", "reaction_log", "reaction_sse"):
-                (directory / f"libdrasi_{name}.dylib").touch()
-        executable(self.bin / "uname", "print('Darwin')\n")
         executable(self.bin / "python3", """
-import os, sys
-print(os.environ["SELECTED_SDK"] if sys.argv[-1] == "local-workspace" else os.environ["POLICY_MODE"])
+import json,os,sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["python3", *sys.argv[1:]]) + "\\n")
+assert sys.argv[1] == "examples/postgres/qualify.py"
 """)
-        source = (ROOT / "examples/getting-started/scripts/run-end-to-end.sh").read_text()
-        selection = source.split('PLUGIN_MODE="$(bash ', 1)[1].split('\n"$SERVER_BIN" ', 1)[0]
-        selection = 'PLUGIN_MODE="$(bash ' + selection
-        config = self.root / "server.yaml"
-        config.write_text("apiVersion: drasi.io/v1\n")
-        for mode, explicit, success, local in (
-            ("registry", "", True, False),
-            ("registry", str(unrelated), False, False),
-            ("local", "", True, True),
-            ("local", str(self.root / "missing"), False, False),
-        ):
-            with self.subTest(mode=mode, explicit=explicit):
+        for explicit in (False, True):
+            with self.subTest(explicit=explicit):
+                self.log.write_text("")
+                environment = {
+                    **self.environment, "CARGO_TARGET_DIR": str(selected),
+                    "EVIDENCE_DIR": str(self.root / "new-evidence"),
+                }
+                overrides = {
+                    "SERVER_BIN": str(selected / "custom-server"),
+                    "GENERATOR_BIN": str(selected / "custom-generator"),
+                    "LOCAL_PLUGINS_DIR": str(selected / "native-libraries"),
+                }
+                if explicit:
+                    environment.update(overrides)
                 result = subprocess.run(
-                    ["bash", "-c", "set -eu\nlog_info() { :; }\nlog_error() { echo \"$*\" >&2; }\n"
-                     + selection + '\nprintf "%s\\n" ${SERVER_EXTRA_ARGS[@]+"${SERVER_EXTRA_ARGS[@]}"}\n'],
-                    cwd=self.root, env={
-                        **self.environment, "POLICY_MODE": mode, "SELECTED_SDK": str(selected),
-                        "SERVER_ROOT": str(self.root), "EXAMPLE_DIR": str(self.root),
-                        "CONFIG_FILE": str(config), "LOCAL_PLUGINS_DIR": explicit,
-                        "BUILD_LOCAL_PLUGINS": "",
-                    }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    ["bash", str(scripts / "run-end-to-end.sh")],
+                    cwd=self.root, env=environment, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, text=True,
                 )
-                self.assertEqual(result.returncode == 0, success, result.stderr)
-                self.assertEqual("--skip-verification" in result.stdout, local)
-                if local:
-                    self.assertIn(str(selected_plugins), result.stdout)
-                self.assertNotIn(str(unrelated), result.stdout)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(len(self.commands()), 1)
+                command = self.commands()[0]
+                for flag, expected in (
+                    ("--server", overrides["SERVER_BIN"] if explicit else str(selected / "debug/drasi-server")),
+                    ("--generator", overrides["GENERATOR_BIN"] if explicit else str(selected / "debug/examples/native-postgres")),
+                    ("--plugins", overrides["LOCAL_PLUGINS_DIR"] if explicit else str(selected / "debug")),
+                ):
+                    self.assertEqual(command[command.index(flag) + 1], expected)
+                self.assertEqual([command[index + 1] for index, value in enumerate(command) if value == "--case"],
+                    ["getting-started-server", *[f"getting-started-step-{n}" for n in range(3, 7)]])
+                self.assertNotIn(str(unrelated), command)
+                self.assertFalse(any("cleanup.sh" in value or "install_plugins.py" in value for value in command))
+
+    def test_getting_started_setup_preserves_complete_and_partial_installations(self):
+        scripts = self.root / "examples/getting-started/scripts"
+        scripts.mkdir(parents=True)
+        (scripts.parent / "database").mkdir()
+        shutil.copyfile(ROOT / "examples/getting-started/scripts/setup-database.sh",
+                        scripts / "setup-database.sh")
+        executable(self.bin / "podman", """
+import json,os,sys
+args=sys.argv[1:]
+data=sys.stdin.read() if "-i" in args else ""
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["podman", *args, data]) + "\\n")
+if "psql" in args and "-c" in args:
+    query=args[args.index("-c") + 1]
+    if "to_regclass" in query: print(os.environ["SETUP_STATE"])
+    elif "rolreplication" in query: print(os.environ.get("SETUP_VALID", "t"))
+""")
+        for state, valid, success in [
+            ("0,0,0", "t", True), ("1,1,1", "t", True),
+            ("1,0,1", "t", False), ("1,1,1", "f", False),
+        ]:
+            with self.subTest(state=state, valid=valid):
+                self.log.write_text("")
+                result = subprocess.run(["bash", str(scripts / "setup-database.sh")],
+                    cwd=self.root, env={**self.environment, "CONTAINER_CLI": str(self.bin / "podman"),
+                                       "SETUP_STATE": state, "SETUP_VALID": valid},
+                    input="", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+                self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+                statements = "\n".join(argument for event in self.commands() for argument in event)
+                self.assertNotIn("pg_drop_replication_slot", statements)
+                self.assertNotIn("DROP TABLE", statements)
+                self.assertNotIn("down", [argument for event in self.commands() for argument in event])
+                if state == "0,0,0":
+                    self.assertIn("CREATE TABLE message", statements)
+                    self.assertIn("pg_create_logical_replication_slot", statements)
+                else:
+                    self.assertNotIn("CREATE TABLE", statements)
+                    self.assertNotIn("pg_create_logical_replication_slot", statements)
+                if state == "1,0,1":
+                    self.assertIn("Incomplete tutorial installation", result.stderr)
 
     def test_playground_provides_python_with_tomllib_for_build_preflight(self):
         config = json.loads((ROOT / ".devcontainer/playground/devcontainer.json").read_text())

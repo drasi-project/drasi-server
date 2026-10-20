@@ -53,6 +53,26 @@ fn env(name: &str) -> Result<String> {
     ensure!(!value.trim().is_empty(), "{name} is empty");
     Ok(value)
 }
+
+fn env_or(name: &str, default: &str) -> Result<String> {
+    match std::env::var(name) {
+        Ok(value) => {
+            ensure!(!value.trim().is_empty(), "{name} is empty");
+            Ok(value)
+        }
+        Err(std::env::VarError::NotPresent) => Ok(default.into()),
+        Err(error) => Err(error).with_context(|| format!("{name} is not valid Unicode")),
+    }
+}
+
+fn env_port(name: &str, default: &str) -> Result<u16> {
+    let value = env_or(name, default)?;
+    let port = value
+        .parse()
+        .with_context(|| format!("{name} must be a valid TCP port"))?;
+    ensure!(port > 0, "{name} must be nonzero");
+    Ok(port)
+}
 fn id(value: &str) -> Result<ComponentId> {
     Ok(ComponentId::try_new(value)?)
 }
@@ -101,6 +121,9 @@ struct Runtime {
     sequence: AtomicU64,
     token: String,
     host: String,
+    pg_port: u16,
+    sse_host: String,
+    sse_port: u16,
     password: String,
     plan_endpoint: String,
 }
@@ -144,6 +167,7 @@ impl Runtime {
         core.add_components(queries).await?;
         let database = database::components(
             &self.host,
+            self.pg_port,
             &self.password,
             &env("GPU_STATE_DIR")?,
             catalog,
@@ -212,7 +236,7 @@ impl Runtime {
             .clone();
         components = components.component(sse.specification(id("gpu-demo-ui")?, json!({
             "queryStreams":gpu_contracts::UI_QUERIES.iter().map(|id| (*id,format!("{id}/out"))).collect::<BTreeMap<_,_>>(),
-            "host":"0.0.0.0","port":8081,"ssePath":"/events",
+            "host":self.sse_host,"port":self.sse_port,"ssePath":"/events",
         }))?, sse);
         let mut relationships = gpu_contracts::UI_QUERIES
             .iter()
@@ -390,7 +414,7 @@ impl Runtime {
                 .map_err(anyhow::Error::msg)?;
             let snapshot = tokio::time::timeout(Duration::from_secs(120), async {
                 loop {
-                    let current = database::current_snapshot(&self.host, &self.password, epoch).await?;
+                    let current = database::current_snapshot(&self.host, self.pg_port, &self.password, epoch).await?;
                     let snapshot = reader.fetch_snapshot().await?;
                     let rows = snapshot.to_vec();
                     ensure!(rows.len() == 1, "transactional configuration query must have one row");
@@ -856,6 +880,9 @@ async fn main() -> Result<()> {
         sequence: AtomicU64::new(0),
         token: env("INTERNAL_TOKEN")?,
         host: env("PGHOST")?,
+        pg_port: env_port("PGPORT", "5432")?,
+        sse_host: env_or("GPU_SSE_HOST", "0.0.0.0")?,
+        sse_port: env_port("GPU_SSE_PORT", "8081")?,
         password: env("REPLICATION_PASSWORD")?,
         plan_endpoint: env("PLAN_ENDPOINT")?,
     });
@@ -881,8 +908,8 @@ async fn main() -> Result<()> {
             "/",
             get(|| async { axum::response::Redirect::temporary("/ui/?instance=gpu-demo") }),
         );
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    tracing::info!("Drasi Server admin UI enabled at /ui/?instance=gpu-demo");
+    let listener = tokio::net::TcpListener::bind(env_or("LISTEN_ADDRESS", "0.0.0.0:8080")?).await?;
+    tracing::info!(address=%listener.local_addr()?, "Drasi Server admin UI enabled at /ui/?instance=gpu-demo");
     runtime.start(None, None).await?;
     let stopping = runtime.clone();
     let served = axum::serve(listener, app)

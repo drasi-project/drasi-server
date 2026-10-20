@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds a matched Drasi Server and the five plugins required by the trading
+# Builds a matched Drasi Server and the five libraries required by the trading
 # demo. Shared origin checks require an explicitly selected, coherent local
 # Cargo graph; the presence of a sibling checkout never selects it.
 
@@ -38,7 +38,7 @@ fail() {
     exit 1
 }
 
-for command_name in cargo make python3 git; do
+for command_name in cargo make python3 git node; do
     command -v "$command_name" >/dev/null 2>&1 ||
         fail "Required command not found: $command_name"
 done
@@ -107,17 +107,17 @@ case "$(uname -s)" in
 esac
 
 REQUIRED_PLUGIN_CRATES=(
-    drasi-source-http
-    drasi-source-postgres
-    drasi-bootstrap-scriptfile
-    drasi-bootstrap-postgres
+    drasi-computation-source-http
+    drasi-computation-source-postgres
+    drasi-computation-bootstrap-http
+    drasi-computation-bootstrap-postgres
     drasi-reaction-sse
 )
 REQUIRED_PLUGIN_FILES=(
-    "${PLUGIN_PREFIX}drasi_source_http.${PLUGIN_EXT}"
-    "${PLUGIN_PREFIX}drasi_source_postgres.${PLUGIN_EXT}"
-    "${PLUGIN_PREFIX}drasi_bootstrap_scriptfile.${PLUGIN_EXT}"
-    "${PLUGIN_PREFIX}drasi_bootstrap_postgres.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_computation_source_http.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_computation_source_postgres.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_computation_bootstrap_http.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_computation_bootstrap_postgres.${PLUGIN_EXT}"
     "${PLUGIN_PREFIX}drasi_reaction_sse.${PLUGIN_EXT}"
 )
 
@@ -139,6 +139,12 @@ for plugin_file in "${REQUIRED_PLUGIN_FILES[@]}"; do
     cp "$source_path" "$STAGING_DIR/$plugin_file"
 done
 
+echo "Generating the canonical Trading bundle from actual native metadata..."
+(cd "$DRASI_SERVER_ROOT" && CARGO_TARGET_DIR="$SERVER_TARGET_DIR" \
+    cargo build --locked --release --example native-postgres)
+(cd "$SCRIPT_DIR/app" && node --import tsx scripts/export-native-recipe.ts \
+    "$SERVER_TARGET_DIR/release/examples/native-postgres" "$STAGING_DIR")
+
 echo "Validating local plugin ABI, target, and trading configuration..."
 if ! "$SERVER_BINARY" validate \
     --config "$CONFIG_PATH" \
@@ -148,8 +154,7 @@ if ! "$SERVER_BINARY" validate \
     fail "Drasi Server rejected the local plugin set."
 fi
 
-if grep -Eq 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG" ||
-    ! grep -Fq 'Plugins (5 loaded' "$VALIDATION_LOG"; then
+if grep -Eq 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG"; then
     cat "$VALIDATION_LOG" >&2
     echo >&2
     echo -e "${RED}Local trading plugins are incompatible with this Drasi Server.${NC}" >&2

@@ -1313,6 +1313,7 @@ dependencies = [
  "drasi-ffi-primitives",
  "drasi-lib",
  "drasi-plugin-sdk",
+ "futures-util",
  "indexmap 2.14.0",
  "libloading",
  "log",

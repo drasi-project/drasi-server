@@ -1,0 +1,173 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Generation input: Drasi Server Getting Started Tutorial.
+# =============================================================================
+# This configuration demonstrates a complete Drasi Server setup with:
+# - PostgreSQL source with CDC (Change Data Capture)
+# - Multiple continuous queries (filter, aggregation, time-based)
+# - Log reaction for console output
+# - SSE reaction for real-time browser streaming
+#
+# This tutorial mirrors the Drasi Platform getting-started tutorial at drasi.io
+#
+# SECURITY NOTE: This config uses environment variables for sensitive data.
+# Set these before running: source .env or use a secrets manager.
+
+# Server Configuration
+apiVersion: drasi.io/v1
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8080}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: reaction/log
+  - ref: reaction/sse
+
+# =============================================================================
+# Sources
+# =============================================================================
+# Sources define where data comes from. This example uses PostgreSQL with
+# logical replication for Change Data Capture (CDC).
+
+instances:
+  - id: getting-started-server
+
+    sources:
+      - kind: postgres
+        id: postgres-messages
+        autoStart: true
+
+    # PostgreSQL connection settings
+    # Using environment variables for security
+        host: "${POSTGRES_HOST:-localhost}"
+        port: ${POSTGRES_PORT:-5432}
+        database: "${POSTGRES_DATABASE:-getting_started}"
+        user: "${POSTGRES_USER:-drasi_user}"
+        password: "${POSTGRES_PASSWORD}"
+        sslMode: prefer
+
+    # Tables to monitor for changes
+        tables:
+          - message
+
+    # Replication settings for CDC
+        slotName: drasi_getting_started_slot
+        publicationName: drasi_getting_started_pub
+
+    # Primary key configuration for change tracking
+        tableKeys:
+          - table: message
+            keyColumns:
+              - messageid
+
+    # Bootstrap provider loads existing data on startup
+        bootstrapProvider:
+          kind: postgres
+
+
+# =============================================================================
+# Queries
+# =============================================================================
+# Continuous queries that process incoming data in real-time.
+# These queries automatically update when source data changes.
+
+    queries:
+  # Query 1: hello-world-from
+  # Filters for messages containing "Hello World" and returns the sender
+  # Similar to the Platform tutorial's hello-world-from query
+      - id: hello-world-from
+        autoStart: true
+        query: |
+          MATCH (m:message {message: 'Hello World'})
+          RETURN m.messageid AS MessageId, m.from AS MessageFrom
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
+
+  # Query 2: message-count
+  # Aggregates messages by content and counts frequency
+  # Cypher equivalent of the Platform tutorial's GQL aggregation query
+      - id: message-count
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          RETURN m.message AS Message, count(m) AS Frequency
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
+
+  # Query 3: inactive-people
+  # Identifies users who haven't sent a message in 20+ seconds
+  # Uses drasi.trueLater for time-based triggering
+      - id: inactive-people
+        autoStart: true
+        query: |
+          MATCH (m:message)
+          WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
+          WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
+            OR drasi.trueLater(
+                 LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
+                 LastMessageTimestamp + duration({ seconds: 20 })
+               )
+          RETURN MessageFrom, LastMessageTimestamp
+        queryLanguage: Cypher
+        sources:
+          - sourceId: postgres-messages
+
+# =============================================================================
+# Reactions
+# =============================================================================
+# Reactions define what happens when query results change.
+# This example uses two reactions: console logging and SSE streaming.
+
+    reactions:
+  # Log Reaction - Console Output
+  # Prints query results to the console with custom formatting
+      - kind: log
+        id: log-all-queries
+        autoStart: true
+        queries:
+          - hello-world-from
+          - message-count
+          - inactive-people
+    # Default template configuration for all queries
+    # Templates use handlebars syntax for formatting
+        defaultTemplate:
+          added:
+            template: "[{{query_name}}] + {{after}}"
+          updated:
+            template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+          deleted:
+            template: "[{{query_name}}] - {{before}}"
+
+  # SSE Reaction - Real-time Browser Streaming
+  # Streams query results to connected clients via Server-Sent Events
+  # Access at: http://localhost:8081/events
+      - kind: sse
+        id: sse-stream
+        autoStart: true
+        queries:
+          - hello-world-from
+          - message-count
+          - inactive-people
+        host: "${SSE_HOST:-0.0.0.0}"
+        port: ${SSE_PORT:-8081}
+        ssePath: /events
+        heartbeatIntervalMs: 30000

@@ -46,3 +46,10 @@ reset/reseed the demo or delete retained state to bypass this failure.
 
 The [embedded development guide](../embedded/README.md#operations-diagnostics-and-development)
 documents commands for building and exercising these assets.
+
+The [fresh native PostgreSQL qualification](../embedded/README.md#fresh-native-postgresql-qualification)
+runs the actual runtime, control service and matching native libraries against a
+new database, slot and state directory. It verifies atomic multi-table CDC and
+same-slot recovery across graceful and abrupt runtime restarts without touching
+an installed demo. Cold reconstruction with undrained persistent input pipes
+remains outside that qualification.

@@ -175,6 +175,47 @@ and [UI](#the-react-ui). The later sections cover
 [operations and development](#operations-diagnostics-and-development) and
 [known limitations](#known-limitations-and-troubleshooting).
 
+## Fresh native PostgreSQL qualification
+
+`ops/qualify-native-postgres.py` runs the real locally built GPU runtime,
+control service and native plugins against a new Podman PostgreSQL container.
+It does not read the demo `.env`, reuse demo images, inspect an existing
+database, or run demo reset/down commands. Its database, managed slot, listener
+ports and query-state directory are isolated from a running installation.
+
+Build matching artifacts from the current sibling checkouts, then run from the
+Server repository:
+
+```sh
+export CARGO_TARGET_DIR="$PWD/target"
+cargo build --locked --manifest-path examples/gpu-cluster-lab/shared/crates/native/Cargo.toml \
+  --features runtime --bin gpu-runtime
+cargo build --locked --manifest-path examples/gpu-cluster-lab/shared/Cargo.toml \
+  -p gpu-control --bin gpu-control
+cargo build --locked --manifest-path examples/gpu-cluster-lab/shared/crates/native/Cargo.toml \
+  --lib --no-default-features --features dynamic-plugin
+cargo build --locked --manifest-path ../drasi-core/Cargo.toml \
+  -p drasi-computation-sink-sse --lib --features dynamic-plugin
+python3 examples/gpu-cluster-lab/embedded/ops/qualify-native-postgres.py \
+  --runtime target/debug/gpu-runtime --control target/debug/gpu-control \
+  --native-plugin target/debug/libgpu_native.dylib \
+  --sse-plugin target/debug/libdrasi_computation_sink_sse.dylib \
+  --evidence /tmp/gpu-native-postgres-proof
+```
+
+Use `.so` instead of `.dylib` on Linux and a **new** evidence directory for every
+run. The harness checks snapshot/live handover with concurrent multi-table
+transactions, query-backed readiness, rollback exclusion, an offline write,
+graceful restart and abrupt runtime loss. Both restarts must retain the same
+managed slot. It awaits process cleanup, removes only its own container/state,
+and retains logs and observations in the evidence directory.
+
+For local hosting, `PGPORT` defaults to `5432`, `LISTEN_ADDRESS` to
+`0.0.0.0:8080`, and `GPU_SSE_HOST`/`GPU_SSE_PORT` to `0.0.0.0`/`8081`.
+These overrides allow isolated qualification without changing normal Compose
+defaults. The proof does not establish cold recovery with undrained persistent
+input pipes or make old position formats compatible.
+
 ## How Drasi implements the demo
 
 Drasi maintains continuous queries over database rows and native component

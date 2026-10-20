@@ -16,6 +16,9 @@ use std::{
 
 const INSTANCE: &str = "native-services";
 
+#[path = "composite_services.rs"]
+mod composite_services;
+
 #[tokio::test(flavor = "current_thread")]
 async fn native_service_discovery_reports_negotiated_factories_without_configuration() -> Result<()>
 {
@@ -205,6 +208,110 @@ async fn native_query_snapshot_recipe_retains_exact_catalogue_scope_and_roundtri
             .as_object_mut()
             .unwrap()
             .extend(update.as_object().unwrap().clone());
+        assert!(validate_definition(&invalid).is_err());
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Result<()> {
+    let mut topology = DesiredInstance::default().topology;
+    for consumer in ["left", "right"] {
+        declare(
+            &mut topology,
+            consumer,
+            ResourceRole::Checkpoint,
+            json!({"kind":"sourceProgress","component":consumer}),
+        );
+    }
+    declare(
+        &mut topology,
+        "feedback",
+        ResourceRole::Checkpoint,
+        json!({
+            "kind":"consumerProgress",
+            "producer":"source",
+            "consumers":{"left":"left","right":"right"}
+        }),
+    );
+    topology.resource_dependencies.insert(
+        resource("feedback"),
+        BTreeMap::from([
+            (resource("left"), ResourceRole::Checkpoint),
+            (resource("right"), ResourceRole::Checkpoint),
+        ]),
+    );
+    let config = ComputationConfig {
+        definition: topology,
+    };
+    validate_definition(&config)?;
+    let json = serde_json::to_value(&config)?;
+    let decoded: ComputationConfig = serde_json::from_value(json.clone())?;
+    validate_definition(&decoded)?;
+    let decoded: ComputationConfig = serde_yaml::from_str(&serde_yaml::to_string(&config)?)?;
+    assert_eq!(serde_json::to_value(decoded)?, json);
+
+    let resolver = ServerManagementResources::new(&PluginRegistry::new(), None)?;
+    let graph = &config.definition.graph_id;
+    let mut dependencies = BTreeMap::new();
+    for specification in &config.definition.resources[..2] {
+        let handle = resolver
+            .resolve(
+                INSTANCE,
+                graph,
+                specification,
+                &config.definition.resource_configurations[&specification.id],
+            )
+            .await?;
+        dependencies.insert(specification.id.clone(), handle);
+    }
+    let specification = &config.definition.resources[2];
+    let recipe = &config.definition.resource_configurations[&specification.id];
+    let handle = resolver
+        .resolve_with_dependencies(INSTANCE, graph, specification, recipe, &dependencies)
+        .await?;
+    let feedback = handle.get::<ConsumerProgressSet>()?;
+    assert_eq!(feedback.producer_id(), &id("source"));
+    assert_eq!(feedback.owners().len(), 2);
+    for consumer in ["left", "right"] {
+        let actual = dependencies[&resource(consumer)].get::<QuerySourceProgressResource>()?;
+        assert!(Arc::ptr_eq(&feedback.owners()[&id(consumer)], &actual.0));
+    }
+    assert!(!feedback.read_only().snapshot()?.ready());
+    assert!(resolver
+        .resolve_with_dependencies(INSTANCE, "foreign", specification, recipe, &dependencies,)
+        .await
+        .is_err());
+    assert!(resolver
+        .resolve(INSTANCE, graph, specification, recipe)
+        .await
+        .is_err());
+    let mut wrong_owner = dependencies.clone();
+    wrong_owner.insert(
+        resource("left"),
+        ResourceHandle::new(
+            ResourceRole::Checkpoint,
+            Arc::new(QuerySourceProgressResource(Arc::new(
+                QuerySourceProgress::new(graph.as_str(), id("another"))?,
+            ))),
+        ),
+    );
+    assert!(resolver
+        .resolve_with_dependencies(INSTANCE, graph, specification, recipe, &wrong_owner,)
+        .await
+        .is_err());
+    for consumers in [
+        json!({}),
+        json!({"source":"left"}),
+        json!({"left":"left","right":"left"}),
+        json!({"left":"feedback"}),
+    ] {
+        let mut invalid = config.clone();
+        invalid
+            .definition
+            .resource_configurations
+            .get_mut(&resource("feedback"))
+            .unwrap()["consumers"] = consumers;
         assert!(validate_definition(&invalid).is_err());
     }
     Ok(())

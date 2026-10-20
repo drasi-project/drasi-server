@@ -4,12 +4,61 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { DrasiClient, DrasiError, type Component, type DrasiErrorDetails } from '@drasi/react/client';
-import { TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, type TradingQueryDefinition } from './config';
+import {
+  TRADING_NATIVE_COMPUTATION, TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION,
+  type TradingQueryDefinition,
+} from './config';
 
 const SETUP_TIMEOUT_MS = 60000;
 const POLL_MS = 200;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (isRecord(value)) return `{${Object.keys(value).sort().map(key =>
+    `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+const nativeDefinition = TRADING_NATIVE_COMPUTATION.definition;
+const nativeIds = new Set(nativeDefinition.components.map(component => component.descriptor.id));
+const resourceIds = new Set(nativeDefinition.resources.map(resource => resource.id));
+const componentId = (value: unknown) =>
+  isRecord(value) && isRecord(value.descriptor) ? value.descriptor.id : undefined;
+const resourceId = (value: unknown) => isRecord(value) ? value.id : undefined;
+const ownedRelationship = (value: unknown) => {
+  if (!isRecord(value) || !isRecord(value.definition)) return false;
+  return [value.definition.from, value.definition.to].some(endpoint =>
+    isRecord(endpoint) && typeof endpoint.component === 'string' && nativeIds.has(endpoint.component));
+};
+
+function owned(values: unknown, ids: Set<string>, key: (value: unknown) => unknown): unknown[] {
+  if (!Array.isArray(values)) throw new DrasiError('INVALID_PAYLOAD');
+  return values.filter(value => {
+    const id = key(value);
+    return typeof id === 'string' && ids.has(id);
+  });
+}
+
+function matchesNativeDefinition(actual: Record<string, unknown>): boolean {
+  const sorted = (values: unknown[]) => values.map(canonical).sort();
+  if (actual.version !== nativeDefinition.version || actual.graph_id !== nativeDefinition.graph_id ||
+      canonical(sorted(owned(actual.components, nativeIds, componentId))) !== canonical(sorted(nativeDefinition.components)) ||
+      canonical(sorted(owned(actual.resources, resourceIds, resourceId))) !== canonical(sorted(nativeDefinition.resources))) return false;
+  for (const field of ['relationships', 'boundary_relationships'] as const) {
+    const values = actual[field];
+    if (!Array.isArray(values) ||
+        canonical(sorted(values.filter(ownedRelationship))) !== canonical(sorted(nativeDefinition[field]))) return false;
+  }
+  for (const field of ['resource_configurations', 'resource_dependencies'] as const) {
+    const values = actual[field];
+    if (!isRecord(values)) return false;
+    const selected = Object.fromEntries(Object.entries(values).filter(([id]) => resourceIds.has(id)));
+    if (canonical(selected) !== canonical(nativeDefinition[field])) return false;
+  }
+  return true;
+}
 
 /** Only positively identified, known Trading resources are eligible for setup. */
 export function canPrepareTrading(error: unknown, instanceId: string): error is DrasiError {
@@ -150,11 +199,53 @@ async function prepare(
   // Preflight the whole known bundle before any write. Do not partially create
   // around an authorization, malformed-data or conflicting-definition failure.
   let ready = true;
+  const present: string[] = [];
   for (const definition of TRADING_QUERIES) {
     const component = await readOptional(() => readQuery(definition), 'QUERY_NOT_FOUND');
+    if (component) present.push(definition.id);
     if (component?.status !== 'Running') ready = false;
   }
   const reaction = await readOptional(readReaction, 'REACTION_NOT_FOUND');
+  const nativeUrl = `${serverUrl}/api/v1/instances/${encodeURIComponent(instanceId)}/computation`;
+  const bundleDetails = details('query', TRADING_QUERY_IDS.find(id => !present.includes(id)) ?? TRADING_QUERY_IDS[0]);
+  const readNative = async () => {
+    Object.assign(active, bundleDetails);
+    const { data } = await request(fetcher, `${nativeUrl}/configuration`, signal, {}, bundleDetails);
+    if (!isRecord(data) || data.version !== 1 || !isRecord(data.instance)) {
+      throw new DrasiError('INVALID_PAYLOAD', bundleDetails);
+    }
+    for (const kind of ['sources', 'queries'] as const) {
+      const declarations = data.instance[kind];
+      if (!Array.isArray(declarations)) throw new DrasiError('INVALID_PAYLOAD', bundleDetails);
+      if (declarations.some(value => isRecord(value) && typeof value.id === 'string' && nativeIds.has(value.id))) {
+        throw new DrasiError('INCOMPATIBLE_RESOURCE', bundleDetails);
+      }
+    }
+    if (data.native_components === undefined || data.native_components === null) return null;
+    if (!isRecord(data.native_components) || !isRecord(data.native_components.topology)) {
+      throw new DrasiError('INVALID_PAYLOAD', bundleDetails);
+    }
+    return data.native_components.topology;
+  };
+  let topology = await readNative();
+  if (present.length === 0 &&
+      (topology === null || (owned(topology.components, nativeIds, componentId).length === 0 &&
+        owned(topology.resources, resourceIds, resourceId).length === 0))) {
+    await request(fetcher, `${nativeUrl}/components`, signal, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(TRADING_NATIVE_COMPUTATION),
+    }, bundleDetails);
+    topology = await readNative(); // A 409 must prove the exact winning group, not just query names.
+  }
+  if (topology === null || !matchesNativeDefinition(topology)) {
+    throw new DrasiError('INCOMPATIBLE_RESOURCE', bundleDetails);
+  }
+  // A concurrent tab may have installed the complete group after our preflight.
+  for (const definition of TRADING_QUERIES.filter(query => !present.includes(query.id))) {
+    if (await readOptional(() => readQuery(definition), 'QUERY_NOT_FOUND') === null) {
+      throw new DrasiError('INCOMPATIBLE_RESOURCE', details('query', definition.id));
+    }
+  }
   if (ready && reaction?.status === 'Running') return;
 
   const ensure = async (
@@ -165,6 +256,7 @@ async function prepare(
     let component = await readOptional(read, kind === 'query' ? 'QUERY_NOT_FOUND' : 'REACTION_NOT_FOUND');
     let started = false;
     if (!component) {
+      if (kind === 'query') throw new DrasiError('INCOMPATIBLE_RESOURCE', details(kind, id));
       const result = await request(fetcher, url(kind), signal, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -193,7 +285,8 @@ async function prepare(
       component = await read();
     }
   };
-  // Query/source/join order is intentional. Never parallelize creation.
+  // Membership was installed as one native batch. Existing query restart APIs
+  // retain the graph's stop/reinitialize/resume barrier for the shared producer.
   for (const definition of TRADING_QUERIES) {
     await ensure('query', definition.id, { ...definition, autoStart: true }, () => readQuery(definition));
   }

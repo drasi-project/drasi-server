@@ -14,14 +14,20 @@
 # limitations under the License.
 
 # Start Server Script
-# Builds and starts Drasi Server with the getting-started configuration
+# Starts the matched local native Server/plugin build without resetting data.
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXAMPLE_DIR="$SCRIPT_DIR/.."
-SERVER_ROOT="$EXAMPLE_DIR/../.."
+SERVER_ROOT="$(cd "$EXAMPLE_DIR/../.." && pwd)"
+cd "$SERVER_ROOT"
 CONFIG_FILE="$EXAMPLE_DIR/server-config.yaml"
+TARGET_DIR="${CARGO_TARGET_DIR:-$SERVER_ROOT/target}"
+PROFILE="${PROFILE:-debug}"
+SERVER_BIN="${SERVER_BIN:-$TARGET_DIR/$PROFILE/drasi-server}"
+GENERATOR_BIN="${GENERATOR_BIN:-$TARGET_DIR/$PROFILE/examples/native-postgres}"
+LOCAL_PLUGINS_DIR="${LOCAL_PLUGINS_DIR:-$TARGET_DIR/$PROFILE}"
 
 echo "=== Drasi Server Getting Started ==="
 echo
@@ -32,24 +38,16 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Check if PostgreSQL is running
-if ! docker ps | grep -q getting-started-postgres; then
-    echo "Warning: PostgreSQL container is not running"
-    echo "Run ./setup-database.sh first"
-    echo
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+for binary in "$SERVER_BIN" "$GENERATOR_BIN"; do
+    if [ ! -x "$binary" ]; then
+        echo "Build the matching Server, native-postgres example and native libraries first; see examples/postgres/README.md." >&2
         exit 1
     fi
-fi
-
-# Build the server (and the Web UI). `make build-release` invokes `make build-ui`
-# first so the /ui route is available; using `cargo build --release` alone would
-# leave ui/dist missing and the Web UI would not be served.
-echo "Building Drasi Server (release mode, including Web UI)..."
-cd "$SERVER_ROOT"
-make build-release
+done
+: "${POSTGRES_PASSWORD:?Export the configured drasi_user password before starting}"
+DRASI_PG_POSTGRES_MESSAGES_SETTINGS="$("$GENERATOR_BIN" settings \
+    "$SERVER_ROOT/examples/postgres/recipes/getting-started-server.yaml" postgres-messages)"
+export DRASI_PG_POSTGRES_MESSAGES_SETTINGS
 
 echo
 echo "Starting Drasi Server..."
@@ -63,4 +61,5 @@ echo "=============================================="
 echo
 
 # Run the server
-exec ./target/release/drasi-server --config "$CONFIG_FILE"
+cd "$SERVER_ROOT"
+exec "$SERVER_BIN" --config "$CONFIG_FILE" --plugins-dir "$LOCAL_PLUGINS_DIR" --skip-verification

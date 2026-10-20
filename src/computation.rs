@@ -20,8 +20,9 @@ use drasi_core::computation::ComputationIndexProvider;
 use drasi_host_sdk::{
     computation::NativeBootstrapFactories,
     management::{
-        HostConfigurationResolver, NativeBootstrapConfig, NativeConsumerConfig,
-        NativeQuerySnapshotsConfig, QosRecoveryConfig, SharedQosConfig,
+        CompositeBootstrapConfig, ConsumerProgressConfig, HostConfigurationResolver,
+        NativeBootstrapConfig, NativeConsumerConfig, NativeQuerySnapshotsConfig, QosRecoveryConfig,
+        SharedQosConfig,
     },
 };
 use drasi_lib::{
@@ -82,7 +83,9 @@ pub enum ComputationResourceConfig {
     SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
     NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
+    CompositeBootstrap(#[schema(value_type = serde_json::Value)] CompositeBootstrapConfig),
     NativeQuerySnapshots(#[schema(value_type = serde_json::Value)] NativeQuerySnapshotsConfig),
+    ConsumerProgress(#[schema(value_type = serde_json::Value)] ConsumerProgressConfig),
     Middleware {},
     QueryMiddleware {},
     TransactionalTransformers {},
@@ -123,8 +126,8 @@ impl ComputationResourceConfig {
             | Self::SharedStorage { .. }
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
             Self::QueryCatalog {} | Self::NativeQuerySnapshots(_) => ResourceRole::QueryCatalog,
-            Self::NativeBootstrap(_) => ResourceRole::Bootstrap,
-            Self::SourceProgress { .. } => ResourceRole::Checkpoint,
+            Self::NativeBootstrap(_) | Self::CompositeBootstrap(_) => ResourceRole::Bootstrap,
+            Self::SourceProgress { .. } | Self::ConsumerProgress(_) => ResourceRole::Checkpoint,
             Self::Middleware {} | Self::QueryMiddleware {} => ResourceRole::Middleware,
             Self::TransactionalTransformers {}
             | Self::BridgeIngressControl {}
@@ -212,7 +215,12 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         } else if let ComputationResourceConfig::NativeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
+        } else if let ComputationResourceConfig::CompositeBootstrap(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+            config.validate_owner(&resource.id, definition)?;
         } else if let ComputationResourceConfig::NativeQuerySnapshots(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+        } else if let ComputationResourceConfig::ConsumerProgress(config) = &recipe {
             config.validate(resource, &dependencies)?;
         } else {
             anyhow::ensure!(
@@ -565,10 +573,17 @@ impl ManagementResourceResolver for ServerManagementResources {
                         &BTreeMap::new(),
                     )?;
                 }
+                ComputationResourceConfig::CompositeBootstrap(config) => {
+                    config.validate(resource, &dependencies)?;
+                    config.validate_owner(&resource.id, desired)?;
+                }
                 ComputationResourceConfig::NativeConsumer(config) => {
                     config.validate_dependencies(resource, &dependencies)?
                 }
                 ComputationResourceConfig::NativeQuerySnapshots(config) => {
+                    config.validate(resource, &dependencies)?
+                }
+                ComputationResourceConfig::ConsumerProgress(config) => {
                     config.validate(resource, &dependencies)?
                 }
                 _ => {}
@@ -638,7 +653,13 @@ impl ManagementResourceResolver for ServerManagementResources {
                 .resolve(instance, graph, resource, dependencies, &self.bootstraps)
                 .await;
         }
+        if let ComputationResourceConfig::CompositeBootstrap(config) = recipe {
+            return config.resolve(instance, graph, resource, dependencies);
+        }
         if let ComputationResourceConfig::NativeQuerySnapshots(config) = recipe {
+            return config.resolve(graph, resource, dependencies);
+        }
+        if let ComputationResourceConfig::ConsumerProgress(config) = recipe {
             return config.resolve(graph, resource, dependencies);
         }
         anyhow::ensure!(
@@ -706,8 +727,14 @@ impl ManagementResourceResolver for ServerManagementResources {
             ComputationResourceConfig::NativeBootstrap(_) => {
                 unreachable!("native bootstrap resolved with dependencies")
             }
+            ComputationResourceConfig::CompositeBootstrap(_) => {
+                unreachable!("composite bootstrap resolved with dependencies")
+            }
             ComputationResourceConfig::NativeQuerySnapshots(_) => {
                 unreachable!("native query snapshots resolved with dependencies")
+            }
+            ComputationResourceConfig::ConsumerProgress(_) => {
+                unreachable!("consumer progress resolved with dependencies")
             }
             ComputationResourceConfig::Middleware {} => ResourceHandle::new(
                 ResourceRole::Middleware,

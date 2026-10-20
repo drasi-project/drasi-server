@@ -1,0 +1,81 @@
+{
+  "apiVersion": "drasi.io/v1",
+  "host": "0.0.0.0",
+  "port": 8280,
+  "logLevel": "info",
+  "persistConfig": false,
+  "autoInstallPlugins": false,
+  "instances": [{
+    "id": "trading-server",
+    "sources": [{
+      "kind": "http",
+      "id": "price-feed",
+      "autoStart": true,
+      "host": "0.0.0.0",
+      "port": 9100,
+      "timeoutMs": 10000,
+      "bootstrapProvider": {
+        "kind": "http",
+        "endpoints": [{
+          "url": "${TRADING_SNAPSHOT_URL:-http://localhost:9200/api/initial-prices}",
+          "response": {
+            "itemsPath": "$.items",
+            "mappings": [{
+              "elementType": "node",
+              "template": {
+                "id": "{{item.id}}",
+                "labels": ["stock_prices"],
+                "properties": {
+                  "symbol": "{{item.properties.symbol}}",
+                  "price": "{{item.properties.price}}",
+                  "previous_close": "{{item.properties.previous_close}}",
+                  "volume": "{{item.properties.volume}}",
+                  "timestamp": "{{item.properties.timestamp}}"
+                }
+              }
+            }]
+          }
+        }],
+        "timeoutSeconds": 10,
+        "maxRetries": 2,
+        "retryDelayMs": 100
+      }
+    }, {
+      "kind": "postgres",
+      "id": "postgres-stocks",
+      "autoStart": true,
+      "host": "${POSTGRES_HOST:-localhost}",
+      "port": "${POSTGRES_PORT:-5632}",
+      "database": "${POSTGRES_DB:-trading_demo}",
+      "user": "${POSTGRES_USER:-drasi_user}",
+      "password": "${POSTGRES_PASSWORD:-drasi_password}",
+      "tables": ["stocks", "portfolio", "watchlist"],
+      "slotName": "${TRADING_STOCKS_SLOT:-drasi_trading_slot}",
+      "publicationName": "${TRADING_STOCKS_PUBLICATION:-drasi_trading_pub}",
+      "sslMode": "prefer",
+      "tableKeys": [
+        {"table": "stocks", "keyColumns": ["id"]},
+        {"table": "portfolio", "keyColumns": ["id"]},
+        {"table": "watchlist", "keyColumns": ["id"]}
+      ],
+      "bootstrapProvider": {"kind": "postgres"}
+    }, {
+      "kind": "postgres",
+      "id": "postgres-broker",
+      "autoStart": true,
+      "host": "${POSTGRES_HOST:-localhost}",
+      "port": "${POSTGRES_PORT:-5632}",
+      "database": "${POSTGRES_DB:-trading_demo}",
+      "user": "${POSTGRES_USER:-drasi_user}",
+      "password": "${POSTGRES_PASSWORD:-drasi_password}",
+      "tables": ["limit_orders"],
+      "slotName": "${TRADING_BROKER_SLOT:-drasi_broker_slot}",
+      "publicationName": "${TRADING_BROKER_PUBLICATION:-drasi_broker_pub}",
+      "sslMode": "prefer",
+      "tableKeys": [{"table": "limit_orders", "keyColumns": ["id"]}],
+      "bootstrapProvider": {"kind": "postgres"}
+    }],
+    "queries": [],
+    "reactions": []
+  }]
+}

@@ -24,13 +24,14 @@ use std::{
 
 pub async fn current_snapshot(
     host: &str,
+    port: u16,
     password: &str,
     epoch: uuid::Uuid,
 ) -> Result<inputs::DatabaseSnapshot> {
     use gpu_control::db::{self, Table};
     let options = PgConnectOptions::new()
         .host(host)
-        .port(5432)
+        .port(port)
         .database("gpu_demo")
         .username("gpu_reader")
         .password(password)
@@ -70,6 +71,7 @@ impl ConfigurationResolver for Settings {
 
 pub fn components(
     host: &str,
+    port: u16,
     password: &str,
     path: &str,
     catalog: QueryResultsCatalog,
@@ -92,7 +94,7 @@ pub fn components(
     let settings = PostgresTransactionConfig {
         connection: PostgresSourceConfig {
             host: host.into(),
-            port: 5432,
+            port,
             database: "gpu_demo".into(),
             user: "gpu_reader".into(),
             password: password.into(),
@@ -124,7 +126,11 @@ pub fn components(
         NativePlugin::from_definition(drasi_computation_bootstrap_postgres::plugin()?)?;
     let snapshot = bootstrap_plugin
         .bootstrap_factories()
-        .first()
+        .iter()
+        .find(|factory| {
+            factory.metadata().implementation.name.as_ref()
+                == drasi_computation_bootstrap_postgres::POSTGRES_BOOTSTRAP
+        })
         .context("native PostgreSQL bootstrap factory is missing")?
         .create_provider(
             super::id(DATABASE_QUERY)?,
@@ -146,7 +152,11 @@ pub fn components(
     ));
     let source_factory = postgres
         .factories()
-        .first()
+        .iter()
+        .find(|factory| {
+            factory.metadata().implementation.name.as_ref()
+                == drasi_computation_source_postgres::POSTGRES_SOURCE
+        })
         .context("native PostgreSQL source factory is missing")?
         .clone();
     let query_factory = FactoryRegistry::standard()

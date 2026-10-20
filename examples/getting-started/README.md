@@ -43,85 +43,41 @@ A message tracking system that:
 
 Before you begin, ensure you have:
 
-- **Docker**: Required to run PostgreSQL
-  - [Install Docker](https://docs.docker.com/get-docker/)
+- **Podman**: Used for isolated PostgreSQL qualification; manual setup also needs
+  a Compose provider. `CONTAINER_CLI=docker` selects an existing Docker setup
+  for the manual database wrapper instead.
 - **Rust/Cargo**: Required to build Drasi Server
   - [Install Rust](https://rustup.rs/)
 - **psql** (optional): For manual database queries
   - macOS: `brew install postgresql`
   - Ubuntu: `sudo apt-get install postgresql-client`
 
+Build the matching Server, generator and native libraries using
+[`../postgres/README.md`](../postgres/README.md). These configurations use
+canonical `computation.definition`, generated from real factory metadata,
+because PostgreSQL settings are secret configuration references. The editable
+application recipes are in `../postgres/recipes/`; they are not runtime configs.
+
 ## Run the entire demo end-to-end (automated)
 
-If you just want to verify the example works on your machine, a single
-script will start PostgreSQL, build and start Drasi Server, run the same
-REST and CDC change-detection assertions used by CI, and report a pass /
-fail summary:
+After building the matching local binaries/libraries, run the isolated proof:
 
 ```bash
 cd scripts
 ./run-end-to-end.sh
 ```
 
-What it does:
+It uses a fresh Podman database, unique configured slots, loopback ports and
+new instance state. It exercises both this standalone configuration and numbered
+steps 3–6, verifies initial snapshots, inserts a live message, and observes timed
+inactivity where configured. All owned processes/database resources are cleaned
+up; logs and result evidence remain. It never invokes the installed demo's
+setup/reset/cleanup scripts or touches existing slots, volumes or `.env`.
 
-1. Calls `setup-database.sh` to start the `getting-started-postgres`
-   container with sample data and a logical-replication slot.
-2. Runs `cargo build --release` from the repo root.
-3. Launches `drasi-server` against
-   [`server-config.yaml`](./server-config.yaml) in the background and
-   waits for `GET /health`.
-4. Verifies that the configured sources and queries are present via the
-   REST API.
-5. Inserts a `'Hello World'` row into the `message` table and polls
-   `/api/v1/instances/getting-started-server/queries/hello-world-from/results` until the new row appears
-   (asserting the end-to-end CDC pipeline works).
-6. Stops the server. By default it leaves the Postgres container
-   running so you can keep exploring; pass `CLEANUP=1` to tear it down.
-
-Exit code is `0` on success and `1` on any failure (with the tail of
-the server log printed for debugging).
-
-Useful overrides:
-
-| Variable          | Default     | Purpose                               |
-|-------------------|-------------|---------------------------------------|
-| `SERVER_HOST`     | `localhost` | Host used for `/health` + REST checks |
-| `SERVER_PORT`     | `8080`      | Port used for `/health` + REST checks |
-| `STARTUP_TIMEOUT` | `60`        | Seconds to wait for `/health`         |
-| `RESULT_TIMEOUT`  | `30`        | Seconds to wait for the inserted row  |
-| `SKIP_BUILD`      | unset       | Skip `cargo build --release`          |
-| `CLEANUP`         | unset       | Run `cleanup.sh` on exit              |
-| `LOCAL_PLUGINS_DIR` | unset | Plugin directory for explicitly selected matching local SDK development. In local mode only, defaults to that Cargo-selected workspace's `target/release/plugins`. Set to `skip` to leave the registry config unchanged. |
-| `BUILD_LOCAL_PLUGINS` | unset | If set to `1`, build plugins from the actual matching local SDK workspace. Registry builds reject this option rather than using an unrelated sibling. |
-
-Examples:
-
-```bash
-# Fast re-run after a previous build, with full teardown afterwards
-SKIP_BUILD=1 CLEANUP=1 ./run-end-to-end.sh
-
-# Use a non-default port
-SERVER_PORT=18080 ./run-end-to-end.sh
-
-# Leave the OCI registry configuration unchanged
-LOCAL_PLUGINS_DIR=skip ./run-end-to-end.sh
-
-# After explicitly selecting matching local SDK dependencies, build their plugins
-BUILD_LOCAL_PLUGINS=1 ./run-end-to-end.sh
-```
-
-> **Plugin source selection:** default registry builds never inspect or select
-> a sibling checkout. Unsigned local plugins require matching SDK/host/FFI/library
-> identities in Cargo's selected local workspace. Only that mode accepts
-> `LOCAL_PLUGINS_DIR` or builds local plugins; missing required binaries fail.
-> Registry mode retains the configured OCI registry
->    (`ghcr.io/drasi-project`). This is what CI uses on linux-amd64.
->
-> When a local plugins directory is used, the script generates a temp
-> `server-config.local.yaml` whose `pluginRegistry` points at it and
-> launches the server with `--skip-verification --plugins-dir <dir>`.
-> The temp file is git-ignored.
+`CARGO_TARGET_DIR` defaults to the Server's `target`, and `PROFILE` defaults to
+`debug`. `SERVER_BIN`, `GENERATOR_BIN`, `LOCAL_PLUGINS_DIR` and `EVIDENCE_DIR`
+override those artifact locations. The evidence path must be new. There is no
+automatic rebuild, registry fallback or destructive `CLEANUP` mode.
 
 ## Run the Example Manually
 
@@ -137,11 +93,15 @@ cd scripts
 ./setup-database.sh
 ```
 
-This will:
-- Start PostgreSQL with logical replication enabled
-- Create the `message` table
-- Insert initial sample data
-- Set up replication slots for CDC
+This starts PostgreSQL without removing its volume. When the standalone
+`message` table, publication and slot are all absent, it provisions them and
+their initial data. An existing complete installation is checked without
+modification; a partial or incompatible installation is an explicit error.
+It never drops/recreates a configured slot to make startup pass.
+
+The numbered-step configurations use the separate quoted `"Message"` schema,
+`drasi_pub` publication and `drasi_slot`. Do not point them at the standalone
+lower-case fixture. The isolated proof creates the correct schema for each.
 
 You'll see the initial messages:
 
@@ -158,13 +118,16 @@ In a **new terminal**, run:
 
 ```bash
 cd scripts
+export POSTGRES_PASSWORD='drasi_password' # Default for a newly provisioned demo only.
 ./start-server.sh
 ```
 
-This will:
-- Build Drasi Server in release mode
-- Start the server with the tutorial configuration
-- Connect to PostgreSQL and begin capturing changes
+The wrapper uses the already built matching local Server/generator/plugins.
+It resolves native PostgreSQL settings into
+`DRASI_PG_POSTGRES_MESSAGES_SETTINGS`, starts the generated configuration,
+and connects one shared native source to all three real query owners.
+`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE` and `POSTGRES_USER`
+can override the recipe's defaults; existing credentials are never reset.
 
 You'll see log output showing:
 - Source connecting to PostgreSQL
@@ -213,8 +176,8 @@ Now let's see the system react to changes! In a **new terminal**:
 
 **Add a "Hello World" message:**
 ```bash
-cd scripts
-./add-message.sh "Alice" "Hello World"
+podman exec getting-started-postgres psql -U drasi_user -d getting_started \
+  -c "INSERT INTO message (\"from\",message) VALUES ('Alice','Hello World');"
 ```
 
 Watch the browser/console - you'll see:
@@ -223,7 +186,8 @@ Watch the browser/console - you'll see:
 
 **Add a different message:**
 ```bash
-./add-message.sh "Bob" "Goodbye World"
+podman exec getting-started-postgres psql -U drasi_user -d getting_started \
+  -c "INSERT INTO message (\"from\",message) VALUES ('Bob','Goodbye World');"
 ```
 
 Watch the results:
@@ -236,7 +200,8 @@ Watch the results:
 
 **Delete a message:**
 ```bash
-./delete-message.sh 2
+podman exec getting-started-postgres psql -U drasi_user -d getting_started \
+  -c "DELETE FROM message WHERE messageid=2;"
 ```
 
 Watch the results:
@@ -245,54 +210,32 @@ Watch the results:
 
 ### Step 5: Cleanup
 
-When you're done:
+Stop the Server with Ctrl+C. Stop the manually started database without removing
+its volume when you no longer need it:
 
 ```bash
-cd scripts
-./cleanup.sh
+cd database
+podman compose stop
 ```
 
-To also remove the database volume:
-```bash
-./cleanup.sh --volumes
-```
+Do not remove the volume, table, publication or slot as a recovery shortcut.
+The automated proof cleans only its own fresh resources.
 
 ## Understanding the Components
 
 ### PostgreSQL Source
 
-The source connects to PostgreSQL using logical replication (WAL) to capture all changes:
+`drasi.postgres/shared-changes` reads the existing configured slot using logical
+replication. Its `consumerProgress` resource names all three query progress
+owners. Each query's `drasi.postgres/shared-row-bootstrap` provider uses a
+temporary exported snapshot and publishes its real boundary only after complete
+initialization. Feedback respects every required consumer; there is no aggregate
+checkpoint or separate source per query.
 
-```yaml
-sources:
-  - kind: postgres
-    id: postgres-messages
-    host: localhost
-    port: 5432
-    database: getting_started
-    user: drasi_user
-    password: drasi_password
-    tables:
-      - message
-    slotName: drasi_getting_started_slot
-    publicationName: drasi_getting_started_pub
-    bootstrapProvider:
-      kind: postgres
-      host: localhost
-      port: 5432
-      database: getting_started
-      user: drasi_user
-      password: drasi_password
-      tables:
-        - message
-      slotName: drasi_getting_started_slot
-      publicationName: drasi_getting_started_pub
-      sslMode: prefer
-      tableKeys:
-        - table: message
-          keyColumns:
-            - messageid
-```
+Edit `../postgres/recipes/getting-started-server.yaml` and rerun
+`examples/native-postgres.rs` to regenerate `server-config.yaml`. The generator
+copies actual factory schemas and ports and preserves secret references; do not
+hand-edit the expanded metadata.
 
 Key features:
 - **WAL Replication**: Zero-polling change detection
@@ -308,7 +251,7 @@ Queries run continuously and automatically update when source data changes.
 Filters messages containing "Hello World":
 
 ```cypher
-MATCH (m:Message {message: 'Hello World'})
+MATCH (m:message {message: 'Hello World'})
 RETURN m.messageid AS MessageId, m.from AS MessageFrom
 ```
 
@@ -317,7 +260,7 @@ RETURN m.messageid AS MessageId, m.from AS MessageFrom
 Aggregates messages by content:
 
 ```cypher
-MATCH (m:Message)
+MATCH (m:message)
 RETURN m.message AS Message, count(m) AS Frequency
 ```
 
@@ -326,7 +269,7 @@ RETURN m.message AS Message, count(m) AS Frequency
 Finds users inactive for 20+ seconds using time functions:
 
 ```cypher
-MATCH (m:Message)
+MATCH (m:message)
 WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
 WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
   OR drasi.trueLater(
@@ -429,21 +372,20 @@ See `requests.http` for examples using VSCode REST Client.
 **Error**: `Connection refused` or `Cannot connect to PostgreSQL`
 
 **Solution**:
-1. Verify PostgreSQL is running: `docker ps | grep getting-started-postgres`
+1. Verify PostgreSQL is running: `podman ps --filter name=getting-started-postgres`
 2. If not running, start it: `./scripts/setup-database.sh`
-3. Check Docker logs: `docker logs getting-started-postgres`
+3. Check database logs: `podman logs getting-started-postgres`
 
 ### Replication Slot Issues
 
 **Error**: `replication slot already exists` or replication errors
 
 **Solution**:
-1. Stop the server and database
-2. Clean up and restart:
-   ```bash
-   ./scripts/cleanup.sh --volumes
-   ./scripts/setup-database.sh
-   ```
+Inspect the configured database/slot/publication binding, retained WAL and other
+active readers. A missing or incompatible slot is not automatically recreated.
+Stop the Server before an explicit operator-controlled recovery; never delete
+retained data or reset feedback to suppress the error. Use the isolated proof
+to distinguish an installation problem from the native implementation.
 
 ### SSE Connection Failed
 

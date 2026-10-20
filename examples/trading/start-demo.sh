@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRASI_SERVER_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
 BASE_CONFIG="$SCRIPT_DIR/server/trading-sources-only.yaml"
-PLUGIN_SOURCE="registry"
+PLUGIN_SOURCE="local"
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
@@ -44,8 +44,8 @@ usage() {
 Usage: ./start-demo.sh [--plugin-source registry|local]
 
 Plugin sources:
-  registry  Use compatible signed plugins from GHCR (default).
-  local     Use plugins prepared by ./build-local-plugins.sh.
+  local     Use the matching native libraries prepared by ./build-local-plugins.sh (default).
+  registry  Unavailable until the matching native Trading libraries are published.
 EOF
 }
 
@@ -76,7 +76,11 @@ while [ $# -gt 0 ]; do
 done
 
 case "$PLUGIN_SOURCE" in
-    registry | local) ;;
+    local) ;;
+    registry)
+        echo "Native Trading requires matching unpublished local PG/HTTP libraries. Run build-local-plugins.sh; registry fallback is not supported for this configuration." >&2
+        exit 1
+        ;;
     *)
         echo -e "${RED}Error: Invalid plugin source '$PLUGIN_SOURCE' (expected registry or local)${NC}" >&2
         exit 1
@@ -159,7 +163,6 @@ if [ "$PLUGIN_SOURCE" = "registry" ]; then
 else
     PLUGINS_DIR="$SCRIPT_DIR/plugins/local"
     LOCAL_MANIFEST="$PLUGINS_DIR/local-build.json"
-    LOCAL_CONFIG="$LOG_DIR/trading-sources-local.yaml"
 
     if [ ! -f "$LOCAL_MANIFEST" ]; then
         echo -e "${RED}Local trading plugins have not been prepared.${NC}"
@@ -170,7 +173,7 @@ else
     fi
 
     LOCAL_CORE="$(python3 "$DRASI_SERVER_ROOT/scripts/plugin_origin.py" local-workspace)"
-    if ! LOCAL_PLUGIN_REGISTRY="$(python3 - "$LOCAL_MANIFEST" "$DRASI_SERVER_ROOT/target/release/drasi-server" "$PLUGINS_DIR" "$DRASI_SERVER_ROOT" "$LOCAL_CORE" <<'PY'
+    if ! python3 - "$LOCAL_MANIFEST" "$DRASI_SERVER_ROOT/target/release/drasi-server" "$PLUGINS_DIR" "$DRASI_SERVER_ROOT" "$LOCAL_CORE" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -250,8 +253,8 @@ else:
     prefix, extension = "lib", "so"
 required_plugins = {
     f"{prefix}drasi_{kind}.{extension}"
-    for kind in ("source_http", "source_postgres", "bootstrap_scriptfile",
-                 "bootstrap_postgres", "reaction_sse")
+    for kind in ("computation_source_http", "computation_source_postgres",
+                 "computation_bootstrap_http", "computation_bootstrap_postgres", "reaction_sse")
 }
 if set(manifest.get("plugins", {})) != required_plugins:
     errors.append("manifest must contain exactly the five required trading plugins")
@@ -293,45 +296,20 @@ if errors:
     )
     sys.exit(1)
 
-print(plugins_dir)
+print(f"Matched native plugin directory: {plugins_dir}")
 PY
-)"; then
+    then
         exit 1
     fi
 
-    python3 - "$BASE_CONFIG" "$LOCAL_CONFIG" "$LOCAL_PLUGIN_REGISTRY" <<'PY'
-import json
-import pathlib
-import re
-import sys
-
-source = pathlib.Path(sys.argv[1]).read_text()
-destination = pathlib.Path(sys.argv[2])
-registry = json.dumps(str(pathlib.Path(sys.argv[3]).resolve()))
-source = source.replace("autoInstallPlugins: false", "autoInstallPlugins: true", 1)
-
-replacement = f"pluginRegistry: {registry}"
-if re.search(r"(?m)^pluginRegistry:", source):
-    source = re.sub(r"(?m)^pluginRegistry:.*$", replacement, source, count=1)
-else:
-    marker = "autoInstallPlugins: true"
-    if source.count(marker) != 1:
-        raise SystemExit(f"Unable to locate exactly one '{marker}' setting")
-    source = source.replace(marker, f"{replacement}\n{marker}", 1)
-
-destination.write_text(source)
-PY
-
-    CONFIG_PATH="$LOCAL_CONFIG"
     SERVER_PLUGIN_ARGS=(--skip-verification)
 
     VALIDATION_LOG="$LOG_DIR/local-plugin-validation.log"
     if ! "$DRASI_SERVER_ROOT/target/release/drasi-server" validate \
-        --config "$LOCAL_CONFIG" \
+        --config "$CONFIG_PATH" \
         --plugins-dir "$PLUGINS_DIR" \
         >"$VALIDATION_LOG" 2>&1 ||
-        grep -Eq 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG" ||
-        ! grep -Fq 'Plugins (5 loaded' "$VALIDATION_LOG"; then
+        grep -Eq 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG"; then
         echo -e "${RED}Local trading plugins are incompatible with this Drasi Server.${NC}"
         echo
         grep -E 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG" || tail -50 "$VALIDATION_LOG"
@@ -371,28 +349,75 @@ if [ $attempt -eq $max_attempts ]; then
     exit 1
 fi
 
-# Verify replication slot and publication
+# Configured native slots are operator-owned. Never recreate or reset one here.
 echo "Verifying PostgreSQL replication setup..."
-SLOT_EXISTS=$(docker-compose exec -T postgres psql -U drasi_user -d trading_demo -t -c "SELECT slot_name FROM pg_replication_slots WHERE slot_name = 'drasi_trading_slot';" | tr -d ' ')
-if [ -n "$SLOT_EXISTS" ]; then
-    echo -e "Replication slot: ${GREEN}✓${NC}"
-else
-    echo -e "Replication slot: ${YELLOW}Will be created by Drasi Server${NC}"
-fi
+for slot in drasi_trading_slot drasi_broker_slot; do
+    exists="$(docker-compose exec -T postgres psql -XAt -v ON_ERROR_STOP=1 -U drasi_user -d trading_demo \
+        -c "SELECT count(*) FROM pg_replication_slots WHERE slot_name='$slot' AND plugin='pgoutput' AND database=current_database();")"
+    if [ "$exists" != 1 ]; then
+        echo "Configured slot $slot is missing or incompatible. Provision the documented database explicitly; startup will not replace it." >&2
+        exit 1
+    fi
+done
+for publication in drasi_trading_pub drasi_broker_pub; do
+    exists="$(docker-compose exec -T postgres psql -XAt -v ON_ERROR_STOP=1 -U drasi_user -d trading_demo \
+        -c "SELECT count(*) FROM pg_publication WHERE pubname='$publication';")"
+    if [ "$exists" != 1 ]; then
+        echo "Configured publication $publication is missing. Startup does not alter existing database objects." >&2
+        exit 1
+    fi
+done
 
-PUB_EXISTS=$(docker-compose exec -T postgres psql -U drasi_user -d trading_demo -t -c "SELECT pubname FROM pg_publication WHERE pubname = 'drasi_trading_pub';" | tr -d ' ')
-if [ -n "$PUB_EXISTS" ]; then
-    echo -e "Publication: ${GREEN}✓${NC}"
-else
-    echo -e "Publication: ${RED}Missing - creating...${NC}"
-    docker-compose exec -T postgres psql -U postgres -d trading_demo -c "CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, stock_prices;"
+echo "Starting the Trading API before native HTTP initialization..."
+cleanup_processes() {
+    for pid in "${DRASI_PID:-}" "${REACT_PID:-}" "${API_PID:-}" "${GENERATOR_PID:-}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" || echo "Unable to signal owned process $pid" >&2
+        fi
+    done
+    for pid in "${DRASI_PID:-}" "${REACT_PID:-}" "${API_PID:-}" "${GENERATOR_PID:-}"; do
+        if [ -n "$pid" ]; then
+            if wait "$pid" 2>/dev/null; then
+                :
+            else
+                status=$?
+                case "$status" in
+                    127 | 130 | 143) ;;
+                    *) echo "Owned process $pid exited with status $status" >&2 ;;
+                esac
+            fi
+        fi
+    done
+}
+trap cleanup_processes EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cd "$SCRIPT_DIR/mock-generator"
+if ! python3 -c "import requests, flask, flask_cors, psycopg2" 2>/dev/null; then
+    echo "Install the Trading API requirements in your Python environment: pip install -r mock-generator/requirements.txt" >&2
+    exit 1
 fi
+python3 trading_api.py > "$LOG_DIR/trading-api.log" 2>&1 &
+API_PID=$!
+wait_for_service "http://localhost:${TRADING_API_PORT:-9200}/health" "Trading API" "$API_PID" "$LOG_DIR/trading-api.log"
+
+GENERATOR="$DRASI_SERVER_ROOT/target/release/examples/native-postgres"
+RECIPE="$SCRIPT_DIR/server/trading-native-recipe.json"
+[ -x "$GENERATOR" ] || { echo "Rebuild the native Trading configuration generator." >&2; exit 1; }
+DRASI_PG_POSTGRES_STOCKS_SETTINGS="$("$GENERATOR" settings "$RECIPE" postgres-stocks)"
+DRASI_PG_POSTGRES_BROKER_SETTINGS="$("$GENERATOR" settings "$RECIPE" postgres-broker)"
+export TRADING_SNAPSHOT_URL="${TRADING_SNAPSHOT_URL:-http://localhost:${TRADING_API_PORT:-9200}/api/initial-prices}"
+DRASI_HTTP_PRICE_FEED_SETTINGS="$("$GENERATOR" settings "$RECIPE" price-feed)"
+export DRASI_PG_POSTGRES_STOCKS_SETTINGS DRASI_PG_POSTGRES_BROKER_SETTINGS DRASI_HTTP_PRICE_FEED_SETTINGS
+export DRASI_HTTP_PRICE_FEED_HOST="${DRASI_HTTP_PRICE_FEED_HOST:-0.0.0.0}"
+export DRASI_HTTP_PRICE_FEED_PORT="${DRASI_HTTP_PRICE_FEED_PORT:-9100}"
+export TRADING_PRICE_SOURCE_URL="${TRADING_PRICE_SOURCE_URL:-http://localhost:$DRASI_HTTP_PRICE_FEED_PORT}"
 
 sleep 2
 
 # Step 2: Start Drasi Server
 echo ""
-echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamically)..."
+echo "Step 2: Starting Drasi Server (the app installs its complete native group)..."
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
@@ -403,7 +428,7 @@ RUST_LOG=info,drasi_server::sources::postgres=debug \
         > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
-echo "Replication source will bootstrap initial data from PostgreSQL..."
+echo "PostgreSQL and HTTP initialization will begin when the app installs all query owners."
 
 # Wait for Drasi Server to be ready
 if ! wait_for_service \
@@ -418,19 +443,7 @@ if ! wait_for_service \
     exit 1
 fi
 
-# Verify sources are running
-echo "Verifying Drasi sources..."
-SOURCE_STATUS=$(curl -s http://localhost:8280/api/v1/instances/trading-server/sources)
-if echo "$SOURCE_STATUS" | grep -qi '"status":"running"'; then
-    echo -e "PostgreSQL replication source: ${GREEN}✓ Running${NC}"
-    echo -e "HTTP source: ${GREEN}✓ Running${NC}"
-else
-    echo -e "Sources: ${YELLOW}Starting...${NC}"
-fi
-
-# Give bootstrap time to complete
-echo "Allowing time for bootstrap to complete..."
-sleep 3
+echo "The empty instance is ready for the app-owned native computation bundle."
 
 # Step 3: Install React app dependencies (if needed)
 echo ""
@@ -447,25 +460,8 @@ echo "React app started with PID: $REACT_PID"
 # Wait for React app (Vite dev server runs on 5273)
 wait_for_service "http://localhost:5273" "React application"
 
-# Step 5: Install Python dependencies
-echo ""
-echo "Step 4: Setting up price generator and trading API..."
+# Live HTTP prices are gated on all actual query owners being Running.
 cd "$SCRIPT_DIR/mock-generator"
-if ! python3 -c "import requests, flask, psycopg2" 2>/dev/null; then
-    echo "Installing Python dependencies..."
-    pip3 install -r requirements.txt
-else
-    echo "Python dependencies already installed"
-fi
-
-# Step 6: Start trading API
-echo "Starting Trading API server..."
-python3 trading_api.py > "$LOG_DIR/trading-api.log" 2>&1 &
-API_PID=$!
-echo "Trading API started with PID: $API_PID"
-
-# Wait for Trading API to be ready
-wait_for_service "http://localhost:9200/health" "Trading API"
 
 # Step 7: Start price generator
 echo "Starting simple price generator..."
@@ -510,7 +506,5 @@ echo "$API_PID" > /tmp/drasi-demo-api.pid
 echo "$GENERATOR_PID" > /tmp/drasi-demo-generator.pid
 
 # Keep script running and forward signals
-trap "echo 'Stopping demo...'; kill $DRASI_PID $REACT_PID $API_PID $GENERATOR_PID 2>/dev/null; cd $SCRIPT_DIR/database && docker-compose down; exit" INT TERM
-
 echo "Press Ctrl+C to stop all services"
 wait
