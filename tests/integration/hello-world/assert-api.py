@@ -46,8 +46,8 @@ def check_api(get, default_startup=False):
                 for s in sources["data"]), "Mock source is not running")
     queries = get("/api/v1/queries")
     require(queries.get("success") is True, f"Query API failed: {queries}")
-    require(any(q.get("id") == "all-sensors" for q in queries["data"]),
-            "Smoke query is missing")
+    require(any(q.get("id") == "all-sensors" and q.get("status") == "Running"
+                for q in queries["data"]), "Smoke query is missing or not running")
     results = get("/api/v1/queries/all-sensors/results")
     require(results.get("success") is True and isinstance(results.get("data"), list),
             f"Results API failed: {results}")

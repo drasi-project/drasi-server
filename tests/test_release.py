@@ -355,7 +355,7 @@ class SmokeAssertionsTests(unittest.TestCase):
         return {
             "/health": {"status": "ok"},
             "/api/v1/sources": {"success": True, "data": [{"id": "test-source", "status": "Running"}]},
-            "/api/v1/queries": {"success": True, "data": [{"id": "all-sensors"}]},
+            "/api/v1/queries": {"success": True, "data": [{"id": "all-sensors", "status": "Running"}]},
             "/api/v1/queries/all-sensors/results": {
                 "success": True, "data": [{"SensorId": "sensor-1", "Temperature": 23.5, "Humidity": 40}]},
             "/api/v1/plugins": {"plugins": [
@@ -367,6 +367,29 @@ class SmokeAssertionsTests(unittest.TestCase):
 
     def test_real_response_shapes_pass(self):
         self.assertEqual(len(assert_api.check_api(self.responses().__getitem__)["checks"]), 5)
+
+    def test_non_running_query_fails_even_with_retained_results(self):
+        for state in (
+            {"status": "Error"}, {"status": "Stopped"}, {"status": "Starting"},
+            {"status": "running"}, {"status": None}, {},
+        ):
+            with self.subTest(state=state):
+                responses = self.responses()
+                responses["/api/v1/queries"]["data"] = [
+                    {"id": "all-sensors", **state},
+                    {"id": "another-query", "status": "Running"},
+                ]
+                results = responses["/api/v1/queries/all-sensors/results"]
+                self.assertTrue(results["success"])
+                self.assertGreater(len(results["data"]), 0)
+                with self.assertRaisesRegex(AssertionError, "Smoke query is missing or not running"):
+                    assert_api.check_api(responses.__getitem__)
+
+    def test_missing_smoke_query_fails_with_another_running_query(self):
+        responses = self.responses()
+        responses["/api/v1/queries"]["data"] = [{"id": "another-query", "status": "Running"}]
+        with self.assertRaisesRegex(AssertionError, "Smoke query is missing or not running"):
+            assert_api.check_api(responses.__getitem__)
 
     def test_probe_retries_connection_errors_and_rechecks_all_assertions(self):
         for error in (ConnectionResetError("Connection reset by peer"),
