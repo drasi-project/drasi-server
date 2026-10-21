@@ -18,7 +18,10 @@ import sys
 import tempfile
 import tomllib
 
-from plugin_origin import PLUGIN_ABI_VERSION, PluginOriginError, ROOT, resolve_origin
+from plugin_origin import (
+    PLUGIN_ABI_VERSION, REGISTRY_LIB_VERSION, REGISTRY_PACKAGES,
+    REGISTRY_SDK_VERSION, PluginOriginError, ROOT, resolve_origin,
+)
 
 
 VERSIONS = {
@@ -33,8 +36,6 @@ TEST_VERSIONS = {
     "reaction/log": "0.2.9",
     "reaction/http": "0.3.5",
 }
-# SDK crate and native ABI versions are independent.
-PLUGIN_SDK_VERSION = "0.11.3"
 ISSUER = "https://token.actions.githubusercontent.com"
 SUBJECT = (
     "https://github.com/drasi-project/drasi-core/"
@@ -71,9 +72,9 @@ def read_pins(path, target, versions=VERSIONS):
         if (
             kind not in versions
             or pin["version"] != versions[kind]
-            or pin["sdk_version"] != PLUGIN_SDK_VERSION
-            or pin["lib_version"] != "0.9.3"
-            or pin["core_version"] != "0.5.10"
+            or pin["sdk_version"] != REGISTRY_SDK_VERSION
+            or pin["lib_version"] != REGISTRY_LIB_VERSION
+            or pin["core_version"] != REGISTRY_PACKAGES["drasi-core"].version
             or pin["platform"] != target
             or pin["reference"] != expected_reference
             or re.fullmatch(r"sha256:[a-f0-9]{64}", pin["digest"]) is None

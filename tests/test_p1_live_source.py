@@ -30,8 +30,8 @@ SPEC.loader.exec_module(provenance)
 
 def locked_packages():
     return {"package": [
-        {"name": name, "version": version, "source": plugin_origin.REGISTRY, "checksum": checksum}
-        for name, (version, checksum) in plugin_origin.REGISTRY_PACKAGES.items()
+        {"name": name, "version": release.version, "source": plugin_origin.REGISTRY, "checksum": release.checksum}
+        for name, release in plugin_origin.REGISTRY_PACKAGES.items()
     ]}
 
 
@@ -49,7 +49,7 @@ class LiveSourceProvenanceTests(unittest.TestCase):
         self.assertEqual(set(selected), set(plugin_origin.REGISTRY_PACKAGES))
         for name, entry in selected.items():
             self.assertEqual(entry["source"], plugin_origin.REGISTRY)
-            self.assertEqual(entry["version"], plugin_origin.REGISTRY_PACKAGES[name][0])
+            self.assertEqual(entry["version"], plugin_origin.REGISTRY_PACKAGES[name].version)
 
     def test_rejects_old_release_versions(self):
         for name, version in (
@@ -68,7 +68,7 @@ class LiveSourceProvenanceTests(unittest.TestCase):
             for source in (None, "git+https://example.invalid/unreviewed"):
                 with self.subTest(name=name, source=source):
                     metadata = fixture()
-                    replace_package(metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], source))
+                    replace_package(metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name].version, source))
                     with self.assertRaises(plugin_origin.PluginOriginError):
                         self.selected(metadata=metadata)
 
@@ -116,7 +116,7 @@ class LiveSourceProvenanceTests(unittest.TestCase):
     def test_explicit_local_mode_is_not_a_passing_released_live_gate(self):
         metadata = fixture()
         for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
-            replace_package(metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], None))
+            replace_package(metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name].version, None))
         with self.assertRaisesRegex(ValueError, "requires registry dependencies"):
             self.selected(metadata=metadata)
 
@@ -128,11 +128,13 @@ class PublishedArchiveTests(unittest.TestCase):
         self.root = Path(directory.name).resolve()
         self.package = {
             "name": "drasi-core",
-            "version": plugin_origin.REGISTRY_PACKAGES["drasi-core"][0],
+            "version": plugin_origin.REGISTRY_PACKAGES["drasi-core"].version,
             "manifest_path": str(self.root / "Cargo.toml"),
         }
 
-    def archive(self, revision=provenance.RELEASE_REVISION, include_vcs=True, extra_files=None):
+    def archive(self, revision=None, include_vcs=True, extra_files=None):
+        if revision is None:
+            revision = plugin_origin.REGISTRY_PACKAGES[self.package["name"]].revision
         files = {"Cargo.toml": b"[package]\n", "src/lib.rs": b"pub fn example() {}\n"}
         if include_vcs:
             files[".cargo_vcs_info.json"] = json.dumps({
@@ -151,11 +153,17 @@ class PublishedArchiveTests(unittest.TestCase):
         data = buffer.getvalue()
         return data, hashlib.sha256(data).hexdigest()
 
+    def verify(self, data, checksum):
+        return provenance.verify_archive(
+            self.package, checksum, data,
+            plugin_origin.REGISTRY_PACKAGES[self.package["name"]].revision,
+        )
+
     def test_verified_archive_binds_vcs_and_resolved_source_bytes(self):
         data, checksum = self.archive()
-        proof = provenance.verify_archive(self.package, checksum, data)
+        proof = self.verify(data, checksum)
         self.assertEqual(proof["sha256"], checksum)
-        self.assertEqual(proof["vcs"]["git"]["sha1"], provenance.RELEASE_REVISION)
+        self.assertEqual(proof["vcs"]["git"]["sha1"], plugin_origin.REGISTRY_PACKAGES["drasi-core"].revision)
         self.assertTrue(proof["resolvedSourceMatchesArchive"])
         self.assertEqual(proof["verifiedFileCount"], 3)
         self.assertIn("src/lib.rs", proof["rustSourceSha256"])
@@ -163,35 +171,70 @@ class PublishedArchiveTests(unittest.TestCase):
     def test_rejects_wrong_archive_checksum_before_reading_source(self):
         data, _ = self.archive()
         with self.assertRaisesRegex(ValueError, "archive checksum"):
-            provenance.verify_archive(self.package, "0" * 64, data)
+            self.verify(data, "0" * 64)
 
     def test_rejects_modified_or_missing_resolved_source(self):
         data, checksum = self.archive()
         (self.root / "src/lib.rs").write_text("modified")
         with self.assertRaisesRegex(ValueError, "differs from published archive"):
-            provenance.verify_archive(self.package, checksum, data)
+            self.verify(data, checksum)
         (self.root / "src/lib.rs").unlink()
         with self.assertRaises(FileNotFoundError):
-            provenance.verify_archive(self.package, checksum, data)
+            self.verify(data, checksum)
 
     def test_rejects_missing_and_unapproved_archive_vcs(self):
-        for revision, include in (("0" * 40, True), (provenance.RELEASE_REVISION, False)):
+        for revision, include in (("0" * 40, True), (None, False)):
             with self.subTest(revision=revision, include=include):
                 data, checksum = self.archive(revision, include)
                 with self.assertRaisesRegex(ValueError, "VCS identity"):
-                    provenance.verify_archive(self.package, checksum, data)
+                    self.verify(data, checksum)
 
     def test_unchanged_parsers_keep_their_actual_older_published_revision(self):
-        self.package.update(name="drasi-query-ast", version=plugin_origin.REGISTRY_PACKAGES["drasi-query-ast"][0])
-        data, checksum = self.archive(provenance.PARSER_REVISION)
-        proof = provenance.verify_archive(self.package, checksum, data)
-        self.assertEqual(proof["vcs"]["git"]["sha1"], provenance.PARSER_REVISION)
-        data, checksum = self.archive(provenance.RELEASE_REVISION)
+        self.package.update(name="drasi-query-ast", version=plugin_origin.REGISTRY_PACKAGES["drasi-query-ast"].version)
+        data, checksum = self.archive()
+        proof = self.verify(data, checksum)
+        self.assertEqual(proof["vcs"]["git"]["sha1"], plugin_origin.REGISTRY_PACKAGES["drasi-query-ast"].revision)
+        data, checksum = self.archive(plugin_origin.REGISTRY_PACKAGES["drasi-core"].revision)
         with self.assertRaisesRegex(ValueError, "VCS identity"):
-            provenance.verify_archive(self.package, checksum, data)
+            self.verify(data, checksum)
+
+    def test_partial_release_preserves_each_packages_archive_revision(self):
+        metadata = fixture()
+        next_sdk_revision = "a" * 40
+        original = plugin_origin.REGISTRY_PACKAGES.copy()
+        releases = {}
+        archives = {}
+        directory = self.root
+        for entry in metadata["packages"]:
+            name = entry["name"]
+            if name not in original:
+                continue
+            self.package = entry
+            self.root = directory / name
+            entry["manifest_path"] = str(self.root / "Cargo.toml")
+            revision = next_sdk_revision if name in plugin_origin.SDK_PACKAGES else original[name].revision
+            data, checksum = self.archive(revision)
+            archives[name] = data
+            releases[name] = original[name]._replace(checksum=checksum, revision=revision)
+        with (
+            patch.dict(plugin_origin.REGISTRY_PACKAGES, releases),
+            patch.object(provenance, "read_archive", side_effect=lambda entry: archives[entry["name"]]),
+        ):
+            proof = provenance.published_provenance(metadata, {}, locked_packages(), plugin_origin)
+            for name, release in releases.items():
+                self.assertEqual(proof[name]["archive"]["vcs"]["git"]["sha1"], release.revision)
+            self.assertNotEqual(
+                proof["drasi-plugin-sdk"]["archive"]["vcs"]["git"]["sha1"],
+                proof["drasi-core"]["archive"]["vcs"]["git"]["sha1"],
+            )
+            plugin_origin.REGISTRY_PACKAGES["drasi-core"] = releases["drasi-core"]._replace(
+                revision=next_sdk_revision,
+            )
+            with self.assertRaisesRegex(ValueError, "VCS identity"):
+                provenance.published_provenance(metadata, {}, locked_packages(), plugin_origin)
 
     def documentation_fixture(self, aliases, tampered=False, hard_links=False, both_spellings=False):
-        self.package.update(name="drasi-middleware", version=plugin_origin.REGISTRY_PACKAGES["drasi-middleware"][0])
+        self.package.update(name="drasi-middleware", version=plugin_origin.REGISTRY_PACKAGES["drasi-middleware"].version)
         entries = {"README.md": b"middleware documentation", "readme.md": b"workspace documentation"}
         data, checksum = self.archive(extra_files=entries)
         original_read, original_stat, original_same, original_iter = Path.read_bytes, Path.stat, Path.samefile, Path.iterdir
@@ -226,7 +269,7 @@ class PublishedArchiveTests(unittest.TestCase):
             stack.enter_context(patch.object(Path, "stat", stat))
             stack.enter_context(patch.object(Path, "samefile", same))
             stack.enter_context(patch.object(Path, "iterdir", directory))
-            return provenance.verify_archive(self.package, checksum, data)
+            return self.verify(data, checksum)
 
     def test_case_insensitive_documentation_alias_checks_the_last_archive_entry(self):
         proof = self.documentation_fixture(aliases=True)
@@ -267,7 +310,7 @@ class PublishedArchiveTests(unittest.TestCase):
                         duplicate.addfile(member, io.BytesIO(contents))
         data = output.getvalue()
         with self.assertRaisesRegex(ValueError, "duplicate published archive entry"):
-            provenance.verify_archive(self.package, hashlib.sha256(data).hexdigest(), data)
+            self.verify(data, hashlib.sha256(data).hexdigest())
 
     def test_rejects_symlinked_resolved_source(self):
         data, checksum = self.archive()
@@ -277,7 +320,7 @@ class PublishedArchiveTests(unittest.TestCase):
         source.unlink()
         source.symlink_to(real)
         with self.assertRaisesRegex(ValueError, "Linked published source"):
-            provenance.verify_archive(self.package, checksum, data)
+            self.verify(data, checksum)
 
     def test_non_documentation_aliases_never_get_the_last_entry_exception(self):
         data, checksum = self.archive(extra_files={"src/other.rs": b"other"})
@@ -290,7 +333,7 @@ class PublishedArchiveTests(unittest.TestCase):
 
         with patch.object(Path, "stat", stat):
             with self.assertRaisesRegex(ValueError, "Unexpected published source file alias"):
-                provenance.verify_archive(self.package, checksum, data)
+                self.verify(data, checksum)
 
 
 if __name__ == "__main__":

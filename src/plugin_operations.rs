@@ -601,8 +601,28 @@ mod tests {
     #[test]
     fn test_host_version_info() {
         let info = PluginOperations::host_version_info();
-        assert!(!info.sdk_version.is_empty());
-        assert!(!info.target_triple.is_empty());
+        let lock: toml::Value = toml::from_str(include_str!("../Cargo.lock")).expect("parse lock");
+        let packages = lock["package"].as_array().expect("locked packages");
+        for (name, advertised) in [
+            ("drasi-host-sdk", &info.sdk_version),
+            ("drasi-plugin-sdk", &info.sdk_version),
+            ("drasi-ffi-primitives", &info.sdk_version),
+            ("drasi-core", &info.core_version),
+            ("drasi-lib", &info.lib_version),
+        ] {
+            let matches: Vec<_> = packages
+                .iter()
+                .filter(|package| package["name"].as_str() == Some(name))
+                .collect();
+            assert_eq!(matches.len(), 1, "expected one locked {name}");
+            assert_eq!(
+                matches[0]["version"].as_str(),
+                Some(advertised.as_str()),
+                "host must advertise the locked {name} package version"
+            );
+            semver::Version::parse(advertised).expect("valid advertised package version");
+        }
+        assert_eq!(info.target_triple, env!("TARGET_TRIPLE"));
     }
 
     #[test]

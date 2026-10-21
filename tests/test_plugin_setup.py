@@ -303,7 +303,7 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
                 if mode == "local":
                     for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
                         replace_package(
-                            metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], None),
+                            metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name].version, None),
                         )
                 _, selected = plugin_origin.classify(metadata)
                 core = {
@@ -426,7 +426,7 @@ sys.exit(42)
         metadata = fixture()
         for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
             replace_package(
-                metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name][0], None, str(core)),
+                metadata, package(name, plugin_origin.REGISTRY_PACKAGES[name].version, None, str(core)),
             )
         selected = plugin_origin.selected_packages(metadata)
         core_metadata = {

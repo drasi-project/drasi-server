@@ -34,7 +34,7 @@ def fixture():
     server = package("drasi-server", "0.2.3", None, "/fixture/server")
     packages = [
         server,
-        *(package(name, version) for name, (version, _) in plugin_origin.REGISTRY_PACKAGES.items()),
+        *(package(name, release.version) for name, release in plugin_origin.REGISTRY_PACKAGES.items()),
     ]
     return {
         "workspace_members": [server["id"]],
@@ -81,7 +81,7 @@ class PluginOriginTests(unittest.TestCase):
             for source in (None, "git+https://example.invalid/core"):
                 with self.subTest(name=name, source=source):
                     metadata = fixture()
-                    version = plugin_origin.REGISTRY_PACKAGES[name][0]
+                    version = plugin_origin.REGISTRY_PACKAGES[name].version
                     replace_package(metadata, package(name, version, source))
                     with self.assertRaisesRegex(plugin_origin.PluginOriginError, f"registry {name}"):
                         plugin_origin.classify(metadata)
@@ -147,8 +147,8 @@ class PluginOriginTests(unittest.TestCase):
 
     def test_release_checksums_and_full_graph_are_not_inferred_from_versions(self):
         lock = {"package": [
-            {"name": name, "version": version, "source": plugin_origin.REGISTRY, "checksum": checksum}
-            for name, (version, checksum) in plugin_origin.REGISTRY_PACKAGES.items()
+            {"name": name, "version": release.version, "source": plugin_origin.REGISTRY, "checksum": release.checksum}
+            for name, release in plugin_origin.REGISTRY_PACKAGES.items()
         ]}
         plugin_origin.validate_registry_lock(lock)
         for name in plugin_origin.REGISTRY_PACKAGES:
@@ -168,7 +168,7 @@ class PluginOriginTests(unittest.TestCase):
     def test_local_mode_requires_the_actual_matching_build_workspace(self):
         metadata = fixture()
         for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib", "drasi-core"):
-            version = plugin_origin.REGISTRY_PACKAGES[name][0]
+            version = plugin_origin.REGISTRY_PACKAGES[name].version
             replace_package(metadata, package(name, version, None))
         mode, selected = plugin_origin.classify(metadata)
         self.assertEqual(mode, "local")

@@ -27,6 +27,11 @@ source overrides, duplicate identities, older releases, altered checksums and
 unused patches rather than accepting arbitrary registry versions. This is
 independent of the plugin binaries' own SDK version fields.
 
+Each reviewed package identity also records the archive's source revision.
+The live source verifier uses that per-package revision, so a partial SDK release
+does not relabel unchanged core, library, or parser archives. Plugin installation
+derives its required SDK, core, and library versions from the same policy.
+
 The published core includes the final reviewed aggregate grouping, sign/magnitude
 numeric equality and hashing, compound keys, default/current fingerprints,
 precision-safe Noop, lazy min/max and terminal suppression fixes. Library 0.9.3

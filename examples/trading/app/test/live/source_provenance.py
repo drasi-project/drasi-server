@@ -17,11 +17,6 @@ import tomllib
 from urllib.request import urlopen
 
 
-RELEASE_REVISION = "22125bf1d66062533b832a166fe4a51079a23d6e"
-PARSER_REVISION = "8f0ed49802ab0f2d62ce834aafe7fe7e5861ee76"
-PARSERS = {"drasi-query-ast", "drasi-query-cypher", "drasi-query-gql"}
-
-
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -51,7 +46,7 @@ def read_archive(package):
         return response.read()
 
 
-def verify_archive(package, checksum, data):
+def verify_archive(package, checksum, data, expected_revision):
     actual = hashlib.sha256(data).hexdigest()
     if actual != checksum:
         raise ValueError(f"Unverified published archive checksum: {package['name']}")
@@ -78,7 +73,6 @@ def verify_archive(package, checksum, data):
             files[relative] = hashlib.sha256(content).hexdigest()
             if relative == ".cargo_vcs_info.json":
                 vcs = json.loads(content)
-    expected_revision = PARSER_REVISION if package["name"] in PARSERS else RELEASE_REVISION
     if not vcs or vcs.get("git", {}).get("sha1") != expected_revision or not vcs.get("path_in_vcs"):
         raise ValueError(f"Unexpected published archive VCS identity: {package['name']}")
     aliases = {}
@@ -138,7 +132,10 @@ def published_provenance(metadata, manifest, lock, policy):
     return {
         name: {
             **{key: package[key] for key in ("version", "source", "manifest_path")},
-            "archive": verify_archive(package, policy.REGISTRY_PACKAGES[name][1], read_archive(package)),
+            "archive": verify_archive(
+                package, policy.REGISTRY_PACKAGES[name].checksum, read_archive(package),
+                policy.REGISTRY_PACKAGES[name].revision,
+            ),
         }
         for name, package in selected.items()
     }
