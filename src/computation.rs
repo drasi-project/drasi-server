@@ -18,10 +18,13 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use drasi_core::computation::ComputationIndexProvider;
 use drasi_host_sdk::{
-    computation::NativeBootstrapFactories,
+    computation::{
+        NativeBootstrapFactories, NativeIdentityProviders, NativeSourceBootstrapFactories,
+    },
     management::{
         CompositeBootstrapConfig, ConsumerProgressConfig, HostConfigurationResolver,
-        NativeBootstrapConfig, NativeConsumerConfig, NativeQuerySnapshotsConfig, QosRecoveryConfig,
+        NativeBootstrapConfig, NativeConsumerConfig, NativeIdentityConfig,
+        NativeQuerySnapshotsConfig, NativeSourceBootstrapConfig, QosRecoveryConfig,
         SharedQosConfig,
     },
 };
@@ -83,9 +86,11 @@ pub enum ComputationResourceConfig {
     SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
     NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
+    NativeSourceBootstrap(#[schema(value_type = serde_json::Value)] NativeSourceBootstrapConfig),
     CompositeBootstrap(#[schema(value_type = serde_json::Value)] CompositeBootstrapConfig),
     NativeQuerySnapshots(#[schema(value_type = serde_json::Value)] NativeQuerySnapshotsConfig),
     ConsumerProgress(#[schema(value_type = serde_json::Value)] ConsumerProgressConfig),
+    NativeIdentity(#[schema(value_type = serde_json::Value)] NativeIdentityConfig),
     Middleware {},
     QueryMiddleware {},
     TransactionalTransformers {},
@@ -126,14 +131,16 @@ impl ComputationResourceConfig {
             | Self::SharedStorage { .. }
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
             Self::QueryCatalog {} | Self::NativeQuerySnapshots(_) => ResourceRole::QueryCatalog,
-            Self::NativeBootstrap(_) | Self::CompositeBootstrap(_) => ResourceRole::Bootstrap,
+            Self::NativeBootstrap(_)
+            | Self::NativeSourceBootstrap(_)
+            | Self::CompositeBootstrap(_) => ResourceRole::Bootstrap,
             Self::SourceProgress { .. } | Self::ConsumerProgress(_) => ResourceRole::Checkpoint,
             Self::Middleware {} | Self::QueryMiddleware {} => ResourceRole::Middleware,
             Self::TransactionalTransformers {}
             | Self::BridgeIngressControl {}
             | Self::BridgeEgressControl {}
             | Self::ChildSupervisor { .. } => ResourceRole::Component,
-            Self::BridgeTls { .. } => ResourceRole::Identity,
+            Self::BridgeTls { .. } | Self::NativeIdentity(_) => ResourceRole::Identity,
             Self::Configuration {} => ResourceRole::SecretStore,
             Self::Qos { .. } | Self::SharedQos(_) => ResourceRole::StateStore,
         }
@@ -215,12 +222,17 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         } else if let ComputationResourceConfig::NativeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
+        } else if let ComputationResourceConfig::NativeSourceBootstrap(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+            config.validate_owner(&resource.id, definition)?;
         } else if let ComputationResourceConfig::CompositeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
         } else if let ComputationResourceConfig::NativeQuerySnapshots(config) = &recipe {
             config.validate(resource, &dependencies)?;
         } else if let ComputationResourceConfig::ConsumerProgress(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+        } else if let ComputationResourceConfig::NativeIdentity(config) = &recipe {
             config.validate(resource, &dependencies)?;
         } else {
             anyhow::ensure!(
@@ -426,6 +438,8 @@ pub async fn build_components(
         factories,
         transactional,
         NativeBootstrapFactories::new(),
+        NativeSourceBootstrapFactories::new(),
+        NativeIdentityProviders::new(),
     )
     .await
 }
@@ -442,6 +456,8 @@ pub async fn build_components_with_registry(
         native_factory_registry(registry)?,
         registry.transactional_transformer_registry(core.middleware_registry())?,
         registry.computation_bootstrap_factories()?,
+        registry.computation_source_bootstrap_factories()?,
+        registry.computation_identity_providers(),
     )
     .await
 }
@@ -452,6 +468,8 @@ async fn build_components_with_resources(
     factories: FactoryRegistry,
     transactional: Arc<TransactionalTransformerRegistry>,
     bootstraps: NativeBootstrapFactories,
+    source_bootstraps: NativeSourceBootstrapFactories,
+    identity_providers: NativeIdentityProviders,
 ) -> Result<ComponentBatch> {
     validate_definition(config)?;
     for component in &config.definition.components {
@@ -469,6 +487,8 @@ async fn build_components_with_resources(
         middleware: core.middleware_registry(),
         transactional,
         bootstraps,
+        source_bootstraps,
+        identity_providers,
         secrets: services.secrets,
     });
     resolver.validate_transition(
@@ -525,6 +545,8 @@ async fn build_components_with_resources(
 pub struct ServerManagementResources {
     factories: FactoryRegistry,
     bootstraps: NativeBootstrapFactories,
+    source_bootstraps: NativeSourceBootstrapFactories,
+    identity_providers: NativeIdentityProviders,
     middleware: Arc<drasi_core::middleware::MiddlewareTypeRegistry>,
     transactional: Arc<TransactionalTransformerRegistry>,
     secrets: Option<Arc<dyn SecretStoreProvider>>,
@@ -539,6 +561,8 @@ impl ServerManagementResources {
         Ok(Self {
             factories: native_factory_registry(registry)?,
             bootstraps: registry.computation_bootstrap_factories()?,
+            source_bootstraps: registry.computation_source_bootstrap_factories()?,
+            identity_providers: registry.computation_identity_providers(),
             transactional: registry.transactional_transformer_registry(middleware.clone())?,
             middleware,
             secrets,
@@ -573,6 +597,15 @@ impl ManagementResourceResolver for ServerManagementResources {
                         &BTreeMap::new(),
                     )?;
                 }
+                ComputationResourceConfig::NativeSourceBootstrap(config) => {
+                    config.validate(resource, &dependencies)?;
+                    config.validate_owner(&resource.id, desired)?;
+                    config.validate_configuration(
+                        &self.source_bootstraps,
+                        &dependencies,
+                        &BTreeMap::new(),
+                    )?;
+                }
                 ComputationResourceConfig::CompositeBootstrap(config) => {
                     config.validate(resource, &dependencies)?;
                     config.validate_owner(&resource.id, desired)?;
@@ -584,6 +617,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                     config.validate(resource, &dependencies)?
                 }
                 ComputationResourceConfig::ConsumerProgress(config) => {
+                    config.validate(resource, &dependencies)?
+                }
+                ComputationResourceConfig::NativeIdentity(config) => {
                     config.validate(resource, &dependencies)?
                 }
                 _ => {}
@@ -653,6 +689,17 @@ impl ManagementResourceResolver for ServerManagementResources {
                 .resolve(instance, graph, resource, dependencies, &self.bootstraps)
                 .await;
         }
+        if let ComputationResourceConfig::NativeSourceBootstrap(config) = recipe {
+            return config
+                .resolve(
+                    instance,
+                    graph,
+                    resource,
+                    dependencies,
+                    &self.source_bootstraps,
+                )
+                .await;
+        }
         if let ComputationResourceConfig::CompositeBootstrap(config) = recipe {
             return config.resolve(instance, graph, resource, dependencies);
         }
@@ -661,6 +708,15 @@ impl ManagementResourceResolver for ServerManagementResources {
         }
         if let ComputationResourceConfig::ConsumerProgress(config) = recipe {
             return config.resolve(graph, resource, dependencies);
+        }
+        if let ComputationResourceConfig::NativeIdentity(config) = recipe {
+            return config.resolve(
+                instance,
+                resource,
+                dependencies,
+                &self.identity_providers,
+                self.secrets.clone(),
+            );
         }
         anyhow::ensure!(
             dependencies.is_empty(),
@@ -727,6 +783,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             ComputationResourceConfig::NativeBootstrap(_) => {
                 unreachable!("native bootstrap resolved with dependencies")
             }
+            ComputationResourceConfig::NativeSourceBootstrap(_) => {
+                unreachable!("native source bootstrap resolved with dependencies")
+            }
             ComputationResourceConfig::CompositeBootstrap(_) => {
                 unreachable!("composite bootstrap resolved with dependencies")
             }
@@ -735,6 +794,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             }
             ComputationResourceConfig::ConsumerProgress(_) => {
                 unreachable!("consumer progress resolved with dependencies")
+            }
+            ComputationResourceConfig::NativeIdentity(_) => {
+                unreachable!("native identity resolved with dependencies")
             }
             ComputationResourceConfig::Middleware {} => ResourceHandle::new(
                 ResourceRole::Middleware,
@@ -963,6 +1025,104 @@ pub(crate) async fn cleanup_failed_preparation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct DeferredIdentity(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl drasi_plugin_sdk::IdentityProviderPluginDescriptor for DeferredIdentity {
+        fn kind(&self) -> &str {
+            "deferred-identity"
+        }
+        fn config_version(&self) -> &str {
+            "1"
+        }
+        fn config_schema_name(&self) -> &str {
+            "Identity"
+        }
+        fn config_schema_json(&self) -> String {
+            r#"{"Identity":{"type":"object"}}"#.into()
+        }
+        async fn create_identity_provider(
+            &self,
+            _: &serde_json::Value,
+        ) -> Result<Box<dyn drasi_lib::identity::IdentityProvider>> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            anyhow::bail!("construction must not resolve identity credentials")
+        }
+    }
+
+    async fn native_identity_recipe_matrix() -> Result<()> {
+        let descriptor = Arc::new(DeferredIdentity(std::sync::atomic::AtomicUsize::new(0)));
+        let mut registry = crate::plugin_registry::PluginRegistry::new();
+        registry.register_identity_provider(descriptor.clone());
+        let recipe = serde_json::json!({"kind":"nativeIdentity","provider":{
+            "kind":"deferred-identity","config_version":"1",
+            "config":{"password":{"kind":"Secret","name":"persisted-reference"}}
+        }});
+        let parsed: ComputationResourceConfig = serde_json::from_value(recipe.clone())?;
+        assert_eq!(parsed.role(), ResourceRole::Identity);
+        assert_eq!(serde_json::to_value(&parsed)?, recipe);
+        assert!(!format!("{parsed:?}").contains("persisted-reference"));
+        let resource = ResourceSpecification {
+            id: ResourceId::try_new("database-identity")?,
+            role: ResourceRole::Identity,
+            ownership: ResourceOwnership::Graph,
+            binding: "database-identity".into(),
+        };
+        let resolver = ServerManagementResources::new(&registry, None)?;
+        let handle = resolver
+            .resolve("instance", "graph", &resource, &recipe)
+            .await?;
+        handle.get::<drasi_host_sdk::computation::NativeIdentityResource>()?;
+        assert_eq!(descriptor.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let mut topology = drasi_lib::management::DesiredInstance::default().topology;
+        topology.resources.push(resource.clone());
+        topology
+            .resource_configurations
+            .insert(resource.id.clone(), recipe.clone());
+        let config = ComputationConfig {
+            definition: topology,
+        };
+        validate_definition(&config)?;
+        let core = DrasiLib::builder().build().await?;
+        let batch = build_components_with_registry(&config, &core, &registry).await?;
+        batch.bindings.resources[&resource.id]
+            .get::<drasi_host_sdk::computation::NativeIdentityResource>()?;
+        assert_eq!(
+            batch.definition.resource_configurations[&resource.id],
+            recipe
+        );
+        assert_eq!(descriptor.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let mut unknown = recipe.clone();
+        unknown["provider"]["kind"] = serde_json::json!("missing");
+        assert!(resolver
+            .resolve("instance", "graph", &resource, &unknown)
+            .await
+            .is_err());
+        let mut dependencies = BTreeMap::new();
+        dependencies.insert(resource.id.clone(), handle);
+        assert!(resolver
+            .resolve_with_dependencies("instance", "graph", &resource, &recipe, &dependencies)
+            .await
+            .is_err());
+        let mut wrong_role = resource;
+        wrong_role.role = ResourceRole::SecretStore;
+        assert!(resolver
+            .resolve("instance", "graph", &wrong_role, &recipe)
+            .await
+            .is_err());
+        core.shutdown().await?;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn native_identity_recipe_current_thread() -> Result<()> {
+        native_identity_recipe_matrix().await
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_identity_recipe_multi_thread() -> Result<()> {
+        native_identity_recipe_matrix().await
+    }
 
     #[test]
     fn host_and_bridge_factories_are_available_without_loading_child_plugins() {

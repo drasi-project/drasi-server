@@ -462,8 +462,15 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
 async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() -> Result<()> {
     let plugin = drasi_host_sdk::computation::load(artifact("drasi_computation_bootstrap_sqlite"))?;
     assert!(plugin.factories().is_empty());
-    assert_eq!(plugin.bootstrap_factories().len(), 1);
-    let metadata = plugin.bootstrap_factories()[0].metadata().clone();
+    let metadata = plugin
+        .bootstrap_factories()
+        .iter()
+        .find(|factory| {
+            factory.metadata().implementation.name.as_ref() == "drasi.sqlite/file-bootstrap"
+        })
+        .context("SQLite file bootstrap factory")?
+        .metadata()
+        .clone();
     let mut plugins = factories();
     plugins.register_computation_plugin(plugin)?;
     let directory = tempfile::tempdir()?;
@@ -554,12 +561,11 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
     let bootstraps = catalogue["bootstrapFactories"]
         .as_array()
         .context("bootstrap catalogue")?;
-    assert_eq!(bootstraps.len(), 1);
-    assert_eq!(
-        bootstraps[0]["implementation"]["name"],
-        "drasi.sqlite/file-bootstrap"
-    );
-    assert_eq!(bootstraps[0]["source_progress"], false);
+    let file_bootstrap = bootstraps
+        .iter()
+        .find(|factory| factory["implementation"]["name"] == "drasi.sqlite/file-bootstrap")
+        .context("SQLite file bootstrap in catalogue")?;
+    assert_eq!(file_bootstrap["source_progress"], false);
     Ok(())
 }
 

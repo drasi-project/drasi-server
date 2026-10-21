@@ -1,0 +1,14 @@
+{
+  "instance": "mysql",
+  "source": "mysql-source",
+  "queries": [
+    {
+      "id": "all-items",
+      "query": "MATCH (n:items) RETURN n.id AS id,n.value AS value"
+    },
+    {
+      "id": "selected-items",
+      "query": "MATCH (n:items) WHERE n.id >= 2 RETURN n.id AS id,n.value AS value"
+    }
+  ]
+}

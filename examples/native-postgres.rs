@@ -232,6 +232,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 source_progress: (kind == "postgres")
                     .then(|| resource(&progress))
                     .transpose()?,
+                source_bootstrap: None,
             };
             let mut bootstrap_recipe = serde_json::to_value(bootstrap_config)?;
             bootstrap_recipe["kind"] = json!("nativeBootstrap");
