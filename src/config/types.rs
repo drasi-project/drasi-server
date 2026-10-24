@@ -154,6 +154,9 @@ pub struct DrasiServerConfig {
     /// Example: `["http://localhost:3000", "https://dashboard.example.com"]`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cors_allowed_origins: Vec<String>,
+    /// Optional application-owned OpenTelemetry progress metrics export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<crate::telemetry::MetricsConfig>,
     /// Explicit instances. Omitted or empty lists do not create an implicit instance.
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -177,6 +180,7 @@ impl Default for DrasiServerConfig {
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,
             cors_allowed_origins: Vec::new(),
+            metrics: None,
             instances: Vec::new(),
         }
     }
@@ -494,6 +498,9 @@ impl DrasiServerConfig {
     pub fn validate(&self) -> Result<()> {
         use crate::api::mappings::map_server_settings;
 
+        if let Some(metrics) = &self.metrics {
+            metrics.validate()?;
+        }
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
         let resolved_settings = map_server_settings(self, &mapper)?;

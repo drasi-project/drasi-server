@@ -43,6 +43,24 @@ pub struct InstanceRegistry {
 }
 
 impl InstanceRegistry {
+    pub(crate) fn metrics_reader(
+        &self,
+    ) -> impl Fn() -> anyhow::Result<Vec<(String, Arc<DrasiLib>)>> + Send + Sync + 'static {
+        let instances = Arc::downgrade(&self.instances);
+        move || {
+            let Some(instances) = instances.upgrade() else {
+                return Ok(Vec::new());
+            };
+            let instances = instances.try_read().map_err(|_| {
+                anyhow::anyhow!("instance registry is busy; metrics sample omitted")
+            })?;
+            Ok(instances
+                .iter()
+                .map(|(id, core)| (id.clone(), core.clone()))
+                .collect())
+        }
+    }
+
     pub(crate) fn same_instances(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.instances, &other.instances)
     }

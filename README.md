@@ -1218,6 +1218,55 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 | `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
+| `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
+
+### OpenTelemetry progress metrics
+
+Configure `metrics` at Server level to export OTLP/HTTP JSON to an existing
+collector. Omitting it creates no metrics exporter or metrics worker.
+
+```yaml
+metrics:
+  endpoint: "${OTEL_METRICS_ENDPOINT:-http://127.0.0.1:4318/v1/metrics}"
+  exportIntervalMs: 1000
+  exportTimeoutMs: 1000
+```
+
+`endpoint` is the full metrics URL. It must use HTTP or HTTPS, without embedded
+credentials, a query string, or a fragment. HTTPS verifies the server certificate;
+redirects are not followed. Standard OTLP exporter header environment variables
+can supply collector authentication. The default interval is 10,000 ms
+(allowed: 100 to 3,600,000); the default timeout is 5,000 ms (100 to 30,000).
+Programmatic callers can use `DrasiServer::with_metrics`.
+
+The `drasi.progress` instrumentation scope exports the observable gauge
+`drasi.query.progress.sequence`. Its `drasi.progress.stage` attribute distinguishes
+`input.committed` from `output.produced`. Input points also identify
+`drasi.input.kind` (`source` or `stream`) and `drasi.input.id`. An input that
+produces no changed result still advances committed input, not output.
+
+Every point identifies the Drasi instance, query, component generation and
+operation, query output generation, configuration hash, and whether both input
+and output progress use persistent storage. Resource attributes identify the
+Server version, PID, and a new `service.instance.id` for each metrics runtime.
+No query text, result rows, credentials, or opaque source-position bytes are
+exported. Stopped, failed, unready, or unsupported queries are omitted, not
+reported as zero. Sequences above OTLP's signed 64-bit range are rejected with
+an error rather than wrapped.
+
+These are processing observations, **not a completion or exactly-once guarantee**.
+Proving a finite run finished also requires its actual final input boundary,
+all required destination records, and snapshots from that completed state.
+Do not reuse samples from another restart or treat a collector's retained old
+value as fresh evidence. Scheduled future work requires separate accounting.
+
+The Server owns its meter provider; it does not replace the application's global
+provider. Collection reads existing graph-owned state without storage/network
+I/O. Network export and SDK shutdown run away from the Tokio executor, including
+on a current-thread runtime. Export errors are logged; shutdown errors are
+returned. Cancelled cleanup retains the worker for a later join. This first slice
+does not yet export every component's throughput, latency, queue, or delivery
+metrics.
 
 ### Instance Settings
 

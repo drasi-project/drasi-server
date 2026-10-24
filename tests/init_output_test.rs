@@ -145,6 +145,7 @@ fn test_empty_config_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -194,6 +195,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -252,6 +254,7 @@ fn test_mock_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -311,6 +314,7 @@ fn test_http_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -369,6 +373,7 @@ fn test_grpc_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -426,6 +431,7 @@ fn test_postgres_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -529,6 +535,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -614,6 +621,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -685,6 +693,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -752,6 +761,7 @@ fn test_log_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -810,6 +820,7 @@ fn test_http_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -869,6 +880,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -931,6 +943,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -998,6 +1011,7 @@ fn test_query_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -1084,6 +1098,7 @@ fn test_full_config_roundtrip() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {

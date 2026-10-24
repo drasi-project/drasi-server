@@ -79,6 +79,7 @@ pub fn build_config(
         hot_reload_plugins: server_settings.hot_reload_plugins,
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
+        metrics: None,
         instances: vec![DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id).into(),
             persist_index: server_settings.persist_index,

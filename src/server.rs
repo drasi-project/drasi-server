@@ -64,6 +64,8 @@ pub struct DrasiServer {
     cors_allowed_origins: Vec<String>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
     configuration_stores: crate::managed_configuration::ConfigurationStores,
+    metrics: crate::telemetry::MetricsRuntime,
+    metrics_config: Option<crate::telemetry::MetricsConfig>,
 }
 
 struct PreparedInstance {
@@ -656,6 +658,8 @@ impl DrasiServer {
             cors_allowed_origins: config.cors_allowed_origins.clone(),
             watcher_handle,
             configuration_stores,
+            metrics_config: config.metrics.clone(),
+            metrics: Default::default(),
             loaded_configuration: Some(config),
         })
     }
@@ -692,6 +696,8 @@ impl DrasiServer {
             watcher_handle: None,
             configuration_stores: Default::default(),
             loaded_configuration: None,
+            metrics_config: None,
+            metrics: Default::default(),
         }
     }
 
@@ -732,6 +738,8 @@ impl DrasiServer {
             watcher_handle: None,
             configuration_stores: Default::default(),
             loaded_configuration: None,
+            metrics_config: None,
+            metrics: Default::default(),
         }
     }
 
@@ -741,6 +749,13 @@ impl DrasiServer {
         OpenOptions::new().append(true).open(path).is_ok()
     }
 
+    /// Configure optional OTLP progress metrics for a programmatically built server.
+    pub fn with_metrics(mut self, config: crate::telemetry::MetricsConfig) -> Result<Self> {
+        config.validate()?;
+        self.metrics_config = Some(config);
+        Ok(self)
+    }
+
     pub async fn run(mut self) -> Result<()> {
         let cores = self
             .instances
@@ -748,10 +763,21 @@ impl DrasiServer {
             .map(|instance| instance.core.clone())
             .collect();
         let result = self.run_until_shutdown().await;
+        let metrics_cleanup = self.metrics.shutdown().await;
         if let Some(handle) = self.watcher_handle.take() {
             handle.abort();
             let _ = handle.await;
         }
+        let result = match (result, metrics_cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(cleanup)) => Err(anyhow::Error::new(
+                drasi_lib::error::OperationFailures::new(
+                    "Server and metrics shutdown failed",
+                    vec![error, cleanup],
+                ),
+            )),
+        };
         match result {
             Ok(()) => Ok(()),
             Err(error) => Err(crate::computation::cleanup_failed_preparation(cores, error).await),
@@ -815,6 +841,9 @@ impl DrasiServer {
 
         let registry = InstanceRegistry::from_map(instance_map)
             .with_configuration_stores(self.configuration_stores.clone());
+        if let Some(config) = &self.metrics_config {
+            self.metrics.start(config.clone(), &registry).await?;
+        }
         self.plugin_orchestrator
             .bind_instances(registry.clone())
             .await?;
