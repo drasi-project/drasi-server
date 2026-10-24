@@ -53,6 +53,11 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
             .await?,
     );
     core.start().await?;
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        core.computation_component("items")?.wait_started(),
+    )
+    .await??;
     core.get_query_results("items").await?;
     Ok((core, input))
 }
