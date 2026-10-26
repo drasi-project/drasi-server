@@ -3,15 +3,13 @@ host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: false
-# Auto-install required plugins from the default OCI registry on startup.
-# Signature verification is disabled to keep the smoke test self-contained
-# and avoid a hard dependency on Sigstore/Rekor availability in CI.
+# Resolve compatible stable plugins from the default OCI registry on startup.
 autoInstallPlugins: true
-verifyPlugins: false
+verifyPlugins: true
 
 plugins:
-  - ref: source/mock:0.2.12
-  - ref: reaction/log:0.2.9
+  - ref: source/mock
+  - ref: reaction/log
 
 sources:
   - kind: mock

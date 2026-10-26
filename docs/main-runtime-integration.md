@@ -195,10 +195,15 @@ finishes and the API starts listening. Persistent failures still fail the check,
 and container logs are retained; a transient connection is not a passing result.
 All seven release binaries and both images share health, running-source,
 query and nonempty numeric-result assertions. Runtime evidence records loaded
-plugin versions, ABI and binary hashes; the hello-world plugins are version
-pinned. Its existing signature-verification exemption remains limited to
-that smoke configuration. The shipped default configuration keeps verification
-enabled, explicitly installs the reviewed plugins, and uses the HTTP plugin's
+plugin versions, ABI and binary hashes. The hello-world test resolves floating
+stable `source/mock` and `reaction/log` references with signature verification
+enabled, exercising the host resolver and dynamic loader rather than statically
+linked plugin implementations. Each binary test uses a fresh plugin directory
+and retains its lockfile, runtime report and server log. This shared release
+check also runs against Nightly's dependency-upgraded candidate; there is no
+separate nightly compatibility job. Registry or Sigstore failures fail the test
+rather than falling back to unsigned artifacts. The shipped default configuration
+still explicitly installs the reviewed plugins and uses the HTTP plugin's
 current `outputTemplates.routes` schema. The runtime image supplies C++/GCC
 libraries and a plugin directory writable by its non-root user.
 

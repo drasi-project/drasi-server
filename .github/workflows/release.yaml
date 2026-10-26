@@ -793,8 +793,10 @@ jobs:
     name: Test ${{ matrix.artifact_suffix }}
     needs: [determine-version, build-linux, build-macos, build-windows-msvc]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     env:
       PYTHON: python
+      PLUGINS_DIR: ${{ github.workspace }}/smoke-plugins
     strategy:
       fail-fast: false
       matrix:
@@ -850,6 +852,10 @@ jobs:
           name: ${{ env.ARTIFACT_PREFIX }}-drasi-server-${{ matrix.artifact_suffix }}
           path: bin
 
+      - name: Require a fresh plugin directory
+        shell: bash
+        run: mkdir "$PLUGINS_DIR"
+
       - name: Run hello-world smoke test (Unix)
         if: runner.os != 'Windows' && !matrix.use_alpine
         run: |
@@ -874,6 +880,7 @@ jobs:
             sh -c "
               apk add --no-cache bash curl python3 libstdc++ libgcc &&
               SERVER_BINARY=/bin-artifacts/${{ matrix.binary_name }} \
+                PLUGINS_DIR=/workspace/smoke-plugins \
                 SMOKE_REPORT=/workspace/runtime.json \
                 bash /tests/integration/hello-world/run-integration-test.sh
             "
@@ -919,6 +926,17 @@ jobs:
           name: ${{ env.ARTIFACT_PREFIX }}-evidence-binary-${{ matrix.artifact_suffix }}
           path: binary-${{ matrix.artifact_suffix }}.json
           if-no-files-found: error
+
+      - name: Preserve plugin lockfile and runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-binary-logs-${{ matrix.artifact_suffix }}
+          path: |
+            smoke-plugins/plugins.lock
+            runtime.json
+            tests/integration/hello-world/server.log
+          if-no-files-found: warn
 
       - name: Show server logs on failure
         if: failure()
