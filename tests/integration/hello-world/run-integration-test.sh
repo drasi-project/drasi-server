@@ -7,6 +7,7 @@
 #
 # Environment variables:
 #   SERVER_BINARY  - path to the drasi-server binary (required)
+#   PLUGINS_DIR    - optional isolated plugin directory
 #   SERVER_PORT    - port to use (default: 8080)
 #   PYTHON         - Python executable (default: python3)
 
@@ -16,6 +17,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/config.yaml}"
 SERVER_BINARY="${SERVER_BINARY:?SERVER_BINARY must be set}"
+PLUGINS_DIR="${PLUGINS_DIR:-}"
 SERVER_LOG="${SERVER_LOG:-$SCRIPT_DIR/server.log}"
 SERVER_PORT="${SERVER_PORT:-8080}"
 
@@ -64,7 +66,12 @@ start_server() {
     exit 1
   fi
 
-  "$SERVER_BINARY" --config "$CONFIG_FILE" --port "$SERVER_PORT" > "$SERVER_LOG" 2>&1 &
+  server_args=(--config "$CONFIG_FILE" --port "$SERVER_PORT")
+  if [ -n "$PLUGINS_DIR" ]; then
+    mkdir -p "$PLUGINS_DIR"
+    server_args+=(--plugins-dir "$PLUGINS_DIR")
+  fi
+  "$SERVER_BINARY" "${server_args[@]}" > "$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   log_info "Server started with PID: $SERVER_PID"
 

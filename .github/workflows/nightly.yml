@@ -92,14 +92,88 @@ jobs:
       candidate_kind: upgrade
       dry_run: true
 
+  plugin-compatibility:
+    name: Check candidate against latest stable plugins
+    needs: [prepare-candidate, release-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare-candidate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v5
+        with:
+          name: upgrade-${{ github.run_attempt }}-drasi-server-x86_64-linux-gnu
+          path: bin
+      - name: Prepare a fresh plugin directory
+        env:
+          COMPATIBILITY_DIR: ${{ runner.temp }}/plugin-compatibility
+        run: |
+          set -euo pipefail
+          mkdir -p "$COMPATIBILITY_DIR/plugins"
+          if [[ -n "$(find "$COMPATIBILITY_DIR/plugins" -mindepth 1 -print -quit)" ]]; then
+            echo "::error::Plugin directory must be empty"
+            exit 1
+          fi
+      - name: Run candidate against latest stable plugins with verification enabled
+        env:
+          SERVER_BINARY: ${{ github.workspace }}/bin/drasi-server-x86_64-linux-gnu
+          CONFIG_FILE: ${{ github.workspace }}/tests/integration/plugin-compatibility/config.yaml
+          PLUGINS_DIR: ${{ runner.temp }}/plugin-compatibility/plugins
+          SERVER_LOG: ${{ runner.temp }}/plugin-compatibility/server.log
+          SMOKE_REPORT: ${{ runner.temp }}/plugin-compatibility/runtime.json
+          SERVER_PORT: "8080"
+        run: |
+          set -euo pipefail
+          chmod +x "$SERVER_BINARY"
+          tests/integration/hello-world/run-integration-test.sh
+      - name: Record selected plugin versions and ABI
+        if: success()
+        env:
+          REPORT: ${{ runner.temp }}/plugin-compatibility/runtime.json
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ["REPORT"]).read_text())
+          print("## Latest stable plugin compatibility")
+          print("| Plugin | Version | Host ABI |")
+          print("| --- | --- | --- |")
+          for plugin in report["plugins"]:
+              if plugin.get("id") in {"source/mock", "reaction/log"}:
+                  print(
+                      f"| {plugin['id']} | {plugin['pluginVersion']} "
+                      f"| {plugin['sdkVersion']} |"
+                  )
+          PY
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: nightly-plugin-compatibility-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/plugin-compatibility/server.log
+            ${{ runner.temp }}/plugin-compatibility/runtime.json
+            ${{ runner.temp }}/plugin-compatibility/plugins/plugins.lock
+          if-no-files-found: warn
+
   summary:
     name: Nightly result
     if: always()
-    needs: [prepare-candidate, release-checks]
+    needs: [prepare-candidate, release-checks, plugin-compatibility]
     runs-on: ubuntu-latest
     env:
       PREPARATION_RESULT: ${{ needs.prepare-candidate.result }}
       CHECKS_RESULT: ${{ needs.release-checks.result }}
+      PLUGIN_COMPATIBILITY_RESULT: ${{ needs.plugin-compatibility.result }}
       BASE_SHA: ${{ needs.prepare-candidate.outputs.base_sha }}
       CANDIDATE_SHA: ${{ needs.prepare-candidate.outputs.sha }}
     steps:
@@ -112,12 +186,14 @@ jobs:
             echo "| --- | --- |"
             echo "| Dependency upgrade | $PREPARATION_RESULT |"
             echo "| Release checks | $CHECKS_RESULT |"
+            echo "| Latest stable plugin compatibility | $PLUGIN_COMPATIBILITY_RESULT |"
             echo ""
             echo "An upgrade failure does not establish the health of the locked baseline."
             echo "Use a separate Build and Release dry run to check the locked baseline."
             echo "No official image tags, Git tags, Releases or main were changed."
           } >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$PREPARATION_RESULT" != success || "$CHECKS_RESULT" != success ]]; then
+          if [[ "$PREPARATION_RESULT" != success || "$CHECKS_RESULT" != success \
+              || "$PLUGIN_COMPATIBILITY_RESULT" != success ]]; then
             echo "::error::Nightly did not complete every required stage successfully"
             exit 1
           fi

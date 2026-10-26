@@ -527,7 +527,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("workflow_call:", nightly)
         jobs = dict(re.findall(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)",
                                nightly.split("\njobs:\n", 1)[1], re.MULTILINE | re.DOTALL))
-        self.assertEqual(set(jobs), {"prepare-candidate", "release-checks", "summary"})
+        self.assertEqual(
+            set(jobs),
+            {"prepare-candidate", "release-checks", "plugin-compatibility", "summary"},
+        )
         self.assertIn("base_sha: ${{ steps.baseline.outputs.sha }}", jobs["prepare-candidate"])
         self.assertIn("sha: ${{ steps.commit.outputs.sha }}", jobs["prepare-candidate"])
         self.assertIn("needs: prepare-candidate", jobs["release-checks"])
@@ -535,6 +538,26 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}", jobs["release-checks"])
         self.assertIn("candidate_kind: upgrade", jobs["release-checks"])
         self.assertIn("dry_run: true", jobs["release-checks"])
+        compatibility = jobs["plugin-compatibility"]
+        self.assertIn("needs: [prepare-candidate, release-checks]", compatibility)
+        self.assertIn(
+            "name: upgrade-${{ github.run_attempt }}-drasi-server-x86_64-linux-gnu",
+            compatibility,
+        )
+        compatibility_config = (
+            ROOT / "tests/integration/plugin-compatibility/config.yaml"
+        ).read_text()
+        self.assertIn("autoInstallPlugins: true", compatibility_config)
+        self.assertIn("verifyPlugins: true", compatibility_config)
+        references = re.findall(r"^\s+- ref: (.+)$", compatibility_config, re.MULTILINE)
+        self.assertEqual(references, ["source/mock", "reaction/log"])
+        self.assertFalse(any(":nightly" in reference for reference in references))
+        self.assertIn("tests/integration/hello-world/run-integration-test.sh", compatibility)
+        self.assertIn("PLUGINS_DIR:", compatibility)
+        self.assertIn("plugins/plugins.lock", compatibility)
+        smoke_runner = (ROOT / "tests/integration/hello-world/run-integration-test.sh").read_text()
+        self.assertIn('PLUGINS_DIR="${PLUGINS_DIR:-}"', smoke_runner)
+        self.assertIn('server_args+=(--plugins-dir "$PLUGINS_DIR")', smoke_runner)
         self.assertEqual(re.findall(r"uses: \./\.github/workflows/([\w.-]+)", nightly), ["release.yaml"])
         self.assertNotIn("\n  push:", nightly)
 
@@ -555,24 +578,43 @@ class WorkflowContractTests(unittest.TestCase):
         nightly = (ROOT / ".github/workflows/nightly.yml").read_text()
         summary = nightly.split("\n  summary:\n", 1)[1]
         self.assertIn("if: always()", summary)
-        self.assertIn("needs: [prepare-candidate, release-checks]", summary)
+        self.assertIn(
+            "needs: [prepare-candidate, release-checks, plugin-compatibility]",
+            summary,
+        )
         self.assertIn("recorded, not separately tested", summary)
         script = "\n".join(line[10:] for line in summary.split("run: |\n", 1)[1].splitlines())
         with tempfile.TemporaryDirectory() as temp:
             for preparation in ("success", "failure", "cancelled", "skipped", ""):
                 for checks in ("success", "failure", "cancelled", "skipped", ""):
-                    with self.subTest(preparation=preparation, checks=checks):
-                        result = subprocess.run(
-                            ["bash", "-euo", "pipefail", "-c", script],
-                            env={**os.environ, "GITHUB_STEP_SUMMARY": str(Path(temp) / "summary"),
-                                 "PREPARATION_RESULT": preparation, "CHECKS_RESULT": checks,
-                                 "BASE_SHA": "a" * 40, "CANDIDATE_SHA": "b" * 40},
-                            capture_output=True, text=True,
-                        )
-                        self.assertEqual(result.returncode == 0,
-                                         preparation == checks == "success", result.stderr)
-                        if result.returncode:
-                            self.assertIn("::error::", result.stdout)
+                    for plugin_compatibility in (
+                        "success", "failure", "cancelled", "skipped", "",
+                    ):
+                        with self.subTest(
+                            preparation=preparation,
+                            checks=checks,
+                            plugin_compatibility=plugin_compatibility,
+                        ):
+                            result = subprocess.run(
+                                ["bash", "-euo", "pipefail", "-c", script],
+                                env={
+                                    **os.environ,
+                                    "GITHUB_STEP_SUMMARY": str(Path(temp) / "summary"),
+                                    "PREPARATION_RESULT": preparation,
+                                    "CHECKS_RESULT": checks,
+                                    "PLUGIN_COMPATIBILITY_RESULT": plugin_compatibility,
+                                    "BASE_SHA": "a" * 40,
+                                    "CANDIDATE_SHA": "b" * 40,
+                                },
+                                capture_output=True, text=True,
+                            )
+                            self.assertEqual(
+                                result.returncode == 0,
+                                preparation == checks == plugin_compatibility == "success",
+                                result.stderr,
+                            )
+                            if result.returncode:
+                                self.assertIn("::error::", result.stdout)
 
     def test_container_checks_do_not_repair_or_override_the_runtime(self):
         script = (ROOT / "scripts/smoke-release-container.sh").read_text()
