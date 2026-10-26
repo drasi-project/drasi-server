@@ -5,6 +5,10 @@ name: Nightly
 run-name: "Nightly (${{ github.ref_name }})"
 
 on:
+  # Temporary branch-only trigger for testing; remove before merging.
+  push:
+    branches:
+      - plugin-compatibility-ci
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:

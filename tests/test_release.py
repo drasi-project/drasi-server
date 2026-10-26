@@ -559,7 +559,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('PLUGINS_DIR="${PLUGINS_DIR:-}"', smoke_runner)
         self.assertIn('server_args+=(--plugins-dir "$PLUGINS_DIR")', smoke_runner)
         self.assertEqual(re.findall(r"uses: \./\.github/workflows/([\w.-]+)", nightly), ["release.yaml"])
-        self.assertNotIn("\n  push:", nightly)
+        self.assertIn("\n  push:\n    branches:\n      - plugin-compatibility-ci\n", nightly)
 
     def test_release_is_a_standalone_entrypoint_without_nested_wrappers(self):
         workflow = (ROOT / ".github/workflows/release.yaml").read_text()
