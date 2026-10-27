@@ -35,7 +35,7 @@ function setup(present = false, backend = new SyntheticTrading()) {
     return json(response.body, response.status);
   });
   const client = new DrasiClient({
-    serverUrl: DRASI_SERVER_URL, instanceId: backend.instanceId, queryIds: TRADING_QUERY_IDS,
+    serverUrl: DRASI_SERVER_URL, instanceId: backend.instanceId, outputIds: TRADING_QUERY_IDS,
     reaction: TRADING_STREAM, fetch: fetcher, reconnect,
   });
   const options = { client, serverUrl: DRASI_SERVER_URL, fetch: fetcher };

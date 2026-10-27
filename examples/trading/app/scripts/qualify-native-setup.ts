@@ -7,7 +7,7 @@ import { DRASI_SERVER_URL, TRADING_QUERY_IDS, TRADING_STREAM } from '../src/dras
 
 const client = new DrasiClient({
   serverUrl: DRASI_SERVER_URL, instanceId: 'trading-server',
-  queryIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM, fetch,
+  outputIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM, fetch,
 });
 await ensureTradingResources({ client, serverUrl: DRASI_SERVER_URL, fetch },
   new DrasiError('QUERY_NOT_FOUND', {

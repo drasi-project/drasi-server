@@ -25,6 +25,7 @@ use super::plugin_validation::{
     collect_all_bootstrap_providers, collect_all_reactions, collect_all_sources,
     schema_error_codes, ComponentValidationReport, FieldError,
 };
+use crate::api::models::{BootstrapProviderConfig, SourceConfig};
 use crate::config::types::DrasiServerConfig;
 use crate::plugin_registry::PluginRegistry;
 
@@ -63,7 +64,8 @@ pub fn validate_component_configs(
             if let Some(descriptor) = registry.get_bootstrapper(&bp.kind) {
                 let schema_json = descriptor.config_schema_json();
                 let schema_name = descriptor.config_schema_name().to_string();
-                let errors = validate_against_schema(&schema_json, &schema_name, &bp.config);
+                let input = bootstrap_schema_input(src, bp, &schema_json, &schema_name);
+                let errors = validate_against_schema(&schema_json, &schema_name, &input);
                 if !errors.is_empty() {
                     reports.push(ComponentValidationReport {
                         component_type: "bootstrap".to_string(),
@@ -110,6 +112,41 @@ pub fn validate_component_configs(
     }
 
     reports
+}
+
+/// No-options providers can read the separately supplied source configuration.
+/// Do not validate identical inherited source fields as bootstrap-only options.
+fn bootstrap_schema_input(
+    source: &SourceConfig,
+    bootstrap: &BootstrapProviderConfig,
+    schema_json: &str,
+    schema_name: &str,
+) -> Value {
+    let mut input = bootstrap.config.clone();
+    if source.kind != bootstrap.kind {
+        return input;
+    }
+    let Ok(schemas) = serde_json::from_str::<Value>(schema_json) else {
+        return input; // The normal validator reports malformed schema metadata.
+    };
+    let Some(schema) = schemas.get(schema_name) else {
+        return input;
+    };
+    let empty_properties = |name| match schema.get(name) {
+        None => true,
+        Some(Value::Object(properties)) => properties.is_empty(),
+        Some(_) => false,
+    };
+    if schema.get("type").and_then(Value::as_str) == Some("object")
+        && schema.get("additionalProperties").and_then(Value::as_bool) == Some(false)
+        && empty_properties("properties")
+        && empty_properties("patternProperties")
+    {
+        if let Some(properties) = input.as_object_mut() {
+            properties.retain(|name, value| source.config.get(name) != Some(&*value));
+        }
+    }
+    input
 }
 
 /// Build a JSON Schema document from an OpenAPI schema map and validate
@@ -688,6 +725,115 @@ mod tests {
             .errors
             .iter()
             .any(|e| e.message.contains("filePaths")));
+    }
+
+    #[test]
+    fn empty_bootstrap_schema_does_not_reject_inherited_source_fields() {
+        let mut registry = mock_registry();
+        registry.register_bootstrapper(Arc::new(MockBootstrapDesc {
+            kind: "postgres",
+            schema_name: "bootstrap.no_options.Config",
+            schema_json: r#"{
+                "bootstrap.no_options.Config": {
+                    "type": "object", "additionalProperties": false
+                }
+            }"#,
+        }));
+        let source: SourceConfig = serde_json::from_value(serde_json::json!({
+            "kind": "postgres",
+            "id": "owner",
+            "host": "localhost",
+            "database": "example",
+            "bootstrapProvider": {"kind": "postgres"}
+        }))
+        .unwrap();
+        let config = config_with(vec![source], vec![]);
+        assert!(
+            validate_component_configs(&config, &registry).is_empty(),
+            "the inherited connection belongs to the source, not the empty bootstrap schema"
+        );
+    }
+
+    #[test]
+    fn empty_bootstrap_schema_still_rejects_new_or_overridden_options() {
+        let mut registry = mock_registry();
+        registry.register_bootstrapper(Arc::new(MockBootstrapDesc {
+            kind: "postgres",
+            schema_name: "bootstrap.no_options.Config",
+            schema_json: r#"{
+                "bootstrap.no_options.Config": {
+                    "type": "object", "properties": {}, "additionalProperties": false
+                }
+            }"#,
+        }));
+        for bootstrap in [
+            serde_json::json!({"kind": "postgres", "typo": true}),
+            serde_json::json!({"kind": "postgres", "host": "different-server"}),
+        ] {
+            let source: SourceConfig = serde_json::from_value(serde_json::json!({
+                "kind": "postgres", "id": "owner",
+                "host": "localhost", "database": "example",
+                "bootstrapProvider": bootstrap
+            }))
+            .unwrap();
+            let reports = validate_component_configs(&config_with(vec![source], vec![]), &registry);
+            assert_eq!(reports.len(), 1);
+            assert_eq!(reports[0].component_type, "bootstrap");
+            assert!(!reports[0].errors.is_empty());
+        }
+    }
+
+    #[test]
+    fn bootstrap_with_declared_options_keeps_inherited_type_validation() {
+        let mut registry = mock_registry();
+        registry.register_bootstrapper(Arc::new(MockBootstrapDesc {
+            kind: "postgres",
+            schema_name: "bootstrap.with_options.Config",
+            schema_json: r#"{
+                "bootstrap.with_options.Config": {
+                    "type": "object", "required": ["host"],
+                    "properties": {"host": {"type": "integer"}, "database": {"type": "string"}},
+                    "additionalProperties": false
+                }
+            }"#,
+        }));
+        let source: SourceConfig = serde_json::from_value(serde_json::json!({
+            "kind": "postgres", "id": "owner",
+            "host": "localhost", "database": "example",
+            "bootstrapProvider": {"kind": "postgres"}
+        }))
+        .unwrap();
+        let reports = validate_component_configs(&config_with(vec![source], vec![]), &registry);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].component_type, "bootstrap");
+        assert!(reports[0].errors.iter().any(|error| error.field == "/host"));
+    }
+
+    #[test]
+    fn empty_schema_filter_does_not_apply_to_other_kinds_or_pattern_properties() {
+        let source: SourceConfig = serde_json::from_value(serde_json::json!({
+            "kind": "postgres", "id": "owner", "host": "localhost",
+            "bootstrapProvider": {"kind": "postgres"}
+        }))
+        .unwrap();
+        let bootstrap = source.bootstrap_provider().unwrap().as_inline().unwrap();
+        let pattern_schema = r#"{"Config":{
+            "type":"object","additionalProperties":false,
+            "patternProperties":{"^host$":{"type":"integer"}}
+        }}"#;
+        assert_eq!(
+            bootstrap_schema_input(&source, bootstrap, pattern_schema, "Config"),
+            bootstrap.config
+        );
+        let different = BootstrapProviderConfig {
+            kind: "different".to_string(),
+            config: bootstrap.config.clone(),
+        };
+        let empty_schema = r#"{"Config":{"type":"object","additionalProperties":false}}"#;
+        assert_eq!(
+            bootstrap_schema_input(&source, &different, empty_schema, "Config"),
+            different.config
+        );
     }
 
     // =======================================================================

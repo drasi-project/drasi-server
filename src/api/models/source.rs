@@ -270,11 +270,9 @@ fn merge_bootstrap_provider_with_source(
         _ => return serde_json::Value::Object(bootstrap_map),
     };
 
-    // Inheritance only applies when the bootstrap provider is the SAME kind as
-    // the source, since they then share a config schema. For mix-and-match
-    // (a different bootstrapper kind) the provider must be configured
-    // explicitly — inheriting source fields into a different schema would be
-    // meaningless or wrong.
+    // Same-kind inline providers can reuse source settings. Their own schemas
+    // need not be identical: a no-options provider may read source_config_json
+    // separately. A different-kind provider must be configured explicitly.
     if bootstrap_kind != source_kind {
         return serde_json::Value::Object(bootstrap_map);
     }

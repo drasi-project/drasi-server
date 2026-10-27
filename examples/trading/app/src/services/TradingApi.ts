@@ -18,7 +18,7 @@
  * Changes made through this API flow through PostgreSQL CDC to Drasi and back to the UI.
  */
 
-const TRADING_API_URL = 'http://localhost:9200';
+const TRADING_API_URL = import.meta.env?.VITE_TRADING_API_URL ?? 'http://localhost:9200';
 
 export interface Stock {
   symbol: string;

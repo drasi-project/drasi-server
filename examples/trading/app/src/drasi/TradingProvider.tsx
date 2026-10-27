@@ -37,7 +37,7 @@ export function TradingProvider({
       const resolvedId = await resolveTradingInstance(baseUrl, fetcher, controller.signal, instanceId);
       controller.signal.throwIfAborted();
       client = new DrasiClient({
-        serverUrl: baseUrl, instanceId: resolvedId, queryIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM,
+        serverUrl: baseUrl, instanceId: resolvedId, outputIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM,
         resultAdapter: tradingResultAdapter, fetch: fetcher, eventSourceFactory, reconnect: stableReconnect,
       });
       setState({ client, initialized: false, error: null });

@@ -214,7 +214,7 @@ describe('Trading explicit legacy adapter', () => {
       results: [{ type: 'UPDATE', data: after, before, after }],
     }, context);
     expect(deltas).toEqual([{
-      kind: 'delta', queryId: 'active-orders-query', receivedAt: 10, sourceTimestamp: 5,
+      kind: 'delta', outputId: 'active-orders-query', receivedAt: 10, sourceTimestamp: 5,
       changes: [{ kind: 'update', before, after }],
     }]);
     expect(tradingResultAdapter({
@@ -249,7 +249,7 @@ describe('Trading explicit legacy adapter', () => {
   it('names the unidentified legacy update limitation as delete then upsert', () => {
     const before = { id: 1, symbol: 'OLD' }, after = { id: 2, symbol: 'NEW' };
     expect(tradingResultAdapter({ results: [{ op: 'u', before, after }] }, context)).toEqual([{
-      kind: 'delta', queryId: 'portfolio-query', receivedAt: 10, sourceTimestamp: undefined,
+      kind: 'delta', outputId: 'portfolio-query', receivedAt: 10, sourceTimestamp: undefined,
       changes: [{ kind: 'delete', before }, { kind: 'upsert', after }],
     }]);
   });
