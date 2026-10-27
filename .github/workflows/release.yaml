@@ -34,6 +34,11 @@ on:
         default: false
   workflow_call:
     inputs:
+      rocksdb_experiment:
+        description: 'Temporary pinned index source experiment; upgrade dry runs only'
+        required: false
+        type: boolean
+        default: false
       candidate_sha:
         description: 'Exact committed candidate to build and test'
         required: true
@@ -56,6 +61,7 @@ permissions:
   contents: read
 
 env:
+  DRASI_ROCKSDB_EXPERIMENT: ${{ inputs.rocksdb_experiment && inputs.dry_run && inputs.candidate_kind == 'upgrade' && '1' || '0' }}
   IMAGE_NAME: drasi-server
   CANDIDATE_KIND: ${{ inputs.candidate_kind || 'release' }}
   ARTIFACT_PREFIX: ${{ format('{0}-{1}', inputs.candidate_kind || 'release', github.run_attempt) }}

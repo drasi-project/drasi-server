@@ -70,6 +70,40 @@ def replace_package(metadata, replacement):
 
 
 class PluginOriginTests(unittest.TestCase):
+    def test_pinned_index_experiment_is_opt_in_and_does_not_allow_git_sdk(self):
+        metadata = fixture()
+        replace_package(metadata, package(
+            "drasi-index-rocksdb", "0.6.4", plugin_origin.EXPERIMENT_SOURCE,
+        ))
+        with self.assertRaises(plugin_origin.PluginOriginError):
+            plugin_origin.classify(metadata)
+        self.assertEqual(
+            plugin_origin.classify(metadata, rocksdb_experiment=True)[0], "registry",
+        )
+        for name in ("drasi-index-rocksdb", "drasi-core", "drasi-plugin-sdk"):
+            changed = copy.deepcopy(metadata)
+            version = plugin_origin.REGISTRY_PACKAGES[name][0]
+            replace_package(changed, package(name, version, "git+https://example.invalid/core"))
+            with self.assertRaises(plugin_origin.PluginOriginError):
+                plugin_origin.classify(changed, rocksdb_experiment=True)
+
+    def test_experimental_lock_requires_exact_revision_and_other_checksums(self):
+        lock = {"package": [
+            {"name": name, "version": version, "source": plugin_origin.REGISTRY, "checksum": checksum}
+            for name, (version, checksum) in plugin_origin.REGISTRY_PACKAGES.items()
+        ]}
+        index = next(p for p in lock["package"] if p["name"] == "drasi-index-rocksdb")
+        index["source"] = plugin_origin.EXPERIMENT_SOURCE
+        del index["checksum"]
+        plugin_origin.validate_registry_lock(lock, rocksdb_experiment=True)
+        with self.assertRaises(plugin_origin.PluginOriginError):
+            plugin_origin.validate_registry_lock(lock)
+        for name in ("drasi-index-rocksdb", "drasi-core"):
+            changed = copy.deepcopy(lock)
+            next(p for p in changed["package"] if p["name"] == name)["source"] = "git+wrong"
+            with self.assertRaises(plugin_origin.PluginOriginError):
+                plugin_origin.validate_registry_lock(changed, rocksdb_experiment=True)
+
     def test_all_registry_graph_uses_pinned_plugins(self):
         mode, selected = plugin_origin.classify(fixture())
         self.assertEqual(mode, "registry")

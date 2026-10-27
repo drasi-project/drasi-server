@@ -46,6 +46,13 @@ jobs:
           MODE: bump
           BUMP: patch
         run: bash scripts/update-release-dependencies.sh
+      - name: Apply temporary RocksDB branch experiment
+        if: github.ref == 'refs/heads/plugin-compatibility-ci'
+        env:
+          DRASI_ROCKSDB_EXPERIMENT: "1"
+        run: |
+          python3 scripts/prepare-rocksdb-experiment.py
+          python3 scripts/plugin_origin.py mode
       - name: Commit all dependency changes on an isolated branch
         id: commit
         env:
@@ -95,6 +102,7 @@ jobs:
       base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}
       candidate_kind: upgrade
       dry_run: true
+      rocksdb_experiment: ${{ github.ref == 'refs/heads/plugin-compatibility-ci' }}
 
   summary:
     name: Nightly result

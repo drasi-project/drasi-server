@@ -140,6 +140,44 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uncommitted"):
             release.candidate(args)
 
+    def test_experimental_index_cannot_be_a_production_candidate(self):
+        manifest = self.root / "Cargo.toml"
+        manifest.write_text(manifest.read_text() + """
+[patch.crates-io]
+drasi-index-rocksdb = { git = "https://example.invalid/core", rev = "test" }
+""")
+        subprocess.run(["git", "add", "Cargo.toml"], check=True)
+        subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                        "commit", "-qm", "Experimental fixture"], check=True)
+        for kind, enabled in (("release", "1"), ("locked", "1"), ("upgrade", "0")):
+            with self.subTest(kind=kind, enabled=enabled):
+                with patch.dict(os.environ, DRASI_ROCKSDB_EXPERIMENT=enabled):
+                    with self.assertRaisesRegex(ValueError, "restricted"):
+                        release.candidate(SimpleNamespace(
+                            kind=kind, base_sha="", tag="", output="experiment.json",
+                        ))
+        with patch.dict(os.environ, DRASI_ROCKSDB_EXPERIMENT="1"):
+            with self.assertRaisesRegex(ValueError, "differs from"):
+                release.candidate(SimpleNamespace(
+                    kind="upgrade", base_sha="", tag="", output="experiment.json",
+                ))
+        manifest.write_text(manifest.read_text().replace(
+            'git = "https://example.invalid/core", rev = "test"',
+            f'git = "{release.EXPERIMENT_REPOSITORY}", rev = "{release.EXPERIMENT_REVISION}"',
+        ))
+        subprocess.run(["git", "add", "Cargo.toml"], check=True)
+        subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                        "commit", "-qm", "Pin experiment fixture"], check=True)
+        with patch.dict(os.environ, DRASI_ROCKSDB_EXPERIMENT="1",
+                        GITHUB_OUTPUT=str(self.root / "outputs")):
+            release.candidate(SimpleNamespace(
+                kind="upgrade", base_sha="", tag="", output="experiment.json",
+            ))
+        self.assertEqual(
+            release.read_json("experiment.json")["experimental_rocksdb_revision"],
+            release.EXPERIMENT_REVISION,
+        )
+
     def test_lockfile_hashes_and_windows_binary_record_survive_git_eol_settings(self):
         with patch.dict(os.environ, GITHUB_OUTPUT=str(self.root / "outputs")):
             release.candidate(SimpleNamespace(
@@ -543,6 +581,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("base_sha: ${{ needs.prepare-candidate.outputs.base_sha }}", jobs["release-checks"])
         self.assertIn("candidate_kind: upgrade", jobs["release-checks"])
         self.assertIn("dry_run: true", jobs["release-checks"])
+        self.assertIn(
+            "rocksdb_experiment: ${{ github.ref == 'refs/heads/plugin-compatibility-ci' }}",
+            jobs["release-checks"],
+        )
+        self.assertIn("python3 scripts/prepare-rocksdb-experiment.py", jobs["prepare-candidate"])
         self.assertEqual(re.findall(r"uses: \./\.github/workflows/([\w.-]+)", nightly), ["release.yaml"])
         self.assertIn("\n  push:\n    branches:\n      - plugin-compatibility-ci\n", nightly)
 

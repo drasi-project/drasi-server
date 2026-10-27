@@ -15,7 +15,7 @@ import subprocess
 import tomllib
 import zipfile
 
-from plugin_origin import PLUGIN_ABI_VERSION
+from plugin_origin import EXPERIMENT_REPOSITORY, EXPERIMENT_REVISION, PLUGIN_ABI_VERSION
 
 
 TARGETS = (
@@ -89,6 +89,14 @@ def candidate(args):
     require(not run("git", "status", "--porcelain", "--untracked-files=no"),
             "Candidate must have no uncommitted tracked changes")
     require(args.kind in ("release", "locked", "upgrade"), "Unknown candidate kind")
+    manifest = tomllib.loads(Path("Cargo.toml").read_text())
+    index_patch = manifest.get("patch", {}).get("crates-io", {}).get("drasi-index-rocksdb")
+    if index_patch is not None:
+        require(args.kind == "upgrade" and os.environ.get("DRASI_ROCKSDB_EXPERIMENT") == "1",
+                "Experimental index source is restricted to opted-in upgrade rehearsals")
+        require(index_patch == {
+            "git": EXPERIMENT_REPOSITORY, "rev": EXPERIMENT_REVISION,
+        }, "Experimental index patch differs from the pinned source")
     version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
     tag = args.tag or version
     require(re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", tag) and tag != "latest",
@@ -107,6 +115,8 @@ def candidate(args):
         "lockfiles": {name: sha256(name) for name in locks},
         "drasi_dependencies": dependencies, "reviewed_plugin_abi": PLUGIN_ABI_VERSION,
     }
+    if index_patch is not None:
+        data["experimental_rocksdb_revision"] = EXPERIMENT_REVISION
     write_json(args.output, data)
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         for key in ("sha", "kind", "tag"):

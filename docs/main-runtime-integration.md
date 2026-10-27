@@ -179,6 +179,19 @@ Git tags or GitHub Releases, and never updates `main` or the version-bump PR bra
 
 ### Test staging is not official publication
 
+Temporary branch experiment: Nightly runs triggered from `plugin-compatibility-ci`
+replace only `drasi-index-rocksdb` with
+`ruokun-niu/drasi-core@bb9059d4fc13eb899833a86e4a05acf6e4633e95`
+(the inspected `ubutnu-upgrade` branch). Preparation commits the Git source
+patch and resolved lockfile into the isolated candidate. Core/AST dependencies
+are redirected back to their reviewed registry releases, so SDKs and published
+plugins remain unchanged. The explicit `rocksdb_experiment` reusable-workflow
+input enables only this exact source exception, only for upgrade dry runs.
+Normal release origin checks still reject the Git index. Candidate evidence
+records the experimental revision; it cannot be used for official publication.
+Remove the temporary override and its policy exception after testing or adopt
+the corrected published index release instead. This does not rebuild plugins.
+
 Production, manual `dry_run`, and Nightly's upgraded candidate build images once
 into `ghcr.io/<owner>/drasi-server-test`, using unique
 `run-<id>-<attempt>-<kind>-<sha>-<architecture>` tags. Thus a dry run requires

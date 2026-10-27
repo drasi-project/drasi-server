@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,13 @@ REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 REGISTRY_SDK_VERSION = "0.11.3"
 REGISTRY_LIB_VERSION = "0.9.3"
 PLUGIN_ABI_VERSION = "0.14.0"
+
+# Temporary, explicit nightly experiment; all other runtime identities stay released.
+EXPERIMENT_REPOSITORY = "https://github.com/ruokun-niu/drasi-core"
+EXPERIMENT_REVISION = "bb9059d4fc13eb899833a86e4a05acf6e4633e95"
+EXPERIMENT_SOURCE = (
+    f"git+{EXPERIMENT_REPOSITORY}?rev={EXPERIMENT_REVISION}#{EXPERIMENT_REVISION}"
+)
 
 # Official archive checksums for the reviewed release; Cargo verifies downloaded bytes.
 # Source and reconstruction boundaries are documented in docs/main-runtime-integration.md.
@@ -91,7 +99,7 @@ def selected_packages(metadata, names=(*SDK_PACKAGES, "drasi-lib", "drasi-core")
     return selected
 
 
-def classify(metadata):
+def classify(metadata, *, rocksdb_experiment=False):
     selected = selected_packages(metadata)
     sources = [selected[name]["source"] for name in SDK_PACKAGES]
     if all(source == REGISTRY for source in sources):
@@ -107,6 +115,10 @@ def classify(metadata):
         released = selected_packages(metadata, REGISTRY_PACKAGES)
         for name, package in released.items():
             version, _ = REGISTRY_PACKAGES[name]
+            if rocksdb_experiment and name == "drasi-index-rocksdb":
+                if package["source"] != EXPERIMENT_SOURCE or package["version"] != version:
+                    raise PluginOriginError("RocksDB experiment requires the exact pinned index source")
+                continue
             if package["source"] != REGISTRY or package["version"] != version:
                 raise PluginOriginError(
                     f"Released runtime requires registry {name} {version}; "
@@ -144,11 +156,20 @@ def matching_local_workspace(selected, metadata):
     return workspace
 
 
-def validate_registry_lock(lock):
+def validate_registry_lock(lock, *, rocksdb_experiment=False):
     if lock.get("patch", {}).get("unused"):
         raise PluginOriginError("Released runtime cannot contain unused source patches")
     for name, (version, checksum) in REGISTRY_PACKAGES.items():
         matches = [package for package in lock["package"] if package["name"] == name]
+        if rocksdb_experiment and name == "drasi-index-rocksdb":
+            if (
+                len(matches) != 1
+                or matches[0]["version"] != version
+                or matches[0].get("source") != EXPERIMENT_SOURCE
+                or "checksum" in matches[0]
+            ):
+                raise PluginOriginError("RocksDB experiment lock must use the exact pinned index source")
+            continue
         if (
             len(matches) != 1
             or matches[0]["version"] != version
@@ -159,9 +180,15 @@ def validate_registry_lock(lock):
 
 
 def resolve_origin():
-    mode, selected = classify(cargo_metadata(ROOT / "Cargo.toml"))
+    experiment = os.environ.get("DRASI_ROCKSDB_EXPERIMENT") == "1"
+    mode, selected = classify(
+        cargo_metadata(ROOT / "Cargo.toml"), rocksdb_experiment=experiment,
+    )
     if mode == "registry":
-        validate_registry_lock(tomllib.loads((ROOT / "Cargo.lock").read_text()))
+        validate_registry_lock(
+            tomllib.loads((ROOT / "Cargo.lock").read_text()),
+            rocksdb_experiment=experiment,
+        )
         return mode, None
     sdk_manifest = Path(selected["drasi-plugin-sdk"]["manifest_path"])
     workspace = matching_local_workspace(
