@@ -18,7 +18,7 @@ exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 authors = ["Drasi Project"]
 description = "Standalone Drasi server for data change processing"
@@ -167,3 +167,11 @@ large_enum_variant = "allow"
 # drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
 # drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
 # drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
+
+
+[patch.crates-io]
+drasi-index-rocksdb = { git = "https://github.com/ruokun-niu/drasi-core", rev = "bb9059d4fc13eb899833a86e4a05acf6e4633e95" }
+
+[patch."https://github.com/ruokun-niu/drasi-core"]
+drasi-core = { version = "=0.5.10" }
+drasi-query-ast = { version = "=0.3.5" }
