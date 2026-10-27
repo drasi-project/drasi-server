@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type FormEvent } from 'react';
-import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/react/react';
-import { entity, inputs, key, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
+import { graphRowKey } from '@drasi/react/client';
+import { useDrasiClient, useDrasiConnectionStatus, useDrasiOutput } from '@drasi/react/react';
+import { entity, inputs, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
 import { ArchitectureOverlay } from './Architecture';
 
 const inspectionStages: Record<QueryId,{label:string;description:string}> = {
@@ -12,7 +13,8 @@ const inspectionStages: Record<QueryId,{label:string;description:string}> = {
 };
 
 function useView(id: QueryId) {
-  return useDrasiQuery(id, { getKey: row => key(id,row), transform: row => validate(id,row) });
+  // Rows arrive as graph changes and are keyed by their canonical element identity.
+  return useDrasiOutput(id, { getKey: graphRowKey, transform: row => validate(id,row) });
 }
 export function App() {
   const source = useView('scene-inputs'), context = useView('geometry-context'), obstructions = useView('obstructions');

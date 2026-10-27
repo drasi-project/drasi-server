@@ -175,7 +175,7 @@ export const TECH_STOCKS_QUERY: QueryDefinition = {
            sp.price AS price,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
   `,
-  sources: [
+  inputs: [
     { sourceId: 'postgres-stocks', pipeline: [] },
     { sourceId: 'price-feed', pipeline: [] }
   ],

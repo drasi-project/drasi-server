@@ -39,11 +39,11 @@ The source settings are the native `MySqlConfig`: explicitly selected `items`,
 ordinary `changes`, `replay: server`, and an opt-in coordinated
 `start: {mode: snapshot, lock_timeout_ms: 5000}`. Each query has its own
 `sourceProgress` and `nativeBootstrap` resource; the source has the corresponding
-fixed `consumerProgress` set. The sink settings select `all-items` and
-`selected-items` and use parameter-only templates such as:
+fixed `consumerProgress` set. The sink settings bind the `all-items` and
+`selected-items` producers to their output streams and use parameter-only templates such as:
 
 ```text
-CALL effect({{param query_id}},{{param operation}},{{param after.id}},{{param after.value}})
+CALL effect({{param output.alias}},{{param operation}},{{param after.id}},{{param after.value}})
 ```
 
 See the [source](../../../drasi-core/components/computation-plugins/sources/mysql/README.md),

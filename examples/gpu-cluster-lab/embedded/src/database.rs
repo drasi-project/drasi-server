@@ -265,8 +265,8 @@ pub fn components(
             kind: gpu_native::postgres::POSTGRES_JSON.into(),
             config: Default::default(),
         }],
-        sources: vec![serde_json::from_value(json!({
-            "source_id":"postgres", "pipeline":[gpu_native::postgres::POSTGRES_JSON],
+        inputs: vec![serde_json::from_value(json!({
+            "component":"postgres", "pipeline":[gpu_native::postgres::POSTGRES_JSON],
         }))?],
         ..Default::default()
     };
@@ -311,7 +311,7 @@ pub fn components(
         )
         .component(
             ComponentSpecification {
-                descriptor: definition.descriptor_with_execution(&execution),
+                descriptor: definition.descriptor(),
                 role: ComponentRole::Query,
                 completion: None,
                 implementation: query_factory.descriptor().implementation.clone(),

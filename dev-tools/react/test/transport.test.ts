@@ -130,7 +130,7 @@ describe('shared read-only transport/auth policy', () => {
     vi.useFakeTimers();
     for (const mode of ['auth', 'fetch', 'body'] as const) {
       const { client, server } = setup({
-        queryIds: ['stocks', 'other'], requestTimeoutMs: 25,
+        outputIds: ['stocks', 'other'], requestTimeoutMs: 25,
         ...(mode === 'auth' ? { headers: () => new Promise<HeadersInit>(() => {}) } : {}),
       });
       if (mode === 'fetch') server.fetch.mockImplementation(() => new Promise<Response>(() => {}));

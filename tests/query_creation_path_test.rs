@@ -155,7 +155,7 @@ async fn scenario(native: bool) -> Result<()> {
     );
     let config = Query::cypher("items")
         .query("MATCH (n:Item) RETURN n.value AS value")
-        .from_source("input")
+        .from_input("input")
         .enable_bootstrap(false)
         .build();
     if native {

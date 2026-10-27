@@ -90,8 +90,8 @@ instances:
                  sum(s.amount) AS TotalRevenue,
                  avg(s.amount) AS AverageOrderValue
         queryLanguage: Cypher
-        sources:
-          - sourceId: sales-data
+        inputs:
+          - sales-data
 
   # KPI: Active users
       - id: kpi-active-users
@@ -101,8 +101,8 @@ instances:
           WHERE u.status = 'active'
           RETURN count(u) AS ActiveUsers
         queryLanguage: Cypher
-        sources:
-          - sourceId: user-activity
+        inputs:
+          - user-activity
 
   # KPI: System health
       - id: kpi-system-health
@@ -113,8 +113,8 @@ instances:
                  avg(m.memory) AS AvgMemory,
                  max(m.latency) AS MaxLatency
         queryLanguage: Cypher
-        sources:
-          - sourceId: system-metrics
+        inputs:
+          - system-metrics
 
   # Activity Feed: Recent sales
       - id: recent-sales
@@ -127,8 +127,8 @@ instances:
                  s.product AS Product,
                  s.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: sales-data
+        inputs:
+          - sales-data
 
   # Activity Feed: User events
       - id: user-events
@@ -139,8 +139,8 @@ instances:
                  e.action AS Action,
                  e.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: user-activity
+        inputs:
+          - user-activity
 
   # Alerts: High-value sales
       - id: high-value-sales
@@ -153,8 +153,8 @@ instances:
                  s.customer AS Customer,
                  'HIGH_VALUE' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: sales-data
+        inputs:
+          - sales-data
 
   # Alerts: System warnings
       - id: system-warnings
@@ -167,8 +167,8 @@ instances:
                  m.memory AS Memory,
                  'RESOURCE_WARNING' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: system-metrics
+        inputs:
+          - system-metrics
 
   # Charts: Sales by category
       - id: sales-by-category
@@ -179,8 +179,8 @@ instances:
                  count(s) AS Count,
                  sum(s.amount) AS Total
         queryLanguage: Cypher
-        sources:
-          - sourceId: sales-data
+        inputs:
+          - sales-data
 
     reactions:
   # Console logging for debugging

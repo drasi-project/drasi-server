@@ -15,7 +15,7 @@ vi.mock('@drasi/react/react', async importOriginal => ({
   ...await importOriginal<typeof import('@drasi/react/react')>(),
   useDrasiClient: () => ({ ...sdk, error: null }),
   useDrasiConnectionStatus: () => ({ connected: sdk.connected, error: sdk.transportError ?? undefined }),
-  useDrasiQuery: (id: QueryId) => ({
+  useDrasiOutput: (id: QueryId) => ({
     data: sdk.initialized ? rows[id] : null, loading: !sdk.initialized,
     stale: false, error: null, status: sdk.initialized ? 'live' : 'initial-loading', retry: vi.fn(),
   }),

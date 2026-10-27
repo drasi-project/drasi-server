@@ -69,7 +69,7 @@ impl Harness {
     async fn new() -> Result<Self> {
         let (store, mut source) = source::channel()?;
         source.start().await?;
-        let mut geometry = transformer::Geometry::new(ComponentId::try_new("geometry")?)?;
+        let mut geometry = transformer::Geometry::new(ComponentId::try_new("geometry")?, None)?;
         geometry.start().await?;
         Ok(Self {
             store,
@@ -145,6 +145,61 @@ fn changes(outputs: &[OutputEnvelope]) -> Result<Vec<SourceChange>> {
         .collect())
 }
 #[tokio::test]
+async fn derived_outputs_own_volatile_progress_through_real_query_chain() -> Result<()> {
+    let scope = drasi_computation_plugin_sdk::wire::Scope {
+        instance_id: "wall-test-instance".into(),
+        graph_id: "wall-test".into(),
+        generation: 1,
+    };
+    let mut previous_epoch = None;
+    for _ in 0..2 {
+        let mut h = Harness::new().await?;
+        h.geometry =
+            transformer::Geometry::new(ComponentId::try_new("geometry-worker")?, Some(&scope))?;
+        h.geometry.start().await?;
+        let mut identity = None;
+        let mut sequence = 0;
+        for (command, expected_rows) in [
+            (Command::Reset, 0),
+            (Command::Put { entity: wall(4.5) }, 1),
+            (Command::Put { entity: wall(5.5) }, 1),
+            (Command::Delete { id: "wall".into() }, 0),
+        ] {
+            let (context, outputs) = h.send(command).await?;
+            assert!(!outputs.is_empty());
+            for output in outputs {
+                assert_eq!(
+                    output.envelope.system().ordering(),
+                    ChangeOrdering::ProducerSequence
+                );
+                let progress = GraphProducerProgress::from_envelope(&output.envelope)?
+                    .context("geometry output progress")?;
+                let current = progress.identity();
+                assert_eq!(current.component_id().as_str(), "geometry-worker");
+                assert_eq!(current.stream().as_str(), "geometry/out");
+                assert_eq!(current.construction_scope(), "wall-test-instance");
+                assert_eq!(current.graph_id(), "wall-test");
+                assert!(!current.persistent());
+                if let Some(identity) = &identity {
+                    assert_eq!(current, identity);
+                } else {
+                    assert_ne!(Some(current.incarnation()), previous_epoch);
+                    identity = Some(current.clone());
+                }
+                sequence += 1;
+                assert_eq!(progress.sequence(), sequence);
+                assert!(context.iter().any(|input| {
+                    input.envelope.system().timestamp() == output.envelope.system().timestamp()
+                }));
+            }
+            assert_eq!(h.rows()?.len(), expected_rows);
+        }
+        previous_epoch = identity.map(|identity| identity.incarnation());
+        h.close().await?;
+    }
+    Ok(())
+}
+#[tokio::test]
 async fn scene_inputs_and_outputs_have_no_location_dimension() -> Result<()> {
     for entity in model::fixture().values() {
         let value = serde_json::to_value(entity)?;
@@ -165,7 +220,10 @@ async fn scene_inputs_and_outputs_have_no_location_dimension() -> Result<()> {
     let (_, blocked) = h.send(Command::Put { entity: wall(4.5) }).await?;
     for output in initial.iter().chain(&blocked) {
         for change in GraphChangeCodec::decode_changes(&output.envelope)? {
-            if let SourceChange::Insert { element } | SourceChange::Update { element } = change {
+            if let SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. } = change
+            {
                 assert!(element.get_properties().get("floor").is_none());
             }
         }
@@ -195,7 +253,7 @@ async fn real_queries_enrich_obstacle_only_changes_and_retract() -> Result<()> {
     assert_eq!(rows[0]["obstacle"], "Movable wall");
     let identity = rows[0]["id"].clone();
     let (_, output) = h.send(Command::Put { entity: wall(5.5) }).await?;
-    assert!(matches!(changes(&output)?[0], SourceChange::Update { .. }));
+    assert!(matches!(changes(&output)?[0], SourceChange::Replace { .. }));
     assert_eq!(h.rows()?[0]["id"], identity);
     let (_, output) = h.send(Command::Delete { id: "wall".into() }).await?;
     assert!(matches!(changes(&output)?[0], SourceChange::Delete { .. }));
@@ -309,9 +367,12 @@ async fn sparse_query_delete_clears_cache_and_old_snapshot_cannot_restore_it() -
         None,
         &ComponentId::try_new("geometry-context")?,
         SystemMetadata::new(stream.clone(), sequence),
+        &snapshot.projector,
         &[QueryPartEvaluationContext::Removing {
             before: row.values,
-            row_signature: row.signature,
+            row_signature: row
+                .signature
+                .context("context query row has no evaluator signature")?,
         }],
         QueryChangeCodec::metadata(&prior.envelope)?,
     )?
@@ -332,14 +393,14 @@ async fn sparse_query_delete_clears_cache_and_old_snapshot_cannot_restore_it() -
         })
         .collect();
     let change_set = ChangeSet::try_new(
-        ChangeSetId::try_new("sparse-test", vec![1].into())?,
+        full_delete.changes().id().clone(),
         QueryChangeCodec::schema().descriptor().clone(),
         sparse,
     )?;
     let envelope = full_delete.derive(
         emission_id(&stream, sequence)?,
         change_set,
-        SystemMetadata::new(stream, sequence),
+        full_delete.system().as_ref().clone(),
     );
     let output = h
         .geometry

@@ -63,8 +63,8 @@ instances:
           WHERE g.value < 0
           RETURN g.value AS AlertValue, g.message AS Message, g.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: events
+        inputs:
+          - events
 
   # Simulated "metrics" - positive values are metrics
       - id: metrics
@@ -74,8 +74,8 @@ instances:
           WHERE g.value >= 0
           RETURN g.value AS MetricValue, g.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: events
+        inputs:
+          - events
 
   # All events with full data
       - id: all-events
@@ -84,8 +84,8 @@ instances:
           MATCH (g:Generic)
           RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: events
+        inputs:
+          - events
 
     reactions:
       - kind: log

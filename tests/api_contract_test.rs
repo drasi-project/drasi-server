@@ -89,17 +89,17 @@ fn test_query_config_serialization() {
 
     let config = Query::cypher("test-query")
         .query("MATCH (n:Node) RETURN n")
-        .from_source("source1")
-        .from_source("source2")
+        .from_input("source1")
+        .from_input("source2")
         .auto_start(true)
         .build();
 
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["id"], "test-query");
     assert_eq!(json["query"], "MATCH (n:Node) RETURN n");
-    assert_eq!(json["sources"].as_array().unwrap().len(), 2);
-    assert_eq!(json["sources"][0]["source_id"], "source1");
-    assert_eq!(json["sources"][1]["source_id"], "source2");
+    assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
+    assert_eq!(json["inputs"][0], "source1");
+    assert_eq!(json["inputs"][1], "source2");
     assert_eq!(json["auto_start"], true);
 }
 
@@ -108,9 +108,9 @@ fn test_query_config_deserialization() {
     let json = json!({
         "id": "test-query",
         "query": "MATCH (p:Person) WHERE p.age > 21 RETURN p",
-        "sources": [
+        "inputs": [
             {
-                "source_id": "postgres-db",
+                "component": "postgres-db",
                 "pipeline": []
             }
         ],
@@ -120,8 +120,8 @@ fn test_query_config_deserialization() {
     let config: QueryConfig = serde_json::from_value(json).unwrap();
     assert_eq!(config.id, "test-query");
     assert_eq!(config.query, "MATCH (p:Person) WHERE p.age > 21 RETURN p");
-    assert_eq!(config.sources.len(), 1);
-    assert_eq!(config.sources[0].source_id, "postgres-db");
+    assert_eq!(config.inputs.len(), 1);
+    assert_eq!(config.inputs[0].component, "postgres-db");
     assert!(!config.auto_start);
 }
 
@@ -256,7 +256,7 @@ fn test_very_long_query_string() {
     let long_query = "MATCH ".to_string() + &"(n:Node) ".repeat(100) + "RETURN n";
     let config = Query::cypher("long-query")
         .query(&long_query)
-        .from_source("source1")
+        .from_input("source1")
         .auto_start(false)
         .build();
 
@@ -276,7 +276,7 @@ fn test_empty_strings() {
 
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["query"], "");
-    assert_eq!(json["sources"], json!([]));
+    assert_eq!(json["inputs"], json!([]));
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn test_type_mismatch_rejection() {
     let invalid_query = json!({
         "id": "test",
         "query": "MATCH (n) RETURN n",
-        "sources": "should-be-array", // Wrong type - should be array
+        "inputs": "should-be-array", // Wrong type - should be array
         "auto_start": false
     });
 

@@ -67,8 +67,8 @@ instances:
           MATCH (o:Order)
           RETURN o.id AS OrderId, o.customer AS Customer, o.total AS Total
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders
+        inputs:
+          - orders
 
       - id: high-value-orders
         autoStart: true
@@ -77,8 +77,8 @@ instances:
           WHERE o.total > 500
           RETURN o.id AS OrderId, o.total AS Total
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders
+        inputs:
+          - orders
 
     reactions:
   # Log for debugging

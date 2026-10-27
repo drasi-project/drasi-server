@@ -29,7 +29,11 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
     configuration.validate()?;
     let epoch = Uuid::new_v4();
     let assessment = Evaluator::new()?.evaluate(&configuration)?;
-    let mut source = Emitter::new(StreamId::try_new("shared-policy-projection")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("shared-policy-projection")?,
+        ComponentId::try_new("policy-projection-fixture")?,
+        None,
+    )?;
     let mut query = query("shared-policy-status", views::STATUS).await?;
     let mut ready = json!({
         "fleet_id":"demo", "observation_epoch":epoch,
@@ -146,6 +150,7 @@ async fn timeline_is_bounded_and_preserves_explicit_observation_epochs() -> Resu
             .descriptor(ComponentId::try_new("bounded-timeline")?)?,
         json!({"stream":"bounded-timeline-source"}),
         hub.clone(),
+        None,
     )?;
     producer.start().await?;
     let epoch = Uuid::new_v4();
@@ -216,9 +221,14 @@ async fn fresh_runtime_producer_does_not_reuse_prior_epoch_evidence() -> Result<
         descriptor.clone(),
         json!({"stream":"first-status"}),
         hub.clone(),
+        None,
     )?;
-    let mut second =
-        crate::status::Producer::new(descriptor, json!({"stream":"second-status"}), hub.clone())?;
+    let mut second = crate::status::Producer::new(
+        descriptor,
+        json!({"stream":"second-status"}),
+        hub.clone(),
+        None,
+    )?;
     first.start().await?;
     assert!(
         second.start().await.is_err(),
@@ -306,6 +316,7 @@ async fn runtime_readiness_requires_complete_lifecycle_observations() -> Result<
             .descriptor(ComponentId::try_new("runtime-status")?)?,
         json!({"stream":"readiness-test"}),
         workers.hub.clone(),
+        None,
     )?;
     producer.start().await?;
     let mut query = query("readiness-test", views::STATUS).await?;
@@ -557,12 +568,17 @@ async fn simulator_activity_names_actual_moves_without_inventing_moves_on_bootst
             .descriptor(ComponentId::try_new("move-status")?)?,
         json!({"stream":"move-status"}),
         workers.hub.clone(),
+        None,
     )?;
     runtime.start().await?;
     simulator.start().await?;
     let mut input = query("move-input", "MATCH (i:Input) RETURN i.payload AS payload").await?;
     let mut timeline = query("move-timeline", views::TIMELINE).await?;
-    let mut source = Emitter::new(StreamId::try_new("move-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("move-source")?,
+        ComponentId::try_new("replica-move-fixture")?,
+        None,
+    )?;
     let boot = bootstrap(&fixture, epoch)?;
     let Message::Bootstrap { mut plan, .. } = boot.clone() else {
         unreachable!()
@@ -773,7 +789,11 @@ async fn project_workload_updates(
             snapshot.insert(id.clone(), value).is_none(),
             "duplicate workload row"
         );
-        identities.insert(id, row.signature);
+        identities.insert(
+            id,
+            row.signature
+                .context("workload row has no evaluator signature")?,
+        );
     }
     assert_eq!(
         live, &snapshot,
@@ -790,7 +810,11 @@ async fn workload_identity_survives_readiness_and_execution_transitions() -> Res
         views::execution_settings(),
     )
     .await?;
-    let mut source = Emitter::new(StreamId::try_new("workload-identity")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("workload-identity")?,
+        ComponentId::try_new("workload-fixture")?,
+        None,
+    )?;
     let fixture = fixtures::load("baseline")?;
     let mut live = BTreeMap::new();
     project_workload_updates(
@@ -953,6 +977,7 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
                 .descriptor(ComponentId::try_new("runtime-status")?)?,
             json!({"stream":"rejected-plan-status"}),
             workers.hub.clone(),
+            None,
         )?;
         runtime.start().await?;
         simulator.start().await?;
@@ -962,7 +987,11 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
         )
         .await?;
         let mut status_query = query("startup-status", views::STATUS).await?;
-        let mut source = Emitter::new(StreamId::try_new("rejected-plan-source")?);
+        let mut source = Emitter::new(
+            StreamId::try_new("rejected-plan-source")?,
+            ComponentId::try_new("rejected-plan-fixture")?,
+            None,
+        )?;
         deliver(
             &mut simulator,
             &mut input_query,
@@ -1077,13 +1106,21 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
         settings,
     )
     .await?;
-    let mut database = Emitter::new(StreamId::try_new("expiry-database")?);
+    let mut database = Emitter::new(
+        StreamId::try_new("expiry-database")?,
+        ComponentId::try_new("expiry-database-fixture")?,
+        None,
+    )?;
     project(
         &mut query,
         &database_configuration(&mut database, &fixture)?,
     )
     .await?;
-    let mut context = Emitter::new(StreamId::try_new("expiry-policy")?);
+    let mut context = Emitter::new(
+        StreamId::try_new("expiry-policy")?,
+        ComponentId::try_new("expiry-policy-fixture")?,
+        None,
+    )?;
     let mut snapshot = json!({
         "epoch":epoch, "configuration":configuration, "plan":plan,
         "settings":fixture.settings, "config_fingerprint":fingerprint,
@@ -1104,7 +1141,11 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
             .unwrap(),
     ];
     project(&mut query, &context.emit(changes, None)?).await?;
-    let mut reports = Emitter::new(StreamId::try_new("expiry-simulator")?);
+    let mut reports = Emitter::new(
+        StreamId::try_new("expiry-simulator")?,
+        ComponentId::try_new("expiry-simulator-fixture")?,
+        None,
+    )?;
     let now = wire::utc_millis()?;
     let mut changes = Vec::new();
     for gpu in configuration.gpus.values() {
@@ -1195,7 +1236,11 @@ async fn inventory_views_preserve_reports_until_the_real_deadline() -> Result<()
         "MATCH (i:Input) RETURN i.payload AS payload",
     )
     .await?;
-    let mut source = Emitter::new(StreamId::try_new("inventory-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("inventory-source")?,
+        ComponentId::try_new("inventory-fixture")?,
+        None,
+    )?;
     let mut gpus =
         configured_query("inventory-ui-gpus", views::GPUS, views::gpu_settings()).await?;
     let mut clusters = configured_query(
@@ -1386,7 +1431,11 @@ async fn optional_native_join_replaces_the_unmatched_snapshot_row() -> Result<()
         "MATCH (d:DecisionExplanation) OPTIONAL MATCH (d)-[:DECISION_WRITE]->(w:PlanWriteOutcome) RETURN d.decision_id AS decision_id, w.outcome AS outcome",
         views::decision_settings(),
     ).await?;
-    let mut source = Emitter::new(StreamId::try_new("optional-join-probe-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("optional-join-probe-source")?,
+        ComponentId::try_new("optional-join-fixture")?,
+        None,
+    )?;
     let left = source
         .record(
             "DecisionExplanation",
@@ -1436,7 +1485,11 @@ async fn optional_native_join_replaces_the_unmatched_snapshot_row() -> Result<()
 async fn optional_fleet_context_preserves_inventory_before_bootstrap() -> Result<()> {
     let mut query = query("optional-context",
         "MATCH (w:workload_requirements) OPTIONAL MATCH (a:AppliedPlan) RETURN w.workload_id AS workload_id, a.fleet_id AS fleet_id").await?;
-    let mut source = Emitter::new(StreamId::try_new("optional-context")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("optional-context")?,
+        ComponentId::try_new("optional-context-fixture")?,
+        None,
+    )?;
     let change = source
         .record(
             "workload_requirements",
@@ -1459,7 +1512,11 @@ async fn optional_assignment_list_preserves_null_before_and_after_context() -> R
         "optional-assignment-list",
         "MATCH (w:workload_requirements) OPTIONAL MATCH (p:gpu_placements) RETURN w.workload_id AS workload_id, [d IN p.assignments WHERE d = 'replica'] AS matching",
     ).await?;
-    let mut source = Emitter::new(StreamId::try_new("optional-assignment-list-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("optional-assignment-list-source")?,
+        ComponentId::try_new("optional-assignment-fixture")?,
+        None,
+    )?;
     let workload = source
         .record(
             "workload_requirements",
@@ -1504,7 +1561,11 @@ async fn assignment_list_matches_equal_property_maps() -> Result<()> {
         "assignment-equality",
         "MATCH (w:workload_requirements) OPTIONAL MATCH (p:gpu_placements) RETURN w.workload_id AS workload_id, [d IN p.assignments WHERE d = w.assignment] AS matching",
     ).await?;
-    let mut source = Emitter::new(StreamId::try_new("assignment-equality-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("assignment-equality-source")?,
+        ComponentId::try_new("assignment-equality-fixture")?,
+        None,
+    )?;
     let assignment = json!({"gpu_id":"gpu-1","workload_revision":"1","memory_mib":4096});
     let workload = source
         .record(
@@ -1532,7 +1593,11 @@ async fn aggregate_count_equals_integer_list_size() -> Result<()> {
     let mut query = query("numeric-count-equality",
         "MATCH (w:workload_requirements) WITH sum(w.replicas) AS count RETURN count AS count, size([1,2]) AS expected, count = size([1,2]) AS equal, count <> size([1,2]) AS unequal"
     ).await?;
-    let mut source = Emitter::new(StreamId::try_new("numeric-count-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("numeric-count-source")?,
+        ComponentId::try_new("numeric-count-fixture")?,
+        None,
+    )?;
     let workload = source
         .record("workload_requirements", "workload", &json!({"replicas":2}))?
         .unwrap();
@@ -1557,6 +1622,7 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
             .descriptor(ComponentId::try_new("runtime-status")?)?,
         json!({"stream":"projection-runtime"}),
         workers.hub.clone(),
+        None,
     )?;
     runtime.start().await?;
     let mut policy = processor(Kind::Policy, workers.clone())?;
@@ -1572,7 +1638,11 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         "MATCH (i:Input) RETURN i.payload AS payload",
     )
     .await?;
-    let mut source = Emitter::new(StreamId::try_new("projection-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("projection-source")?,
+        ComponentId::try_new("projection-fixture")?,
+        None,
+    )?;
     let mut policy_query = query("ui-policy", views::POLICY).await?;
     let mut decision_query =
         configured_query("ui-decisions", views::DECISIONS, views::decision_settings()).await?;
@@ -2179,7 +2249,11 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
 
 #[test]
 fn graph_projection_rejects_lossy_integers_without_caching_failed_records() -> Result<()> {
-    let mut emitter = Emitter::new(StreamId::try_new("typed-record-test")?);
+    let mut emitter = Emitter::new(
+        StreamId::try_new("typed-record-test")?,
+        ComponentId::try_new("typed-record-fixture")?,
+        None,
+    )?;
     let invalid = json!({"nested":[{"counter":u64::MAX}]});
     assert!(emitter.record("Typed", "id", &invalid).is_err());
     assert!(emitter.record("Typed", "id", &invalid).is_err());

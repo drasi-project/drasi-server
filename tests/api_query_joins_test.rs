@@ -7,7 +7,7 @@ use drasi_lib::{
     config::{QueryJoinConfig, QueryJoinKeyConfig},
     DrasiLib, Query, QueryConfig,
 };
-use drasi_server::api::models::query::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::models::query::QueryConfigDto;
 use drasi_server::api::shared::extractor::ConfigBody;
 use drasi_server::api::shared::handlers::create_query;
 use std::sync::Arc;
@@ -17,8 +17,8 @@ use test_support::mock_components::create_mock_source;
 fn build_query_config() -> QueryConfig {
     Query::cypher("watchlist-joined-query-test")
         .query("MATCH (s:stocks)<-[:HAS_PRICE]-(sp:stock_prices) RETURN s.symbol AS symbol")
-        .from_source("postgres-stocks")
-        .from_source("price-feed")
+        .from_input("postgres-stocks")
+        .from_input("price-feed")
         .auto_start(false)
         .with_joins(vec![QueryJoinConfig {
             id: "HAS_PRICE".to_string(),
@@ -44,16 +44,8 @@ fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
         query: config.query,
         query_language: config.query_language,
         middleware: vec![], // Simplified for testing
-        sources: config
-            .sources
-            .iter()
-            .map(|s| SourceSubscriptionConfigDto {
-                source_id: s.source_id.clone(),
-                nodes: s.nodes.clone(),
-                relations: s.relations.clone(),
-                pipeline: s.pipeline.clone(),
-            })
-            .collect(),
+        inputs: config.inputs.into_iter().map(Into::into).collect(),
+        result: Default::default(),
         enable_bootstrap: config.enable_bootstrap,
         joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
         priority_queue_capacity: config.priority_queue_capacity,

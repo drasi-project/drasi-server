@@ -72,8 +72,8 @@ instances:
         autoStart: true
         enableBootstrap: true
 
-        sources:
-          - sourceId: my-postgres-db
+        inputs:
+          - my-postgres-db
 
 # Reactions (where to send query results)
     reactions:

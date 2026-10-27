@@ -171,8 +171,8 @@ export class DrasiClient {
         ...q,
         status: item.status ?? q.status,
         error_message: item.error_message ?? q.error_message,
-        sources: (q.sources ?? q.source_subscriptions)?.map((sub: any) =>
-          typeof sub === 'string' ? sub : (sub.sourceId ?? sub.source_id)
+        inputs: q.inputs?.map((input: any) =>
+          typeof input === 'string' ? input : input.component
         ) || []
       };
     });
@@ -189,8 +189,8 @@ export class DrasiClient {
       ...q,
       status: payload?.status ?? q.status,
       error_message: payload?.error_message ?? q.error_message,
-      sources: (q.sources ?? q.source_subscriptions)?.map((sub: any) =>
-        typeof sub === 'string' ? sub : (sub.sourceId ?? sub.source_id)
+      inputs: q.inputs?.map((input: any) =>
+        typeof input === 'string' ? input : input.component
       ) || []
     };
   }
@@ -199,12 +199,12 @@ export class DrasiClient {
    * Create a new query
    */
   async createQuery(query: Partial<Query>): Promise<Query> {
-    // Convert to API format (camelCase, sources field with sourceId)
+    // Convert to API format (camelCase; each source is a bare upstream component name in `inputs`)
     const apiQuery: any = {
       id: query.id,
       query: query.query,
       autoStart: query.auto_start ?? true,
-      sources: query.sources?.map(s => ({ sourceId: s })) || [],
+      inputs: query.inputs ?? [],
       queryLanguage: 'Cypher',
       enableBootstrap: true,
     };

@@ -693,7 +693,7 @@ mod tests {
             vec![TestSource::new("src1", "mock")],
             vec![Query::cypher("q1")
                 .query("MATCH (n) RETURN n")
-                .from_source("src1")
+                .from_input("src1")
                 .build()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )
@@ -888,11 +888,11 @@ mod tests {
             vec![
                 Query::cypher("q-alpha")
                     .query("MATCH (e:Event) RETURN e")
-                    .from_source("events")
+                    .from_input("events")
                     .build(),
                 Query::cypher("q-beta")
                     .query("MATCH (m:Metric) WHERE m.value > 10 RETURN m")
-                    .from_source("metrics")
+                    .from_input("metrics")
                     .build(),
             ],
             vec![],
@@ -916,9 +916,10 @@ mod tests {
             "MATCH (e:Event) RETURN e"
         );
 
-        // Verify source subscription (camelCase: sourceId)
-        let sources = q_alpha["sources"].as_sequence().unwrap();
-        assert_eq!(sources[0]["sourceId"].as_str().unwrap(), "events");
+        // Verify the input binding uses the bare component shorthand
+        let inputs = q_alpha["inputs"].as_sequence().unwrap();
+        assert_eq!(inputs[0].as_str().unwrap(), "events");
+        assert!(q_alpha.get("sources").is_none());
     }
 
     #[tokio::test]
@@ -931,7 +932,7 @@ mod tests {
             vec![TestSource::new("src1", "mock")],
             vec![Query::cypher("q1")
                 .query("MATCH (n) RETURN n")
-                .from_source("src1")
+                .from_input("src1")
                 .build()],
             vec![
                 TestReaction::new("rx-webhook", "http", vec!["q1".into()])
@@ -1027,7 +1028,7 @@ mod tests {
             vec![TestSource::new("src1", "mock")],
             vec![Query::cypher("q1")
                 .query("MATCH (n) RETURN n")
-                .from_source("src1")
+                .from_input("src1")
                 .build()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )
@@ -1065,12 +1066,12 @@ mod tests {
             vec![
                 Query::cypher("q-on")
                     .query("MATCH (n) RETURN n")
-                    .from_source("src-on")
+                    .from_input("src-on")
                     .auto_start(true)
                     .build(),
                 Query::cypher("q-off")
                     .query("MATCH (n) RETURN n")
-                    .from_source("src-off")
+                    .from_input("src-off")
                     .auto_start(false)
                     .build(),
             ],
@@ -1133,7 +1134,7 @@ mod tests {
                 .with_property("interval", serde_json::json!(500))],
             vec![Query::cypher("q1")
                 .query("MATCH (s:Sensor) WHERE s.temp > 75 RETURN s")
-                .from_source("src1")
+                .from_input("src1")
                 .auto_start(true)
                 .build()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])
@@ -1168,7 +1169,10 @@ mod tests {
             parsed.instances[0].queries[0].query,
             "MATCH (s:Sensor) WHERE s.temp > 75 RETURN s"
         );
-        assert_eq!(parsed.instances[0].queries[0].sources[0].source_id, "src1");
+        assert_eq!(
+            parsed.instances[0].queries[0].inputs[0],
+            crate::api::models::QueryInputConfigDto::Component("src1".to_string())
+        );
 
         assert_eq!(parsed.instances[0].reactions.len(), 1);
         assert_eq!(parsed.instances[0].reactions[0].id, "rx1");
@@ -1453,7 +1457,7 @@ mod tests {
             vec![TestSource::new("src1", "mock")],
             vec![Query::cypher("q1")
                 .query("MATCH (n) RETURN n")
-                .from_source("src1")
+                .from_input("src1")
                 .build()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )

@@ -161,8 +161,8 @@ instances:
       - id: high-temp
         query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-feed
+        inputs:
+          - sensor-feed
         autoStart: true
     reactions:
       - kind: log
@@ -493,8 +493,9 @@ mismatched query catalogs are rejected.
 
 Components default to `autoStart: true`. Connections are bounded, with
 `defaultPipeCapacity: 32` unless overridden on the graph or an individual
-connection's `capacity`. A component name selects its only port in the required
-direction. For multiple ports, use an explicit endpoint:
+connection's `capacity`. A component name selects the factory's declared primary
+port in the required direction, or its only port when no primary is declared.
+Multiple ports without a primary are ambiguous. To select a different port, use an explicit endpoint:
 `{from: {component: producer, port: output}, to: consumer}`.
 Output stream names default to `component-id/port-id`; `streams` can override
 them. A factory's own stream setting, if provided, must agree with that binding.
@@ -504,9 +505,11 @@ IDs. Resource roles and ownership come from their recipes; optional
 `resourceDependencies` lists prerequisite resource IDs. `config` values are
 literal factory settings, not resolved environment/secret references.
 
-**Existing `computation.definition` configurations remain supported.** This is
-the expanded Core version-1 `DesiredTopology` format, used for saved snapshots
+**`computation.definition`** is the expanded Core version-1 `DesiredTopology`
+format, used for saved snapshots
 and advanced pipe, configuration-reference, merge and recovery settings.
+Its YAML uses single-entry maps for enum variants, matching the JSON representation,
+so generated configurations and exported snapshots use the same structure.
 Both forms resolve into the same graph construction and validation paths.
 Use exactly one of `graph` or `definition`. Root computation configuration
 cannot be mixed with explicit instances. External component/pipe bindings
@@ -1059,8 +1062,8 @@ sources:
 queries:
   - id: my-query
     query: "MATCH (n) WHERE n.value > ${THRESHOLD:-10} RETURN n"
-    sources:
-      - sourceId: data-source
+    inputs:
+      - data-source
     autoStart: true
 
 reactions:
@@ -1828,8 +1831,8 @@ queries:
       WHERE o.status = 'active'
       RETURN o.id, o.customer_id, o.total
     queryLanguage: Cypher
-    sources:
-      - sourceId: orders-db
+    inputs:
+      - orders-db
     autoStart: true
     enableBootstrap: true
 ```
@@ -1839,13 +1842,54 @@ queries:
 | `id` | string | (required) | Unique query identifier |
 | `query` | string | (required) | Query string (Cypher or GQL) |
 | `queryLanguage` | string | `GQL` | Query language: `Cypher` or `GQL` |
-| `sources` | array | (required) | Source subscriptions |
+| `inputs` | array | (required) | Upstream components to consume: a source, another query or a transformer. Each entry is a component name (its primary output) or an object `{component, port?, nodes?, relations?, pipeline?}`. |
+| `result` | object | `{}` | Result options. `result.label` sets the node label of published results; it never changes the output schema. |
 | `autoStart` | boolean | `false` | Start query automatically |
-| `enableBootstrap` | boolean | `true` | Process initial data from sources |
+| `enableBootstrap` | boolean | `true` | Process initial data from inputs |
 | `priorityQueueCapacity` | integer | (global) | Override input queue capacity, including live events queued during bootstrap |
 | `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
 | `storageBackend` | string or object | (instance default) | Index backend for this query. See [Per-Query Index Backend](#per-query-index-backend). |
 | `joins` | array | (none) | Synthetic join definitions |
+
+#### Query Inputs and Chaining
+
+`inputs` names upstream components. The component can be a source, **another query**, or a
+transformer, so a query's output feeds the next query exactly like a source does. A bare name
+consumes the component's primary output; use the object form to pick another output `port` or to
+keep label selectors and a middleware `pipeline`:
+
+```yaml
+queries:
+  - id: room-comfort
+    inputs: [facilities]
+    result:
+      label: RoomComfort          # node label of this query's published results
+    query: |
+      MATCH (r:Room)
+      RETURN r.id AS RoomId, r.floor AS FloorId, r.comfort AS ComfortLevel
+
+  - id: floor-comfort
+    inputs:
+      - room-comfort              # shorthand for { component: room-comfort }
+    result:
+      label: FloorComfort
+    query: |
+      MATCH (r:RoomComfort)
+      RETURN r.FloorId AS FloorId, avg(r.ComfortLevel) AS ComfortLevel
+
+  - id: filtered
+    inputs:
+      - component: facilities
+        port: out                 # explicit output port (otherwise primary/only output)
+        nodes: [Room]
+        pipeline: [decode]
+```
+
+`result.label` only names the result nodes (default `Result`); every query output still uses the
+standard graph-change schema. Entries accept exactly `component`, `port`, `nodes`, `relations`
+and `pipeline`. The former `sources` / `sourceId` fields are no longer accepted. An empty
+component, a malformed port, a duplicate input or an empty `result.label` is rejected before the
+query is created.
 
 **Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
 
@@ -1897,8 +1941,8 @@ queries before their reactions.
 #### Source Subscriptions
 
 ```yaml
-sources:
-  - sourceId: orders-db
+inputs:
+  - component: orders-db
     nodes: [Order, Customer]      # Optional: filter node labels
     relations: [PLACED_BY]        # Optional: filter relation labels
     pipeline: [decoder, mapper]   # Optional: middleware pipeline
@@ -1914,9 +1958,9 @@ queries:
     query: |
       MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
       RETURN o.id, c.name
-    sources:
-      - sourceId: orders-db
-      - sourceId: customers-db
+    inputs:
+      - orders-db
+      - customers-db
     joins:
       - id: CUSTOMER
         keys:
@@ -2166,8 +2210,8 @@ instances:
     queries:
       - id: high-value-orders
         query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
-        sources:
-          - sourceId: analytics-db
+        inputs:
+          - analytics-db
     reactions:
       - kind: log
         id: analytics-log
@@ -2183,8 +2227,8 @@ instances:
     queries:
       - id: alert-threshold
         query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
-        sources:
-          - sourceId: metrics-api
+        inputs:
+          - metrics-api
     reactions:
       - kind: sse
         id: alert-stream
@@ -2306,7 +2350,7 @@ curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
     "id": "high-values",
     "query": "MATCH (n:Item) WHERE n.value > 100 RETURN n",
     "queryLanguage": "Cypher",
-    "sources": [{"sourceId": "test-source"}],
+    "inputs": ["test-source"],
     "autoStart": true
   }'
 
@@ -2731,8 +2775,8 @@ queries:
       MATCH (p:Product)
       WHERE p.quantity <= p.reorder_point
       RETURN p.sku, p.name, p.quantity, p.reorder_point
-    sources:
-      - sourceId: inventory-db
+    inputs:
+      - inventory-db
 
 reactions:
   - kind: http
@@ -2756,8 +2800,8 @@ queries:
       WHERE t.amount > 10000
         AND t.country <> t.account_country
       RETURN t.id, t.account_id, t.amount, t.country
-    sources:
-      - sourceId: transactions-db
+    inputs:
+      - transactions-db
 
 reactions:
   - kind: sse
@@ -2823,8 +2867,8 @@ instances:
           WHERE o.total > ${ORDER_THRESHOLD:-1000}
           RETURN o.id, o.customer_id, o.total, o.status
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
         autoStart: true
         enableBootstrap: true
 
@@ -2834,8 +2878,8 @@ instances:
           WHERE c.created_at > datetime() - duration('P7D')
           RETURN c.customer_id, c.email, c.created_at
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
         autoStart: true
 
     reactions:
@@ -2903,8 +2947,8 @@ instances:
     queries:
       - id: active-users
         query: "MATCH (u:users) WHERE u.last_active > datetime() - duration('PT1H') RETURN count(u) as active_count"
-        sources:
-          - sourceId: analytics-db
+        inputs:
+          - analytics-db
         autoStart: true
     reactions:
       - kind: sse
@@ -2928,8 +2972,8 @@ instances:
     queries:
       - id: test-query
         query: "MATCH (s:SensorReading) WHERE s.temperature > 28 RETURN s"
-        sources:
-          - sourceId: test-data
+        inputs:
+          - test-data
         autoStart: true
     reactions:
       - kind: log
@@ -3041,14 +3085,14 @@ instances:
     queries:
       - id: new-commits
         query: "MATCH (c:Commit) RETURN c ORDER BY c.timestamp DESC"
-        sources:
-          - sourceId: github-events
+        inputs:
+          - github-events
         autoStart: true
 
       - id: large-payments
         query: "MATCH (p:Payment) WHERE p.amount > 10000 RETURN p"
-        sources:
-          - sourceId: stripe-events
+        inputs:
+          - stripe-events
         autoStart: true
 
     reactions:
@@ -3106,8 +3150,8 @@ instances:
       - id: monitored-changes
         query: "${MAIN_QUERY:-MATCH (n) RETURN n}"
         queryLanguage: Cypher
-        sources:
-          - sourceId: main-db
+        inputs:
+          - main-db
         autoStart: true
         enableBootstrap: true
 

@@ -57,8 +57,8 @@ instances:
           MATCH (g:Generic)
           RETURN count(g) AS TotalCount
         queryLanguage: Cypher
-        sources:
-          - sourceId: data-source
+        inputs:
+          - data-source
 
   # Sum and average
       - id: value-stats
@@ -69,8 +69,8 @@ instances:
                  avg(g.value) AS AverageValue,
                  count(g) AS RecordCount
         queryLanguage: Cypher
-        sources:
-          - sourceId: data-source
+        inputs:
+          - data-source
 
   # Min and Max
       - id: value-extremes
@@ -80,8 +80,8 @@ instances:
           RETURN min(g.value) AS MinValue,
                  max(g.value) AS MaxValue
         queryLanguage: Cypher
-        sources:
-          - sourceId: data-source
+        inputs:
+          - data-source
 
   # Filtered aggregation - positive values only
       - id: positive-stats
@@ -93,8 +93,8 @@ instances:
                  sum(g.value) AS PositiveSum,
                  avg(g.value) AS PositiveAvg
         queryLanguage: Cypher
-        sources:
-          - sourceId: data-source
+        inputs:
+          - data-source
 
   # Filtered aggregation - negative values only
       - id: negative-stats
@@ -105,8 +105,8 @@ instances:
           RETURN count(g) AS NegativeCount,
                  sum(g.value) AS NegativeSum
         queryLanguage: Cypher
-        sources:
-          - sourceId: data-source
+        inputs:
+          - data-source
 
     reactions:
       - kind: log

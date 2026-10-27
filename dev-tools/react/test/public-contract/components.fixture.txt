@@ -22,10 +22,10 @@ import {
 } from '@drasi/react/components';
 import type {
   DrasiClientOptions, DrasiInitializeOptions, ConnectionStatus, DrasiError, DrasiErrorCode, DrasiErrorDetails,
-  ReactionReference, QueryConfig, ReactionConfig, Component, ResultRow, QueryResult,
-  ResultChange, QuerySnapshot, QueryDelta, ResultAdapter, ResultAdapterContext,
-  LegacyResultAdapterOptions, ResultReconciliationOptions, RowKey, QuerySubscription,
-  QuerySubscriptionState, QueryStatus, QueryErrorScope,
+  ReactionReference, QueryConfig, ReactionConfig, Component, ResultRow, OutputResult,
+  ResultChange, OutputSnapshot, OutputDelta, ResultAdapter, ResultAdapterContext,
+  LegacyResultAdapterOptions, ResultReconciliationOptions, RowKey, OutputSubscription,
+  OutputSubscriptionState, QueryStatus, QueryErrorScope,
 } from '@drasi/react/client';
 import { accumulateResult, createLegacyResultAdapter, sse034ResultAdapter } from '@drasi/react/client';
 import type {
@@ -50,18 +50,18 @@ export type RootQueryConfig = Assert<Equal<Root.QueryConfig, QueryConfig>>;
 export type RootReactionConfig = Assert<Equal<Root.ReactionConfig, ReactionConfig>>;
 export type RootComponent = Assert<Equal<Root.Component<QueryConfig>, Component<QueryConfig>>>;
 export type RootRow = Assert<Equal<Root.ResultRow, ResultRow>>;
-export type RootResult = Assert<Equal<Root.QueryResult, QueryResult>>;
-export type RootTypedResult = Assert<Equal<Root.QueryResult<Temperature>, QueryResult<Temperature>>>;
+export type RootResult = Assert<Equal<Root.OutputResult, OutputResult>>;
+export type RootTypedResult = Assert<Equal<Root.OutputResult<Temperature>, OutputResult<Temperature>>>;
 export type RootChange = Assert<Equal<Root.ResultChange<Temperature>, ResultChange<Temperature>>>;
-export type RootSnapshot = Assert<Equal<Root.QuerySnapshot<Temperature>, QuerySnapshot<Temperature>>>;
-export type RootDelta = Assert<Equal<Root.QueryDelta<Temperature>, QueryDelta<Temperature>>>;
+export type RootSnapshot = Assert<Equal<Root.OutputSnapshot<Temperature>, OutputSnapshot<Temperature>>>;
+export type RootDelta = Assert<Equal<Root.OutputDelta<Temperature>, OutputDelta<Temperature>>>;
 export type RootAdapter = Assert<Equal<Root.ResultAdapter, ResultAdapter>>;
 export type RootAdapterContext = Assert<Equal<Root.ResultAdapterContext, ResultAdapterContext>>;
 export type RootLegacyOptions = Assert<Equal<Root.LegacyResultAdapterOptions, LegacyResultAdapterOptions>>;
 export type RootReconciliation = Assert<Equal<Root.ResultReconciliationOptions, ResultReconciliationOptions>>;
 export type RootRowKey = Assert<Equal<Root.RowKey, RowKey>>;
-export type RootSubscription = Assert<Equal<Root.QuerySubscription, QuerySubscription>>;
-export type RootSubscriptionState = Assert<Equal<Root.QuerySubscriptionState, QuerySubscriptionState>>;
+export type RootSubscription = Assert<Equal<Root.OutputSubscription, OutputSubscription>>;
+export type RootSubscriptionState = Assert<Equal<Root.OutputSubscriptionState, OutputSubscriptionState>>;
 export type RootQueryStatus = Assert<Equal<Root.QueryStatus, QueryStatus>>;
 export type RootQueryScope = Assert<Equal<Root.QueryErrorScope, QueryErrorScope>>;
 export type RootReducer = Assert<Equal<typeof Root.accumulateResult, typeof accumulateResult>>;

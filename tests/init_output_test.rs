@@ -1031,12 +1031,13 @@ fn test_query_generates_valid_yaml() {
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
-                sources: vec![SourceSubscriptionConfigDto {
-                    source_id: "test-source".to_string(),
+                inputs: vec![QueryInputConfigDto::Expanded(QueryInputObjectDto {
+                    component: "test-source".to_string(),
+                    port: None,
                     nodes: vec!["Node".to_string()],
                     relations: vec!["REL".to_string()],
                     pipeline: vec![],
-                }],
+                })],
                 joins: None,
                 priority_queue_capacity: None,
                 dispatch_buffer_capacity: None,
@@ -1044,6 +1045,7 @@ fn test_query_generates_valid_yaml() {
                 storage_backend: None,
                 outbox_capacity: 1000,
                 bootstrap_timeout_secs: 300,
+                result: Default::default(),
             }],
             reactions: vec![],
             identity_providers: vec![],
@@ -1068,7 +1070,12 @@ fn test_query_generates_valid_yaml() {
         !yaml.contains("bootstrapBufferSize:"),
         "removed bootstrapBufferSize must not be generated"
     );
-    assert!(yaml.contains("sourceId:"), "Should contain sourceId");
+    assert!(yaml.contains("inputs:"), "Should contain inputs");
+    assert!(yaml.contains("component:"), "Should contain component");
+    assert!(
+        !yaml.contains("sourceId:"),
+        "removed source subscription fields must not be generated"
+    );
 
     let parsed = parse_yaml_config(&yaml).expect("Should parse back to config");
     assert_eq!(parsed.instances[0].queries.len(), 1);
@@ -1132,12 +1139,7 @@ fn test_full_config_roundtrip() {
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
-                sources: vec![SourceSubscriptionConfigDto {
-                    source_id: "mock-source".to_string(),
-                    nodes: vec![],
-                    relations: vec![],
-                    pipeline: vec![],
-                }],
+                inputs: vec![QueryInputConfigDto::Component("mock-source".to_string())],
                 joins: None,
                 priority_queue_capacity: None,
                 dispatch_buffer_capacity: None,
@@ -1145,6 +1147,7 @@ fn test_full_config_roundtrip() {
                 storage_backend: None,
                 outbox_capacity: 1000,
                 bootstrap_timeout_secs: 300,
+                result: Default::default(),
             }],
             reactions: vec![ReactionConfig {
                 kind: "log".to_string(),

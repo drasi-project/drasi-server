@@ -27,7 +27,7 @@ describe('Trading with the built @drasi/react dependency and synthetic transport
     expect([...first.backend.queries.keys()]).toEqual(QUERY_IDS);
     for (const query of ALL_QUERIES) {
       expect(first.backend.queries.get(query.id)).toEqual({
-        id: query.id, query: query.query, sources: query.sources, joins: query.joins,
+        id: query.id, query: query.query, inputs: query.inputs, joins: query.joins,
         queryLanguage: 'Cypher', autoStart: true,
       });
     }

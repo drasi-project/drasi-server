@@ -6,11 +6,11 @@
 import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
 import type { DrasiSSEClient } from './DrasiSSEClient';
 import type {
-  ConnectionStatus, QueryResult, QuerySubscription, QuerySubscriptionState, ResultRow,
+  ConnectionStatus, OutputResult, OutputSubscription, OutputSubscriptionState, ResultRow,
 } from './types';
 
 interface SubscriptionOptions {
-  queryId: string;
+  outputId: string;
   source: DrasiSSEClient;
   snapshot: (signal: AbortSignal) => Promise<ResultRow[]>;
   details: DrasiErrorDetails;
@@ -26,13 +26,13 @@ interface SubscriptionOptions {
  * Pending changes are counted, not retained/replayed: without a shared cursor
  * neither the snapshot nor an overlapping delta can be chosen as "newer".
  */
-export function subscribeToQuery(
+export function subscribeToOutput(
   options: SubscriptionOptions,
-  callback: (result: QueryResult) => void,
+  callback: (result: OutputResult) => void,
   onError?: (error: DrasiError) => void,
-  onStateChange?: (state: QuerySubscriptionState) => void,
-): QuerySubscription {
-  const { source, queryId, details } = options;
+  onStateChange?: (state: OutputSubscriptionState) => void,
+): OutputSubscription {
+  const { source, outputId, details } = options;
   let active = true;
   let queryTerminal = false;
   let hasSnapshot = false;
@@ -45,11 +45,11 @@ export function subscribeToQuery(
   let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let unsubscribeStatus = () => {};
-  let state: QuerySubscriptionState = {
+  let state: OutputSubscriptionState = {
     status: 'initial-loading', stale: false, error: null, errorScope: null,
   };
 
-  const publish = (next: QuerySubscriptionState) => {
+  const publish = (next: OutputSubscriptionState) => {
     state = next;
     try {
       onStateChange?.({ ...state });
@@ -91,7 +91,7 @@ export function subscribeToQuery(
       timer = setTimeout(fetchSnapshot, delay);
     }
   };
-  const deliver = (result: QueryResult): boolean => {
+  const deliver = (result: OutputResult): boolean => {
     try {
       callback(result);
       return true;
@@ -119,7 +119,7 @@ export function subscribeToQuery(
         return;
       }
       controller = null;
-      if (!deliver({ kind: 'snapshot', queryId, rows, receivedAt: Date.now() }) ||
+      if (!deliver({ kind: 'snapshot', outputId, rows, receivedAt: Date.now() }) ||
           !active || current !== generation) return;
       hasSnapshot = true;
       snapshotReady = true;
@@ -131,7 +131,7 @@ export function subscribeToQuery(
       }
     });
   };
-  const unsubscribe = source.subscribe(queryId, result => {
+  const unsubscribe = source.subscribe(outputId, result => {
     if (!active || queryTerminal || !source.isConnected()) return;
     if (controller) {
       pendingChanges += result.changes.length;
@@ -173,7 +173,7 @@ export function subscribeToQuery(
     unsubscribeStatus();
     options.onStop();
   };
-  const subscription: QuerySubscription = Object.assign(stop, {
+  const subscription: OutputSubscription = Object.assign(stop, {
     retry: () => {
       if (!active) return;
       queryTerminal = false;

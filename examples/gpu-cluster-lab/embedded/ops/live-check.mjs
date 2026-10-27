@@ -7,7 +7,7 @@ const demo = process.env.DEMO_URL ?? 'http://localhost:5400';
 const drasi = process.env.DRASI_URL ?? 'http://localhost:8080';
 const mode = process.argv[2] ?? '--smoke';
 assert.ok(['--smoke', '--errors', '--concurrency', '--commands', '--runbook', '--acceptance',
-  '--restart-snapshot', '--restart-verify'].includes(mode), 'Unknown live check mode');
+  '--restart-snapshot', '--restart-verify', '--capture-rows'].includes(mode), 'Unknown live check mode');
 
 async function json(base, path, options = {}) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15_000), ...options });
@@ -443,13 +443,25 @@ try {
       const data = event.split('\n').find(line => line.startsWith('data:'));
       if (data) {
         const message = JSON.parse(data.slice(5));
-        if (queryIds.includes(message.queryId)) observed = true;
+        if (queryIds.includes(message.output?.component) && message.output.port === 'out') {
+          assert.ok(!('queryId' in message), 'native output must retain its actual component identity');
+          assert.ok(Array.isArray(message.changes) && message.changes.length > 0);
+          for (const change of message.changes) {
+            assert.ok(['ADD', 'REPLACE', 'PATCH', 'DELETE'].includes(change.operation));
+            assert.ok(change.identity?.id, 'native changes require canonical element identity');
+          }
+          observed = true;
+        }
       }
     }
   }
 } finally { await reader.cancel(); }
 if (mode === '--restart-snapshot') {
   console.log(JSON.stringify(await prepareRestart()));
+} else if (mode === '--capture-rows') {
+  const batches = [];
+  for (const query of queryIds) batches.push({ query, rows: await rows(query) });
+  console.log(JSON.stringify(batches));
 } else {
   console.log('Live smoke passed: one instance, nine validated query feeds, confirmed placement, resilience and actual SSE updates.');
 }

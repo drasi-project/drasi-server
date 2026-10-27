@@ -29,7 +29,8 @@ use crate::api::models::{
     ComponentEventDto, ComponentLogTypeDto, ComponentStatusDto, ComponentTypeDto,
     ConfigValueBoolSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
     ConfigValueU64Schema, ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto,
-    RedbStateStoreConfigDto, SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
+    QueryInputConfigDto, QueryInputObjectDto, QueryResultConfigDto, RedbStateStoreConfigDto,
+    SourceMiddlewareConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::handlers::{CloneInstanceRequest, CloneInstanceResponse};
@@ -153,7 +154,9 @@ use utoipa::openapi::RefOr;
             super::handlers::ComponentSelection,
             super::handlers::ComponentRemoval,
             QueryConfigDto,
-            SourceSubscriptionConfigDto,
+            QueryInputConfigDto,
+            QueryInputObjectDto,
+            QueryResultConfigDto,
             SourceMiddlewareConfigDto,
             RedbStateStoreConfigDto,
             ConfigValueStringSchema,

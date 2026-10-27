@@ -19,20 +19,16 @@ instances:
             kind: memoryIndexes
           wall-query-catalog:
             kind: queryCatalog
-          wall-query-snapshots:
-            kind: nativeQuerySnapshots
-            catalog: wall-query-catalog
-            queries:
-              - scene-inputs
-              - geometry-context
-              - obstructions
-              - affected-journeys
-              - geometry-status
+          wall-output-snapshots:
+            kind: nativeOutputSnapshots
+            outputs:
+              - {component: scene-inputs, port: out}
+              - {component: geometry-context, port: out}
+              - {component: obstructions, port: out}
+              - {component: affected-journeys, port: out}
+              - {component: geometry-status, port: out}
             timeoutMs: 5000
             maxReaders: 16
-
-        resourceDependencies:
-          wall-query-snapshots: [wall-query-catalog]
 
         components:
           - id: scene
@@ -143,18 +139,12 @@ instances:
             kind: drasi.network/sse-sink
             version: "1"
             resources:
-              query_snapshots: wall-query-snapshots
+              output_snapshots: wall-output-snapshots
             config:
               host: 127.0.0.1
               port: 8422
               ssePath: /events
               heartbeatIntervalMs: 5000
-              queryStreams:
-                scene-inputs: scene-inputs/out
-                geometry-context: geometry-context/out
-                obstructions: obstructions/out
-                affected-journeys: affected-journeys/out
-                geometry-status: geometry-status/out
 
     # A component name selects its single output/input port.
         connections:

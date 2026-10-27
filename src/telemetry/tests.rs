@@ -44,7 +44,7 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
             .with_query(
                 Query::cypher("items")
                     .query("MATCH (n:Item) RETURN n.value AS value")
-                    .from_source("input")
+                    .from_input("input")
                     .enable_bootstrap(false)
                     .auto_start(true)
                     .build(),

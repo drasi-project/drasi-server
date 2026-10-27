@@ -374,7 +374,7 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
         "/api/v1/instances/test/queries",
         json!({
             "id":"selected", "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.value AS value",
-            "queryLanguage":"Cypher", "sources":[{"sourceId":"input"}],
+            "queryLanguage":"Cypher", "inputs":["input"],
             "autoStart":true, "enableBootstrap":false,
         }),
     )
@@ -576,16 +576,19 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
     std::fs::write(
             &config,
             serde_json::to_vec(&json!({
-                "id":"native-plugin-test", "host":"127.0.0.1", "port":api_port,
+                "host":"127.0.0.1", "port":api_port,
                 "persistConfig":false,
                 "enableUi":false, "autoInstallPlugins":false,
+                "instances":[{
+                "id":"native-plugin-test",
                 "sources":[{"kind":"http", "id":"input", "host":"127.0.0.1", "port":source_port}],
                 "queries":[{
                     "id":"selected", "queryLanguage":"Cypher", "autoStart":true,
-                    "enableBootstrap":false, "sources":[{"sourceId":"input"}],
+                    "enableBootstrap":false, "inputs":["input"],
                     "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.marker AS marker, n.value AS value"
                 }],
                 "reactions":[{"kind":"log", "id":"output", "queries":["selected"]}]
+                }]
             }))
             .unwrap(),
         )
@@ -697,7 +700,9 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let rows: Value = client
-                .get(format!("{base}/queries/selected/results"))
+                .get(format!(
+                    "{base}/instances/native-plugin-test/queries/selected/results"
+                ))
                 .send()
                 .await
                 .unwrap()

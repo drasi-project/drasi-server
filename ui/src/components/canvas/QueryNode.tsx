@@ -12,7 +12,7 @@ interface QueryNodeData {
   resultCount?: number;
   query?: string;
   queryLanguage?: string;
-  sourceIds?: string[];
+  inputIds?: string[];
   expanded?: boolean;
   locked?: boolean;
   error?: string;

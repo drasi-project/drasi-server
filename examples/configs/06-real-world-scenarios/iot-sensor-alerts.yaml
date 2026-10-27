@@ -71,8 +71,8 @@ instances:
                  s.unit AS Unit,
                  s.location AS Location
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-ingest
+        inputs:
+          - sensor-ingest
 
   # High temperature alerts (> 80F)
       - id: high-temp-alerts
@@ -85,8 +85,8 @@ instances:
                  s.location AS Location,
                  'HIGH_TEMPERATURE' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-ingest
+        inputs:
+          - sensor-ingest
 
   # Low temperature alerts (< 32F - freezing)
       - id: freeze-alerts
@@ -99,8 +99,8 @@ instances:
                  s.location AS Location,
                  'FREEZING' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-ingest
+        inputs:
+          - sensor-ingest
 
   # High humidity alerts (> 70%)
       - id: humidity-alerts
@@ -113,8 +113,8 @@ instances:
                  s.location AS Location,
                  'HIGH_HUMIDITY' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-ingest
+        inputs:
+          - sensor-ingest
 
   # Sensor statistics
       - id: sensor-stats
@@ -127,8 +127,8 @@ instances:
                  min(s.value) AS MinValue,
                  max(s.value) AS MaxValue
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-ingest
+        inputs:
+          - sensor-ingest
 
     reactions:
   # Console logging for debugging

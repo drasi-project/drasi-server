@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient, type DrasiClientOptions } from '../src/client/DrasiClient';
 import { accumulateResult } from '../src/client/accumulation';
 import { DrasiError } from '../src/client/errors';
-import type { QueryResult, QuerySubscription, ResultRow } from '../src/client/types';
+import type { OutputResult, OutputSubscription, ResultRow } from '../src/client/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
 import { ReadServer, deferred, failure, json, refs } from './server';
 
@@ -166,7 +166,7 @@ describe('bounded best-effort reconciliation', () => {
     const f = await fixture();
     f.server.snapshot = vi.fn().mockResolvedValueOnce(failure(503)).mockImplementation(async () => json([]));
     const results = vi.fn();
-    let subscription: QuerySubscription;
+    let subscription: OutputSubscription;
     subscription = f.client.subscribe('stocks', results, () => subscription.retry());
     await flush();
     expect(subscription.getState().status).toBe('live');
@@ -177,8 +177,8 @@ describe('bounded best-effort reconciliation', () => {
 
   it('supports unsubscribe from result/state callbacks without late live state or extra snapshot reads', async () => {
     const f = await fixture();
-    let subscription: QuerySubscription;
-    const result = vi.fn<(result: QueryResult) => void>(() => subscription());
+    let subscription: OutputSubscription;
+    const result = vi.fn<(result: OutputResult) => void>(() => subscription());
     subscription = f.client.subscribe('stocks', result);
     await flush();
     expect(result).toHaveBeenCalledOnce();

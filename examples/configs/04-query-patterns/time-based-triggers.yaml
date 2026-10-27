@@ -64,8 +64,8 @@ instances:
                  a.timestamp AS Timestamp,
                  a.type AS ActivityType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
   # Find recently active users (within last 60 seconds)
   # Note: This is a simplified pattern - full time comparison requires datetime support
@@ -78,8 +78,8 @@ instances:
                  a.timestamp AS LastActivity,
                  'ACTIVE' AS Status
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
   # Detect stale sessions
   # Pattern: Sessions that haven't been updated recently
@@ -93,8 +93,8 @@ instances:
                  s.last_activity AS LastActivity,
                  'STALE' AS Status
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
   # Order processing timeout pattern
   # Detect orders stuck in 'processing' state
@@ -108,8 +108,8 @@ instances:
                  o.status AS Status,
                  'TIMEOUT' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
   # Heartbeat monitoring pattern
   # Detect services that haven't sent heartbeat
@@ -123,8 +123,8 @@ instances:
                  s.last_heartbeat AS LastHeartbeat,
                  'HEARTBEAT_MISSING' AS Alert
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
   # SLA violation pattern
   # Tickets not resolved within SLA window
@@ -139,8 +139,8 @@ instances:
                  t.sla_deadline AS Deadline,
                  'SLA_BREACH' AS Alert
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-stream
+        inputs:
+          - activity-stream
 
     reactions:
       - kind: log

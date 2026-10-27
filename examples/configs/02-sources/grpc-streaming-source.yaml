@@ -63,8 +63,8 @@ instances:
           MATCH (m:Message)
           RETURN m.id AS MessageId, m.payload AS Payload, m.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: grpc-stream
+        inputs:
+          - grpc-stream
 
   # Aggregate message statistics
       - id: stream-stats
@@ -73,8 +73,8 @@ instances:
           MATCH (m:Message)
           RETURN count(m) AS MessageCount
         queryLanguage: Cypher
-        sources:
-          - sourceId: grpc-stream
+        inputs:
+          - grpc-stream
 
     reactions:
       - kind: log

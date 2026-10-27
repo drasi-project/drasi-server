@@ -6,7 +6,7 @@
 
 Every REST operation uses
 `/api/v1/instances/{encodedInstanceId}/...`; there is no discovery-order
-fallback. Subscriptions must belong to the configured `queryIds`. Optional
+fallback. Subscriptions must belong to the configured `outputIds`. Optional
 inspection may read another query within that same explicit instance.
 Validation checks lifecycle status, SSE reaction kind and query membership.
 It does not compare desired query text or overwrite deployment settings.
@@ -22,10 +22,11 @@ The request is `GET .../queries/{id}?view=full` or
 | `ComponentLinks` | `{ self: string, full: string }`; resource and `?view=full` links, normalized to encoded instance-scoped paths. |
 | `ComponentStatus` | `'Starting' \| 'Running' \| 'Stopping' \| 'Stopped' \| 'Error' \| 'Reconfiguring' \| 'Added' \| 'Removed'`. |
 | `QueryLanguage` | `'Cypher' \| 'GQL'`; the server must return an explicit value. |
-| `QueryConfig` | Required `id: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `sources: readonly QuerySource[]`, `enableBootstrap: boolean`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
+| `QueryConfig` | Required `id: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `inputs: readonly QueryInput[]`, optional `result?: QueryResultOptions`, `enableBootstrap: boolean`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
 | Optional `QueryConfig` fields | `joins?: readonly QueryJoin[]`, `priorityQueueCapacity?: number`, `dispatchBufferCapacity?: number`, `dispatchMode?: 'Channel'`, `storageBackend?: JsonValue`. Capacities/timeouts are nonnegative safe integers; absent fields do not acquire client defaults. |
-| `QuerySource` | `{ sourceId: string, pipeline: readonly string[], nodes: readonly string[], relations: readonly string[] }`. |
-| `QueryJoin` / `QueryJoinKey` | `{ id: string, keys: readonly QueryJoinKey[] }` / `{ label: string, property: string }`. Source and join ordering is retained. |
+| `QueryInput` / `QueryInputObject` | A bare upstream component name (its primary output), or `{ component: string, port?: string, nodes?: readonly string[], relations?: readonly string[], pipeline?: readonly string[] }`; the server omits unset/empty optional fields. The component may be a source, another query or a transformer. |
+| `QueryResultOptions` | `{ label?: string }`: the node label of published results. It never changes the output schema. |
+| `QueryJoin` / `QueryJoinKey` | `{ id: string, keys: readonly QueryJoinKey[] }` / `{ label: string, property: string }`. Input and join ordering is retained. |
 | `QueryMiddleware` | `{ kind: string, name: string, config: Readonly<Record<string, JsonValue>> }`; configuration belongs to its server plugin. |
 | `ReactionConfig` | Required `id: string`, `kind: string`, `queries: readonly string[]`; flattened plugin fields have type `JsonValue \| undefined`, not a nested creation body. |
 | `SseReactionConfig` | Extends `ReactionConfig` with `kind: 'sse'`, `host: string`, `port: number` (integer 1–65535), `ssePath: string` (starts with `/`) and `heartbeatIntervalMs: number` (nonnegative safe integer). `getReaction()` still returns the general reaction read type. |
@@ -53,12 +54,14 @@ identity and returns safely encoded, instance-scoped links. It never follows
 arbitrary response links, and refuses REST redirects into another path/origin.
 The UI helper returns `${serverUrl}/ui?instance={encodedInstanceId}`.
 
-The historical `test/fixtures/server-v1/contract.json` contains **unmodified actual response
+The historical `test/fixtures/server-v1/contract.json` contains **actual response
 bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. The historical `test/fixtures/server-v1-0.2.3/contract.json` separately
+cases. The recorded query config's subscription list was rewritten once, in the fixture
+itself, from the removed `sources` field to the v1 `inputs` shape (the provenance `note` says
+so); tests consume the fixtures directly. The historical `test/fixtures/server-v1-0.2.3/contract.json` separately
 records the own rebuilt server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
 read tests consume both versions. New records are never substituted into the
 old provenance. See [verified compatibility](testing.md#verified-compatibility).
@@ -102,7 +105,7 @@ export function authenticatedClient(
   };
   return new DrasiClient({
     serverUrl: 'https://drasi.example', instanceId: 'analytics',
-    queryIds: ['readings'],
+    outputIds: ['readings'],
     reaction: { id: 'events', endpoint: 'https://events.example/changes' },
     credentials: 'include', headers, eventSourceFactory: openStream,
   });

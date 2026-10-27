@@ -7,7 +7,7 @@ import type { DrasiError } from '../client/errors';
 import type { QueryConfig, QueryErrorScope, QueryStatus, ResultRow, RowKey } from '../client/types';
 
 /** Identity precedes projection. A generic alone never validates a wire row. */
-export interface UseDrasiQueryOptions<T extends object = ResultRow> {
+export interface UseDrasiOutputOptions<T extends object = ResultRow> {
   /**
    * Required stable RAW-row identity, including sparse deletes and both sides
    * of updates. Return a nonempty string; invalid keys are errors, not skips.
@@ -25,7 +25,7 @@ export interface UseDrasiQueryOptions<T extends object = ResultRow> {
 }
 
 /** Best-effort data and explicit recovery state, not an atomic server snapshot. */
-export interface UseDrasiQueryResult<T extends object = ResultRow> {
+export interface UseDrasiOutputResult<T extends object = ResultRow> {
   data: T[] | null;
   status: QueryStatus;
   stale: boolean;
@@ -33,9 +33,15 @@ export interface UseDrasiQueryResult<T extends object = ResultRow> {
   error: DrasiError | null;
   errorScope: QueryErrorScope | null;
   lastUpdate: Date | null;
-  /** Query-local REST refresh; use useDrasiClient().retry for a shared connection failure. */
+  /** Output-local refresh; use useDrasiClient().retry for a shared connection failure. */
   retry: () => void;
 }
+
+/** Options of the continuous-query facade; identical to the generic output options. */
+export interface UseDrasiQueryOptions<T extends object = ResultRow> extends UseDrasiOutputOptions<T> {}
+
+/** Result of the continuous-query facade; identical to the generic output result. */
+export interface UseDrasiQueryResult<T extends object = ResultRow> extends UseDrasiOutputResult<T> {}
 
 export interface UseDrasiQueryDefinitionResult {
   config: QueryConfig | null;

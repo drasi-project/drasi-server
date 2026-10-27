@@ -105,29 +105,18 @@ fn declare(topology: &mut DesiredTopology, name: &str, role: ResourceRole, recip
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn native_query_snapshot_recipe_retains_exact_catalogue_scope_and_roundtrips() -> Result<()> {
+async fn native_output_snapshot_recipe_is_an_immutable_policy_and_roundtrips() -> Result<()> {
     let mut topology = DesiredInstance::default().topology;
     declare(
         &mut topology,
-        "catalog",
-        ResourceRole::QueryCatalog,
-        json!({"kind":"queryCatalog"}),
-    );
-    declare(
-        &mut topology,
         "snapshots",
-        ResourceRole::QueryCatalog,
+        ResourceRole::OutputCatalogue,
         json!({
-            "kind":"nativeQuerySnapshots",
-            "catalog":"catalog",
-            "queries":["q"],
+            "kind":"nativeOutputSnapshots",
+            "outputs":[{"component":"q","port":"out"},{"component":"source"}],
             "timeoutMs":1000,
             "maxReaders":2
         }),
-    );
-    topology.resource_dependencies.insert(
-        resource("snapshots"),
-        BTreeMap::from([(resource("catalog"), ResourceRole::QueryCatalog)]),
     );
     let config = ComputationConfig {
         definition: topology,
@@ -140,61 +129,30 @@ async fn native_query_snapshot_recipe_retains_exact_catalogue_scope_and_roundtri
     assert_eq!(serde_json::to_value(&yaml_roundtrip)?, json);
     validate_definition(&yaml_roundtrip)?;
     let resolver = ServerManagementResources::new(&PluginRegistry::new(), None)?;
-    let catalog_spec = &config.definition.resources[0];
-    let snapshot_spec = &config.definition.resources[1];
-    let catalog = resolver
-        .resolve(
-            INSTANCE,
-            &config.definition.graph_id,
-            catalog_spec,
-            &config.definition.resource_configurations[&catalog_spec.id],
-        )
-        .await?;
-    let dependencies = BTreeMap::from([(catalog_spec.id.clone(), catalog)]);
+    let snapshot_spec = &config.definition.resources[0];
     let recipe = &config.definition.resource_configurations[&snapshot_spec.id];
-    let resolved = resolver
-        .resolve_with_dependencies(
-            INSTANCE,
-            &config.definition.graph_id,
-            snapshot_spec,
-            recipe,
-            &dependencies,
-        )
-        .await?;
-    assert_eq!(
-        resolved
-            .get::<drasi_host_sdk::computation::NativeQuerySnapshotsResource>()?
-            .graph_id(),
-        config.definition.graph_id,
-    );
-    assert!(resolver
-        .resolve_with_dependencies(INSTANCE, "foreign", snapshot_spec, recipe, &dependencies,)
-        .await
-        .is_err());
-    assert!(resolver
+    resolver
         .resolve(INSTANCE, &config.definition.graph_id, snapshot_spec, recipe)
-        .await
-        .is_err());
-    let wrong_type = BTreeMap::from([(
-        catalog_spec.id.clone(),
-        ResourceHandle::new(ResourceRole::QueryCatalog, Arc::new("not a catalogue")),
-    )]);
-    assert!(resolver
-        .resolve_with_dependencies(
-            INSTANCE,
-            &config.definition.graph_id,
-            snapshot_spec,
-            recipe,
-            &wrong_type,
-        )
-        .await
-        .is_err());
-    let mut invalid = config.clone();
-    invalid.definition.resource_dependencies.clear();
-    assert!(validate_definition(&invalid).is_err());
+        .await?
+        .get::<drasi_host_sdk::computation::NativeOutputSnapshotsResource>()?;
+    // The policy holds no catalogue, so a dependency is rejected rather than ignored.
+    let mut with_dependency = config.clone();
+    declare(
+        &mut with_dependency.definition,
+        "catalog",
+        ResourceRole::QueryCatalog,
+        json!({"kind":"queryCatalog"}),
+    );
+    with_dependency.definition.resource_dependencies.insert(
+        resource("snapshots"),
+        BTreeMap::from([(resource("catalog"), ResourceRole::QueryCatalog)]),
+    );
+    assert!(validate_definition(&with_dependency).is_err());
     for update in [
-        json!({"queries":[]}),
-        json!({"queries":["q","q"]}),
+        json!({"outputs":[]}),
+        json!({"outputs":[{"component":"q"},{"component":"q"}]}),
+        json!({"outputs":[{"component":"q","port":"out","extra":true}]}),
+        json!({"queries":["q"]}),
         json!({"timeoutMs":0}),
         json!({"maxReaders":0}),
         json!({"maxReaders":1025}),
@@ -208,7 +166,7 @@ async fn native_query_snapshot_recipe_retains_exact_catalogue_scope_and_roundtri
             .as_object_mut()
             .unwrap()
             .extend(update.as_object().unwrap().clone());
-        assert!(validate_definition(&invalid).is_err());
+        assert!(validate_definition(&invalid).is_err(), "{update}");
     }
     Ok(())
 }

@@ -309,8 +309,8 @@ instances:
       - id: test-query
         query: "MATCH (n) RETURN n"
         auto_start: true
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     assert_fails_with_field(yaml, "auto_start");
@@ -326,8 +326,8 @@ instances:
       - id: test-query
         query: "MATCH (n) RETURN n"
         query_language: Cypher
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     assert_fails_with_field(yaml, "query_language");
@@ -343,8 +343,8 @@ instances:
       - id: test-query
         query: "MATCH (n) RETURN n"
         enable_bootstrap: true
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     assert_fails_with_field(yaml, "enable_bootstrap");
@@ -360,8 +360,8 @@ instances:
       - id: test-query
         query: "MATCH (n) RETURN n"
         bootstrap_buffer_size: 10000
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     assert_fails_with_field(yaml, "bootstrap_buffer_size");
@@ -553,8 +553,8 @@ instances:
       - id: test-query
         query: "MATCH (n) RETURN n"
         unknownQueryField: value
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     assert_fails_with_field(yaml, "unknownQueryField");
@@ -725,8 +725,8 @@ instances:
         queryLanguage: Cypher
         autoStart: true
         enableBootstrap: true
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions:
       - kind: log
         id: test-log
@@ -844,8 +844,8 @@ instances:
     queries:
       - id: query-1
         query: "MATCH (n) RETURN n"
-        sources:
-          - sourceId: mock-1
+        inputs:
+          - mock-1
     reactions:
       - kind: log
         id: log-1

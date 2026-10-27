@@ -488,8 +488,8 @@ queries:
   - id: inline-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
-    sources:
-      - sourceId: inline-source
+    inputs:
+      - inline-source
     autoStart: true
 
 reactions:
@@ -933,10 +933,10 @@ queries:
       MATCH (u:User)-[:PLACED]->(o:Order)-[:CONTAINS]->(p:Product)
       RETURN u.name AS userName, o.order_id AS orderId, p.name AS productName
     queryLanguage: Cypher
-    sources:
-      - sourceId: users-source
-      - sourceId: orders-source
-      - sourceId: products-source
+    inputs:
+      - users-source
+      - orders-source
+      - products-source
     joins:
       - id: PLACED
         keys:
@@ -1033,8 +1033,8 @@ queries:
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
   - id: high-temp-alerts
@@ -1043,8 +1043,8 @@ queries:
       WHERE s.temperature > 80
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
 reactions:

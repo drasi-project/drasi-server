@@ -137,6 +137,48 @@ with open(os.environ["POLICY_LOG"], "a") as output:
                     ))
                     self.assertFalse(self.core.exists())
 
+    def test_local_test_plugins_copy_the_actual_cargo_target_not_stale_siblings(self):
+        self.core.mkdir()
+        cargo = self.directory / "bin/cargo"
+        cargo.write_text(f"#!{sys.executable}\n" + """
+import json, os, sys
+from pathlib import Path
+target = Path(sys.argv[sys.argv.index("--target-dir") + 1])
+with open(os.environ["POLICY_LOG"], "a") as output:
+    output.write(json.dumps(["cargo", str(target)]) + "\\n")
+folder = target / "debug"
+folder.mkdir(parents=True, exist_ok=True)
+for name in ("drasi_source_mock", "drasi_reaction_log", "drasi_reaction_http", "drasi_bootstrap_scriptfile"):
+    for prefix, suffix in (("lib", ".dylib"), ("lib", ".so"), ("", ".dll")):
+        (folder / (prefix + name + suffix)).write_text("fresh:" + str(target))
+""")
+        cargo.chmod(0o755)
+        for override in (None, str(self.directory / "shared target"), "relative target"):
+            with self.subTest(target=override):
+                self.log.write_text("")
+                stale = self.core / "target/debug"
+                stale.mkdir(parents=True, exist_ok=True)
+                for suffix in (".dylib", ".so"):
+                    (stale / ("libdrasi_source_mock" + suffix)).write_text("stale")
+                environment = {**self.env, "FIXTURE_MODE": "local"}
+                environment.pop("CARGO_TARGET_DIR", None)
+                if override is not None:
+                    environment["CARGO_TARGET_DIR"] = override
+                target = (self.core / "target" if override is None else
+                          Path(override) if Path(override).is_absolute() else self.server / override)
+                result = subprocess.run(
+                    ["make", "-f", str(ROOT / "Makefile"), "build-local-test-plugins"],
+                    cwd=self.server, env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                command, actual_target = self.calls()[-1]
+                self.assertEqual(command, "cargo")
+                self.assertEqual(Path(actual_target).resolve(), target.resolve())
+                copied = list((self.server / "target/debug/plugins").iterdir())
+                self.assertEqual(len(copied), 4)
+                self.assertTrue(all(path.read_text() == "fresh:" + actual_target for path in copied))
+
     def test_yaml_validation_needs_no_source_preparation_and_reports_test_failure(self):
         def script(document, step):
             job = document.split("\n  build_validation:\n", 1)[1]

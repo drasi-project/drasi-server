@@ -1,6 +1,6 @@
 use anyhow::{ensure, Context, Result};
 use drasi_computation_contracts::{
-    ChangeOperation, QueryChangeCodec, QueryRowKind, RecordId, RecordImage,
+    ChangeOperation, QueryChangeCodec, ResultNodeProjector, ResultOperationMetadata,
 };
 use gpu_contracts::{Configuration, Plan, Settings};
 use gpu_control::db::Table;
@@ -246,7 +246,9 @@ pub fn partition_records(records: &[Value]) -> Result<BTreeMap<&'static str, Vec
 #[derive(Default)]
 pub(crate) struct DatabaseInputs {
     rows: BTreeMap<String, Vec<Value>>,
-    aggregates: BTreeMap<String, HashMap<RecordId, Vec<Value>>>,
+    /// Aggregate rows keyed by their opaque row identity, which is independent
+    /// of the output scope that carried them.
+    aggregates: BTreeMap<String, HashMap<Vec<u8>, Vec<Value>>>,
     sequences: BTreeMap<String, u64>,
     snapshot_floors: BTreeMap<String, u64>,
     boundary: Option<BootstrapBoundary>,
@@ -272,23 +274,10 @@ impl DatabaseInputs {
                         row.records.len() <= 448,
                         "database input row bound exceeded"
                     );
-                    let record = QueryChangeCodec::encode_row(
-                        query,
-                        row.signature,
-                        &BTreeMap::from([(
-                            "records".into(),
-                            drasi_core_types::evaluation::variable_value::VariableValue::from(
-                                Value::Array(row.records.clone()),
-                            ),
-                        )]),
-                        QueryRowKind::Aggregation {
-                            grouping_keys: vec![],
-                            default_before: false,
-                            default_after: false,
-                        },
-                        RecordImage::Full,
-                    )?;
-                    aggregates.insert(record.identity().clone(), row.records.clone());
+                    aggregates.insert(
+                        ResultNodeProjector::signature_identity(row.signature).to_vec(),
+                        row.records.clone(),
+                    );
                 }
                 seeds.push((query.clone(), watermark.sequence, aggregates));
             }
@@ -325,10 +314,15 @@ impl DatabaseInputs {
         query: &str,
         sequence: u64,
         operations: &[ChangeOperation],
+        projection: &[ResultOperationMetadata],
     ) -> Result<()> {
         ensure!(
             DATABASE_QUERIES.contains(&query),
             "unknown database input query"
+        );
+        ensure!(
+            operations.len() == projection.len(),
+            "database query projection does not match its operations"
         );
         if self
             .snapshot_floors
@@ -344,11 +338,15 @@ impl DatabaseInputs {
             "database query output sequence regressed"
         );
         let mut aggregates = self.aggregates.get(query).cloned().unwrap_or_default();
-        for operation in operations {
+        for (operation, meta) in operations.iter().zip(projection) {
+            let identity = meta.row_identity.to_vec();
             match operation {
                 ChangeOperation::Added { after, .. } | ChangeOperation::Updated { after, .. } => {
                     let row = QueryChangeCodec::decode_row(after)?;
-                    ensure!(row.query_id == query, "database query identity mismatch");
+                    ensure!(
+                        row.identity == meta.row_identity,
+                        "database query row identity mismatch"
+                    );
                     ensure!(row.values.len() == 1, "unexpected database query columns");
                     let records: Vec<Value> = serde_json::from_value(serde_json::to_value(
                         row.values
@@ -356,10 +354,10 @@ impl DatabaseInputs {
                             .context("database query requires records")?,
                     )?)?;
                     ensure!(records.len() <= 448, "database input row bound exceeded");
-                    aggregates.insert(operation.identity().clone(), records);
+                    aggregates.insert(identity, records);
                 }
                 ChangeOperation::Deleted { .. } => {
-                    aggregates.remove(operation.identity());
+                    aggregates.remove(&identity);
                 }
             }
         }

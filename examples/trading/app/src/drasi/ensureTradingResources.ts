@@ -126,9 +126,9 @@ function queryContract(config: TradingQueryDefinition): string {
   return JSON.stringify({
     query: config.query.trim(),
     language: config.queryLanguage,
-    sources: config.sources.map(source => ({
-      sourceId: source.sourceId, pipeline: source.pipeline ?? [],
-      nodes: source.nodes ?? [], relations: source.relations ?? [],
+    inputs: config.inputs.map(input => typeof input === 'string' ? { component: input } : input).map(input => ({
+      component: input.component, port: input.port ?? null, pipeline: input.pipeline ?? [],
+      nodes: input.nodes ?? [], relations: input.relations ?? [],
     })),
     joins: (config.joins ?? []).map(join => ({
       id: join.id, keys: join.keys.map(key => ({ label: key.label, property: key.property })),

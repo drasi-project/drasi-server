@@ -274,7 +274,7 @@ for (const entry of entries) {
       expect(component.status).toBe('Running');
       assert(object(component.config));
       expect(component.config.queryLanguage).toBe('Cypher');
-      expect(component.config.sources).toMatchObject([{ sourceId: 'probe-feed' }]);
+      expect(component.config.inputs).toEqual(['probe-feed']);
       expect(component.config.query).toContain(`p.room = '${queryId === 'north-room' ? 'North' : 'South'}'`);
       expect(component.config.query).toContain('RETURN p.probeId AS probeId, p.room AS room, p.temperatureC AS temperatureC');
     }
@@ -347,7 +347,7 @@ for (const entry of entries) {
     const original = await full(request, evidence, queryPath);
     assert(object(original.config));
     const fields = [
-      'id', 'autoStart', 'query', 'queryLanguage', 'middleware', 'sources', 'enableBootstrap',
+      'id', 'autoStart', 'query', 'queryLanguage', 'middleware', 'inputs', 'enableBootstrap',
       'joins', 'priorityQueueCapacity', 'dispatchBufferCapacity',
       'dispatchMode', 'storageBackend', 'outboxCapacity', 'bootstrapTimeoutSecs',
     ];

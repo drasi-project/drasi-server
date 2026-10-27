@@ -18,7 +18,7 @@ use anyhow::Result;
 use drasi_lib::config::QueryLanguage;
 
 use drasi_server::api::models::{
-    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
+    ConfigValue, QueryConfigDto, QueryInputConfigDto, ReactionConfig, SourceConfig,
 };
 use drasi_server::{DrasiLibInstanceConfig, DrasiServerConfig};
 
@@ -45,12 +45,8 @@ pub fn build_config(
             auto_start: true,
             enable_bootstrap: true,
             middleware: vec![],
-            sources: vec![SourceSubscriptionConfigDto {
-                source_id,
-                nodes: vec![],
-                relations: vec![],
-                pipeline: vec![],
-            }],
+            inputs: vec![QueryInputConfigDto::Component(source_id)],
+            result: Default::default(),
             joins: None,
             priority_queue_capacity: None,
             dispatch_buffer_capacity: None,
@@ -232,8 +228,8 @@ mod tests {
         assert!(query.enable_bootstrap);
 
         // Check query subscribes to the source
-        assert_eq!(query.sources.len(), 1);
-        assert_eq!(query.sources[0].source_id, "my-mock".to_string());
+        assert_eq!(query.inputs.len(), 1);
+        assert_eq!(query.inputs[0], QueryInputConfigDto::Component("my-mock".to_string()));
     }
 
     #[test]
@@ -253,8 +249,8 @@ mod tests {
         // Query should subscribe to the first source
         assert_eq!(config.instances[0].queries.len(), 1);
         assert_eq!(
-            config.instances[0].queries[0].sources[0].source_id,
-            "source-1".to_string()
+            config.instances[0].queries[0].inputs[0],
+            QueryInputConfigDto::Component("source-1".to_string())
         );
     }
 

@@ -82,7 +82,7 @@ it('keeps errors typed and query-local retry isolated from another real table su
       return <button onClick={state.retry}>{error.code}: retry one</button>;
     },
   );
-  render(<DrasiProvider {...refs} queryIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={stream.create}>
+  render(<DrasiProvider {...refs} outputIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={stream.create}>
     <section aria-label="First"><QueryTable {...props} renderError={errorSlot} /></section>
     <section aria-label="Second"><QueryTable {...props} queryId="other" /></section>
   </DrasiProvider>);

@@ -4,7 +4,7 @@ interface QueryFormProps {
   fields: Record<string, unknown>;
   errors: Record<string, string>;
   onChange: (field: string, value: unknown) => void;
-  availableSources: { id: string; kind: string }[];
+  availableInputs: { id: string; kind: string }[];
 }
 
 const TEMPLATES = [
@@ -26,19 +26,19 @@ export default function QueryForm({
   fields,
   errors,
   onChange,
-  availableSources,
+  availableInputs,
 }: QueryFormProps) {
-  const selectedSources = (fields.sources as string[]) ?? [];
+  const selectedInputs = (fields.inputs as string[]) ?? [];
 
-  const toggleSource = (sourceId: string) => {
-    const current = [...selectedSources];
-    const idx = current.indexOf(sourceId);
+  const toggleInput = (componentId: string) => {
+    const current = [...selectedInputs];
+    const idx = current.indexOf(componentId);
     if (idx >= 0) {
       current.splice(idx, 1);
     } else {
-      current.push(sourceId);
+      current.push(componentId);
     }
-    onChange("sources", current);
+    onChange("inputs", current);
   };
 
   return (
@@ -96,26 +96,26 @@ export default function QueryForm({
       {/* Source selection */}
       <div className="space-y-1">
         <label className="flex items-center gap-1 text-xs font-medium text-drasi-text-secondary uppercase tracking-wider">
-          Sources <span className="text-drasi-error">*</span>
+          Inputs <span className="text-drasi-error">*</span>
         </label>
-        {errors.sources && (
-          <p className="text-[10px] text-drasi-error">{errors.sources}</p>
+        {errors.inputs && (
+          <p className="text-[10px] text-drasi-error">{errors.inputs}</p>
         )}
-        {availableSources.length === 0 ? (
+        {availableInputs.length === 0 ? (
           <p className="text-xs text-drasi-text-secondary italic">
-            No sources available. Create a source first.
+            No inputs available. Create a source or another query first.
           </p>
         ) : (
           <div className="space-y-1.5">
-            {availableSources.map((src) => (
+            {availableInputs.map((src) => (
               <label
                 key={src.id}
                 className="flex items-center gap-2 p-2 rounded-lg bg-drasi-card border border-drasi-border cursor-pointer hover:border-drasi-text-secondary transition-colors"
               >
                 <input
                   type="checkbox"
-                  checked={selectedSources.includes(src.id)}
-                  onChange={() => toggleSource(src.id)}
+                  checked={selectedInputs.includes(src.id)}
+                  onChange={() => toggleInput(src.id)}
                   className="rounded border-drasi-border text-drasi-source focus:ring-drasi-source"
                 />
                 <span className="text-sm text-drasi-text-primary">

@@ -229,13 +229,15 @@ build-local-test-plugins:
 	@set -eu; \
 	core_root="$$(python3 scripts/plugin_origin.py local-workspace)"; \
 	plugins_dir="$(CURDIR)/target/debug/plugins"; \
+	target_dir="$${CARGO_TARGET_DIR:-$$core_root/target}"; \
+	case "$$target_dir" in /*) ;; *) target_dir="$(CURDIR)/$$target_dir";; esac; \
 	cd "$$core_root"; \
-	cargo build --locked --lib \
+	cargo build --locked --lib --target-dir "$$target_dir" \
 		-p drasi-source-mock -p drasi-reaction-log -p drasi-reaction-http -p drasi-bootstrap-scriptfile \
 		--features drasi-source-mock/dynamic-plugin,drasi-reaction-log/dynamic-plugin,drasi-reaction-http/dynamic-plugin,drasi-bootstrap-scriptfile/dynamic-plugin; \
 	mkdir -p "$$plugins_dir"; \
 	for plugin in drasi_source_mock drasi_reaction_log drasi_reaction_http drasi_bootstrap_scriptfile; do \
-		cp "target/debug/$(PLUGIN_LIB_PREFIX)$$plugin.$(PLUGIN_LIB_EXT)" "$$plugins_dir/"; \
+		cp "$$target_dir/debug/$(PLUGIN_LIB_PREFIX)$$plugin.$(PLUGIN_LIB_EXT)" "$$plugins_dir/"; \
 	done
 	@echo "=== Test plugins ready in target/debug/plugins/ ==="
 

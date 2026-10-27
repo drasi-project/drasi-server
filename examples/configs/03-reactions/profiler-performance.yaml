@@ -68,8 +68,8 @@ instances:
           MATCH (g:Generic)
           RETURN g.value AS Value, g.message AS Message
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-volume
+        inputs:
+          - high-volume
 
   # Filtered query (positive values only)
       - id: filtered-query
@@ -79,8 +79,8 @@ instances:
           WHERE g.value > 0
           RETURN g.value AS Value, g.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-volume
+        inputs:
+          - high-volume
 
   # Aggregation query (more compute intensive)
       - id: aggregation-query
@@ -89,8 +89,8 @@ instances:
           MATCH (g:Generic)
           RETURN count(g) AS Count, avg(g.value) AS Average
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-volume
+        inputs:
+          - high-volume
 
     reactions:
   # Profiler reaction for performance analysis

@@ -22,7 +22,7 @@ The generated configuration contains secret references, not credentials:
   `connection` (host, port, database, user, password, tables, encryption,
   trust_server_certificate, poll_interval_ms), plus `barrier_table`.
 * `DRASI_MSSQL_SINK_SETTINGS`: JSON containing the same `connection`,
-  `queries: ["all"]`, and `default_template` or `routes`. For example an added
+  `producers: {"all": "all/out"}`, and `default_template` or `routes`. For example an added
   template is `EXEC dbo.ApplyEffect {{param operation}},{{param after.id}},{{param after.value}}`.
 
 Use a database with CDC enabled and SQL Server Agent running. The example selects

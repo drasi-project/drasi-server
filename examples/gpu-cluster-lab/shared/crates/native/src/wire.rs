@@ -1,8 +1,9 @@
 use anyhow::{ensure, Context, Result};
 use drasi_computation_contracts::{
-    ChangeEnvelope, ChangeOperation, GraphChangeCodec, InputEnvelope, OutputEnvelope, PortId,
-    QueryChangeCodec, StreamId,
+    ChangeEnvelope, ChangeOperation, ComponentId, GraphChangeCodec, GraphProducerIdentity,
+    GraphProducerProgress, InputEnvelope, OutputEnvelope, PortId, QueryChangeCodec, StreamId,
 };
+use drasi_computation_plugin_sdk::wire::Scope;
 use drasi_core_types::models::{
     Element, ElementMetadata, ElementPropertyMap, ElementReference, ElementValue, SourceChange,
 };
@@ -113,16 +114,28 @@ pub fn decode(input: &InputEnvelope) -> Result<Vec<Message>> {
 
 pub struct Emitter {
     pub stream: StreamId,
+    identity: GraphProducerIdentity,
     sequence: u64,
     rows: BTreeMap<String, serde_json::Value>,
 }
 impl Emitter {
-    pub fn new(stream: StreamId) -> Self {
-        Self {
+    pub fn new(stream: StreamId, component: ComponentId, scope: Option<&Scope>) -> Result<Self> {
+        let identity = GraphProducerIdentity::volatile(
+            scope
+                .map_or("volatile", |scope| scope.instance_id.as_str())
+                .into(),
+            scope
+                .map_or("volatile", |scope| scope.graph_id.as_str())
+                .into(),
+            component,
+            stream.clone(),
+        )?;
+        Ok(Self {
             stream,
+            identity,
             sequence: 0,
             rows: BTreeMap::new(),
-        }
+        })
     }
     pub fn record<T: Serialize>(
         &mut self,
@@ -158,7 +171,7 @@ impl Emitter {
         };
         self.rows.insert(identity, value);
         Ok(Some(if existed {
-            SourceChange::Update { element }
+            SourceChange::Replace { element }
         } else {
             SourceChange::Insert { element }
         }))
@@ -201,24 +214,23 @@ impl Emitter {
         if changes.is_empty() {
             return Ok(vec![]);
         }
-        self.sequence = self
+        let sequence = self
             .sequence
             .checked_add(1)
             .context("native stream sequence exhausted")?;
-        let envelope = match input {
-            Some(input) => GraphChangeCodec::derive_changes(
-                input,
-                &changes,
-                self.stream.clone(),
-                self.sequence,
-            )?,
+        let mut envelope = match input {
+            Some(input) => {
+                GraphChangeCodec::derive_changes(input, &changes, self.stream.clone(), sequence)?
+            }
             None => GraphChangeCodec::encode_changes(
                 &changes,
                 self.stream.clone(),
-                self.sequence,
+                sequence,
                 Some(chrono::Utc::now()),
             )?,
         };
+        GraphProducerProgress::annotate(&mut envelope, &self.identity, sequence)?;
+        self.sequence = sequence;
         Ok(vec![OutputEnvelope {
             port: PortId::try_new("out")?,
             envelope,

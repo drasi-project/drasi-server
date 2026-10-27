@@ -99,7 +99,8 @@ export interface QueryDefinition {
   id: string;
   description: string;
   query: string;
-  sources: Array<{ sourceId: string; pipeline: string[] }>;
+  /** Upstream components, in merge order: bare names consume each component's primary output. */
+  inputs: string[];
   joins: QueryJoin[];
 }
 
@@ -125,10 +126,7 @@ export const WATCHLIST_QUERY: QueryDefinition = {
            sp.previous_close AS previousClose,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [ON_WATCHLIST, HAS_PRICE]
 };
 
@@ -167,10 +165,7 @@ export const PORTFOLIO_QUERY: QueryDefinition = {
            profitLoss,
            profitLossPercent
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [OWNS_STOCK, HAS_PRICE]
 };
 
@@ -196,10 +191,7 @@ export const TOP_GAINERS_QUERY: QueryDefinition = {
            sp.previous_close AS previousClose,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [HAS_PRICE]
 };
 
@@ -225,10 +217,7 @@ export const TOP_LOSERS_QUERY: QueryDefinition = {
            sp.previous_close AS previousClose,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [HAS_PRICE]
 };
 
@@ -253,10 +242,7 @@ export const HIGH_VOLUME_QUERY: QueryDefinition = {
            sp.volume AS volume,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [HAS_PRICE]
 };
 
@@ -280,9 +266,7 @@ export const PRICE_TICKER_QUERY: QueryDefinition = {
            sp.previous_close AS previousClose,
            ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
-  sources: [
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['price-feed'],
   joins: []
 };
 
@@ -308,10 +292,7 @@ export const SECTOR_PERFORMANCE_QUERY: QueryDefinition = {
            min(sp.price) AS minPrice,
            max(sp.price) AS maxPrice
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [HAS_PRICE]
 };
 
@@ -343,10 +324,7 @@ export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
            END AS totalProfitLossPercent,
            positionCount
   `,
-  sources: [
-    { sourceId: 'postgres-stocks', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-stocks', 'price-feed'],
   joins: [OWNS_STOCK, HAS_PRICE]
 };
 
@@ -377,10 +355,7 @@ export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
            o.expires_at AS expiresAt,
            ((toFloat(o.target_price) - sp.price) / sp.price * 100) AS distancePercent
   `,
-  sources: [
-    { sourceId: 'postgres-broker', pipeline: [] },
-    { sourceId: 'price-feed', pipeline: [] }
-  ],
+  inputs: ['postgres-broker', 'price-feed'],
   joins: [ORDER_HAS_PRICE]
 };
 
@@ -412,9 +387,7 @@ export const STALE_ORDERS_QUERY: QueryDefinition = {
            'STALE' AS alertType,
            'Order pending past halfway to expiry' AS alertMessage
   `,
-  sources: [
-    { sourceId: 'postgres-broker', pipeline: [] }
-  ],
+  inputs: ['postgres-broker'],
   joins: []
 };
 
@@ -446,9 +419,7 @@ export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
            'EXPIRED' AS alertType,
            'Order expired - time limit reached' AS alertMessage
   `,
-  sources: [
-    { sourceId: 'postgres-broker', pipeline: [] }
-  ],
+  inputs: ['postgres-broker'],
   joins: []
 };
 

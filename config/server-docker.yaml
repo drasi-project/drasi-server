@@ -37,8 +37,8 @@ instances:
         queryLanguage: Cypher
         autoStart: true
         enableBootstrap: true
-        sources:
-          - sourceId: vehicle-location-source
+        inputs:
+          - vehicle-location-source
 
       - id: pending-orders-query
         query: |
@@ -49,8 +49,8 @@ instances:
         queryLanguage: Cypher
         autoStart: true
         enableBootstrap: true
-        sources:
-          - sourceId: vehicle-location-source
+        inputs:
+          - vehicle-location-source
 
     reactions:
       - id: driver-availability-logger

@@ -316,12 +316,16 @@ async function promptForArrayValue(
   required: boolean
 ): Promise<unknown | undefined> {
   const items = resolveSchema(schema.items, definitions);
-  if (items?.properties?.sourceId && Array.isArray(items.required) && items.required.includes('sourceId')) {
-    const input = await promptForText(`${promptLabel} (comma-separated source IDs)`, required);
+  const alternatives: any[] = Array.isArray(items?.oneOf) ? items.oneOf.map((entry: any) => resolveSchema(entry, definitions)) : [];
+  const isQueryInput = alternatives.some((entry) => entry?.type === 'string')
+    && alternatives.some((entry) => entry?.properties?.component && Array.isArray(entry.required) && entry.required.includes('component'));
+  if (isQueryInput) {
+    // The bare component name is the shorthand for the component's primary output.
+    const input = await promptForText(`${promptLabel} (comma-separated source or query IDs)`, required);
     if (!input) {
       return required ? undefined : undefined;
     }
-    return input.split(',').map((entry) => entry.trim()).filter(Boolean).map((sourceId) => ({ sourceId }));
+    return input.split(',').map((entry) => entry.trim()).filter(Boolean);
   }
 
   if (items?.type === 'string' || items?.enum) {

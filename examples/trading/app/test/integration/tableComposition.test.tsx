@@ -244,7 +244,7 @@ describe('Trading tutorial presentation', () => {
     const before = app.backend.requests.length;
     app.backend.queries.set('watchlist-query', {
       id: 'watchlist-query', queryLanguage: 'Cypher', autoStart: true,
-      query: 'MATCH (n) RETURN n', sources: [], middleware,
+      query: 'MATCH (n) RETURN n', inputs: [], middleware,
     });
     expect(screen.queryByRole('dialog')).toBeNull();
     await user.click(within(panel('Watchlist')).getByRole('button', { name: 'View code' }));
@@ -316,11 +316,12 @@ describe('Trading tutorial presentation', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('keeps query text, source/join order and optional configuration fields in copied definitions', () => {
+  it('keeps query text, input/join order and optional configuration fields in copied definitions', () => {
     const config: QueryConfig = {
       id: 'inspect', queryLanguage: 'GQL', autoStart: false,
       query: '  MATCH (a)\nRETURN a  ',
-      sources: [{ sourceId: 'events', pipeline: ['parse'], nodes: ['A'], relations: ['R'] }, { sourceId: 'other', pipeline: [], nodes: [], relations: [] }],
+      inputs: [{ component: 'events', pipeline: ['parse'], nodes: ['A'], relations: ['R'] }, 'other', { component: 'floor', port: 'out' }],
+      result: { label: 'Floor' },
       joins: [{ id: 'JOIN', keys: [{ label: 'A', property: 'id' }, { label: 'B', property: 'id' }] }],
       middleware: [], enableBootstrap: true,
       outboxCapacity: 10, bootstrapTimeoutSecs: 30, priorityQueueCapacity: 25,
@@ -328,9 +329,9 @@ describe('Trading tutorial presentation', () => {
     };
     expect(formatQueryConfig(config)).toBe([
       'id: inspect', 'queryLanguage: GQL', 'autoStart: false', '',
-      'query: |', '  MATCH (a)', '  RETURN a', '', 'sources:',
-      '  - sourceId: events', '    pipeline: [parse]', '    nodes: [A]', '    relations: [R]',
-      '  - sourceId: other', '', 'joins:', '  - id: JOIN', '    keys:',
+      'query: |', '  MATCH (a)', '  RETURN a', '', 'inputs:',
+      '  - component: events', '    pipeline: [parse]', '    nodes: [A]', '    relations: [R]',
+      '  - other', '  - component: floor', '    port: out', '', 'result:', '  label: Floor', '', 'joins:', '  - id: JOIN', '    keys:',
       '      - label: A, property: id', '      - label: B, property: id',
       'enableBootstrap: true', 'priorityQueueCapacity: 25',
       'dispatchBufferCapacity: 15', 'dispatchMode: Channel', '', 'storageBackend: {\n  "kind": "memory"\n}',

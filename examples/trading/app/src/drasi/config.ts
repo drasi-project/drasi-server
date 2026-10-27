@@ -25,7 +25,7 @@
 
 import {
   createLegacyResultAdapter, DrasiError,
-  type QueryConfig, type QuerySource, type ResultRow, type RouteUnidentified,
+  type QueryConfig, type QueryInput, type ResultRow, type RouteUnidentified,
 } from '@drasi/react/client';
 import { ALL_QUERIES } from '@/services/queries';
 import nativeComputation from '../../public/native-computation.json';
@@ -46,14 +46,12 @@ export const DRASI_SERVER_URL = environment('VITE_DRASI_SERVER_URL') ?? 'http://
 /** App-owned creation/comparison fields, not the complete server read DTO. */
 export type TradingQueryDefinition =
   Pick<QueryConfig, 'id' | 'query' | 'queryLanguage' | 'joins'> & {
-    readonly sources: readonly (
-      Pick<QuerySource, 'sourceId'> & Partial<Omit<QuerySource, 'sourceId'>>
-    )[];
+    readonly inputs: readonly QueryInput[];
   };
 
 /** All continuous queries the Trading example multiplexes over one connection. */
-export const TRADING_QUERIES: TradingQueryDefinition[] = ALL_QUERIES.map(({ id, query, sources, joins }) => ({
-  id, query, sources, joins, queryLanguage: 'Cypher',
+export const TRADING_QUERIES: TradingQueryDefinition[] = ALL_QUERIES.map(({ id, query, inputs, joins }) => ({
+  id, query, inputs, joins, queryLanguage: 'Cypher',
 }));
 export const TRADING_QUERY_IDS = TRADING_QUERIES.map(query => query.id);
 

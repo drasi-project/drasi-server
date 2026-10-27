@@ -380,8 +380,8 @@ queries:
   - id: meta-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
-    sources:
-      - sourceId: meta-source
+    inputs:
+      - meta-source
 
 reactions:
   - kind: log

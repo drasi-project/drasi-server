@@ -19,12 +19,14 @@ import {
   DrasiProvider,
   DrasiClientProvider,
   useDrasiClient,
+  useDrasiOutput,
   useDrasiQuery,
   useDrasiQueryDefinition,
   useDrasiConnectionStatus,
   useDrasiServerUiUrl,
   useTableSort,
   useRowAnimation,
+  type UseDrasiOutputResult,
   type UseDrasiQueryOptions,
   type UseDrasiQueryResult,
   type UseDrasiQueryDefinitionResult,
@@ -54,7 +56,7 @@ interface Delivery {
 }
 
 const clientOptions: DrasiClientOptions = {
-  serverUrl: 'https://drasi.example', instanceId: 'warehouse-west', queryIds: ['temperatures'],
+  serverUrl: 'https://drasi.example', instanceId: 'warehouse-west', outputIds: ['temperatures'],
   reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
   credentials: 'same-origin', headers: { 'X-Consumer': 'packed-hooks' },
   resultAdapter: sse034ResultAdapter, reconciliation: { maxPendingChanges: 10000 },
@@ -161,9 +163,9 @@ export const readOnlyOptions: UseDrasiQueryOptions = {
 
 export const providerProps: DrasiProviderProps = { ...clientOptions, children: null };
 // @ts-expect-error Providers must not discover an implicit default instance.
-export const missingInstance: DrasiProviderProps = { serverUrl: clientOptions.serverUrl, queryIds: clientOptions.queryIds, reaction: clientOptions.reaction, children: null };
+export const missingInstance: DrasiProviderProps = { serverUrl: clientOptions.serverUrl, outputIds: clientOptions.outputIds, reaction: clientOptions.reaction, children: null };
 // @ts-expect-error Provider creation never deploys queries.
-export const providerDeployment: DrasiProviderProps = { ...providerProps, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', sources: [] }] };
+export const providerDeployment: DrasiProviderProps = { ...providerProps, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', inputs: [] }] };
 // @ts-expect-error Provider credentials are the same typed request contract as the client.
 export const providerCredentials: DrasiProviderProps = { ...providerProps, credentials: true };
 // @ts-expect-error Headers cannot accept arbitrary object values through provider props.
@@ -182,8 +184,11 @@ export function Consumer(): ReactNode {
   const deliveries: UseDrasiQueryResult<Delivery> = useDrasiQuery<Delivery>('deliveries', defaultInput);
   const defaultResult: UseDrasiQueryResult = useDrasiQuery('other', defaultOptions);
   const filtered: UseDrasiQueryResult<Temperature> = useDrasiQuery('temperatures', nullableOptions);
+  const output: UseDrasiOutputResult<Temperature> = useDrasiOutput<Temperature>('temperatures', temperatureOptions);
   // @ts-expect-error Every hook call requires options, even a raw read.
   useDrasiQuery('other');
+  // @ts-expect-error The generic output hook requires options as well.
+  useDrasiOutput('other');
   // @ts-expect-error A typed generic does not waive the required raw key and validating transform.
   useDrasiQuery<Temperature>('temperatures');
   const rows: ResultRow[] | null = defaultResult.data;

@@ -19,8 +19,8 @@ queries:
   - id: all-events
     query: "MATCH (g) RETURN elementId(g)"
     queryLanguage: Cypher
-    sources:
-      - sourceId: test-source
+    inputs:
+      - test-source
     autoStart: true
 
 reactions:

@@ -86,7 +86,7 @@ describe('DrasiSSEClient', () => {
 
     expect(results).toEqual([
       expect.objectContaining({
-        queryId: 'stocks',
+        outputId: 'stocks',
         kind: 'delta',
         changes: [{ kind: 'upsert', after: { id: 'A', price: 10 } }],
       }),

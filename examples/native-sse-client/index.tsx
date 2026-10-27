@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { DrasiClient, DrasiError, sse034ResultAdapter } from '@drasi/react/client';
+import { DrasiClient, DrasiError, nativeGraphResultAdapter } from '@drasi/react/client';
 import { DrasiClientProvider } from '@drasi/react/react';
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -16,7 +16,16 @@ function requireRunning(node: Record<string, unknown>): void {
   }
 }
 
-export function validateNativeSseGraph(value: unknown, queryIds: readonly string[], sinkId: string): void {
+/**
+ * One graph output the browser reads: the sink's route `id`, and the real
+ * component and output port that produce its data. A source, a transformer or a
+ * query may be an output.
+ */
+export type NativeOutput = { readonly id: string; readonly component: string; readonly port: string };
+
+const OUTPUT_ROLES = ['Source', 'Transformer', 'Query'];
+
+export function validateNativeSseGraph(value: unknown, outputs: readonly NativeOutput[], sinkId: string): void {
   if (!record(value) || value.success !== true || !record(value.data) ||
       !record(value.data.graph) || !Array.isArray(value.data.components) ||
       !Array.isArray(value.data.relationships)) {
@@ -34,30 +43,37 @@ export function validateNativeSseGraph(value: unknown, queryIds: readonly string
     throw new DrasiError('INCOMPATIBLE_RESOURCE');
   }
   requireRunning(sink);
-  for (const id of queryIds) {
-    const query = components.find(node => record(node) && node.id === id);
-    if (!record(query)) throw new DrasiError('QUERY_NOT_FOUND', { resourceId: id });
-    if (query.role !== 'Query') throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: id });
-    requireRunning(query);
+  for (const output of outputs) {
+    const producer = components.find(node => record(node) && node.id === output.component);
+    if (!record(producer)) throw new DrasiError('OUTPUT_NOT_FOUND', { resourceId: output.id });
+    if (typeof producer.role !== 'string' || !OUTPUT_ROLES.includes(producer.role)) {
+      throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: output.id });
+    }
+    requireRunning(producer);
     if (!edges.some(edge => record(edge) && edge.representation === 'NativeProvider' &&
-        edge.binding === 'Bound' && record(edge.from) && edge.from.component === id &&
-        edge.from.port === 'out' && record(edge.to) && edge.to.component === sinkId &&
+        edge.binding === 'Bound' && record(edge.from) && edge.from.component === output.component &&
+        edge.from.port === output.port && record(edge.to) && edge.to.component === sinkId &&
         edge.to.port === 'in')) {
-      throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: id });
+      throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: output.id });
     }
   }
 }
 
 // The SDK's default validator expects a legacy Reaction DTO. Its public
 // client/provider binding lets this native example validate actual graph edges.
-type NativeOptions = { origin: string; instanceId: string; queryIds: readonly string[]; sinkId: string; endpoint: string };
+type NativeOptions = {
+  origin: string; instanceId: string; outputs: readonly NativeOutput[]; sinkId: string; endpoint: string;
+};
 
 class NativeSseClient extends DrasiClient {
   constructor(private readonly nativeOptions: NativeOptions) {
     super({
-      serverUrl: nativeOptions.origin, instanceId: nativeOptions.instanceId, queryIds: [...nativeOptions.queryIds],
+      serverUrl: nativeOptions.origin, instanceId: nativeOptions.instanceId,
+      outputIds: nativeOptions.outputs.map(output => output.id),
       reaction: { id: nativeOptions.sinkId, endpoint: nativeOptions.endpoint },
-      resultAdapter: sse034ResultAdapter,
+      resultAdapter: nativeGraphResultAdapter,
+      // The sink serves each output's snapshot as canonical ADD changes next to its event stream.
+      graphSnapshots: { url: id => new URL(`/snapshot/${encodeURIComponent(id)}`, nativeOptions.endpoint).toString() },
     });
   }
 
@@ -76,7 +92,7 @@ class NativeSseClient extends DrasiClient {
           { instanceId: this.nativeOptions.instanceId, status: response.status },
         );
       }
-      validateNativeSseGraph(await response.json(), this.nativeOptions.queryIds, this.nativeOptions.sinkId);
+      validateNativeSseGraph(await response.json(), this.nativeOptions.outputs, this.nativeOptions.sinkId);
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof DrasiError) throw error;
@@ -86,7 +102,7 @@ class NativeSseClient extends DrasiClient {
   }
 }
 
-export function NativeSseProvider({ children, origin, instanceId, queryIds, sinkId, endpoint }: NativeOptions & { children: ReactNode }) {
+export function NativeSseProvider({ children, origin, instanceId, outputs, sinkId, endpoint }: NativeOptions & { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
     client: DrasiClient | null; initialized: boolean; error: DrasiError | null;
@@ -96,7 +112,7 @@ export function NativeSseProvider({ children, origin, instanceId, queryIds, sink
     setAttempt(current => current + 1);
   }, []);
   useEffect(() => {
-    const client = new NativeSseClient({ origin, instanceId, queryIds, sinkId, endpoint });
+    const client = new NativeSseClient({ origin, instanceId, outputs, sinkId, endpoint });
     let active = true;
     setState({ client, initialized: false, error: null });
     const unsubscribe = client.onConnectionStatusChange(status => {
@@ -114,6 +130,6 @@ export function NativeSseProvider({ children, origin, instanceId, queryIds, sink
       },
     );
     return () => { active = false; unsubscribe(); void client.disconnect(); };
-  }, [attempt, origin, instanceId, queryIds, sinkId, endpoint]);
+  }, [attempt, origin, instanceId, outputs, sinkId, endpoint]);
   return <DrasiClientProvider value={{ ...state, retry }}>{children}</DrasiClientProvider>;
 }

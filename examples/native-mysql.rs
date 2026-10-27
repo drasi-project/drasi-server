@@ -727,7 +727,10 @@ mod tests {
                 .sql("INSERT INTO items VALUES(2,'selected')")
                 .await?;
             let mut sink = database.sink_settings();
-            sink["queries"] = json!(["all-items", "selected-items"]);
+            sink["outputs"] = json!({
+                "all-items": {"component": "all-items", "port": "out"},
+                "selected-items": {"component": "selected-items", "port": "out"},
+            });
             if with_identity {
                 database
                     .sql(

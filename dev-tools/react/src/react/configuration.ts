@@ -12,7 +12,7 @@ export function configurationKey(options: DrasiClientOptions): string | null {
     const { reconnect } = options;
     return JSON.stringify([
       normalizeServerUrl(options.serverUrl, {}), options.instanceId,
-      [...options.queryIds].sort(), options.reaction.id,
+      [...options.outputIds].sort(), options.reaction.id,
       validateHttpUrl(options.reaction.endpoint, {}),
       options.credentials ?? 'same-origin',
       typeof options.headers === 'function' ? null : [...new Headers(options.headers).entries()],

@@ -6,13 +6,13 @@
 import { createLegacyResultAdapter, sse034ResultAdapter } from '../src';
 import type {
   DrasiClient, DrasiClientOptions, DrasiError, DrasiInitializeOptions, DrasiProviderProps, ReactionReference,
-  QueryDelta, QuerySnapshot, QuerySubscriptionState, ResultAdapter, ResultChange,
+  OutputDelta, OutputSnapshot, OutputSubscriptionState, ResultAdapter, ResultChange,
   RowKey, UseDrasiQueryOptions,
 } from '../src';
 
 const reaction: ReactionReference = { id: 'events', endpoint: 'https://events.example/changes' };
 const options: DrasiClientOptions = {
-  serverUrl: 'https://drasi.example', instanceId: 'analytics', queryIds: ['readings'], reaction,
+  serverUrl: 'https://drasi.example', instanceId: 'analytics', outputIds: ['readings'], reaction,
 };
 export const provider: DrasiProviderProps = { ...options, children: null };
 export const explicitAdapter: DrasiClientOptions = {
@@ -32,9 +32,9 @@ export const initialize = (client: DrasiClient): Promise<void> => client.initial
 export const invalidInitial: DrasiInitializeOptions = { maxInitialReconnectAttempts: 'manage' };
 
 // @ts-expect-error Instance identity must be explicitly resolved by the consumer.
-export const missingInstance: DrasiClientOptions = { serverUrl: options.serverUrl, queryIds: ['readings'], reaction };
+export const missingInstance: DrasiClientOptions = { serverUrl: options.serverUrl, outputIds: ['readings'], reaction };
 // @ts-expect-error Connection options do not accept deployment definitions.
-export const deployment: DrasiClientOptions = { ...options, queries: [{ id: 'readings', query: 'MATCH (n) RETURN n', sources: [] }] };
+export const deployment: DrasiClientOptions = { ...options, queries: [{ id: 'readings', query: 'MATCH (n) RETURN n', inputs: [] }] };
 // @ts-expect-error A server bind port is not a browser endpoint reference.
 export const bindSettings: ReactionReference = { id: 'events', port: 8081 };
 // @ts-expect-error Legacy routing must be explicitly selected through resultAdapter.
@@ -50,18 +50,18 @@ export const nullKey: RowKey = () => null;
 // @ts-expect-error Numeric identity needs an explicit domain string representation.
 export const numberKey: RowKey = () => 1;
 
-export const snapshot: QuerySnapshot = { kind: 'snapshot', queryId: 'readings', rows: [], receivedAt: 1 };
+export const snapshot: OutputSnapshot = { kind: 'snapshot', outputId: 'readings', rows: [], receivedAt: 1 };
 export const change: ResultChange = { kind: 'update', before: { id: 'old' }, after: { id: 'new' } };
-export const delta: QueryDelta = { kind: 'delta', queryId: 'readings', changes: [change], receivedAt: 2 };
+export const delta: OutputDelta = { kind: 'delta', outputId: 'readings', changes: [change], receivedAt: 2 };
 // @ts-expect-error A normalized update requires both sides.
 export const missingBefore: ResultChange = { kind: 'update', after: { id: 'new' } };
 // @ts-expect-error Deltas cannot masquerade as full snapshots.
-export const deltaSnapshot: QuerySnapshot = delta;
-export const state: QuerySubscriptionState = {
+export const deltaSnapshot: OutputSnapshot = delta;
+export const state: OutputSubscriptionState = {
   status: 'resynchronizing', stale: false, error: null, errorScope: null,
 };
 // @ts-expect-error Only hooks can determine whether a projected view is empty.
-export const emptyState: QuerySubscriptionState = { ...state, status: 'empty' };
+export const emptyState: OutputSubscriptionState = { ...state, status: 'empty' };
 
 export function handleError(error: DrasiError): string {
   const retryable: boolean = error.retryable;

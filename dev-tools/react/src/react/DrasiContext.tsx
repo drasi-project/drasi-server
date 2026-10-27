@@ -32,12 +32,14 @@ import { configurationKey } from './configuration';
 import type {
   ConnectionStatus,
   QueryConfig,
-  QueryResult,
-  QuerySubscription,
-  QuerySubscriptionState,
+  OutputResult,
+  OutputSubscription,
+  OutputSubscriptionState,
   ResultRow,
 } from '../client/types';
-import type { UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult } from './types';
+import type {
+  UseDrasiOutputOptions, UseDrasiOutputResult, UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult,
+} from './types';
 
 export interface DrasiContextValue {
   client: DrasiClient | null;
@@ -68,7 +70,7 @@ export const DrasiClientProvider = DrasiContext.Provider;
  * Wrap your application once near the root:
  * ```tsx
  * <DrasiProvider serverUrl="https://drasi.example" instanceId="analytics"
- *   queryIds={['readings']} reaction={{ id: 'events', endpoint: 'https://events.example/sse' }}>
+ *   outputIds={['readings']} reaction={{ id: 'events', endpoint: 'https://events.example/sse' }}>
  *   <App />
  * </DrasiProvider>
  * ```
@@ -76,9 +78,10 @@ export const DrasiClientProvider = DrasiContext.Provider;
 export const DrasiProvider: React.FC<DrasiProviderProps> = ({
   serverUrl,
   instanceId,
-  queryIds,
+  outputIds,
   reaction,
   resultAdapter,
+  graphSnapshots,
   reconciliation,
   fetch: fetcher,
   headers,
@@ -93,7 +96,7 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
     client: DrasiClient | null; attempt: number; initialized: boolean; error: DrasiError | null;
   }>({ client: null, attempt: 0, initialized: false, error: null });
   const key = configurationKey({
-    serverUrl, instanceId, queryIds, reaction, headers, credentials, reconnect, requestTimeoutMs, reconciliation,
+    serverUrl, instanceId, outputIds, reaction, headers, credentials, reconnect, requestTimeoutMs, reconciliation,
   });
   const headersProvider = typeof headers === 'function' ? headers : undefined;
 
@@ -104,9 +107,10 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
         return { client: new DrasiClient({
           serverUrl,
           instanceId,
-          queryIds,
+          outputIds,
           reaction,
           resultAdapter,
+          graphSnapshots,
           reconciliation,
           fetch: fetcher,
           headers,
@@ -123,6 +127,7 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
       key,
       instanceId,
       resultAdapter,
+      graphSnapshots,
       fetcher,
       eventSourceFactory,
       headersProvider,
@@ -192,26 +197,46 @@ export function useDrasiClient(): DrasiContextValue {
 }
 
 /**
- * Accumulate raw rows by required domain identity, then derive a typed view.
+ * Accumulate the raw rows of one graph output (a source, transformer or query
+ * output) by required identity, then derive a typed view.
  * Projection/key changes recompute retained rows without another socket or
  * subscription. Live batches use only the latest committed key callback;
  * suspended/abandoned renders cannot publish it. Sparse deletes never transform.
+ */
+export function useDrasiOutput<T extends object = ResultRow>(
+  outputId: string,
+  options: UseDrasiOutputOptions<T>,
+): UseDrasiOutputResult<T> {
+  return useRows('output', outputId, options);
+}
+
+/**
+ * The continuous-query facade over the same machinery: query-scoped error
+ * details for applications that subscribe to a Server query.
  */
 export function useDrasiQuery<T extends object = ResultRow>(
   queryId: string,
   options: UseDrasiQueryOptions<T>,
 ): UseDrasiQueryResult<T> {
+  return useRows('query', queryId, options);
+}
+
+function useRows<T extends object>(
+  resourceKind: 'query' | 'output',
+  outputId: string,
+  options: UseDrasiOutputOptions<T>,
+): UseDrasiOutputResult<T> {
   const {
     client,
     initialized,
     error: providerError,
   } = useDrasiClient();
-  const scope = useMemo(() => ({ client, queryId }), [client, queryId]);
+  const scope = useMemo(() => ({ client, outputId }), [client, outputId]);
   const [result, setResult] = useState<{
     scope: typeof scope;
     rows: ResultRow[] | null;
     lastUpdate: Date | null;
-    state: QuerySubscriptionState;
+    state: OutputSubscriptionState;
   }>({
     scope, rows: null, lastUpdate: null,
     state: { status: 'initial-loading', stale: false, error: null, errorScope: null },
@@ -223,7 +248,7 @@ export function useDrasiQuery<T extends object = ResultRow>(
   useInsertionEffect(() => {
     committedGetKey.current = getKey;
   }, [getKey]);
-  const subscriptionRef = useRef<{ scope: typeof scope; subscription: QuerySubscription } | null>(null);
+  const subscriptionRef = useRef<{ scope: typeof scope; subscription: OutputSubscription } | null>(null);
   const lastGood = useRef<{ scope: typeof scope; data: T[]; lastUpdate: Date | null } | null>(null);
   const retry = useCallback(() => {
     if (subscriptionRef.current?.scope === scope) subscriptionRef.current.subscription.retry();
@@ -232,7 +257,7 @@ export function useDrasiQuery<T extends object = ResultRow>(
   useEffect(() => {
     let active = true;
     let rawRows: ResultRow[] = [];
-    const stateChanged = (state: QuerySubscriptionState) => {
+    const stateChanged = (state: OutputSubscriptionState) => {
       if (!active) return;
       setResult(current => ({
         ...(current.scope === scope ? current : { scope, rows: null, lastUpdate: null }), state,
@@ -243,15 +268,15 @@ export function useDrasiQuery<T extends object = ResultRow>(
       error: providerError, errorScope: providerError ? 'connection' : null,
     });
     if (!initialized || !client) return () => { active = false; };
-    const handleResult = (batch: QueryResult) => {
+    const handleResult = (batch: OutputResult) => {
       if (!active) return;
       rawRows = accumulateResult(rawRows, batch, committedGetKey.current, {
-        instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
+        instanceId: client.instanceId, resourceKind, resourceId: outputId,
       });
       const rows = rawRows;
       setResult(current => ({ ...current, scope, rows, lastUpdate: new Date(batch.receivedAt) }));
     };
-    const subscription = client.subscribe(queryId, handleResult, error => {
+    const subscription = client.subscribe(outputId, handleResult, error => {
       if (active) setResult(current => ({ ...current, state: { ...current.state, error } }));
     }, stateChanged);
     subscriptionRef.current = { scope, subscription };
@@ -260,14 +285,14 @@ export function useDrasiQuery<T extends object = ResultRow>(
       if (subscriptionRef.current?.subscription === subscription) subscriptionRef.current = null;
       subscription();
     };
-  }, [queryId, client, initialized, providerError, scope]);
+  }, [outputId, client, initialized, providerError, scope]);
 
   const rows = result.scope === scope ? result.rows : null;
   const projection = useMemo(() => {
     if (rows === null) return { data: null, error: null };
-    const details = { instanceId: client?.instanceId, resourceKind: 'query' as const, resourceId: queryId };
+    const details = { instanceId: client?.instanceId, resourceKind, resourceId: outputId };
     try {
-      const keyed = accumulateResult([], { kind: 'snapshot', queryId, rows, receivedAt: 0 }, options.getKey, details);
+      const keyed = accumulateResult([], { kind: 'snapshot', outputId: outputId, rows, receivedAt: 0 }, options.getKey, details);
       const transformed: T[] = [];
       for (const row of keyed) {
         const value = options.transform(row);
@@ -283,7 +308,7 @@ export function useDrasiQuery<T extends object = ResultRow>(
     } catch (error) {
       return { data: null, error: asDrasiError(error, details, 'RESULT_PROCESSING_FAILED') };
     }
-  }, [rows, options.getKey, options.transform, options.postProcess, client, queryId]);
+  }, [rows, options.getKey, options.transform, options.postProcess, client, outputId]);
   useEffect(() => {
     if (projection.data !== null) lastGood.current = { scope, data: projection.data, lastUpdate: result.lastUpdate };
   }, [projection, scope, result.lastUpdate]);

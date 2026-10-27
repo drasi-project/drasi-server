@@ -114,7 +114,7 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
 
     let clone_query = Query::cypher("clone-query")
         .query(QUERY_TEXT)
-        .from_source("clone-src")
+        .from_input("clone-src")
         .auto_start(true)
         .build();
 
@@ -366,12 +366,9 @@ async fn test_clone_preserves_query_config() {
         "Cloned query text should match source"
     );
 
-    // Verify source subscription was preserved
-    let sources = config["sources"].as_array().unwrap();
-    let source_ids: Vec<&str> = sources
-        .iter()
-        .map(|s| s["sourceId"].as_str().unwrap())
-        .collect();
+    // Verify the input binding was preserved (bare component shorthand)
+    let inputs = config["inputs"].as_array().unwrap();
+    let source_ids: Vec<&str> = inputs.iter().map(|s| s.as_str().unwrap()).collect();
     assert!(
         source_ids.contains(&"clone-src"),
         "Cloned query should reference clone-src: {source_ids:?}"

@@ -42,7 +42,7 @@ const components: Component[] = [
     implementation: 'geometry-context · drasi/continuous-query',
     detail: 'A real Cypher query selects active SceneObject records and collects their payloads. The source manifest travels with the selected inputs, including an empty scene.',
     input: 'in ← scene.out (graph changes).',
-    output: 'out → geometry.in (query-row changes), and the shared result outlet.',
+    output: 'out → geometry.in (graph changes carrying Result nodes), and the shared result outlet.',
     note: 'MATCH (n:SceneObject) WHERE n.active = true RETURN collect(n.payload) AS objects',
   },
   {
@@ -50,7 +50,7 @@ const components: Component[] = [
     summary: 'Compute and diff obstructions.', x: 930, y: 210,
     implementation: 'geometry · move-a-wall/geometry · Rust geo',
     detail: 'The event handler caches coherent inputs, computes polyline-to-convex-polygon distance, and diffs its last output. A circular cart footprint plus clearance is swept along each planned path. Contact counts as obstruction.',
-    input: 'in ← geometry-context.out (query-row changes).',
+    input: 'in ← geometry-context.out (graph changes carrying Result nodes).',
     output: 'out → Obstruction graph changes, cart/journey/destination/obstacle metadata and GeometryStatus.',
     note: 'Numerical tolerance: 1e-7. Stable IDs: journey/obstacle. Moving the obstacle away emits a deletion. No simulation timer.',
   },
@@ -185,7 +185,7 @@ export function Architecture({onClose, scrollOffset = 0}: {onClose: () => void; 
       <div className="architecture-guide">
         <p id="architecture-hint"><span aria-hidden="true">ⓘ</span> Click a component or arrow for details. Click anywhere or press Esc to dismiss.</p>
         <div className="architecture-legend" aria-label="Connection types">
-          <span className="graph">Graph changes</span><span className="rows">Query rows</span><span className="transport">HTTP / SSE</span>
+          <span className="graph">Source / transformer output</span><span className="rows">Query output</span><span className="transport">HTTP / SSE</span>
         </div>
       </div>
       <div className="architecture-diagram">

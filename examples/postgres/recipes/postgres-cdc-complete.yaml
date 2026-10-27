@@ -121,8 +121,8 @@ instances:
           MATCH (u:users)
           RETURN u.id AS UserId, u.email AS Email, u.created_at AS CreatedAt
         queryLanguage: Cypher
-        sources:
-          - sourceId: app-database
+        inputs:
+          - app-database
 
   # Track orders with total > $100
       - id: high-value-orders
@@ -132,8 +132,8 @@ instances:
           WHERE o.total > 100
           RETURN o.order_id AS OrderId, o.customer_id AS CustomerId, o.total AS Total
         queryLanguage: Cypher
-        sources:
-          - sourceId: app-database
+        inputs:
+          - app-database
 
   # Product inventory alerts
       - id: low-inventory
@@ -143,8 +143,8 @@ instances:
           WHERE p.quantity < 10
           RETURN p.sku AS SKU, p.name AS ProductName, p.quantity AS Quantity
         queryLanguage: Cypher
-        sources:
-          - sourceId: app-database
+        inputs:
+          - app-database
 
     reactions:
       - kind: log

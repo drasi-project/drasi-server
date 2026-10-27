@@ -15,10 +15,10 @@
 //! Query configuration mapper.
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
-use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
+use crate::api::models::QueryConfigDto;
 use drasi_core::models::SourceMiddlewareConfig;
 use drasi_lib::channels::DispatchMode;
-use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
+use drasi_lib::config::{QueryConfig, QueryInputConfig, QueryResultConfig};
 use std::sync::Arc;
 
 pub struct QueryConfigMapper;
@@ -29,11 +29,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
         dto: &QueryConfigDto,
         _resolver: &DtoMapper,
     ) -> Result<QueryConfig, MappingError> {
-        let sources = dto
-            .sources
-            .iter()
-            .map(map_source_subscription)
-            .collect::<Result<Vec<_>, _>>()?;
+        let inputs = dto.inputs.iter().map(QueryInputConfig::from).collect();
 
         let middleware = dto
             .middleware
@@ -81,13 +77,13 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             })
             .transpose()?;
 
-        Ok(QueryConfig {
+        let config = QueryConfig {
             id: dto.id.clone(),
             auto_start: dto.auto_start,
             query: dto.query.clone(),
             query_language: dto.query_language.clone(),
             middleware,
-            sources,
+            inputs,
             enable_bootstrap: dto.enable_bootstrap,
             joins,
             priority_queue_capacity: dto.priority_queue_capacity,
@@ -97,17 +93,13 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             recovery_policy: None,
             outbox_capacity: dto.outbox_capacity,
             bootstrap_timeout_secs: dto.bootstrap_timeout_secs,
-        })
+            result: QueryResultConfig {
+                label: dto.result.label.clone(),
+            },
+        };
+        config
+            .validate_declarations()
+            .map_err(|e| MappingError::SourceCreationError(e.to_string()))?;
+        Ok(config)
     }
-}
-
-fn map_source_subscription(
-    dto: &SourceSubscriptionConfigDto,
-) -> Result<SourceSubscriptionConfig, MappingError> {
-    Ok(SourceSubscriptionConfig {
-        source_id: dto.source_id.clone(),
-        nodes: dto.nodes.clone(),
-        relations: dto.relations.clone(),
-        pipeline: dto.pipeline.clone(),
-    })
 }

@@ -85,7 +85,7 @@ export function ArchitectureOverlay({ onClose, returnFocus }: { onClose: () => v
             <p id="gpu-architecture-hint">Click a component or arrow for details. Tab then Enter/Space also selects.
               Escape closes details first, then this overview.</p></div>
           <div className="gpu-architecture-legend" aria-label="Connection types">
-            <span className="graph">Graph changes</span><span className="rows">Query rows</span>
+            <span className="graph">Source / transformer output</span><span className="rows">Query output</span>
             <span className="transport">HTTP / SQL / CDC</span><span className="lifecycle">Host / hub reporting</span>
           </div>
         </div>

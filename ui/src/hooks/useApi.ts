@@ -350,7 +350,7 @@ export function useQueries(instanceId?: string) {
             return [...prev, {
               id: event.componentId,
               query: "",
-              sources: [],
+              inputs: [],
               status: "Stopped" as ComponentStatus,
             }];
           });

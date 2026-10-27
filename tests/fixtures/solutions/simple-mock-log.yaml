@@ -21,8 +21,8 @@ queries:
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity
     queryLanguage: Cypher
-    sources:
-      - sourceId: mock-sensor
+    inputs:
+      - mock-sensor
     autoStart: true
 
 reactions:

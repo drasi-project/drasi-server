@@ -61,8 +61,8 @@ instances:
           WHERE m.message = 'Hello World'
           RETURN m.messageid AS MessageId, m.from AS MessageFrom
         queryLanguage: Cypher
-        sources:
-          - sourceId: postgres-messages
+        inputs:
+          - postgres-messages
 
       - id: message-count
         autoStart: true
@@ -70,8 +70,8 @@ instances:
           MATCH (m:message)
           RETURN m.message AS Message, count(m) AS Frequency
         queryLanguage: Cypher
-        sources:
-          - sourceId: postgres-messages
+        inputs:
+          - postgres-messages
 
     reactions:
       - kind: log

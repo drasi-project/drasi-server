@@ -72,7 +72,7 @@ describe('real provider configuration and ownership', () => {
   it('preserves a single client/stream for equivalent inline objects, headers and query sets', async () => {
     const { factory, fetcher } = fixture(), observed = vi.fn<(context: DrasiContextValue) => void>();
     const tree = (reverse: boolean) => <DrasiProvider
-      {...refs} queryIds={reverse ? ['other', 'stocks'] : ['stocks', 'other']}
+      {...refs} outputIds={reverse ? ['other', 'stocks'] : ['stocks', 'other']}
       reaction={{ ...refs.reaction }} reconnect={{ ...refs.reconnect }}
       headers={reverse ? [['x-scope', 'test'], ['accept', 'application/json']] : { Accept: 'application/json', 'X-Scope': 'test' }}
       fetch={fetcher} eventSourceFactory={factory.create}
@@ -97,7 +97,7 @@ describe('real provider configuration and ownership', () => {
     ['instance', { instanceId: 'other / tenant' }],
     ['reaction', { reaction: { ...refs.reaction, id: 'other-stream' } }],
     ['endpoint', { reaction: { ...refs.reaction, endpoint: 'https://events.invalid/other' } }],
-    ['query set', { queryIds: ['stocks', 'other'] }],
+    ['query set', { outputIds: ['stocks', 'other'] }],
     ['credentials', { credentials: 'include' }],
     ['headers', { headers: { Authorization: 'fixture-only' } }],
     ['timeout', { requestTimeoutMs: 20000 }],
@@ -203,7 +203,7 @@ describe('real provider configuration and ownership', () => {
 
   it('scopes query/definition changes inside a shared provider without bouncing its stream', async () => {
     const { factory, fetcher } = fixture();
-    const tree = (queryId: string) => <DrasiProvider {...refs} queryIds={['stocks', 'other']}
+    const tree = (queryId: string) => <DrasiProvider {...refs} outputIds={['stocks', 'other']}
       fetch={fetcher} eventSourceFactory={factory.create}><Probe queryId={queryId} /></DrasiProvider>;
     const view = render(tree('stocks'));
     await waitFor(() => expect(factory.instances).toHaveLength(1));
@@ -296,7 +296,7 @@ describe('real provider configuration and ownership', () => {
       return read(input, init);
     });
     const client = new DrasiClient({
-      ...refs, queryIds: ['stocks', 'other'], fetch: fetcher, eventSourceFactory: factory.create,
+      ...refs, outputIds: ['stocks', 'other'], fetch: fetcher, eventSourceFactory: factory.create,
       reconnect: { maxReconnectAttempts: 1, initialReconnectDelayMs: 10 },
     });
     const connected = client.initialize();

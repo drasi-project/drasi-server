@@ -21,7 +21,7 @@ implementation or a headless dependency shortcut.
 | --- | --- |
 | `/client` runtime | `DrasiClient`, `DrasiSSEClient`, `DrasiError`, `sse034ResultAdapter`, `createLegacyResultAdapter`, `accumulateResult` |
 | `/client` connection and transport types | `DrasiClientOptions`, `DrasiInitializeOptions`, `DrasiSSEClientOptions`, `ReactionReference`, `ReconnectOptions`, `ResultReconciliationOptions`, `ConnectionStatus`, `DrasiRequestContext`, `DrasiHeaders`, `DrasiHeadersProvider`, `EventSourceOptions`, `EventSourceFactory`, `EventSourceLike` |
-| `/client` read and error types | `Component`, `ComponentLinks`, `ComponentStatus`, `QueryLanguage`, `QueryConfig`, `QuerySource`, `QueryJoin`, `QueryJoinKey`, `QueryMiddleware`, `ReactionConfig`, `SseReactionConfig`, `JsonValue`, `DrasiErrorCode`, `DrasiErrorDetails`, `DrasiResourceKind` |
+| `/client` read and error types | `Component`, `ComponentLinks`, `ComponentStatus`, `QueryLanguage`, `QueryConfig`, `QueryInput`, `QueryInputObject`, `QueryResultOptions`, `QueryJoin`, `QueryJoinKey`, `QueryMiddleware`, `ReactionConfig`, `SseReactionConfig`, `JsonValue`, `DrasiErrorCode`, `DrasiErrorDetails`, `DrasiResourceKind` |
 | `/client` result and subscription types | `ResultRow`, `RowKey`, `ResultChange`, `QuerySnapshot`, `QueryDelta`, `QueryResult`, `ResultAdapter`, `ResultAdapterContext`, `LegacyResultAdapterOptions`, `RouteUnidentified`, `QueryStatus`, `QueryErrorScope`, `QuerySubscription`, `QuerySubscriptionState` |
 | `/react` runtime | `DrasiProvider`, `DrasiClientProvider`, `useDrasiClient`, `useDrasiQuery`, `useDrasiConnectionStatus`, `useDrasiQueryDefinition`, `useDrasiServerUiUrl`, `useRowAnimation`, `useTableSort`, `useReducedMotion` |
 | `/react` types | `DrasiProviderProps`, `DrasiContextValue`, `UseDrasiQueryOptions`, `UseDrasiQueryResult`, `UseDrasiQueryDefinitionResult`, `AnimationDirection`, `UseRowAnimationOptions`, `UseRowAnimationResult`, `SortConfig`, `UseTableSortOptions`, `UseTableSortResult` |
@@ -44,7 +44,7 @@ wildcard bind hosts, empty/dot identifiers and duplicate query IDs are rejected.
 | --- | --- |
 | `serverUrl: string` | Required absolute HTTP(S) server base, no query/fragment/default. |
 | `instanceId: string` | Required explicit instance, never discovered. |
-| `queryIds: readonly string[]` | Required existing query references; no definitions. |
+| `outputIds: readonly string[]` | Required output references; no definitions. The default Server validation requires each to be an existing running Continuous Query; an application-owned client overrides `validateResources` to accept source, transformer or query outputs of a native graph. |
 | `reaction: ReactionReference` | Required existing SSE reaction and browser URL. |
 | `resultAdapter?: ResultAdapter` | Defaults to strict `sse034ResultAdapter`. Select `createLegacyResultAdapter(...)` or supply a validating custom adapter explicitly. |
 | `reconciliation?: ResultReconciliationOptions` | `maxPendingChanges: 10000`; a positive safe integer bounding changes observed during a pending snapshot, **not** result-set size. |
@@ -232,7 +232,7 @@ import { DrasiError, type ResultAdapter, type ResultChange, type ResultRow, type
 import { DrasiProvider } from '@drasi/react/react';
 import { QueryTable } from '@drasi/react/components';
 
-const queryIds = ['north-room', 'south-room'];
+const outputIds = ['north-room', 'south-room'];
 const object = (value: unknown): value is ResultRow =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -251,7 +251,7 @@ export function createProbeAdapter(): ResultAdapter {
       if (typeof payload.ts !== 'number' || !Number.isFinite(payload.ts)) throw invalid();
       return [];
     }
-    if (typeof payload.queryId !== 'string' || !queryIds.includes(payload.queryId)) {
+    if (typeof payload.queryId !== 'string' || !outputIds.includes(payload.queryId)) {
       throw new DrasiError('UNROUTABLE_RESULT', context);
     }
     const row = (value: unknown): ResultRow => {
@@ -278,9 +278,9 @@ export const readingOptions = {
 export function ProbeTables({ serverUrl, eventsUrl }: { serverUrl: string; eventsUrl: string }) {
   const resultAdapter = useMemo(createProbeAdapter, []);
   return (
-    <DrasiProvider serverUrl={serverUrl} instanceId="cold-chain" queryIds={queryIds}
+    <DrasiProvider serverUrl={serverUrl} instanceId="cold-chain" outputIds={outputIds}
       reaction={{ id: 'cold-chain-events', endpoint: eventsUrl }} resultAdapter={resultAdapter}>
-      {queryIds.map(queryId => (
+      {outputIds.map(queryId => (
         <QueryTable key={queryId} queryId={queryId} title={queryId}
           queryOptions={readingOptions} rowKey={probeKey}
           columns={[{ key: 'probeId', label: 'Probe' }, { key: 'temperatureC', label: 'Temperature (C)' }]} />
@@ -607,7 +607,7 @@ export function HooksOnlyApp({ serverUrl, instanceId, endpoint }: {
 }) {
   return <DrasiProvider
     serverUrl={serverUrl} instanceId={instanceId}
-    queryIds={['readings']} reaction={{ id: 'events', endpoint }}
+    outputIds={['readings']} reaction={{ id: 'events', endpoint }}
   >
     <ReadingList />
   </DrasiProvider>;
@@ -1398,7 +1398,7 @@ configuration without opening a stream. The public instance surface is:
 | `getReaction(signal?: AbortSignal)` | `Promise<Component<ReactionConfig>>`; the **configured** reaction's full-view DTO. No reaction ID argument; the read alone does not enforce running status/SSE membership. |
 | `getQueryConfig(queryId: string, signal?: AbortSignal)` | `Promise<QueryConfig>`; optional definition inspection, extracting `config` from the full query read. Missing/failed reads throw, never return `null`. |
 | `getQueryResults(queryId: string, signal?: AbortSignal)` | `Promise<ResultRow[]>`; validates the query and requires running status before reading its snapshot. This direct read returns **rows**, not a `QuerySnapshot` wrapper, and does not coordinate overlap with an SSE subscription. |
-| `subscribe(queryId, onResult, onError?, onStateChange?)` | `QuerySubscription`; attaches to the shared stream before starting its own REST baseline. `queryId: string` must belong to `queryIds`. Callback shapes and handle methods are below. |
+| `subscribe(outputId, onResult, onError?, onStateChange?)` | `OutputSubscription`; attaches to the shared stream before starting its own baseline. `outputId: string` must belong to `outputIds`. Callback shapes and handle methods are below. |
 | `getConnectionStatus()` | `ConnectionStatus`; a shallow status copy, not a live mutable object or per-query readiness result. |
 | `onConnectionStatusChange(callback: (status: ConnectionStatus) => void)` | `() => void`; immediately calls back with a status copy, then on transitions. Call the returned function to detach. |
 | `getServerUiUrl()` | `string`; the instance-scoped UI link. Does not read/discover that UI or require initialization. |
@@ -1408,7 +1408,7 @@ configuration without opening a stream. The public instance surface is:
 Direct reads perform one attempt and can run without `initialize()`, including
 in a REST-only Node process. Initialization and subscriptions own the documented
 bounded retry policy. Every resource read remains in `instanceId`, even when
-inspecting an ID outside the live `queryIds` set.
+inspecting an ID outside the live `outputIds` set.
 
 The `subscribe` callbacks are synchronous:
 
@@ -1457,7 +1457,7 @@ export async function monitorReadings(
 ) {
   const client = new DrasiClient({
     serverUrl: 'https://drasi.example', instanceId: 'analytics',
-    queryIds: ['readings'],
+    outputIds: ['readings'],
     reaction: { id: 'events', endpoint: 'https://events.example/changes' },
   });
   try {
@@ -1506,7 +1506,7 @@ the owner must supply a trusted browser endpoint and enforce its routing policy.
 
 | Method | Return / behavior |
 | --- | --- |
-| `connect(queryIds: string[], endpoint: string, signal?: AbortSignal, maxInitialReconnectAttempts?: number)` | `Promise<void>`; replaces pending/current connection work and resolves when open, or rejects after permanent failure/exhaustion/cancellation. The fourth argument is a nonnegative safe integer, defaulting to the configured retry count; it bounds only retries before the first open. Subsequent reconnects use the normal policy. The signal cancels the **pending opening**; use `disconnect()` for lifetime cleanup after it resolves. `queryIds` is not a membership or authorization check at this layer: delivery is keyed by actual subscriptions and normalized result IDs. |
+| `connect(outputIds: string[], endpoint: string, signal?: AbortSignal, maxInitialReconnectAttempts?: number)` | `Promise<void>`; replaces pending/current connection work and resolves when open, or rejects after permanent failure/exhaustion/cancellation. The fourth argument is a nonnegative safe integer, defaulting to the configured retry count; it bounds only retries before the first open. Subsequent reconnects use the normal policy. The signal cancels the **pending opening**; use `disconnect()` for lifetime cleanup after it resolves. `outputIds` is not a membership or authorization check at this layer: delivery is keyed by actual subscriptions and normalized result IDs. |
 | `subscribe(queryId: string, onResult: (result: QueryDelta) => void, onError?: (error: DrasiError) => void)` | `() => void`; attaches a delta-only subscriber and returns its plain cleanup function. No REST snapshot, accumulated rows, state callback or query-local refresh method. Provide `onError` for query-scoped protocol/callback failures. |
 | `getQueryError(queryId: string)` | `DrasiError \| null`; retained query-scoped fault, separate from shared status. A later valid batch for that query clears it; disconnect clears all faults. |
 | `getConnectionStatus()` | `ConnectionStatus`; a status copy. |
@@ -1546,7 +1546,7 @@ as a racing success.
 | Code | Meaning / appropriate owner action |
 | --- | --- |
 | `INSTANCE_NOT_FOUND` | Explicit instance is absent. Correct configuration; not query provisioning. |
-| `QUERY_NOT_FOUND`, `REACTION_NOT_FOUND` | Structured REST-confirmed absence. Only the owning app may provision allowlisted resources. |
+| `QUERY_NOT_FOUND`, `OUTPUT_NOT_FOUND`, `REACTION_NOT_FOUND` | Structured absence of a query, a graph output (`OUTPUT_NOT_FOUND`, from an app-owned native client) or a reaction. Only the owning app may provision allowlisted resources. |
 | `RESOURCE_STOPPED` | Stopped/Added resource. Only its owner may start it. |
 | `RESOURCE_STARTING` | Starting/Reconfiguring/bootstrap. Retryable, not absent; no duplicate start. |
 | `RESOURCE_UNAVAILABLE` | Error/Stopping/Removed; operator attention. |
@@ -1556,6 +1556,8 @@ as a racing success.
 | `SNAPSHOT_OVERLAP` | Retryable known snapshot/delta overlap. The ambiguous candidate is discarded; a bounded query-local baseline refresh follows. |
 | `RESULT_BUFFER_OVERFLOW` | Retryable pending-change limit exceeded. Abort the pending read and resynchronize; never truncate to a live result. |
 | `INVALID_ROW_KEY` | Terminal raw identity failure, including sparse deletes. Fix `getKey`/the query projection; there is no silent fallback. |
+| `MISSING_BASE_ROW` | Retryable: a graph `PATCH` arrived for an identity with no base row, so local state diverged. A fresh snapshot follows; state is left untouched. |
+| `UNSUPPORTED_CAPABILITY` | Terminal: the output provides no snapshot (HTTP 501). It is never shown as an empty table. |
 | `RESULT_PROCESSING_FAILED` | Terminal transform, post-processing or subscriber failure. Correct the callback and retry as needed. |
 | `UNROUTABLE_RESULT` | Terminal missing/failed explicit legacy routing. Fix the adapter/routing policy; do not guess a query by shape. |
 
@@ -1580,3 +1582,26 @@ expose no HTTP status, even when the underlying cause is an auth failure.
 | Unstyled components or missing row flashes | Import `/styles.css` once for components and define scoped tokens as needed. Headless hooks never import styles. Initial/unchanged values do not flash, and reduced motion suppresses animation without suppressing updates. |
 | Height throws or percentages have no effect | Replace legacy class strings with the [validated size](#table-sizing); give percentage heights a sized parent. Define referenced custom properties or their literal fallbacks. `0` is not a hide/collapse flag. |
 | A Modal is blank, will not close, or focus returns unexpectedly | SSR intentionally has no portal. Check the lazy chunk and React error boundary, meaningful `title`, controlled `open` updates and a visible close button. Verify focus refs point to eligible elements and account for a surviving top modal. Do not add competing focus/scroll owners. |
+
+
+## Native graph outputs
+
+The generic stream boundary is `OutputSnapshot` / `OutputDelta` (`outputId`), and
+`useDrasiOutput(outputId, options)` accumulates one output's rows for a source,
+a transformer or a query. `useDrasiQuery` is the continuous-query facade over the
+same machinery with query-scoped error details; it must not be used to present a
+source as a query.
+
+A native SSE sink publishes truthful graph changes, not query rows:
+`{output: {alias, component, port}, sequence, publishedAt, changes: [...]}`, each
+change with `operation` (`ADD`, `REPLACE`, `PATCH`, `DELETE`), canonical
+`identity` `{namespace, id}` and only the `before`, `after` and
+`removedProperties` the record carries. Pass `nativeGraphResultAdapter` as the
+`resultAdapter`, key rows with `graphRowKey`, and set
+`graphSnapshots: {url: outputId => ...}` to the sink's `/snapshot/:alias` route,
+which returns canonical `ADD` changes. Rows are keyed by canonical identity: a
+`PATCH` sets and removes properties (an explicit `null` stays a value), an
+identity-only `DELETE` removes the row, and a `PATCH` with no base row raises the
+retryable `MISSING_BASE_ROW` error, which triggers a fresh snapshot. A snapshot
+endpoint that reports `501` raises `UNSUPPORTED_CAPABILITY` instead of an empty
+table.

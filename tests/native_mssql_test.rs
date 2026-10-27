@@ -59,7 +59,7 @@ async fn real_server() -> Result<()> {
         serde_json::to_string(&config)?.replace("env-json:DRASI_MSSQL", "secret-json:DRASI_MSSQL");
     let config: DrasiServerConfig = serde_json::from_str(&json)?;
     let source = database.settings();
-    let sink = json!({"connection":source["connection"],"queries":["all"],
+    let sink = json!({"connection":source["connection"],"outputs":{"all":{"component":"all","port":"out"}},
         "default_template":{"added":{"template":database.scoped_sql("EXEC {{schema}}.ApplyEffect {{param operation}},{{param after.id}},{{param after.value}}")}}});
     let secrets = Arc::new(
         MemorySecretStoreProvider::new()

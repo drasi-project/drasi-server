@@ -200,7 +200,7 @@ python3 examples/gpu-cluster-lab/embedded/ops/qualify-native-postgres.py \
   --runtime target/debug/gpu-runtime --control target/debug/gpu-control \
   --native-plugin target/debug/libgpu_native.dylib \
   --sse-plugin target/debug/libdrasi_computation_sink_sse.dylib \
-  --evidence /tmp/gpu-native-postgres-proof
+  --evidence ./gpu-native-postgres-proof
 ```
 
 Use `.so` instead of `.dylib` on Linux and a **new** evidence directory for every
@@ -209,6 +209,26 @@ transactions, query-backed readiness, rollback exclusion, an offline write,
 graceful restart and abrupt runtime loss. Both restarts must retain the same
 managed slot. It awaits process cleanup, removes only its own container/state,
 and retains logs and observations in the evidence directory.
+
+For **full functional acceptance**, add `--full-acceptance` and
+`--playwright-module /absolute/path/to/installed/playwright/index.mjs`.
+Build `../shared/ui/dist` beforehand (or select existing built assets with
+`--ui-dist`); the harness does not rebuild Rust or UI artifacts. Node.js, npm,
+the UI's installed dependencies, and Playwright's installed Chromium are required.
+This mode stages the actual built UI under the control service's private working
+directory and uses a newly owned labelled PostgreSQL volume instead of tmpfs.
+It runs `live-check.mjs --acceptance`, the real HTTP writer-fault/retry/exhaustion
+checks, and stops/restarts runtime, control **and PostgreSQL**, retaining and
+verifying saved IDs, settings, plans, receipts and the managed slot.
+It captures all nine native query row batches with `live-check.mjs --capture-rows`
+and runs `GPU_LAB_NATIVE_ROWS=<capture> npm test`, so a browser failure cannot
+silently skip that independent payload validation. It then drives the real React
+UI in Chromium, commits a CSRF-authorized edit, and checks its measured/confirmed
+feedback and rendered SSE update without reload. Artifact hashes, each command's output,
+restart snapshot, native rows and browser screenshot remain in the evidence
+directory. Owned helpers are awaited, and only the harness's container, volume
+and transient query state are removed, including on failure. Simulated GPU
+execution is intentional; this is not physical-GPU qualification.
 
 For local hosting, `PGPORT` defaults to `5432`, `LISTEN_ADDRESS` to
 `0.0.0.0:8080`, and `GPU_SSE_HOST`/`GPU_SSE_PORT` to `0.0.0.0`/`8081`.
@@ -1012,8 +1032,9 @@ one subscription to each of the nine UI queries above the display components.
 
 The provider uses the current page origin, instance `gpu-demo`, native sink
 `gpu-demo-ui`, the proxied `/events/gpu-demo` endpoint, and the SDK's
-`sse034ResultAdapter`. The control proxy exposes only the named UI query
-configuration/results routes, the read-only computation graph, and SSE, not
+`nativeGraphResultAdapter` with identity-keyed rows. The control proxy exposes only the named UI query
+configuration/results routes, the read-only computation graph, the SSE stream and the nine
+`/snapshot/{alias}` reads, not
 arbitrary Server management writes. The shared
 [native browser binding](../../native-sse-client/index.tsx) validates the actual
 running native sink and its direct edges instead of fabricating a legacy

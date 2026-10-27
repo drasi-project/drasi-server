@@ -78,8 +78,8 @@ instances:
           MATCH (e:Event)
           RETURN count(e) AS TotalEvents
         queryLanguage: Cypher
-        sources:
-          - sourceId: analytics-events
+        inputs:
+          - analytics-events
 
       - id: event-by-type
         autoStart: true
@@ -87,8 +87,8 @@ instances:
           MATCH (e:Event)
           RETURN e.type AS EventType, count(e) AS Count
         queryLanguage: Cypher
-        sources:
-          - sourceId: analytics-events
+        inputs:
+          - analytics-events
 
     reactions:
       - kind: log
@@ -124,8 +124,8 @@ instances:
           MATCH (h:Health)
           RETURN h.service AS Service, h.status AS Status
         queryLanguage: Cypher
-        sources:
-          - sourceId: health-checks
+        inputs:
+          - health-checks
 
       - id: unhealthy-services
         autoStart: true
@@ -134,8 +134,8 @@ instances:
           WHERE h.status <> 'healthy'
           RETURN h.service AS Service, h.status AS Status, h.message AS Message
         queryLanguage: Cypher
-        sources:
-          - sourceId: health-checks
+        inputs:
+          - health-checks
 
     reactions:
       - kind: log
@@ -180,8 +180,8 @@ instances:
           MATCH (a:Audit)
           RETURN a.id AS AuditId, a.user AS User, a.action AS Action, a.timestamp AS Timestamp
         queryLanguage: Cypher
-        sources:
-          - sourceId: audit-events
+        inputs:
+          - audit-events
 
     reactions:
       - kind: log

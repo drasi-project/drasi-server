@@ -61,7 +61,8 @@ catalog-access arrows are explicitly identified as resource access rather than
 graph pipes. On small screens, expand **Connection schemas** for the same details.
 Close the overlay with the **X** at the top
 right (or Escape when no details are open); focus returns to the info button.
-The overview distinguishes browser commands, graph changes, query rows and
+The overview distinguishes browser commands, source/transformer graph changes,
+query outputs (the same graph-change schema, carrying Result nodes) and
 result delivery. Its expanded introduction explains the Euclidean-distance
 calculation and why cart radius plus clearance matters even when a path misses
 an obstacle. The three inspection queries are grouped for readability.
@@ -134,7 +135,7 @@ native scene source / authoritative in-memory store
     |                                                     |
     v                                                     |
 geometry-context CQ (WHERE active = true, collect payloads) |
-    | query ChangeEnvelope                                |
+    | graph-change envelope (Result nodes)                |
     v                                                     |
 native Geometry Transformer                               |
     | graph ChangeEnvelope: Obstruction +/- and context    |
@@ -160,27 +161,38 @@ The Server uses its built-in `drasi/continuous-query` factories, declared
 each query's `out` port also connects to the outlet's `in` port. The example's
 `geo` dependency supplies the geometry calculation.
 
-The `wall-query-snapshots` resource grants the native SSE sink read-only access
-to that same catalogue for the five declared queries, with at most 16 concurrent
-readers and a five-second readiness timeout. For example,
-`http://127.0.0.1:8422/snapshot/affected-journeys` streams the current rows as a
-JSON array and includes query sequence/generation headers. This adds no result
-cache or query executor. It is a point-in-time read, not an atomic snapshot/live
-subscription; the UI's existing Server snapshot/subscription flow is unchanged.
+The `wall-output-snapshots` resource is an immutable allow-list and limits policy
+for the five declared query output ports (`component` plus `port`), with at most
+16 concurrent readers and a five-second readiness timeout. The host combines it
+with the graph's actual output catalogue when it constructs the SSE sink. For
+example, `http://127.0.0.1:8422/snapshot/affected-journeys` streams the current
+state as a JSON array of canonical `ADD` changes (real identity, element and
+complete `after`) and returns `x-drasi-output-epoch` and
+`x-drasi-output-position` headers. This adds no result cache or query executor.
+It is a point-in-time read, not an atomic snapshot/live subscription; the UI's
+existing Server snapshot/subscription flow is unchanged.
 
 ### Ports and query roles
 
 | Component | Input | Output / role |
 | --- | --- | --- |
 | `scene` (`move-a-wall/scene`) | HTTP `POST /commands`, not a graph input port | `out`: graph-change schema; authoritative input changes only |
-| `scene-inputs` | `in`: graph-change schema from `scene` | `out`: query-row schema; all editable records, including inactive objects, revision and changed IDs |
-| `geometry-context` | `in`: graph-change schema from `scene` | `out`: query-row schema; only active objects plus explicit source manifest |
-| `geometry` (`move-a-wall/geometry`) | `in`: query-row schema from `geometry-context` only | `out`: graph-change schema; diffed obstructions, projected metadata and revision status |
-| `obstructions` | `in`: geometry graph changes | `out`: query rows; exact transformer results for inspector/path highlighting |
-| `affected-journeys` | `in`: geometry graph changes | `out`: query rows; synthetic joins `CART_TASK`, `TO_DESTINATION`, `BLOCKS`, `CAUSED_BY` enrich each obstruction |
-| `geometry-status` | `in`: geometry graph changes | `out`: query rows; last computed input revision and result count |
-| `query-results` | `in`: query-change envelopes from all five CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
-| `wall-ui` | `in`: direct query-change envelopes from all five CQs | Native SSE on `/events`; `@drasi/react` loads real snapshots and applies real deltas |
+| `scene-inputs` | `in`: graph-change schema from `scene` | `out`: graph-change schema carrying scoped query result nodes; all editable records, including inactive objects, revision and changed IDs |
+| `geometry-context` | `in`: graph-change schema from `scene` | `out`: graph-change schema carrying scoped query result nodes; only active objects plus explicit source manifest |
+| `geometry` (`move-a-wall/geometry`) | `in`: graph-change schema carrying query result nodes from `geometry-context` only | `out`: graph-change schema; diffed obstructions, projected metadata and revision status |
+| `obstructions` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; exact transformer results for inspector/path highlighting |
+| `affected-journeys` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; synthetic joins `CART_TASK`, `TO_DESTINATION`, `BLOCKS`, `CAUSED_BY` enrich each obstruction |
+| `geometry-status` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; last computed input revision and result count |
+| `query-results` | `in`: graph-change envelopes with query result nodes from all five CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
+| `wall-ui` | `in`: direct graph-change envelopes with query result nodes from all five CQs | Native SSE on `/events`; the sink writes truthful graph changes (`ADD`/`REPLACE`/`PATCH`/`DELETE` with canonical identity); `@drasi/react` loads the canonical snapshot and applies live changes to its identity-keyed rows |
+
+Every pipe in this table uses the same graph-change v1 schema. A query's `RETURN`
+aliases are properties of its Result nodes, whose identities are scoped to that
+query output; query ID, row kind, generation, sequence and snapshot markers are
+scoped envelope metadata. No pipe converts between a separate query-row and
+graph schema. The Server REST snapshot API remains row JSON; the native SSE
+`/events` and `/snapshot/:alias` carry the graph-change shape at the delivery
+boundary.
 
 The native SSE sink explicitly configures `heartbeatIntervalMs: 5000`. This is
 only a connection heartbeat; it never triggers geometry computation.
@@ -197,6 +209,14 @@ can have several obstruction causes. Removing one cause cannot erase another.
 The geometry output also projects active cart/task/destination/obstacle metadata
 so the impact query is the only place that assembles the human-readable effect.
 
+Scene and geometry output each carry their immediate component's logical producer
+progress. One volatile output epoch lasts for the constructed component's lifetime;
+reconstruction starts a new epoch because the example has no durable state owner.
+Geometry preserves the context query's producer-sequence ordering, lineage and
+timestamps while assigning its own increasing output progress, not the query's
+identity. Native construction supplies the actual component and instance/graph
+scope; the existing `scene/out` and `geometry/out` stream names are unchanged.
+
 The source accepts `put`, `delete`, `reset`, and `clear` commands with an
 `expected_revision`. One mutex serializes mutations; stale revisions are rejected.
 A bounded graph channel is reserved before committing an input mutation. Each
@@ -204,7 +224,7 @@ accepted command emits one real graph envelope with only changed entity records
 and a revision/active-membership manifest. Identical commands are no-ops.
 
 The context CQ really filters and aggregates those records. The transformer
-caches query rows, current scene objects and its last emitted graph records. It
+caches decoded query results, current scene objects and its last emitted graph records. It
 requires the CQ's entity versions to match the explicit source manifest before
 publishing a new revision. This is **not** an inferred time/quiet-period boundary
 or a claim about external database transactions. A full initial fixture or empty

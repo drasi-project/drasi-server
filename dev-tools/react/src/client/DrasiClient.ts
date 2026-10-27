@@ -14,21 +14,22 @@
 
 import { DrasiSSEClient, type EventSourceFactory } from './DrasiSSEClient';
 import type {
-  Component, ConnectionStatus, DrasiHeaders, QueryConfig, QueryResult, QuerySubscription,
-  QuerySubscriptionState, ReactionConfig, ReactionReference, ReconnectOptions, ResultAdapter,
+  Component, ConnectionStatus, DrasiHeaders, QueryConfig, OutputResult, OutputSubscription,
+  OutputSubscriptionState, ReactionConfig, ReactionReference, ReconnectOptions, ResultAdapter,
   ResultReconciliationOptions, ResultRow,
 } from './types';
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 import { instancePath, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
 import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
-import { subscribeToQuery } from './subscription';
+import { readGraphSnapshot, readGraphSnapshotResponse } from './graph';
+import { subscribeToOutput } from './subscription';
 
 /** References to pre-existing resources. No option enables resource management. */
 export interface DrasiClientOptions {
   /** Absolute HTTP(S) server base URL. No default or instance discovery. */
   serverUrl: string;
   instanceId: string;
-  queryIds: readonly string[];
+  outputIds: readonly string[];
   reaction: ReactionReference;
   /** Strict SSE 0.3.4 by default; use a named adapter for legacy/custom formats. */
   resultAdapter?: ResultAdapter;
@@ -44,6 +45,14 @@ export interface DrasiClientOptions {
   requestTimeoutMs?: number;
   /** SSE and snapshot retries are bounded by the same policy. */
   reconnect?: ReconnectOptions;
+  /**
+   * Read each subscription's snapshot from a native sink's generic output
+   * endpoint (`/snapshot/:producer`) instead of the Server's query-results API.
+   * The snapshot is an array of `ADD` graph changes, so every row keeps its
+   * canonical identity and later graph changes (including patches and identity
+   * deletes) apply to it. Use with `nativeGraphResultAdapter`.
+   */
+  graphSnapshots?: { readonly url: (producerId: string) => string };
 }
 
 /** Startup policy: first in-flight call wins; later initializations select new options. */
@@ -60,7 +69,7 @@ export interface DrasiInitializeOptions {
 export class DrasiClient {
   private readonly baseUrl: string;
   private readonly sseClient: DrasiSSEClient;
-  private readonly queryIds: Set<string>;
+  private readonly outputIds: Set<string>;
   private readonly reaction: ReactionReference;
   private readonly fetcher: typeof globalThis.fetch;
   private readonly credentials: RequestCredentials;
@@ -70,6 +79,7 @@ export class DrasiClient {
   private readonly retryDelay: number;
   private readonly maxRetryDelay: number;
   private readonly maxPendingChanges: number;
+  private readonly graphSnapshotUrl?: (producerId: string) => string;
   private readonly subscriptions = new Set<() => void>();
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -79,9 +89,9 @@ export class DrasiClient {
   constructor(options: DrasiClientOptions) {
     this.instanceId = options.instanceId;
     const details = { instanceId: this.instanceId };
-    if (!isIdentifier(options.instanceId) || !Array.isArray(options.queryIds) ||
-        options.queryIds.some(id => !isIdentifier(id)) ||
-        new Set(options.queryIds).size !== options.queryIds.length || !isIdentifier(options.reaction?.id)) {
+    if (!isIdentifier(options.instanceId) || !Array.isArray(options.outputIds) ||
+        options.outputIds.some(id => !isIdentifier(id)) ||
+        new Set(options.outputIds).size !== options.outputIds.length || !isIdentifier(options.reaction?.id)) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
     this.baseUrl = normalizeServerUrl(options.serverUrl, details);
@@ -89,7 +99,7 @@ export class DrasiClient {
       id: options.reaction.id,
       endpoint: validateHttpUrl(options.reaction.endpoint, details),
     };
-    this.queryIds = new Set(options.queryIds);
+    this.outputIds = new Set(options.outputIds);
     const fetcher = options.fetch ?? globalThis.fetch;
     if (typeof fetcher !== 'function') throw new DrasiError('INVALID_CONFIGURATION', details);
     this.fetcher = fetcher.bind(globalThis);
@@ -101,6 +111,10 @@ export class DrasiClient {
     this.retryDelay = options.reconnect?.initialReconnectDelayMs ?? 1000;
     this.maxRetryDelay = options.reconnect?.maxReconnectDelayMs ?? 30000;
     this.maxPendingChanges = options.reconciliation?.maxPendingChanges ?? 10000;
+    if (options.graphSnapshots !== undefined && typeof options.graphSnapshots.url !== 'function') {
+      throw new DrasiError('INVALID_CONFIGURATION', details);
+    }
+    this.graphSnapshotUrl = options.graphSnapshots?.url;
     if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0 ||
         !Number.isSafeInteger(this.maxPendingChanges) || this.maxPendingChanges < 1) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
@@ -126,16 +140,26 @@ export class DrasiClient {
     suffix: 'config' | 'results',
     signal?: AbortSignal,
   ): Promise<unknown> {
-    const details = this.details(kind === 'queries' ? 'query' : 'reaction', id);
+    const url = suffix === 'config'
+      ? `${instancePath(this.baseUrl, this.instanceId, kind, id)}?view=full`
+      : instancePath(this.baseUrl, this.instanceId, kind, id, 'results');
+    return this.getJson(
+      url, this.details(kind === 'queries' ? 'query' : 'reaction', id), readResponse, signal,
+    );
+  }
+
+  private async getJson(
+    url: string,
+    details: DrasiErrorDetails,
+    readBody: (response: Response, details: DrasiErrorDetails) => Promise<unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, this.requestTimeoutMs);
     try {
       signal?.throwIfAborted();
-      const url = suffix === 'config'
-        ? `${instancePath(this.baseUrl, this.instanceId, kind, id)}?view=full`
-        : instancePath(this.baseUrl, this.instanceId, kind, id, 'results');
       const data = await abortable((async () => {
         const headers = typeof this.headers === 'function'
           ? await resolveHeaders(this.headers, {
@@ -149,7 +173,7 @@ export class DrasiClient {
         details.status = response.status;
         controller.signal.throwIfAborted();
         if (response.redirected) throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
-        return readResponse(response, details);
+        return readBody(response, details);
       })(), controller.signal);
       controller.signal.throwIfAborted();
       return data;
@@ -161,6 +185,17 @@ export class DrasiClient {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
     }
+  }
+
+  /**
+   * The subscription's snapshot: identity-keyed graph rows from the producer's
+   * generic snapshot endpoint when configured, else the query's REST rows.
+   */
+  private async readSnapshot(queryId: string, signal?: AbortSignal): Promise<ResultRow[]> {
+    if (!this.graphSnapshotUrl) return this.getQueryResults(queryId, signal);
+    const details = this.details('query', queryId);
+    const url = validateHttpUrl(this.graphSnapshotUrl(queryId), details);
+    return readGraphSnapshot(await this.getJson(url, details, readGraphSnapshotResponse, signal), details);
   }
 
   /** Read the server's full-view query DTO, including lifecycle status. */
@@ -178,7 +213,7 @@ export class DrasiClient {
 
   /** Validate references/usability, not desired query text or deployment settings. */
   async validateResources(signal?: AbortSignal): Promise<void> {
-    const queries = await Promise.allSettled([...this.queryIds].map(async queryId => {
+    const queries = await Promise.allSettled([...this.outputIds].map(async queryId => {
       requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
     }));
     // Drain a validation batch before handing an error to an app that may
@@ -189,7 +224,7 @@ export class DrasiClient {
     const reaction = await this.getReaction(signal);
     const details = this.details('reaction', this.reaction.id);
     if (reaction.config.kind !== 'sse' ||
-        [...this.queryIds].some(id => !reaction.config.queries.includes(id))) {
+        [...this.outputIds].some(id => !reaction.config.queries.includes(id))) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
     }
     requireRunning(reaction, details);
@@ -205,7 +240,7 @@ export class DrasiClient {
     const controller = new AbortController();
     this.initController = controller;
     const promise = this.sseClient.connect(
-      [...this.queryIds], this.reaction.endpoint, controller.signal, options.maxInitialReconnectAttempts,
+      [...this.outputIds], this.reaction.endpoint, controller.signal, options.maxInitialReconnectAttempts,
     );
     this.initPromise = promise;
     try {
@@ -239,23 +274,23 @@ export class DrasiClient {
    */
   subscribe(
     queryId: string,
-    callback: (result: QueryResult) => void,
+    callback: (result: OutputResult) => void,
     onError?: (error: DrasiError) => void,
-    onStateChange?: (state: QuerySubscriptionState) => void,
-  ): QuerySubscription {
-    if (!this.queryIds.has(queryId)) {
+    onStateChange?: (state: OutputSubscriptionState) => void,
+  ): OutputSubscription {
+    if (!this.outputIds.has(queryId)) {
       const error = new DrasiError('INVALID_CONFIGURATION', this.details('query', queryId));
       if (!onError) throw error;
-      const state: QuerySubscriptionState = {
+      const state: OutputSubscriptionState = {
         status: 'terminal-error', stale: false, error, errorScope: 'query',
       };
       onError(error);
       onStateChange?.(state);
       return Object.assign(() => {}, { retry: () => onError(error), getState: () => ({ ...state }) });
     }
-    const subscription = subscribeToQuery({
-      queryId, source: this.sseClient,
-      snapshot: signal => this.getQueryResults(queryId, signal),
+    const subscription = subscribeToOutput({
+      outputId: queryId, source: this.sseClient,
+      snapshot: signal => this.readSnapshot(queryId, signal),
       details: this.details('query', queryId),
       maxRetries: this.maxRetries, retryDelay: this.retryDelay, maxRetryDelay: this.maxRetryDelay,
       maxPendingChanges: this.maxPendingChanges,

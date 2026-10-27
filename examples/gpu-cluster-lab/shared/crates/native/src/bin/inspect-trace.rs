@@ -17,7 +17,6 @@ fn main() -> Result<()> {
         .context("usage: inspect-trace <recording.ndjson>")?;
     let mut codec = EnvelopeCodec::new(NonZeroUsize::new(8 * 1024 * 1024).unwrap());
     codec.register_schema(GraphChangeCodec::schema())?;
-    codec.register_schema(QueryChangeCodec::schema())?;
     let mut output = BufWriter::new(std::io::stdout().lock());
     let mut sequences = BTreeMap::new();
     for (index, line) in BufReader::new(File::open(path)?).lines().enumerate() {
@@ -37,9 +36,14 @@ fn main() -> Result<()> {
         if record["port"] == "graph" {
             for change in GraphChangeCodec::decode_changes(&envelope)? {
                 changes.push(match change {
-                    SourceChange::Insert { element } | SourceChange::Update { element } => json!({
+                    SourceChange::Insert { element } | SourceChange::Replace { element } => json!({
                         "metadata":element.get_metadata(),
                         "properties":Value::Object(element.get_properties().into()),
+                    }),
+                    SourceChange::Update { element, removed_properties } => json!({
+                        "metadata":element.get_metadata(),
+                        "properties":Value::Object(element.get_properties().into()),
+                        "removed_properties":removed_properties,
                     }),
                     SourceChange::Delete { metadata } => json!({"deleted":metadata}),
                     SourceChange::Future { .. } => {
@@ -49,6 +53,7 @@ fn main() -> Result<()> {
             }
         } else {
             ensure!(record["port"] == "query", "unexpected diagnostic port");
+            let query = QueryChangeCodec::metadata(&envelope)?.query_id;
             for operation in envelope.changes().operations() {
                 let (row, deleted) = match operation {
                     ChangeOperation::Added { after, .. }
@@ -64,7 +69,7 @@ fn main() -> Result<()> {
                 };
                 let row = QueryChangeCodec::decode_row(row)?;
                 changes.push(
-                    json!({"query":row.query_id,"signature":row.signature.to_string(),
+                    json!({"query":query,"signature":row.signature.map(|signature| signature.to_string()),
                     "deleted":deleted,"values":QueryChangeCodec::row_values_to_json(&row.values)}),
                 );
             }

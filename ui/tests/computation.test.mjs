@@ -26,7 +26,7 @@ function pipeline(components, relationships = []) {
       components, relationships, resources: [],
     },
     sources: [{ id: "source", kind: "mock", status: "Running", autoStart: true }],
-    queries: [{ id: "query", status: "Running", sourceIds: ["not-a-real-edge"] }],
+    queries: [{ id: "query", status: "Running", inputIds: ["not-a-real-edge"] }],
     reactions: [{ id: "reaction", kind: "log", status: "Running", queryIds: ["query"] }],
   };
 }
@@ -43,7 +43,7 @@ test("all semantic kinds and unknown future kinds render, preserving legacy rend
   assert.equal(graph.nodes.length, 7);
   assert.deepEqual(graph.nodes.map((n) => n.type),
     ["sourceNode", "queryNode", "reactionNode", "computationNode", "computationNode", "computationNode", "computationNode"]);
-  assert.equal(graph.edges.length, 3, "do not infer extra edges from legacy sourceIds/queryIds");
+  assert.equal(graph.edges.length, 3, "do not infer extra edges from legacy inputIds/queryIds");
   assert.equal(new Set(graph.nodes.map((n) => n.id)).size, 7);
 });
 

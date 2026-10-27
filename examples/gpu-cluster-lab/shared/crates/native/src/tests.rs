@@ -25,6 +25,9 @@ mod inputs;
 #[path = "bootstrap_tests.rs"]
 mod bootstrap_transport;
 
+#[path = "producer_tests.rs"]
+mod producer_progress;
+
 fn processor(kind: Kind, workers: Arc<Workers>) -> Result<Processor> {
     let factory = NativeFactory {
         kind,
@@ -37,6 +40,7 @@ fn processor(kind: Kind, workers: Arc<Workers>) -> Result<Processor> {
             .descriptor(ComponentId::try_new(format!("{kind:?}"))?)?,
         serde_json::json!({"stream":format!("{kind:?}/{}",Uuid::new_v4())}),
         workers,
+        None,
     )
 }
 async fn query(id: &str, text: &str) -> Result<ContinuousQueryTransformer> {
@@ -125,7 +129,9 @@ fn payloads(outputs: &[OutputEnvelope], label: &str) -> Result<Vec<serde_json::V
     for output in outputs {
         for change in GraphChangeCodec::decode_changes(&output.envelope)? {
             let element = match change {
-                SourceChange::Insert { element } | SourceChange::Update { element } => element,
+                SourceChange::Insert { element }
+                | SourceChange::Replace { element }
+                | SourceChange::Update { element, .. } => element,
                 _ => continue,
             };
             let drasi_core::models::Element::Node {
@@ -193,7 +199,11 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
     policy.start().await?;
     simulator.start().await?;
     let mut inputs = query("inputs", "MATCH (m:Input) RETURN m.payload AS payload").await?;
-    let mut source = Emitter::new(StreamId::try_new("test-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("test-source")?,
+        ComponentId::try_new("simulator-input-fixture")?,
+        None,
+    )?;
     let bootstrap = bootstrap(&f, epoch)?;
     for row in send(&mut inputs, &mut source, "bootstrap", &bootstrap).await? {
         let input = InputEnvelope {
@@ -377,7 +387,11 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
         "MATCH (m:Input) RETURN m.payload AS payload",
     )
     .await?;
-    let mut source = Emitter::new(StreamId::try_new("recovery-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("recovery-source")?,
+        ComponentId::try_new("recovery-fixture")?,
+        None,
+    )?;
     let steps = [
         (&bootstrap, 0),
         (&unavailable, 0),
@@ -480,7 +494,7 @@ async fn native_root_query_is_exposed_through_ordinary_read_apis() -> Result<()>
     let root_id = drasi.computation_control()?.desired_snapshot().id.clone();
     let config = drasi_lib::Query::cypher("ui-gpus")
         .query("MATCH (n:Probe) RETURN n.id AS id")
-        .from_source("probe")
+        .from_input("probe")
         .enable_bootstrap(false)
         .auto_start(false)
         .build();
@@ -542,8 +556,8 @@ async fn native_root_query_is_exposed_through_ordinary_read_apis() -> Result<()>
     assert_eq!(info.query, config.query);
     assert_eq!(info.status, ComponentStatus::Added);
     assert_eq!(
-        serde_json::to_value(info.source_subscriptions)?,
-        serde_json::to_value(&config.sources)?
+        serde_json::to_value(info.inputs)?,
+        serde_json::to_value(&config.inputs)?
     );
     assert!(info.error_message.is_none());
     let error = drasi.get_query_results("ui-gpus").await.unwrap_err();
@@ -586,7 +600,11 @@ async fn native_placement_and_resilience_keep_hypothetical_allocations_read_only
     placement.start().await?;
     resilience.start().await?;
     let mut inputs = query("scheduling", "MATCH (m:Input) RETURN m.payload AS payload").await?;
-    let mut source = Emitter::new(StreamId::try_new("test-scheduling")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("test-scheduling")?,
+        ComponentId::try_new("scheduling-fixture")?,
+        None,
+    )?;
     for row in send(
         &mut inputs,
         &mut source,
@@ -654,12 +672,17 @@ async fn managed_plan_reaction_reports_real_receipts_via_status_producer() -> Re
             .descriptor(ComponentId::try_new("status-producer")?)?,
         serde_json::json!({"stream":"test-runtime-status"}),
         hub,
+        None,
     )?;
     assert_eq!(reaction.completion(), SinkCompletion::Accepted);
     status.start().await?;
     reaction.start().await?;
     let mut inputs = query("write-plan", "MATCH (m:Input) RETURN m.payload AS payload").await?;
-    let mut emitter = Emitter::new(StreamId::try_new("test-plan-source")?);
+    let mut emitter = Emitter::new(
+        StreamId::try_new("test-plan-source")?,
+        ComponentId::try_new("plan-fixture")?,
+        None,
+    )?;
     let candidate = Candidate {
         decision_id: Uuid::new_v4(),
         expected_plan_version: 1,
@@ -741,7 +764,11 @@ async fn policy_infeasibility_gets_only_a_read_only_capacity_diagnostic() -> Res
         "MATCH (m:Input) RETURN m.payload AS payload",
     )
     .await?;
-    let mut source = Emitter::new(StreamId::try_new("blocked-source")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("blocked-source")?,
+        ComponentId::try_new("blocked-fixture")?,
+        None,
+    )?;
     for row in send(
         &mut inputs,
         &mut source,

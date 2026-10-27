@@ -74,8 +74,8 @@ instances:
           MATCH (n)
           RETURN n.id AS Id, n.status AS Status
         queryLanguage: Cypher
-        sources:
-          - sourceId: readonly-source
+        inputs:
+          - readonly-source
 
       - id: monitoring-query
         autoStart: true
@@ -83,8 +83,8 @@ instances:
           MATCH (n)
           RETURN count(n) AS TotalRecords
         queryLanguage: Cypher
-        sources:
-          - sourceId: readonly-source
+        inputs:
+          - readonly-source
 
     reactions:
       - kind: log

@@ -5,9 +5,14 @@
 
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 import { isIdentifier, isRecord, readRows } from './resources';
+import { readGraphChange, isGraphChange } from './graph';
 import type {
-  LegacyResultAdapterOptions, QueryDelta, ResultAdapter, ResultAdapterContext, ResultChange, ResultRow,
+  GraphResultChange, LegacyResultAdapterOptions, OutputDelta, ResultAdapter, ResultAdapterContext, ResultChange,
+  ResultRow,
 } from './types';
+
+/** The row-keyed changes that the legacy wire formats can express. */
+type LegacyChange = Exclude<ResultChange, GraphResultChange>;
 
 function invalid(details: DrasiErrorDetails): never {
   throw new DrasiError('INVALID_PAYLOAD', details);
@@ -37,7 +42,7 @@ function detailsFor(queryId: string | undefined, context: ResultAdapterContext):
     : { instanceId: context.instanceId, resourceKind: 'query', resourceId: queryId };
 }
 
-function officialChange(value: unknown, details: DrasiErrorDetails): ResultChange | null {
+function officialChange(value: unknown, details: DrasiErrorDetails): LegacyChange | null {
   if (!isRecord(value)) return invalid(details);
   // u64 signatures lose precision in JSON.parse and are absent from REST rows.
   // Validate only their wire type; never expose or use them as identity.
@@ -84,18 +89,18 @@ export const sse034ResultAdapter: ResultAdapter = (payload, context) => {
   }
   const sourceTimestamp = timestamp(payload.timestamp, details);
   const changes = payload.results.map(value => officialChange(value, details))
-    .filter((change): change is ResultChange => change !== null);
-  return [{ kind: 'delta', queryId, changes, receivedAt: context.receivedAt, sourceTimestamp }];
+    .filter((change): change is LegacyChange => change !== null);
+  return [{ kind: 'delta', outputId: queryId, changes, receivedAt: context.receivedAt, sourceTimestamp }];
 };
 
-function legacyRow(value: unknown, details: DrasiErrorDetails): ResultChange {
+function legacyRow(value: unknown, details: DrasiErrorDetails): LegacyChange {
   const data = row(value, details);
   if (data._deleted !== undefined && typeof data._deleted !== 'boolean') return invalid(details);
   const { _deleted, ...clean } = data;
   return _deleted === true ? { kind: 'delete', before: clean } : { kind: 'upsert', after: clean };
 }
 
-function legacyChange(value: unknown, details: DrasiErrorDetails): ResultChange | null {
+function legacyChange(value: unknown, details: DrasiErrorDetails): LegacyChange | null {
   if (!isRecord(value)) return invalid(details);
   if (value.op !== undefined) {
     if (value.op === 'd' || (value.op === 'u' && value.after == null)) {
@@ -125,8 +130,8 @@ function legacyChange(value: unknown, details: DrasiErrorDetails): ResultChange 
   }
 }
 
-function legacyBatch(payload: ResultRow, details: DrasiErrorDetails): ResultChange[] {
-  const changes: ResultChange[] = [];
+function legacyBatch(payload: ResultRow, details: DrasiErrorDetails): LegacyChange[] {
+  const changes: LegacyChange[] = [];
   for (const kind of ['addedResults', 'updatedResults', 'deletedResults'] as const) {
     const values = payload[kind];
     if (values === undefined) continue;
@@ -169,14 +174,14 @@ export function createLegacyResultAdapter(options: LegacyResultAdapterOptions = 
         ? timestamp(Date.parse(payload.timestamp), details) : timestamp(payload.timestamp, details);
     }
     const batch = ['addedResults', 'updatedResults', 'deletedResults'].some(key => payload[key] !== undefined);
-    let changes: ResultChange[];
+    let changes: LegacyChange[];
     if (batch) {
       if (payload.results !== undefined || payload.data !== undefined) return invalid(details);
       changes = legacyBatch(payload, details);
     } else if (payload.results !== undefined) {
       if (!Array.isArray(payload.results) || payload.data !== undefined) return invalid(details);
       changes = payload.results.map(value => legacyChange(value, details))
-        .filter((change): change is ResultChange => change !== null);
+        .filter((change): change is LegacyChange => change !== null);
     } else if (queryId !== undefined && payload.data !== undefined) {
       if (payload.type !== undefined && (typeof payload.type !== 'string' ||
           !['add', 'ADD', 'update', 'UPDATE', 'delete', 'DELETE'].includes(payload.type))) {
@@ -189,14 +194,14 @@ export function createLegacyResultAdapter(options: LegacyResultAdapterOptions = 
       changes = [legacyRow(payload, details)];
     } else return invalid(details);
     if (queryId !== undefined) {
-      return [{ kind: 'delta', queryId, changes, receivedAt: context.receivedAt, sourceTimestamp }];
+      return [{ kind: 'delta', outputId: queryId, changes, receivedAt: context.receivedAt, sourceTimestamp }];
     }
     if (!changes.length) return [];
     if (!options.routeUnidentified) throw new DrasiError('UNROUTABLE_RESULT', details);
     const rows = changes.flatMap(change => change.kind === 'upsert' ? [change.after]
       : change.kind === 'delete' ? [{ ...change.before, _deleted: true }]
       : [{ ...change.before, _deleted: true }, change.after]);
-    const routed: QueryDelta[] = [];
+    const routed: OutputDelta[] = [];
     const expectedRows = [...rows];
     const delivered = new Set<ResultRow>();
     try {
@@ -206,7 +211,7 @@ export function createLegacyResultAdapter(options: LegacyResultAdapterOptions = 
         }
         selected.forEach(item => delivered.add(item));
         routed.push({
-          kind: 'delta', queryId: id, changes: selected.map(item => legacyRow(item, details)),
+          kind: 'delta', outputId: id, changes: selected.map(item => legacyRow(item, details)),
           receivedAt: context.receivedAt, sourceTimestamp,
         });
       });
@@ -219,25 +224,42 @@ export function createLegacyResultAdapter(options: LegacyResultAdapterOptions = 
 }
 
 /** Validate even custom adapters: a TypeScript declaration is not a runtime boundary. */
-export function readAdaptedResults(value: unknown, context: ResultAdapterContext): readonly QueryDelta[] {
+export function readAdaptedResults(value: unknown, context: ResultAdapterContext): readonly OutputDelta[] {
   if (!Array.isArray(value)) return invalid(context);
   return value.map(item => {
-    if (!isRecord(item) || item.kind !== 'delta' || !isIdentifier(item.queryId) || !Array.isArray(item.changes)) {
+    if (!isRecord(item) || item.kind !== 'delta' || !isIdentifier(item.outputId) || !Array.isArray(item.changes)) {
       return invalid(context);
     }
-    const details = detailsFor(item.queryId, context);
+    const details = detailsFor(item.outputId, context);
     const changes: ResultChange[] = item.changes.map(change => {
       if (!isRecord(change)) return invalid(details);
       switch (change.kind) {
         case 'upsert': return { kind: 'upsert', after: row(change.after, details) };
         case 'delete': return { kind: 'delete', before: row(change.before, details) };
         case 'update': return { kind: 'update', before: row(change.before, details), after: row(change.after, details) };
+        case 'graph-add': case 'graph-replace': case 'graph-patch': case 'graph-delete':
+          return graphChange(change, details);
         default: return invalid(details);
       }
     });
     return {
-      kind: 'delta', queryId: item.queryId, changes, receivedAt: timestamp(item.receivedAt, details),
+      kind: 'delta', outputId: item.outputId, changes, receivedAt: timestamp(item.receivedAt, details),
       ...(item.sourceTimestamp === undefined ? {} : { sourceTimestamp: timestamp(item.sourceTimestamp, details) }),
     };
   });
+}
+
+/** A custom adapter's graph change must be as well formed as a wire change. */
+function graphChange(change: Record<string, unknown>, details: DrasiErrorDetails): ResultChange {
+  const wire = {
+    'graph-add': 'ADD', 'graph-replace': 'REPLACE', 'graph-patch': 'PATCH', 'graph-delete': 'DELETE',
+  }[change.kind as string];
+  const validated = readGraphChange({
+    operation: wire, identity: change.identity,
+    ...(change.kind === 'graph-patch' ? { after: change.set, removedProperties: change.removed } : {}),
+    ...(change.kind === 'graph-add' || change.kind === 'graph-replace' ? { after: change.after } : {}),
+    ...(change.before === undefined ? {} : { before: change.before }),
+  }, details);
+  if (!isGraphChange(validated)) return invalid(details);
+  return validated;
 }

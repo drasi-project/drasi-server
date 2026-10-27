@@ -122,8 +122,8 @@ instances:
                  o.created_at AS CreatedAt,
                  'HIGH_VALUE_REVIEW' AS ExceptionType
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
   # Exception 2: Orders stuck in pending
       - id: stuck-orders
@@ -136,8 +136,8 @@ instances:
                  o.created_at AS CreatedAt,
                  'STUCK_ORDER' AS ExceptionType
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
   # Exception 3: Payment failures
       - id: payment-failures
@@ -152,8 +152,8 @@ instances:
                  p.error_message AS ErrorMessage,
                  'PAYMENT_FAILED' AS ExceptionType
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
   # Exception 4: Inventory shortages
       - id: inventory-shortage
@@ -167,8 +167,8 @@ instances:
                  inv.stock_quantity AS AvailableStock,
                  'INVENTORY_SHORTAGE' AS ExceptionType
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
   # Dashboard: All pending orders
       - id: pending-orders
@@ -181,8 +181,8 @@ instances:
                  o.total_amount AS Amount,
                  o.created_at AS CreatedAt
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
   # Dashboard: Order statistics
       - id: order-stats
@@ -193,8 +193,8 @@ instances:
                  count(o) AS OrderCount,
                  sum(o.total_amount) AS TotalAmount
         queryLanguage: Cypher
-        sources:
-          - sourceId: orders-db
+        inputs:
+          - orders-db
 
     reactions:
   # Console logging for all exceptions

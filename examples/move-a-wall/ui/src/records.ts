@@ -66,9 +66,6 @@ export function validate(id: QueryId, row: ResultRow): ResultRow {
   }
   return row;
 }
-export function key(id: QueryId, row: ResultRow): string {
-  return id === 'scene-inputs' || id === 'geometry-context' ? id : text(row.id);
-}
 export function translate(e: Entity, dx: number, dy: number): Entity {
   const move = (p: Point): Point => [Number((p[0]+dx).toFixed(3)),Number((p[1]+dy).toFixed(3))];
   if (e.shape.kind === 'obstacle') return { ...e, shape:{ ...e.shape,vertices:e.shape.vertices.map(move) } };

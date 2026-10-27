@@ -68,8 +68,8 @@ instances:
                  u.session_id AS SessionId,
                  'USER_INACTIVE' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
   # Pattern 2: Service heartbeat monitoring
   # Detects services that haven't sent heartbeats
@@ -84,8 +84,8 @@ instances:
                  s.expected_interval AS ExpectedInterval,
                  'HEARTBEAT_MISSING' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
   # Pattern 3: SLA violation detection
   # Tickets not resolved within SLA window
@@ -101,8 +101,8 @@ instances:
                  t.assigned_to AS AssignedTo,
                  'SLA_BREACH' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
   # Pattern 4: Stale data detection
   # Records that haven't been updated recently
@@ -117,8 +117,8 @@ instances:
                  r.freshness_threshold AS Threshold,
                  'STALE_DATA' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
   # Pattern 5: Missing periodic events
   # Expected recurring events that didn't occur
@@ -133,8 +133,8 @@ instances:
                  e.last_occurrence AS LastOccurrence,
                  'MISSING_EVENT' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
   # Summary: All active alerts
       - id: active-alerts
@@ -148,8 +148,8 @@ instances:
                  a.created_at AS CreatedAt,
                  a.message AS Message
         queryLanguage: Cypher
-        sources:
-          - sourceId: activity-source
+        inputs:
+          - activity-source
 
     reactions:
   # Console logging for all absence detections

@@ -139,8 +139,8 @@ instances:
         query: "MATCH (n) RETURN n"
         queryLanguage: Cypher
         autoStart: true
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     fs::write(&config_path, config).unwrap();
@@ -521,16 +521,16 @@ instances:
     queries:
       - id: query1
         query: "MATCH (n) RETURN n"
-        sources:
-          - sourceId: source1
+        inputs:
+          - source1
       - id: query2
         query: "MATCH (m) RETURN m"
-        sources:
-          - sourceId: source2
+        inputs:
+          - source2
       - id: query3
         query: "MATCH (x) RETURN x"
-        sources:
-          - sourceId: source1
+        inputs:
+          - source1
     reactions:
       - kind: log
         id: reaction1

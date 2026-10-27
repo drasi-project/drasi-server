@@ -8,7 +8,7 @@ import { DrasiClient } from '../src/client/DrasiClient';
 import { accumulateResult } from '../src/client/accumulation';
 import { DrasiError, type DrasiErrorDetails } from '../src/client/errors';
 import { createLegacyResultAdapter, sse034ResultAdapter } from '../src/client/results';
-import type { QueryResult, ResultAdapter, ResultRow } from '../src/client/types';
+import type { OutputResult, ResultAdapter, ResultRow } from '../src/client/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
 import { ReadServer, refs } from './server';
 
@@ -59,7 +59,7 @@ describe.each(adapters)('$name adapter identity error details', ({ adapter }) =>
 
   it('accepts canonical identity and preserves the result unchanged', () => {
     expect(adapter(wire({ queryId: 'stocks' }), context)).toEqual([{
-      kind: 'delta', queryId: 'stocks', receivedAt: 1, sourceTimestamp: 1,
+      kind: 'delta', outputId: 'stocks', receivedAt: 1, sourceTimestamp: 1,
       changes: [{ kind: 'upsert', after: { id: 'A', value: 99 } }],
     }]);
   });
@@ -73,13 +73,13 @@ describe.each(adapters)('$name adapter identity error details', ({ adapter }) =>
 describe('explicit identity compatibility and unidentifiable controls', () => {
   it('does not recognize a legacy-only identity unless that adapter is selected', () => {
     expect(rejected(sse034ResultAdapter, wire({ query_id: 'stocks' }))).toMatchObject(connectionDetails);
-    expect(createLegacyResultAdapter()(wire({ query_id: 'stocks' }), context)[0].queryId).toBe('stocks');
+    expect(createLegacyResultAdapter()(wire({ query_id: 'stocks' }), context)[0].outputId).toBe('stocks');
   });
 
   it('accepts matching aliases only in legacy mode while retaining canonical error scope in strict mode', () => {
     const payload = wire({ queryId: 'stocks', query_id: 'stocks' });
     expect(rejected(sse034ResultAdapter, payload)).toMatchObject(queryDetails('stocks'));
-    expect(createLegacyResultAdapter()(payload, context)[0].queryId).toBe('stocks');
+    expect(createLegacyResultAdapter()(payload, context)[0].outputId).toBe('stocks');
   });
 
   it('preserves nullish selection of an explicitly enabled alias without accepting malformed canonical IDs', () => {
@@ -115,7 +115,7 @@ async function connectedClient(adapter: ResultAdapter) {
   const server = new ReadServer(), factory = fakeEventSourceFactory();
   server.reaction.queries = ['stocks', 'other'];
   const client = new DrasiClient({
-    ...refs, queryIds: ['stocks', 'other'], fetch: server.fetch, eventSourceFactory: factory.create,
+    ...refs, outputIds: ['stocks', 'other'], fetch: server.fetch, eventSourceFactory: factory.create,
     resultAdapter: adapter, reconnect: { maxReconnectAttempts: 2, initialReconnectDelayMs: 10 },
   });
   clients.push(client);
@@ -129,7 +129,7 @@ async function connectedClient(adapter: ResultAdapter) {
   client.onConnectionStatusChange(states);
   function listener(queryId: string) {
     let rows: ResultRow[] = [];
-    const results = vi.fn((result: QueryResult) => {
+    const results = vi.fn((result: OutputResult) => {
       rows = accumulateResult(rows, result, row => typeof row.id === 'string' ? row.id : '');
     });
     const errors = vi.fn();

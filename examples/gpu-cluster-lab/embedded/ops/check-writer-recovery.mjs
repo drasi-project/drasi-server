@@ -6,8 +6,8 @@ import { validateRow } from '../../shared/ui/src/rows.ts';
 const token = process.env.INTERNAL_TOKEN;
 assert.ok(token, 'Internal test authorization is required');
 const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-const control = 'http://control:5400';
-const faults = 'http://writer-faults:8082';
+const control = process.env.DEMO_URL ?? 'http://control:5400';
+const faults = process.env.WRITER_FAULTS_URL ?? 'http://writer-faults:8082';
 
 async function json(base, path, options = {}) {
   const response = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(15000), ...options });
@@ -186,7 +186,12 @@ function serve() {
       response.destroy(error);
     });
   });
-  server.listen(8082, '0.0.0.0');
+  const address = new URL(faults);
+  assert.equal(address.protocol, 'http:', 'The fault listener uses HTTP');
+  server.listen(Number(address.port || 80), process.env.WRITER_FAULTS_BIND_HOST ?? '0.0.0.0');
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => server.close(() => process.exit(0)));
+  }
 }
 
 if (process.argv[2] === 'serve') serve();

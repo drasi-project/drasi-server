@@ -12,23 +12,47 @@ export type JsonValue = null | boolean | number | string
 /** Validated object row. Applications must narrow/transform its unknown fields. */
 export type ResultRow = Record<string, unknown>;
 
-/** Insert/replace by the application's stable key, or an explicit before/after change. */
+/** Canonical element identity: an output-scoped namespace and an opaque key. Never hashed or truncated. */
+export interface ElementIdentity {
+  readonly namespace: string;
+  readonly id: string;
+}
+
+/**
+ * A standard graph change from any producer, keyed by canonical identity. A
+ * property whose value is `null` is a value; a removed property is named in
+ * `removed`. `before` is present only when the record carries a full before
+ * image; an absent one is unknown, never an empty row.
+ */
+export type GraphResultChange<T = ResultRow> =
+  /** The element joins the dataset with its complete image. */
+  | { readonly kind: 'graph-add'; readonly identity: ElementIdentity; readonly after: T }
+  /** The complete image replaces the element, so absent properties are gone. */
+  | { readonly kind: 'graph-replace'; readonly identity: ElementIdentity; readonly after: T; readonly before?: T }
+  /** Only `set` properties change and `removed` names are dropped; everything else is untouched. */
+  | { readonly kind: 'graph-patch'; readonly identity: ElementIdentity; readonly set: Partial<T>;
+      readonly removed: readonly string[]; readonly before?: T }
+  /** The element leaves the dataset; a deletion may carry only its identity. */
+  | { readonly kind: 'graph-delete'; readonly identity: ElementIdentity; readonly before?: T };
+
+/** Insert/replace by the application's stable key, or an explicit before/after change, or a graph change by canonical identity. */
 export type ResultChange<T = ResultRow> =
   | { readonly kind: 'upsert'; readonly after: T }
   | { readonly kind: 'update'; readonly before: T; readonly after: T }
-  | { readonly kind: 'delete'; readonly before: T };
+  | { readonly kind: 'delete'; readonly before: T }
+  | GraphResultChange<T>;
 
-export interface QuerySnapshot<T = ResultRow> {
+export interface OutputSnapshot<T = ResultRow> {
   readonly kind: 'snapshot';
-  readonly queryId: string;
+  readonly outputId: string;
   readonly rows: readonly T[];
   /** Local receipt time for display only, never an ordering cursor. */
   readonly receivedAt: number;
 }
 
-export interface QueryDelta<T = ResultRow> {
+export interface OutputDelta<T = ResultRow> {
   readonly kind: 'delta';
-  readonly queryId: string;
+  readonly outputId: string;
   readonly changes: readonly ResultChange<T>[];
   readonly receivedAt: number;
   /** SSE reaction wall-clock time, when supplied. Not a snapshot cursor. */
@@ -36,7 +60,7 @@ export interface QueryDelta<T = ResultRow> {
 }
 
 /** The only accumulated-result boundary. Wire alternatives must use a named adapter. */
-export type QueryResult<T = ResultRow> = QuerySnapshot<T> | QueryDelta<T>;
+export type OutputResult<T = ResultRow> = OutputSnapshot<T> | OutputDelta<T>;
 
 export interface ResultAdapterContext extends Readonly<DrasiErrorDetails> {
   readonly receivedAt: number;
@@ -46,7 +70,7 @@ export interface ResultAdapterContext extends Readonly<DrasiErrorDetails> {
 export type ResultAdapter = (
   payload: unknown,
   context: ResultAdapterContext,
-) => readonly QueryDelta[];
+) => readonly OutputDelta[];
 
 export interface LegacyResultAdapterOptions {
   /** Only consulted for payloads without either query ID spelling. Never overrides an envelope ID. */
@@ -63,7 +87,7 @@ export type QueryStatus =
 export type QueryErrorScope = 'query' | 'connection';
 
 /** Subscription work state; hooks additionally distinguish an empty accumulated result set. */
-export interface QuerySubscriptionState {
+export interface OutputSubscriptionState {
   readonly status: Exclude<QueryStatus, 'empty'>;
   readonly stale: boolean;
   readonly error: DrasiError | null;
@@ -71,10 +95,10 @@ export interface QuerySubscriptionState {
 }
 
 /** Calling the handle unsubscribes; retry restarts only this subscription's REST reconciliation. */
-export interface QuerySubscription {
+export interface OutputSubscription {
   (): void;
   retry(): void;
-  getState(): QuerySubscriptionState;
+  getState(): OutputSubscriptionState;
 }
 
 export interface ResultReconciliationOptions {
@@ -90,12 +114,26 @@ export interface ConnectionStatus {
   lastConnected?: Date;
 }
 
-/** Source subscription as serialized by the v1 full-view query endpoint. */
-export interface QuerySource {
-  readonly sourceId: string;
-  readonly pipeline: readonly string[];
-  readonly nodes: readonly string[];
-  readonly relations: readonly string[];
+/**
+ * Expanded query input as serialized by the v1 full-view query endpoint. The server
+ * omits `port`, `nodes`, `relations` and `pipeline` when they are unset or empty.
+ */
+export interface QueryInputObject {
+  /** Upstream component: a source, another query or a transformer. */
+  readonly component: string;
+  /** Output port; absent means the component's primary (or only) output. */
+  readonly port?: string;
+  readonly nodes?: readonly string[];
+  readonly relations?: readonly string[];
+  readonly pipeline?: readonly string[];
+}
+
+/** A bare upstream component name (its primary output) or an expanded input object. */
+export type QueryInput = string | QueryInputObject;
+
+/** Result publication options. The label never changes the output schema. */
+export interface QueryResultOptions {
+  readonly label?: string;
 }
 
 export interface QueryJoinKey {
@@ -124,7 +162,8 @@ export interface QueryConfig {
   readonly query: string;
   readonly queryLanguage: QueryLanguage;
   readonly middleware: readonly QueryMiddleware[];
-  readonly sources: readonly QuerySource[];
+  readonly inputs: readonly QueryInput[];
+  readonly result?: QueryResultOptions;
   readonly enableBootstrap: boolean;
   readonly joins?: readonly QueryJoin[];
   readonly priorityQueueCapacity?: number;
@@ -181,7 +220,7 @@ export interface ReactionReference {
 /** Explicit legacy adapter for unidentified rows; routing remains application-owned. */
 export type RouteUnidentified = (
   rows: ResultRow[],
-  deliver: (queryId: string, rows: ResultRow[]) => void,
+  deliver: (outputId: string, rows: ResultRow[]) => void,
 ) => void;
 
 /** Context for fresh per-request authentication, including each stream opening. */

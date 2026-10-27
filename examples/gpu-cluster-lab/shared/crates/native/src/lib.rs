@@ -115,6 +115,7 @@ impl Factory for NativeFactory {
             self.metadata().descriptor(request.id.clone())?,
             request.configuration.clone(),
             self.workers.clone(),
+            request.scope.as_ref(),
         )?;
         let control_handler = Some(Arc::new(lifecycle::Handler {
             signals: Some(processor.signals.clone()),
@@ -155,7 +156,7 @@ pub fn plugin() -> Result<PluginDefinition> {
         "gpu-cluster-lab",
         env!("CARGO_PKG_VERSION"),
         factories,
-        vec![GraphChangeCodec::schema(), QueryChangeCodec::schema()],
+        vec![GraphChangeCodec::schema()],
     )
 }
 
@@ -220,7 +221,11 @@ impl Factory for AuxiliaryFactory {
                 .then_some(drasi_computation_contracts::SinkCompletion::Accepted),
             capabilities: Capabilities {
                 control: !self.reaction,
-                snapshot: self.reaction,
+                snapshot_inputs: if self.reaction {
+                    vec![PortId::try_new("in").expect("constant port")]
+                } else {
+                    Vec::new()
+                },
                 ..Capabilities::default()
             },
         }
@@ -240,6 +245,7 @@ impl Factory for AuxiliaryFactory {
                     descriptor,
                     request.configuration.clone(),
                     self.hub.clone(),
+                    request.scope.as_ref(),
                 )?)),
                 control_handler: Some(Arc::new(lifecycle::Handler {
                     signals: None,

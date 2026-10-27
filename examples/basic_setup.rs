@@ -19,7 +19,7 @@
 //! directly to the builder.
 
 use drasi_lib::config::QueryLanguage;
-use drasi_server::models::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::models::{QueryConfigDto, QueryInputConfigDto};
 
 #[tokio::main]
 #[allow(clippy::print_stdout)]
@@ -40,12 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "vehicle-location-source".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("vehicle-location-source".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -54,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     let pending_orders_query = QueryConfigDto {
@@ -68,12 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "vehicle-location-source".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("vehicle-location-source".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -82,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     // Create the configuration structure
@@ -92,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
+        metrics: Default::default(),
         persist_config: true,
         // Use in-memory indexes (default)
         // Disable temporal history (default)
@@ -104,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Add sources using SourceConfig enum
         // Add reactions using ReactionConfig enum
 
-        // Empty = use legacy single-instance mode
+        // No external plugin registry is configured.
         plugin_registry: None,
         auto_install_plugins: false,
         plugins: vec![],

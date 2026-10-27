@@ -114,7 +114,7 @@ async fn check_autostart(method: Method, category: &str) {
                 .with_query(
                     Query::cypher("query")
                         .query("MATCH (n) RETURN n")
-                        .from_source("input")
+                        .from_input("input")
                         .build(),
                 )
                 .build()

@@ -79,8 +79,8 @@ instances:
           MATCH (n)
           RETURN n
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-throughput
+        inputs:
+          - high-throughput
 
   # Query with custom high capacity (for burst handling)
       - id: high-capacity-query
@@ -90,8 +90,8 @@ instances:
           WHERE n.priority = 'high'
           RETURN n.id AS Id, n.data AS Data
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-throughput
+        inputs:
+          - high-throughput
         priorityQueueCapacity: 50000
         dispatchBufferCapacity: 5000
 
@@ -102,8 +102,8 @@ instances:
           MATCH (n)
           RETURN count(n) AS Count
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-throughput
+        inputs:
+          - high-throughput
         priorityQueueCapacity: 1000
         dispatchBufferCapacity: 100
 

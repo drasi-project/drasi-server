@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use drasi_host_sdk::{
-    computation::{NativeFactory, NativePlugin},
+    computation::{NativeFactory, NativeOutputSnapshotsResource, NativePlugin, OutputSelector},
     PluginRegistry,
 };
 use drasi_lib::{computation::v1::*, ComponentStatus, DrasiLib};
@@ -234,10 +234,41 @@ impl Runtime {
             })
             .context("native SSE factory is missing")?
             .clone();
-        components = components.component(sse.specification(id("gpu-demo-ui")?, json!({
-            "queryStreams":gpu_contracts::UI_QUERIES.iter().map(|id| (*id,format!("{id}/out"))).collect::<BTreeMap<_,_>>(),
-            "host":self.sse_host,"port":self.sse_port,"ssePath":"/events",
-        }))?, sse);
+        let snapshots_id = ResourceId::try_new("gpu-ui-output-snapshots")?;
+        let snapshots = NativeOutputSnapshotsResource::new(
+            gpu_contracts::UI_QUERIES
+                .iter()
+                .map(|query| {
+                    Ok(OutputSelector::new(
+                        id(query)?,
+                        Some(PortId::try_new("out")?),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?,
+            Duration::from_secs(5),
+            16,
+        )?;
+        components = components
+            .declare_resource(ResourceSpecification {
+                id: snapshots_id.clone(),
+                role: ResourceRole::OutputCatalogue,
+                ownership: ResourceOwnership::Borrowed,
+                binding: "gpu-ui-output-snapshots".into(),
+            })?
+            .provide_resource(
+                snapshots_id.clone(),
+                ResourceHandle::new(ResourceRole::OutputCatalogue, Arc::new(snapshots)),
+            )?;
+        let mut specification = sse.specification(
+            id("gpu-demo-ui")?,
+            json!({
+                "host":self.sse_host,"port":self.sse_port,"ssePath":"/events",
+            }),
+        )?;
+        specification
+            .dependencies
+            .insert("output_snapshots".into(), vec![snapshots_id]);
+        components = components.component(specification, sse);
         let mut relationships = gpu_contracts::UI_QUERIES
             .iter()
             .map(|query| relationship(query, "gpu-demo-ui", 64))
@@ -691,7 +722,7 @@ fn queries(catalog: QueryResultsCatalog, diagnostic: bool) -> Result<ComponentBa
         batch = batch
             .component(
                 ComponentSpecification {
-                    descriptor: definition.descriptor_with_execution(&settings),
+                    descriptor: definition.descriptor(),
                     role: ComponentRole::Query,
                     completion: None,
                     implementation: factory.descriptor().implementation.clone(),
@@ -753,6 +784,7 @@ mod tests {
         core.add_components(
             database::components(
                 "127.0.0.1",
+                5432,
                 "test-only",
                 directory.path().to_str().context("test path")?,
                 catalog,

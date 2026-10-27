@@ -486,7 +486,7 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
     let harness = Harness::new(true).await;
     let config = json!({
         "id": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
-        "sources": [{"sourceId": "missing-source"}], "autoStart": true,
+        "inputs": ["missing-source"], "autoStart": true,
     });
     let (status, body) = request(
         &harness.app,
@@ -584,7 +584,7 @@ async fn native_query_attach_streams_results_without_temporary_reaction_nodes() 
         .add_query_with_handle(
             Query::cypher("selected")
                 .query("MATCH (n:Item) RETURN n.value AS value")
-                .from_source("input")
+                .from_input("input")
                 .enable_bootstrap(false)
                 .auto_start(true)
                 .build(),
@@ -869,9 +869,9 @@ async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_
         ],
         "queries": [
             {"id": "invalid-query", "query": INVALID_QUERY,
-             "sources": [{"sourceId": "good-source"}], "autoStart": true},
+             "inputs": ["good-source"], "autoStart": true},
             {"id": "good-query", "query": "MATCH (n) RETURN n",
-             "sources": [{"sourceId": "good-source"}], "autoStart": false},
+             "inputs": ["good-source"], "autoStart": false},
         ],
         "reactions": [
             {"kind": "log", "id": "failed-reaction", "queries": [],
@@ -950,7 +950,7 @@ async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_fai
             .add_query(
                 Query::cypher(id)
                     .query(query)
-                    .from_source("clone-source")
+                    .from_input("clone-source")
                     .auto_start(false)
                     .build(),
             )

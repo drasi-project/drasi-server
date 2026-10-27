@@ -141,7 +141,7 @@ async fn assert_package_versions_and_component_startup(
         core.add_query(
             Query::cypher("version-query")
                 .query("MATCH (n) RETURN n")
-                .from_source("version-source")
+                .from_input("version-source")
                 .enable_bootstrap(false)
                 .auto_start(true)
                 .build(),

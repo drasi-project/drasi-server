@@ -39,18 +39,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -539,18 +539,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -1026,18 +1026,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -1513,18 +1513,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -2000,18 +2000,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -2473,12 +2473,12 @@
                 "Literal": {
                   "joins": [],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -2954,18 +2954,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -3454,18 +3454,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-stocks"
+                      "component": "postgres-stocks"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -3941,18 +3941,18 @@
                     }
                   ],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-broker"
+                      "component": "postgres-broker"
                     },
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "price-feed"
+                      "component": "price-feed"
                     }
                   ]
                 }
@@ -4414,12 +4414,12 @@
                 "Literal": {
                   "joins": [],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-broker"
+                      "component": "postgres-broker"
                     }
                   ]
                 }
@@ -4881,12 +4881,12 @@
                 "Literal": {
                   "joins": [],
                   "middleware": [],
-                  "sources": [
+                  "inputs": [
                     {
                       "nodes": [],
                       "pipeline": [],
                       "relations": [],
-                      "source_id": "postgres-broker"
+                      "component": "postgres-broker"
                     }
                   ]
                 }

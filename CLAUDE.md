@@ -203,8 +203,8 @@ instances:
       - id: "high-temp"
         query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
         queryLanguage: Cypher
-        sources:
-          - sourceId: "sensors"
+        inputs:
+          - "sensors"
         autoStart: true
 
 # Reactions
@@ -239,8 +239,8 @@ instances:
       - id: "high-temp"
         query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
         queryLanguage: Cypher
-        sources:
-          - sourceId: "sensors"
+        inputs:
+          - "sensors"
   - id: "monitoring"
     sources: []
     queries: []
@@ -338,7 +338,7 @@ let server = DrasiServerBuilder::new()
     .add_query(
         Query::cypher("my-query")
             .query("MATCH (n) RETURN n")
-            .from_source("my-source")
+            .from_input("my-source")
             .build()
     )
     .with_reaction(my_reaction_instance)  // Plugin instance
@@ -571,7 +571,7 @@ let server = DrasiServerBuilder::new()
     .add_query(
         Query::cypher("my-query")
             .query("MATCH (n) RETURN n")
-            .from_source("my-source")
+            .from_input("my-source")
             .build()
     )
     .build()

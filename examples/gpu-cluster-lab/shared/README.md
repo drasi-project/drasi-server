@@ -29,6 +29,14 @@ The existing binary names are retained without duplicating library packages:
 embedded version; the native plugin remains independently buildable with
 `--features dynamic-plugin --lib`.
 
+Native processors and runtime-status output each own a volatile producer identity
+for their constructed lifetime, using the actual component ID and native
+instance/graph scope when supplied. Derived graph changes retain query
+producer-sequence ordering, business timestamps and lineage, but carry the
+immediate emitter's increasing logical progress. Wakeup emissions share that
+same identity and sequence. Reconstruction creates a new volatile epoch; these
+in-memory sample producers do not claim durable recovery ownership.
+
 The embedded PostgreSQL input statically registers Core's
 `drasi-computation-source-postgres` and `drasi-computation-bootstrap-postgres`
 definitions through `NativePlugin::from_definition`. These use the same native

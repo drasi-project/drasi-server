@@ -10,7 +10,7 @@ import type { Component, ComponentStatus, QueryConfig } from '../src/client/type
 export const refs: DrasiClientOptions = {
   serverUrl: 'https://drasi.invalid',
   instanceId: 'selected / instance',
-  queryIds: ['stocks'],
+  outputIds: ['stocks'],
   reaction: { id: 'stream', endpoint: 'https://events.invalid/proxy/events' },
   reconnect: { maxReconnectAttempts: 0, initialReconnectDelayMs: 10, maxReconnectDelayMs: 20 },
 };
@@ -21,7 +21,7 @@ export const failure = (status: number, code = 'INTERNAL_ERROR') =>
 
 export function queryConfig(id: string, overrides: Partial<QueryConfig> = {}): QueryConfig {
   return {
-    id, query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [],
+    id, query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', inputs: [],
     autoStart: true, middleware: [], enableBootstrap: true,
     outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
     ...overrides,

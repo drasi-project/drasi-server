@@ -27,7 +27,7 @@ describe('versioned real server read contract', () => {
       return new Response(JSON.stringify(response.body));
     });
     const client = new DrasiClient({
-      serverUrl: 'https://fixture.invalid', instanceId: 'trading-server', queryIds: ['watchlist-query'],
+      serverUrl: 'https://fixture.invalid', instanceId: 'trading-server', outputIds: ['watchlist-query'],
       reaction: { id: 'sse-stream', endpoint: 'https://proxy.invalid/events' }, fetch: fetcher,
     });
     await expect(client.validateResources()).resolves.toBeUndefined();
@@ -35,7 +35,7 @@ describe('versioned real server read contract', () => {
     expect(await client.getReaction()).toEqual(record.reaction.body.data);
     expect(await client.getQueryResults('watchlist-query')).toEqual(record.snapshot.body.data);
     const config = await client.getQueryConfig('watchlist-query');
-    expect(config.sources.map(source => source.sourceId)).toEqual(['postgres-stocks', 'price-feed']);
+    expect(config.inputs).toEqual(['postgres-stocks', 'price-feed']);
     expect(config.joins?.map(join => join.id)).toEqual(['ON_WATCHLIST', 'HAS_PRICE']);
     expect(config.middleware).toEqual([]);
     expect(config.bootstrapTimeoutSecs).toBe(300);
@@ -49,7 +49,8 @@ describe('versioned real server read contract', () => {
     const config = queryConfig('stocks', {
       autoStart: false, queryLanguage: 'GQL', enableBootstrap: false,
       middleware: [{ kind: 'map', name: 'mapper', config: { path: 'value', flags: [true, null, 1] } }],
-      sources: [{ sourceId: 'telemetry', nodes: ['Reading'], relations: ['HAS'], pipeline: ['mapper'] }],
+      inputs: [{ component: 'telemetry', nodes: ['Reading'], relations: ['HAS'], pipeline: ['mapper'] }, 'room-comfort', { component: 'floor-comfort', port: 'out' }],
+      result: { label: 'FloorComfort' },
       joins: [{ id: 'HAS', keys: [{ label: 'Reading', property: 'device' }] }],
       priorityQueueCapacity: 42, dispatchBufferCapacity: 99, dispatchMode: 'Channel',
       storageBackend: { kind: 'memory', enable_archive: false },
@@ -78,11 +79,12 @@ describe('versioned real server read contract', () => {
   it.each([
     { id: 'other-query' }, { query: 7 }, { queryLanguage: 'SQL' }, { autoStart: 'true' },
     { enableBootstrap: null }, { outboxCapacity: -1 }, { bootstrapTimeoutSecs: 0.5 },
-    { outboxCapacity: Number.MAX_SAFE_INTEGER + 1 }, { sources: null },
-    { sources: [{ sourceId: 'one', nodes: [], pipeline: [] }] },
-    { sources: [{ sourceId: 3, nodes: [], pipeline: [], relations: [] }] },
-    { sources: [{ sourceId: 'one', nodes: [7], pipeline: [], relations: [] }] },
-    { sources: [{ sourceId: 'one', nodes: [], pipeline: false, relations: [] }] },
+    { outboxCapacity: Number.MAX_SAFE_INTEGER + 1 }, { inputs: null }, { inputs: undefined }, { inputs: [''] }, { inputs: [{ sourceId: 'one' }] }, { inputs: [{ component: 'one', extra: true }] },
+    { result: { label: '' } }, { result: 7 },
+    { inputs: [{ component: 'one', nodes: 7 }] },
+    { inputs: [{ component: 3, nodes: [], pipeline: [], relations: [] }] },
+    { inputs: [{ component: 'one', nodes: [7], pipeline: [], relations: [] }] },
+    { inputs: [{ component: 'one', nodes: [], pipeline: false, relations: [] }] },
     { middleware: {} }, { middleware: [{ kind: 'map', name: 7, config: {} }] },
     { middleware: [{ kind: 7, name: 'mapper', config: {} }] },
     { middleware: [{ kind: 'map', name: 'mapper', config: [] }] },

@@ -25,13 +25,9 @@ describe('Trading query and deployment contract', () => {
     expect(definitions.get('portfolio-query')?.joins).toEqual([OWNS_STOCK, HAS_PRICE]);
     expect(definitions.get('active-orders-query')?.joins).toEqual([ORDER_HAS_PRICE]);
     expect(HAS_PRICE.keys).toEqual([{ label: 'stocks', property: 'symbol' }, { label: 'stock_prices', property: 'symbol' }]);
-    expect(definitions.get('price-ticker-query')?.sources).toEqual([{ sourceId: 'price-feed', pipeline: [] }]);
-    expect(definitions.get('portfolio-query')?.sources).toEqual([
-      { sourceId: 'postgres-stocks', pipeline: [] }, { sourceId: 'price-feed', pipeline: [] },
-    ]);
-    expect(definitions.get('active-orders-query')?.sources).toEqual([
-      { sourceId: 'postgres-broker', pipeline: [] }, { sourceId: 'price-feed', pipeline: [] },
-    ]);
+    expect(definitions.get('price-ticker-query')?.inputs).toEqual(['price-feed']);
+    expect(definitions.get('portfolio-query')?.inputs).toEqual(['postgres-stocks', 'price-feed']);
+    expect(definitions.get('active-orders-query')?.inputs).toEqual(['postgres-broker', 'price-feed']);
     expect(definitions.get('high-volume-query')?.query).toContain('sp.volume > 10000000');
     expect(definitions.get('top-gainers-query')?.query).toContain('sp.price > sp.previous_close');
     expect(definitions.get('top-losers-query')?.query).toContain('sp.price < sp.previous_close');

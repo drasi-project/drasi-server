@@ -69,8 +69,8 @@ instances:
           MATCH (s:SensorReading)
           RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
         queryLanguage: Cypher
-        sources:
-          - sourceId: live-data
+        inputs:
+          - live-data
 
       - id: sensor-alerts
         autoStart: true
@@ -79,8 +79,8 @@ instances:
           WHERE s.temperature > 27
           RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
         queryLanguage: Cypher
-        sources:
-          - sourceId: live-data
+        inputs:
+          - live-data
 
       - id: sensor-summary
         autoStart: true
@@ -88,8 +88,8 @@ instances:
           MATCH (s:SensorReading)
           RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
         queryLanguage: Cypher
-        sources:
-          - sourceId: live-data
+        inputs:
+          - live-data
 
     reactions:
   # Console logging for debugging

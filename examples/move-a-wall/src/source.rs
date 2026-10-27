@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use drasi_computation_contracts::*;
-use drasi_computation_plugin_sdk::{NativeComponent, NativeSource};
+use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeSource};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -63,20 +63,29 @@ pub struct SceneSource {
 }
 
 pub fn channel() -> Result<(Store, SceneSource)> {
+    channel_with_descriptor(
+        ComponentDescriptor::try_new(
+            ComponentId::try_new("scene")?,
+            vec![wire::port("out", PortDirection::Output, false)?],
+        )?,
+        None,
+    )
+}
+fn channel_with_descriptor(
+    descriptor: ComponentDescriptor,
+    scope: Option<&Scope>,
+) -> Result<(Store, SceneSource)> {
     let (sender, receiver) = mpsc::channel(32);
     Ok((
         Store {
             revision: 0,
             scene: Scene::new(),
             versions: BTreeMap::new(),
-            emitter: Emitter::new("scene/out")?,
+            emitter: Emitter::new("scene/out", descriptor.id().clone(), scope)?,
             sender,
         },
         SceneSource {
-            descriptor: ComponentDescriptor::try_new(
-                ComponentId::try_new("scene")?,
-                vec![wire::port("out", PortDirection::Output, false)?],
-            )?,
+            descriptor,
             receiver,
             started: false,
             http_store: None,
@@ -85,11 +94,40 @@ pub fn channel() -> Result<(Store, SceneSource)> {
     ))
 }
 impl SceneSource {
-    pub fn hosted(descriptor: ComponentDescriptor) -> Result<Self> {
-        let (store, mut source) = channel()?;
-        source.descriptor = descriptor;
+    pub fn hosted(descriptor: ComponentDescriptor, scope: Option<&Scope>) -> Result<Self> {
+        let (store, mut source) = channel_with_descriptor(descriptor, scope)?;
         source.http_store = Some(Arc::new(Mutex::new(store)));
         Ok(source)
+    }
+}
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn scene_progress_uses_constructed_component_not_stream_name() -> Result<()> {
+        let scope = Scope {
+            instance_id: "wall-instance".into(),
+            graph_id: "wall-graph".into(),
+            generation: 1,
+        };
+        let descriptor = ComponentDescriptor::try_new(
+            ComponentId::try_new("scene-worker")?,
+            vec![wire::port("out", PortDirection::Output, false)?],
+        )?;
+        let (mut store, mut source) = channel_with_descriptor(descriptor, Some(&scope))?;
+        source.start().await?;
+        store.command(0, Command::Reset).await?;
+        let output = source.next().await?.context("scene output")?;
+        let progress = GraphProducerProgress::from_envelope(&output.envelope)?
+            .context("scene output progress")?;
+        assert_eq!(progress.identity().component_id().as_str(), "scene-worker");
+        assert_eq!(progress.identity().stream().as_str(), "scene/out");
+        assert_eq!(progress.identity().construction_scope(), "wall-instance");
+        assert_eq!(progress.identity().graph_id(), "wall-graph");
+        assert!(!progress.identity().persistent());
+        assert_eq!(progress.sequence(), 1);
+        source.stop().await
     }
 }
 impl Store {

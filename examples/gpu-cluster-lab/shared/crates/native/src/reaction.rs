@@ -2,7 +2,8 @@ use crate::status::Hub;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use drasi_computation_contracts::{
-    ChangeOperation, ComponentDescriptor, InputEnvelope, QueryChangeCodec, SinkCompletion,
+    ChangeOperation, ComponentDescriptor, InputEnvelope, PortId, QueryChangeCodec, SinkCompletion,
+    SnapshotConsumer,
 };
 use drasi_computation_plugin_sdk::{NativeComponent, NativeSink};
 use gpu_contracts::Candidate;
@@ -165,12 +166,10 @@ impl NativeSink for Reaction {
     fn completion(&self) -> SinkCompletion {
         SinkCompletion::Accepted
     }
-    fn supports_snapshot(&self) -> bool {
-        true
+    fn snapshot_consumer(&mut self, port: &PortId) -> Option<&mut dyn SnapshotConsumer> {
+        (port.as_str() == "in").then_some(self)
     }
-    async fn replace_snapshot(&mut self, input: InputEnvelope) -> Result<()> {
-        self.handle(input).await
-    }
+
     async fn handle(&mut self, input: InputEnvelope) -> Result<()> {
         if QueryChangeCodec::is_progress_only(&input.envelope) {
             return Ok(());
@@ -186,5 +185,12 @@ impl NativeSink for Reaction {
             .send(candidate)
             .context("plan reaction worker exited")?;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl SnapshotConsumer for Reaction {
+    async fn replace_snapshot(&mut self, input: InputEnvelope) -> Result<()> {
+        self.handle(input).await
     }
 }

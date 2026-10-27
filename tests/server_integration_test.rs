@@ -45,7 +45,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     // Build the core using the new builder API
     let query = Query::cypher("counter-query")
         .query("MATCH (n:Counter) RETURN n.value as value")
-        .from_source("counter-source")
+        .from_input("counter-source")
         .auto_start(true)
         .build();
 
@@ -126,20 +126,20 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     // Build the core using the new builder API
     let sensor_query = Query::cypher("sensor-alerts")
         .query("MATCH (s:Sensor) RETURN s")
-        .from_source("sensors-source")
+        .from_input("sensors-source")
         .auto_start(true)
         .build();
 
     let vehicle_query = Query::cypher("vehicle-tracking")
         .query("MATCH (v:Vehicle) RETURN v.id, v.location")
-        .from_source("vehicles-source")
+        .from_input("vehicles-source")
         .auto_start(true)
         .build();
 
     let combined_query = Query::cypher("combined-view")
         .query("MATCH (n) RETURN n")
-        .from_source("sensors-source")
-        .from_source("vehicles-source")
+        .from_input("sensors-source")
+        .from_input("vehicles-source")
         .auto_start(true)
         .build();
 
@@ -209,7 +209,7 @@ async fn test_component_failure_recovery() -> Result<()> {
     let query = Query::cypher("test-query")
         // This query references a non-existent property, but should still start
         .query("MATCH (n) RETURN n.nonexistent as value")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(true)
         .build();
 

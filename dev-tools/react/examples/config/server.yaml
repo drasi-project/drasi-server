@@ -28,16 +28,16 @@ instances:
           RETURN p.probeId AS probeId, p.room AS room, p.temperatureC AS temperatureC
         queryLanguage: Cypher
         autoStart: true
-        sources:
-          - sourceId: probe-feed
+        inputs:
+          - probe-feed
       - id: south-room
         query: >
           MATCH (p:Probe) WHERE p.room = 'South'
           RETURN p.probeId AS probeId, p.room AS room, p.temperatureC AS temperatureC
         queryLanguage: Cypher
         autoStart: true
-        sources:
-          - sourceId: probe-feed
+        inputs:
+          - probe-feed
     reactions:
       - kind: sse
         id: cold-chain-events

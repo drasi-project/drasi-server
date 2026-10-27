@@ -409,7 +409,7 @@ identity and any received HTTP status. Caller cancellation keeps its abort
 identity and stops work without displaying an unmount error.
 
 Before writing, Trading checks existing known definitions: exact query text
-(ignoring outer whitespace), explicit **Cypher**, ordered source subscriptions
+(ignoring outer whitespace), explicit **Cypher**, ordered query inputs
 and joins, plus reaction kind/membership/host/port/path/heartbeat settings.
 Conflict, malformed data, auth, unknown instance and network failures stop setup;
 it never overwrites resources or installs plugins. It compares the generated

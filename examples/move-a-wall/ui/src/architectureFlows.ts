@@ -39,7 +39,7 @@ const source = `SceneObject node properties {
 ${inputRecord}`;
 
 const context = `Query: geometry-context
-Row values { objects: string[] }
+Result node properties (RETURN aliases) { objects: string[] }
 Each string is a JSON-encoded InputRecord.
 
 ${inputRecord}`;
@@ -56,14 +56,17 @@ const status = `GeometryStatus {
   objects: integer; obstructions: integer
 }`;
 
-const impact = `AffectedJourney row {
-  id: string
+const impactFields = `  id: string
   cart_id: string; cart: string
   journey_id: string; task: string
   destination_id: string; destination: string
   obstacle_id: string; obstacle: string
   distance_m: number; required_m: number
 }`;
+const impact = `AffectedJourney Result node properties {
+${impactFields}`;
+const impactRow = `AffectedJourney row {
+${impactFields}`;
 
 const geometry = `${obstruction}
 ${status}
@@ -86,7 +89,7 @@ obstructions:
 ${obstruction}
 
 affected-journeys:
-${impact}
+${impactRow}
 
 geometry-status:
 ${status}`;
@@ -101,10 +104,10 @@ const diffs = `ResultDiff =
       after: Row, row_signature: u64 }
   | { type: "noop" }`;
 
-const graphDetail = 'Native graph-change envelopes carry inserts, updates and deletes. The schema below shows decoded node properties, not a JSON transport envelope.';
-const graphNote = 'Inserts and updates carry node properties. Deletes carry element identity and metadata, not the old properties. Envelopes carry stream/sequence and timing information.';
-const queryDetail = 'Native query-row change envelopes carry row identities/signatures, query generation and sequence, and snapshot markers. The schema below shows the row values.';
-const queryNote = 'Added rows carry an after image; updated rows carry before/after images; deleted rows carry their prior row. These are query results, not graph-node properties.';
+const graphDetail = 'Graph pipes carry graph-change v1 envelopes: ElementImage adds and replacements, ElementPatch updates and deletes. The schema below shows decoded node properties, not a JSON transport envelope.';
+const graphNote = 'Inserts and replacements carry node properties. Source deletes can be identity-only (element identity and metadata, not the old properties). Envelopes carry stream/sequence and timing information.';
+const queryDetail = 'A query output uses the same graph-change v1 schema as every other pipe. Each output is a Result node whose properties are the query’s RETURN aliases, with an identity scoped to that query output. Query ID, row kind, generation, sequence and snapshot markers are scoped envelope metadata, not node properties. The schema below shows the RETURN-alias properties.';
+const queryNote = 'An added Result node carries an ElementImage; an update carries an ElementImage or ElementPatch; a delete carries the prior Result node as an ElementBeforeImage. A downstream transformer or query reads these envelopes directly, with no conversion step.';
 
 export const connections: Connection[] = [
   {
@@ -134,9 +137,9 @@ ${entity}`,
   {
     id: 'context-geometry', kind: 'rows', path: 'M773 210 H827',
     title: 'Active context → Geometry',
-    implementation: 'geometry-context.out → geometry.in · drasi.query-row v1',
+    implementation: 'geometry-context.out → geometry.in · drasi.graph-change v1 (Result nodes)',
     detail: queryDetail, schema: context,
-    note: `${queryNote} The collection includes active entities and the clock manifest, which proves input revision completeness.`,
+    note: `${queryNote} The collected objects include active entities and the clock manifest, which proves input revision completeness; geometry reads this output directly.`,
   },
   {
     id: 'geometry-impact', kind: 'graph', path: 'M1033 210 H1087',
@@ -162,53 +165,53 @@ ${entity}`,
   {
     id: 'context-results', kind: 'rows', path: 'M670 152 V110 H1320 V405 H1293',
     title: 'Active context → Query results outlet',
-    implementation: 'geometry-context.out → query-results.in · drasi.query-row v1',
+    implementation: 'geometry-context.out → query-results.in · drasi.graph-change v1 (Result nodes)',
     detail: queryDetail, schema: context,
     note: `${queryNote} This is the same output that feeds Geometry, published separately for inspection.`,
   },
   {
     id: 'impact-results', kind: 'rows', path: 'M1190 268 V347',
     title: 'Affected journeys → Query results outlet',
-    implementation: 'affected-journeys.out → query-results.in · drasi.query-row v1',
+    implementation: 'affected-journeys.out → query-results.in · drasi.graph-change v1 (Result nodes)',
     detail: queryDetail, schema: impact,
-    note: `${queryNote} One row represents one journey/obstacle cause. The query supplies the human-readable names.`,
+    note: `${queryNote} One Result node represents one journey/obstacle cause. The query supplies the human-readable names.`,
   },
   {
     id: 'inspection-results', kind: 'rows', path: 'M773 405 H1087',
     title: 'Inspection queries → Query results outlet',
-    implementation: 'Three independent out ports → query-results.in · drasi.query-row v1',
+    implementation: 'Three independent out ports → query-results.in · drasi.graph-change v1 (Result nodes)',
     detail: queryDetail,
-    schema: `scene-inputs row { objects: string[] }
+    schema: `scene-inputs Result node properties { objects: string[] }
 Each string is a JSON-encoded InputRecord.
 
-obstructions row:
+obstructions Result node properties:
 ${obstruction}
 
-geometry-status row:
+geometry-status Result node properties:
 ${status}`,
-    note: `${queryNote} This arrow groups three independent feeds; it is not one combined row or atomic multi-query snapshot.`,
+    note: `${queryNote} This arrow groups three independent feeds; it is not one combined result or atomic multi-query snapshot.`,
   },
   {
     id: 'catalog-api', kind: 'rows', path: 'M1190 463 V490 H410 V522',
     title: 'Shared result catalog → REST API',
     implementation: 'wall-query-catalog · retained query readers',
-    detail: 'Shared-resource access, not a graph pipe or an output port on the sink. The API obtains the selected query’s retained row values through its query reader.',
+    detail: 'Shared-resource access, not a graph pipe or an output port on the sink. The API obtains the selected query’s retained results through its query reader and serves them as row JSON.',
     schema: rows,
     note: 'The query-results sink publishes changes; it does not create another copy of business state. HTTP snapshot JSON is shown on the REST API → React UI arrow.',
   },
   {
     id: 'catalog-sse', kind: 'rows', path: 'M670 463 V522',
     title: 'Continuous queries → native SSE sink',
-    implementation: 'All five query out ports → wall-ui.in · drasi.query-row v1',
-    detail: 'Five independent bounded graph pipes, grouped in this arrow. The native sink serializes query envelopes directly at the browser transport boundary, without catalog subscriptions or a reaction queue.',
+    implementation: 'All five query out ports → wall-ui.in · drasi.graph-change v1 (Result nodes)',
+    detail: 'Five independent bounded graph pipes, grouped in this arrow. The native sink reads these graph-change envelopes directly and writes the browser’s result-difference JSON only at the transport boundary, without catalog subscriptions or a reaction queue.',
     schema: queryDetail,
-    note: 'Row is the selected query’s result shape, shown on its incoming arrow. Native envelopes include sequence; the unchanged browser SSE payload does not.',
+    note: 'The result shape is the selected query’s RETURN aliases, shown on its incoming arrow. Native envelopes include sequence; the unchanged browser SSE payload does not.',
   },
   {
     id: 'api-browser', kind: 'transport', path: 'M307 580 H115 V463',
     title: 'REST API → React UI',
     implementation: 'GET /api/v1/instances/move-a-wall/queries/:id/results',
-    detail: 'The SDK reads an ordinary JSON snapshot for one query. This response contains current row values, not change operations or native envelopes.',
+    detail: 'The SDK reads an ordinary JSON snapshot for one query. This external API response contains current row JSON, not change operations or graph-change envelopes.',
     schema: `Successful response {
   success: true
   data: Row[]
@@ -221,7 +224,7 @@ ${rows}`,
     id: 'sse-browser', kind: 'transport', path: 'M670 638 V660 H75 V463',
     title: 'Native SSE sink → React UI',
     implementation: 'GET /events · text/event-stream',
-    detail: 'Each SSE data frame contains the standard, untemplated JSON payload below. The SDK applies its result differences to the selected query.',
+    detail: 'Each SSE data frame contains the standard, untemplated JSON payload below, produced by the sink from graph-change query outputs. The SDK applies its result differences to the selected query.',
     schema: `Result message {
   queryId: string
   results: ResultDiff[]
@@ -230,6 +233,6 @@ ${rows}`,
 ${diffs}
 
 Heartbeat { type: "heartbeat", ts: integer }`,
-    note: 'Row is the selected query’s result shape, not a scene command. Unlike sparse graph deletes, SSE DELETE includes the removed row. This default payload does not expose query sequence.',
+    note: 'This external SSE format is row JSON with ResultDiff events, not the internal graph-change envelope. Row is the selected query’s result shape, not a scene command. Unlike sparse source deletes, SSE DELETE includes the removed row. This default payload does not expose query sequence.',
   },
 ];

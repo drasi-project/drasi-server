@@ -5,21 +5,21 @@
       "name": "All Products",
       "query": "MATCH (p:products) RETURN p.id AS id, p.name AS name, p.price AS price, p.category AS category, p.stock AS stock",
       "description": "Returns all products in the catalog",
-      "sources": ["data-feed"]
+      "inputs": ["data-feed"]
     },
     {
       "id": "low-stock-query",
       "name": "Low Stock Products",
       "query": "MATCH (p:products) WHERE p.stock < 10 RETURN p.id AS id, p.name AS name, p.stock AS stock, p.category AS category",
       "description": "Finds products with low inventory (less than 10 units)",
-      "sources": ["data-feed"]
+      "inputs": ["data-feed"]
     },
     {
       "id": "expensive-products-query",
       "name": "Premium Products",
       "query": "MATCH (p:products) WHERE p.price > 100 RETURN p.id AS id, p.name AS name, p.price AS price, p.category AS category ORDER BY p.price DESC",
       "description": "Lists products priced over $100",
-      "sources": ["data-feed"]
+      "inputs": ["data-feed"]
     }
   ],
   "sampleData": [

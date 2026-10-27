@@ -4,7 +4,8 @@ import { renderToString } from 'react-dom/server';
 import { NativeSseProvider, validateNativeSseGraph as validateGraph } from '@drasi/example-native-sse';
 import { queryIds } from './records';
 
-const validateNativeSseGraph = (value: unknown) => validateGraph(value, queryIds, 'wall-ui');
+const outputs = queryIds.map(id => ({ id, component: id, port: 'out' }));
+const validateNativeSseGraph = (value: unknown) => validateGraph(value, outputs, 'wall-ui');
 
 function graph() {
   return {
@@ -30,7 +31,7 @@ function graph() {
 describe('native SSE graph validation', () => {
   it('renders the shared package without relying on the consuming app JSX runtime', () => {
     expect(renderToString(createElement(NativeSseProvider, {
-      origin: 'http://localhost', instanceId: 'move-a-wall', queryIds,
+      origin: 'http://localhost', instanceId: 'move-a-wall', outputs,
       sinkId: 'wall-ui', endpoint: 'http://localhost/events', children: 'native',
     }))).toBe('native');
   });
@@ -57,12 +58,22 @@ describe('native SSE graph validation', () => {
       expect(() => validateNativeSseGraph(value)).toThrow();
     }
   });
-  it('requires a bound native edge from every selected query', () => {
+  it('accepts a source or transformer output and rejects a producer that is not an output role', () => {
+    const value = graph();
+    value.data.components[1].role = 'Source';
+    expect(() => validateNativeSseGraph(value)).not.toThrow();
+    value.data.components[1].role = 'Transformer';
+    expect(() => validateNativeSseGraph(value)).not.toThrow();
+    value.data.components[1].role = 'Sink';
+    expect(() => validateNativeSseGraph(value)).toThrow();
+  });
+  it('requires a bound native edge from every selected output port', () => {
     for (const change of [
       (value: ReturnType<typeof graph>) => { value.data.relationships.pop(); },
       (value: ReturnType<typeof graph>) => { value.data.relationships[0].binding = 'Binding'; },
       (value: ReturnType<typeof graph>) => { value.data.relationships[0].representation = 'HostSubscription'; },
       (value: ReturnType<typeof graph>) => { value.data.relationships[0].to.port = 'wrong'; },
+      (value: ReturnType<typeof graph>) => { value.data.relationships[0].from.port = 'errors'; },
     ]) {
       const value = graph();
       change(value);

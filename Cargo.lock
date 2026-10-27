@@ -1147,6 +1147,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "drasi-core",
+ "drasi-core-types",
  "drasi-lib",
  "futures-util",
  "rmp-serde",
@@ -1361,6 +1362,7 @@ version = "0.6.4"
 dependencies = [
  "async-stream",
  "async-trait",
+ "bincode",
  "bit-set 0.5.3",
  "bytes",
  "chrono",

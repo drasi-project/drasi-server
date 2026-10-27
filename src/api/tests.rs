@@ -58,18 +58,18 @@ mod serialization_tests {
     fn test_query_config_json_serialization() {
         let config = Query::cypher("test-query")
             .query("MATCH (n) RETURN n")
-            .from_source("source1")
-            .from_source("source2")
+            .from_input("source1")
+            .from_input("source2")
             .auto_start(false)
             .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
         assert_eq!(json["query"], "MATCH (n) RETURN n");
-        assert_eq!(json["sources"].as_array().unwrap().len(), 2);
+        assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
 
         // Test deserialization
         let deserialized: drasi_lib::QueryConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(deserialized.sources.len(), 2);
+        assert_eq!(deserialized.inputs.len(), 2);
     }
 }

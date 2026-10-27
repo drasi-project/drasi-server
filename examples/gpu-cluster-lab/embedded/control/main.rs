@@ -735,6 +735,45 @@ async fn proxy(
     )
         .into_response())
 }
+/// The read-only canonical snapshot of one named UI output, served by the native
+/// SSE sink next to its event stream. Only the nine UI outputs are exposed.
+async fn snapshot(State(app): State<App>, Path(alias): Path<String>) -> ApiResult<Response> {
+    let _guard = available(&app).await?;
+    if !UI_QUERIES.contains(&alias.as_str()) {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "NOT_FOUND",
+            message: "Snapshot route not exposed".into(),
+        });
+    }
+    let base = reqwest::Url::parse(&app.sse).map_err(anyhow::Error::from)?;
+    let url = base
+        .join(&format!("/snapshot/{alias}"))
+        .map_err(anyhow::Error::from)?;
+    let response = app
+        .client
+        .get(url)
+        .send()
+        .await
+        .map_err(anyhow::Error::from)?;
+    let status = response.status();
+    let mut headers = HeaderMap::new();
+    for name in ["x-drasi-output-epoch", "x-drasi-output-position"] {
+        if let Some(value) = response.headers().get(name) {
+            headers.insert(name, value.clone());
+        }
+    }
+    let data = response.bytes().await.map_err(anyhow::Error::from)?;
+    headers.insert(
+        "content-type",
+        "application/json".parse().map_err(anyhow::Error::from)?,
+    );
+    headers.insert(
+        "cache-control",
+        "no-store".parse().map_err(anyhow::Error::from)?,
+    );
+    Ok((status, headers, data).into_response())
+}
 async fn events(State(app): State<App>) -> ApiResult<Response> {
     let _guard = available(&app).await?;
     let reset = app.stream_resets.subscribe();
@@ -873,6 +912,7 @@ async fn main() -> Result<()> {
         .route("/internal/placement-plans", post(write_plan))
         .route("/api/v1/instances/gpu-demo/*path", get(proxy))
         .route("/events/gpu-demo", get(events))
+        .route("/snapshot/:alias", get(snapshot))
         .fallback_service(ServeDir::new("ui/dist"))
         .layer(DefaultBodyLimit::max(256 * 1024))
         .with_state(app);

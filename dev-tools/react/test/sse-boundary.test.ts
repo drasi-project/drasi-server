@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiSSEClient } from '../src/client/DrasiSSEClient';
 import { DrasiError } from '../src/client/errors';
 import { createLegacyResultAdapter } from '../src/client/results';
-import type { QueryDelta, RouteUnidentified } from '../src/client/types';
+import type { OutputDelta, RouteUnidentified } from '../src/client/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
 
 const clients: DrasiSSEClient[] = [];
@@ -21,7 +21,7 @@ async function open(routeUnidentified?: RouteUnidentified) {
     eventSourceFactory: factory.create, resultAdapter: createLegacyResultAdapter({ routeUnidentified }),
   });
   clients.push(client);
-  const results = vi.fn<(value: QueryDelta) => void>(), errors = vi.fn();
+  const results = vi.fn<(value: OutputDelta) => void>(), errors = vi.fn();
   client.subscribe('telemetry', results, errors);
   const connected = client.connect(['telemetry'], 'https://stream.invalid/events');
   factory.instances[0].open();
@@ -51,7 +51,7 @@ describe('explicit legacy SSE adapter boundary', () => {
       query_id: 'telemetry', results: [wire], timestamp: '2026-01-15T12:00:00Z',
     });
     expect(results).toHaveBeenCalledExactlyOnceWith({
-      kind: 'delta', queryId: 'telemetry', changes: [change], receivedAt: expect.any(Number),
+      kind: 'delta', outputId: 'telemetry', changes: [change], receivedAt: expect.any(Number),
       sourceTimestamp: Date.parse('2026-01-15T12:00:00Z'),
     });
   });
@@ -81,7 +81,7 @@ describe('explicit legacy SSE adapter boundary', () => {
     const { source, results } = await open();
     source.message(wire);
     expect(results.mock.calls[0][0]).toEqual({
-      kind: 'delta', queryId: 'telemetry', changes: [{ kind: 'upsert', after: { device: 'one' } }],
+      kind: 'delta', outputId: 'telemetry', changes: [{ kind: 'upsert', after: { device: 'one' } }],
       receivedAt: expect.any(Number), sourceTimestamp: 1234,
     });
   });

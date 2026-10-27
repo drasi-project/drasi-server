@@ -24,8 +24,8 @@ queries:
       MATCH (n:BootstrapNode)
       RETURN n.id AS nodeId, n.name AS nodeName, n.value AS nodeValue
     queryLanguage: Cypher
-    sources:
-      - sourceId: bootstrap-source
+    inputs:
+      - bootstrap-source
     autoStart: true
 
 reactions:

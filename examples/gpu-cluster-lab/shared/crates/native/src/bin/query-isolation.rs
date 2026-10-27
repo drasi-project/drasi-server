@@ -73,8 +73,11 @@ fn load_corpus(path: &Path) -> Result<Corpus> {
     );
     let mut codec = EnvelopeCodec::new(NonZeroUsize::new(8 * 1024 * 1024).unwrap());
     codec.register_schema(GraphChangeCodec::schema())?;
-    codec.register_schema(QueryChangeCodec::schema())?;
-    let mut database = Emitter::new(StreamId::try_new("isolation/database")?);
+    let mut database = Emitter::new(
+        StreamId::try_new("isolation/database")?,
+        ComponentId::try_new("isolation-database")?,
+        None,
+    )?;
     let mut corpus = Corpus {
         frames: Vec::new(),
         configuration: Value::Null,
@@ -104,7 +107,9 @@ fn load_corpus(path: &Path) -> Result<Corpus> {
         let native = GraphChangeCodec::decode_changes(&envelope)?;
         let mut has_reports = false;
         for change in &native {
-            let (SourceChange::Insert { element } | SourceChange::Update { element }) = change
+            let (SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. }) = change
             else {
                 continue;
             };
@@ -138,8 +143,12 @@ fn load_corpus(path: &Path) -> Result<Corpus> {
                     SourceChange::Insert {
                         element: Element::Node { metadata: m, .. },
                     }
+                    | SourceChange::Replace {
+                        element: Element::Node { metadata: m, .. },
+                    }
                     | SourceChange::Update {
                         element: Element::Node { metadata: m, .. },
+                        ..
                     }
                     | SourceChange::Delete { metadata: m } => {
                         m.effective_from = metadata.effective_from
@@ -589,7 +598,9 @@ fn rebase_envelope(frame: &Frame, shift: i64) -> Result<ChangeEnvelope> {
     let mut changes = GraphChangeCodec::decode_changes(&frame.envelope)?;
     for change in &mut changes {
         match change {
-            SourceChange::Insert { element } | SourceChange::Update { element } => {
+            SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. } => {
                 let (metadata, properties) = match element {
                     Element::Node {
                         metadata,
@@ -681,7 +692,7 @@ async fn execute(
             Arc::new(InMemoryComputationProvider)
         } else {
             let config = serde_json::from_value(json!({
-                "id":id, "query":text, "sources":[{"source_id":"fixture"}], "joins":settings.joins,
+                "id":id, "query":text, "inputs":["fixture"], "joins":settings.joins,
                 "enableBootstrap":false, "auto_start":false,
             }))?;
             let batch = core
@@ -818,7 +829,6 @@ async fn execute(
         let mut due = Some(InputEnvelope {
             port: PortId::try_new("in")?,
             envelope: GraphChangeCodec::encode_futures_due(
-                &ComponentId::try_new(format!("{}/scheduled", item.id))?,
                 StreamId::try_new(format!("{}/scheduled", item.id))?,
                 1,
                 chrono::Utc::now(),

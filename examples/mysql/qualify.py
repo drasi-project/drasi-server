@@ -197,12 +197,16 @@ class Qualification:
             ("deleted", "before", "NULL"),
         ]:
             templates[name] = {"template":
-                "CALL effect({{param query_id}},{{param operation}},"
+                "CALL effect({{param output.alias}},{{param operation}},"
                 + "{{param " + row + ".id}}," + value + ")"}
         sink = {
             "hostname": "127.0.0.1", "port": self.database_port, "database": "test",
             "user": "root", "password": self.password,
-            "queries": ["all-items", "selected-items"], "default_template": templates,
+            "outputs": {
+                name: {"component": name, "port": "out"}
+                for name in ("all-items", "selected-items")
+            },
+            "default_template": templates,
         }
         return {
             **os.environ,

@@ -12,7 +12,7 @@ it('the packaged client accepts current Server query metadata without retired bo
     outboxCapacity: 128,
     bootstrapTimeoutSecs: 30,
     middleware: [],
-    sources: [],
+    inputs: ['gpu-inventory'],
   };
   const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
     success: true,
@@ -27,7 +27,7 @@ it('the packaged client accepts current Server query metadata without retired bo
   const client = new DrasiClient({
     serverUrl: 'http://gpu.example',
     instanceId: 'gpu-demo',
-    queryIds: ['ui-gpus'],
+    outputIds: ['ui-gpus'],
     reaction: { id: 'gpu-demo-ui', endpoint: 'http://gpu.example/events/gpu-demo' },
     fetch,
   });

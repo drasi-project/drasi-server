@@ -697,7 +697,9 @@ function ensureSchemaAliases(definitions: Record<string, any>) {
     ['PlatformReactionConfigDto', 'PlatformReactionConfig'],
     ['ProfilerReactionConfigDto', 'ProfilerReactionConfig'],
     ['QueryConfigDto', 'QueryConfig'],
-    ['SourceSubscriptionConfigDto', 'SourceSubscriptionConfig'],
+    ['QueryInputConfigDto', 'QueryInputConfig'],
+    ['QueryInputObjectDto', 'QueryInputObject'],
+    ['QueryResultConfigDto', 'QueryResultConfig'],
     ['RedbStateStoreConfigDto', 'RedbStateStoreConfig'],
   ];
 

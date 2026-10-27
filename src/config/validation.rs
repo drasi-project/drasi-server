@@ -692,8 +692,8 @@ mod tests {
             dispatchBufferCapacity: 1000
             middleware: []
             dispatchMode: "immediate"
-            sources:
-              - sourceId: test-source
+            inputs:
+              - test-source
         "#;
 
         let result: Result<QueryConfigDto, _> = serde_yaml::from_str(yaml);

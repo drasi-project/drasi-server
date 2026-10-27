@@ -100,7 +100,8 @@ interface RawQueryFull extends RawComponentSummary {
     id: string;
     query: string;
     queryLanguage?: string;
-    sources: QuerySourceSubscription[];
+    inputs: QueryInput[];
+    result?: QueryResultOptions;
     autoStart?: boolean;
     enableBootstrap?: boolean;
     [key: string]: unknown;
@@ -138,24 +139,40 @@ export interface QueryConfigResponse {
   id: string;
   query: string;
   queryLanguage?: string;
-  sources: QuerySourceSubscription[];
+  inputs: QueryInput[];
+  result?: QueryResultOptions;
   autoStart?: boolean;
   enableBootstrap?: boolean;
   status?: ComponentStatus;
   error?: string;
 }
 
-export interface QuerySourceSubscription {
-  sourceId: string;
+/** Expanded query input; the server omits unset and empty optional fields. */
+export interface QueryInputObject {
+  component: string;
+  port?: string;
   nodes?: string[];
   relations?: string[];
+  pipeline?: string[];
+}
+
+/** A bare upstream component name (its primary output) or an expanded input object. */
+export type QueryInput = string | QueryInputObject;
+
+export interface QueryResultOptions {
+  label?: string;
+}
+
+export function inputComponent(input: QueryInput): string {
+  return typeof input === "string" ? input : input.component;
 }
 
 export interface CreateQueryRequest {
   id: string;
   query: string;
   queryLanguage?: string;
-  sources: QuerySourceSubscription[];
+  inputs: QueryInput[];
+  result?: QueryResultOptions;
   autoStart?: boolean;
 }
 
@@ -256,7 +273,8 @@ export function normalizeQuery(raw: RawQueryFull): QueryConfigResponse {
     id: raw.id,
     query: raw.config?.query ?? "",
     queryLanguage: raw.config?.queryLanguage,
-    sources: raw.config?.sources ?? [],
+    inputs: raw.config?.inputs ?? [],
+    result: raw.config?.result,
     autoStart: raw.config?.autoStart,
     enableBootstrap: raw.config?.enableBootstrap,
     status: raw.status,
@@ -268,7 +286,7 @@ export function normalizeQuerySummary(raw: RawComponentSummary): QueryConfigResp
   return {
     id: raw.id,
     query: "",
-    sources: [],
+    inputs: [],
     status: raw.status,
     error: raw.errorMessage,
   };

@@ -7,7 +7,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
 use drasi_computation_contracts::*;
-use drasi_computation_plugin_sdk::{NativeComponent, NativeTransformer};
+use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeTransformer};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -21,12 +21,12 @@ pub struct Geometry {
     stopped: bool,
 }
 impl Geometry {
-    pub fn new(id: ComponentId) -> Result<Self> {
+    pub fn new(id: ComponentId, scope: Option<&Scope>) -> Result<Self> {
         Ok(Self {
+            emitter: Emitter::new("geometry/out", id.clone(), scope)?,
             descriptor: descriptor(id)?,
             rows: vec![],
             scene: Scene::new(),
-            emitter: Emitter::new("geometry/out")?,
             sequence: None,
             revision: 0,
             stopped: false,

@@ -43,7 +43,7 @@ function setFetch(fetcher) {
 const options = {
   serverUrl: 'https://drasi.example',
   instanceId: 'warehouse-west',
-  queryIds: ['temperatures'],
+  outputIds: ['temperatures'],
   reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
 };
 const queryOptions = {
@@ -297,7 +297,7 @@ try {
       results: [{ type: 'UPDATE', before, after, data: after }],
     }, { receivedAt: 2 });
     assert.deepEqual(delta, {
-      kind: 'delta', queryId: 'temperatures', receivedAt: 2, sourceTimestamp: 1,
+      kind: 'delta', outputId: 'temperatures', receivedAt: 2, sourceTimestamp: 1,
       changes: [{ kind: 'update', before, after }],
     });
     assert.deepEqual(api.accumulateResult([before], delta, queryOptions.getKey), [after]);
@@ -311,7 +311,7 @@ try {
       links: { self: queryPath, full: `${queryPath}?view=full` },
       config: {
         id: 'temperatures', query: 'MATCH (s:Station) RETURN s.stationId AS stationId',
-        queryLanguage: 'Cypher', sources: [], autoStart: false, middleware: [],
+        queryLanguage: 'Cypher', inputs: [], autoStart: false, middleware: [],
         enableBootstrap: true, outboxCapacity: 100, bootstrapTimeoutSecs: 30,
       },
     };
@@ -383,7 +383,7 @@ try {
     }
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
     for (const name of [
-      'DrasiProvider', 'useDrasiClient', 'useDrasiQuery', 'useDrasiConnectionStatus',
+      'DrasiProvider', 'useDrasiClient', 'useDrasiOutput', 'useDrasiQuery', 'useDrasiConnectionStatus',
       'useDrasiServerUiUrl', 'useDrasiQueryDefinition', 'useRowAnimation', 'useTableSort',
     ]) {
       assert.equal(hooks[name].name, name, `Public/debug React binding name changed: ${name}`);

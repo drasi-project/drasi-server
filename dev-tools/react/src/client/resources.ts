@@ -5,7 +5,7 @@
 
 import type {
   Component, ComponentStatus, JsonValue, QueryConfig, QueryJoin, QueryMiddleware,
-  QuerySource, ReactionConfig, ResultRow,
+  QueryInput, ReactionConfig, ResultRow,
 } from './types';
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 
@@ -112,9 +112,22 @@ export function readComponent(
   };
 }
 
-function isSource(value: unknown): value is QuerySource {
-  return isRecord(value) && isIdentifier(value.sourceId) &&
-    isStringArray(value.nodes) && isStringArray(value.relations) && isStringArray(value.pipeline);
+function isOptionalStringArray(value: unknown): boolean {
+  return value === undefined || isStringArray(value);
+}
+
+function isInput(value: unknown): value is QueryInput {
+  if (isIdentifier(value)) return true;
+  return isRecord(value) && isIdentifier(value.component) &&
+    (value.port === undefined || isIdentifier(value.port)) &&
+    isOptionalStringArray(value.nodes) && isOptionalStringArray(value.relations) &&
+    isOptionalStringArray(value.pipeline) &&
+    Object.keys(value).every(key => ['component', 'port', 'nodes', 'relations', 'pipeline'].includes(key));
+}
+
+function isResult(value: unknown): boolean {
+  return value === undefined || (isRecord(value) &&
+    (value.label === undefined || (typeof value.label === 'string' && value.label.length > 0)));
 }
 
 function isJoin(value: unknown): value is QueryJoin {
@@ -134,7 +147,7 @@ function isQueryConfig(value: unknown): value is QueryConfig {
     isUnsignedInteger(value.outboxCapacity) &&
     isUnsignedInteger(value.bootstrapTimeoutSecs) &&
     Array.isArray(value.middleware) && value.middleware.every(isMiddleware) &&
-    Array.isArray(value.sources) && value.sources.every(isSource) &&
+    Array.isArray(value.inputs) && value.inputs.every(isInput) && isResult(value.result) &&
     (value.joins === undefined || (Array.isArray(value.joins) && value.joins.every(isJoin))) &&
     (value.priorityQueueCapacity === undefined || isUnsignedInteger(value.priorityQueueCapacity)) &&
     (value.dispatchBufferCapacity === undefined || isUnsignedInteger(value.dispatchBufferCapacity)) &&

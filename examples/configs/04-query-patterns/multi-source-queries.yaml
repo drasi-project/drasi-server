@@ -76,9 +76,9 @@ instances:
                  o.id AS OrderId,
                  o.total AS OrderTotal
         queryLanguage: Cypher
-        sources:
-          - sourceId: customer-service
-          - sourceId: order-service
+        inputs:
+          - customer-service
+          - order-service
 
   # Query spanning orders and inventory
       - id: order-inventory
@@ -91,9 +91,9 @@ instances:
                  i.quantity AS InStock,
                  o.quantity AS Ordered
         queryLanguage: Cypher
-        sources:
-          - sourceId: order-service
-          - sourceId: inventory-service
+        inputs:
+          - order-service
+          - inventory-service
 
   # Alert: Order quantity exceeds inventory
       - id: stock-shortage-alert
@@ -107,9 +107,9 @@ instances:
                  i.quantity AS Available,
                  'STOCK_SHORTAGE' AS AlertType
         queryLanguage: Cypher
-        sources:
-          - sourceId: order-service
-          - sourceId: inventory-service
+        inputs:
+          - order-service
+          - inventory-service
 
   # Full customer-order-inventory join
       - id: full-order-view
@@ -123,10 +123,10 @@ instances:
                  o.quantity AS Ordered,
                  i.quantity AS InStock
         queryLanguage: Cypher
-        sources:
-          - sourceId: customer-service
-          - sourceId: order-service
-          - sourceId: inventory-service
+        inputs:
+          - customer-service
+          - order-service
+          - inventory-service
 
     reactions:
       - kind: log

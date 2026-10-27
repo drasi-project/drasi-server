@@ -105,8 +105,8 @@ queries:
   - id: solution-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
-    sources:
-      - sourceId: solution-source
+    inputs:
+      - solution-source
     autoStart: true
 
 reactions:
@@ -137,8 +137,8 @@ queries:
   - id: threshold-query
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-source
+    inputs:
+      - sensor-source
     autoStart: true
 
 reactions:
@@ -173,8 +173,8 @@ queries:
   - id: bootstrap-query
     query: "MATCH (n:TestNode) RETURN n.id AS id, n.value AS value"
     queryLanguage: Cypher
-    sources:
-      - sourceId: bootstrap-source
+    inputs:
+      - bootstrap-source
     autoStart: true
 
 reactions:
@@ -214,9 +214,9 @@ queries:
       MATCH (s:SensorReading)-[:LOCATED_AT]->(l:Location)
       RETURN s.sensor_id AS sensorId, l.name AS locationName
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-source
-      - sourceId: location-source
+    inputs:
+      - sensor-source
+      - location-source
     joins:
       - id: LOCATED_AT
         keys:
@@ -249,7 +249,7 @@ pub async fn create_test_router_with_solutions(
     // The prerequisite query must be running before the reaction subscribes.
     let test_query = Query::cypher("test-query")
         .query("MATCH (n:Node) RETURN n")
-        .from_source("reaction-source")
+        .from_input("reaction-source")
         .auto_start(true)
         .build();
 
@@ -320,7 +320,7 @@ pub async fn create_multi_instance_test_router(
         // The prerequisite query must be running before the reaction subscribes.
         let reaction_query = Query::cypher(&query_id)
             .query("MATCH (n:Node) RETURN n")
-            .from_source(&reaction_source_id)
+            .from_input(&reaction_source_id)
             .auto_start(true)
             .build();
 

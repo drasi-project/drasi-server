@@ -24,7 +24,7 @@ use drasi_host_sdk::{
     management::{
         CompositeBootstrapConfig, ConsumerProgressConfig, HostConfigurationResolver,
         NativeBootstrapConfig, NativeConsumerConfig, NativeIdentityConfig,
-        NativeQuerySnapshotsConfig, NativeSourceBootstrapConfig, QosRecoveryConfig,
+        NativeOutputSnapshotsConfig, NativeSourceBootstrapConfig, QosRecoveryConfig,
         SharedQosConfig,
     },
 };
@@ -45,6 +45,7 @@ pub use authoring::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ComputationConfig {
     #[schema(value_type = serde_json::Value)]
+    #[serde(with = "serde_yaml::with::singleton_map_recursive")]
     pub definition: DesiredTopology,
 }
 
@@ -88,7 +89,7 @@ pub enum ComputationResourceConfig {
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
     NativeSourceBootstrap(#[schema(value_type = serde_json::Value)] NativeSourceBootstrapConfig),
     CompositeBootstrap(#[schema(value_type = serde_json::Value)] CompositeBootstrapConfig),
-    NativeQuerySnapshots(#[schema(value_type = serde_json::Value)] NativeQuerySnapshotsConfig),
+    NativeOutputSnapshots(#[schema(value_type = serde_json::Value)] NativeOutputSnapshotsConfig),
     ConsumerProgress(#[schema(value_type = serde_json::Value)] ConsumerProgressConfig),
     NativeIdentity(#[schema(value_type = serde_json::Value)] NativeIdentityConfig),
     Middleware {},
@@ -130,7 +131,8 @@ impl ComputationResourceConfig {
             | Self::RocksdbIndexes { .. }
             | Self::SharedStorage { .. }
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
-            Self::QueryCatalog {} | Self::NativeQuerySnapshots(_) => ResourceRole::QueryCatalog,
+            Self::QueryCatalog {} => ResourceRole::QueryCatalog,
+            Self::NativeOutputSnapshots(_) => ResourceRole::OutputCatalogue,
             Self::NativeBootstrap(_)
             | Self::NativeSourceBootstrap(_)
             | Self::CompositeBootstrap(_) => ResourceRole::Bootstrap,
@@ -228,7 +230,7 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         } else if let ComputationResourceConfig::CompositeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
-        } else if let ComputationResourceConfig::NativeQuerySnapshots(config) = &recipe {
+        } else if let ComputationResourceConfig::NativeOutputSnapshots(config) = &recipe {
             config.validate(resource, &dependencies)?;
         } else if let ComputationResourceConfig::ConsumerProgress(config) = &recipe {
             config.validate(resource, &dependencies)?;
@@ -613,7 +615,7 @@ impl ManagementResourceResolver for ServerManagementResources {
                 ComputationResourceConfig::NativeConsumer(config) => {
                     config.validate_dependencies(resource, &dependencies)?
                 }
-                ComputationResourceConfig::NativeQuerySnapshots(config) => {
+                ComputationResourceConfig::NativeOutputSnapshots(config) => {
                     config.validate(resource, &dependencies)?
                 }
                 ComputationResourceConfig::ConsumerProgress(config) => {
@@ -703,8 +705,8 @@ impl ManagementResourceResolver for ServerManagementResources {
         if let ComputationResourceConfig::CompositeBootstrap(config) = recipe {
             return config.resolve(instance, graph, resource, dependencies);
         }
-        if let ComputationResourceConfig::NativeQuerySnapshots(config) = recipe {
-            return config.resolve(graph, resource, dependencies);
+        if let ComputationResourceConfig::NativeOutputSnapshots(config) = recipe {
+            return config.resolve(resource, dependencies);
         }
         if let ComputationResourceConfig::ConsumerProgress(config) = recipe {
             return config.resolve(graph, resource, dependencies);
@@ -789,8 +791,8 @@ impl ManagementResourceResolver for ServerManagementResources {
             ComputationResourceConfig::CompositeBootstrap(_) => {
                 unreachable!("composite bootstrap resolved with dependencies")
             }
-            ComputationResourceConfig::NativeQuerySnapshots(_) => {
-                unreachable!("native query snapshots resolved with dependencies")
+            ComputationResourceConfig::NativeOutputSnapshots(_) => {
+                unreachable!("native output snapshots resolved separately")
             }
             ComputationResourceConfig::ConsumerProgress(_) => {
                 unreachable!("consumer progress resolved with dependencies")

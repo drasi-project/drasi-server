@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import type {
-  ConnectionStatus, DrasiHeaders, DrasiHeadersProvider, EventSourceOptions, QueryDelta, ReconnectOptions,
+  ConnectionStatus, DrasiHeaders, DrasiHeadersProvider, EventSourceOptions, OutputDelta, ReconnectOptions,
   ResultAdapter,
 } from './types';
 import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
@@ -52,7 +52,7 @@ interface PendingConnection {
 }
 
 interface ResultSubscriber {
-  callback: (result: QueryDelta) => void;
+  callback: (result: OutputDelta) => void;
   onError?: (error: DrasiError) => void;
 }
 
@@ -131,7 +131,7 @@ export class DrasiSSEClient {
    * open; subsequent reconnects use the configured policy.
    */
   async connect(
-    _queryIds: string[],
+    _outputIds: string[],
     sseEndpoint: string,
     signal?: AbortSignal,
     maxInitialReconnectAttempts = this.maxReconnectAttempts,
@@ -416,9 +416,9 @@ export class DrasiSSEClient {
     }
   }
 
-  private handleQueryResult(result: QueryDelta): void {
-    this.queryErrors.delete(result.queryId);
-    const subscribers = this.subscribers.get(result.queryId);
+  private handleQueryResult(result: OutputDelta): void {
+    this.queryErrors.delete(result.outputId);
+    const subscribers = this.subscribers.get(result.outputId);
     // A multiplexed reaction may include valid queries not selected by this consumer.
     if (!subscribers || result.changes.length === 0) return;
 
@@ -427,7 +427,7 @@ export class DrasiSSEClient {
         subscriber.callback(result);
       } catch (error) {
         this.reportSubscriberError(subscriber, asDrasiError(error, {
-          instanceId: this.errorDetails.instanceId, resourceKind: 'query', resourceId: result.queryId,
+          instanceId: this.errorDetails.instanceId, resourceKind: 'query', resourceId: result.outputId,
         }, 'RESULT_PROCESSING_FAILED'));
       }
     });
@@ -450,7 +450,7 @@ export class DrasiSSEClient {
 
   subscribe(
     queryId: string,
-    callback: (result: QueryDelta) => void,
+    callback: (result: OutputDelta) => void,
     onError?: (error: DrasiError) => void,
   ): () => void {
     let callbacks = this.subscribers.get(queryId);

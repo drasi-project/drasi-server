@@ -13,7 +13,7 @@ updates, starts, stops or deletes an instance/query/reaction.
 1. Move query creation definitions (`queries`, removed `QueryDefinition`) and
    reaction deployment definitions (removed `ReactionDefinition`, bind
    host/port/settings) to an application/operator provisioning path. Supply
-   explicit `serverUrl`, `instanceId`, `queryIds` and
+   explicit `serverUrl`, `instanceId`, `outputIds` and
    `reaction: { id, endpoint }` to the connection owner instead. Do not choose
    the first discovered instance or derive a browser URL from a bind address.
    `QueryConfig` is a complete **read** type, not a replacement creation body.

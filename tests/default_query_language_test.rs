@@ -21,7 +21,7 @@
 
 use drasi_lib::config::QueryLanguage;
 use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
-use drasi_server::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::models::{QueryConfigDto, QueryInputConfigDto};
 
 #[test]
 fn test_default_query_language_is_gql() {
@@ -30,8 +30,8 @@ fn test_default_query_language_is_gql() {
     let yaml = r#"
 id: test-query
 query: "MATCH (n) RETURN n"
-sources:
-  - sourceId: test-source
+inputs:
+  - test-source
 "#;
 
     let dto: QueryConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
@@ -59,12 +59,7 @@ fn test_explicit_cypher_language() {
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "test-source".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("test-source".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -73,6 +68,7 @@ fn test_explicit_cypher_language() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     // Map the DTO to a QueryConfig
@@ -99,12 +95,7 @@ fn test_explicit_gql_language() {
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::GQL,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "test-source".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("test-source".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -113,6 +104,7 @@ fn test_explicit_gql_language() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     // Map the DTO to a QueryConfig
@@ -138,8 +130,8 @@ fn test_invalid_query_language_rejected() {
 id: test-query
 query: "MATCH (n) RETURN n"
 queryLanguage: SQL
-sources:
-  - sourceId: test-source
+inputs:
+  - test-source
 "#;
     let result: Result<QueryConfigDto, _> = serde_yaml::from_str(yaml);
     assert!(
@@ -155,8 +147,8 @@ fn test_yaml_deserialization_explicit_cypher() {
 id: test-query
 query: "MATCH (n) RETURN n"
 queryLanguage: Cypher
-sources:
-  - sourceId: test-source
+inputs:
+  - test-source
 "#;
 
     let dto: QueryConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");

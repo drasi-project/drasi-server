@@ -57,14 +57,14 @@ describe('connect-only DrasiClient', () => {
     expect(factory.instances).toHaveLength(1);
     expect(factory.instances[0].url).toBe(refs.reaction.endpoint);
     expect(client.isInitialized()).toBe(true);
-    expect(await client.getQueryConfig('stocks')).toMatchObject({ queryLanguage: 'Cypher', sources: [] });
+    expect(await client.getQueryConfig('stocks')).toMatchObject({ queryLanguage: 'Cypher', inputs: [] });
     expect(await client.getQueryResults('stocks')).toEqual([{ id: 'A', value: '10', price: 10 }]);
     expect(client.getServerUiUrl()).toBe(`${refs.serverUrl}/ui?instance=${encodeURIComponent(refs.instanceId)}`);
     expect(server.fetch.mock.calls.length).toBeGreaterThan(3);
   });
 
   it('overlaps independent validation reads but waits for every query before opening SSE', async () => {
-    const { client, server, factory } = setup({ queryIds: ['stocks', 'other'] });
+    const { client, server, factory } = setup({ outputIds: ['stocks', 'other'] });
     server.reaction.queries = ['stocks', 'other'];
     const first = deferred<Response>(), second = deferred<Response>();
     const read = server.fetch.getMockImplementation()!;
@@ -86,7 +86,7 @@ describe('connect-only DrasiClient', () => {
   });
 
   it('drains failed parallel validation before handing off to an app retry', async () => {
-    const { client, server } = setup({ queryIds: ['stocks', 'other'] });
+    const { client, server } = setup({ outputIds: ['stocks', 'other'] });
     const other = deferred<Response>();
     const read = server.fetch.getMockImplementation()!;
     let otherSignal: AbortSignal | null | undefined;
@@ -168,7 +168,7 @@ describe('connect-only DrasiClient', () => {
     new Response('bad json'),
     json({ status: 'Running', config: {} }),
     json({ id: 'stocks', status: 'Mystery', config: {} }),
-    json({ id: 'stocks', status: 'Running', config: { id: 'stocks', query: 7, queryLanguage: 'Cypher', sources: [] } }),
+    json({ id: 'stocks', status: 'Running', config: { id: 'stocks', query: 7, queryLanguage: 'Cypher', inputs: [] } }),
     new Response(JSON.stringify({ success: false, data: [] })),
   ])('rejects unsupported DTOs/opaque 404s rather than inventing absence', async response => {
     const { client, server } = setup();
@@ -198,7 +198,7 @@ describe('connect-only DrasiClient', () => {
       { serverUrl: 'file:///private' }, { serverUrl: 'https://name:secret@host' },
       { serverUrl: 'https://host?secret=1' }, { serverUrl: 'http://0.0.0.0' },
       { instanceId: '' }, { instanceId: '..' }, { instanceId: '\uD800' },
-      { queryIds: ['stocks', 'stocks'] }, { queryIds: [''] }, { queryIds: ['.'] },
+      { outputIds: ['stocks', 'stocks'] }, { outputIds: [''] }, { outputIds: ['.'] },
       { reaction: { id: 'stream', endpoint: '/relative' } }, { requestTimeoutMs: 0 },
       { reconnect: { maxReconnectAttempts: Infinity } },
     ]) expect(() => new DrasiClient({ ...refs, ...overrides })).toThrow(DrasiError);

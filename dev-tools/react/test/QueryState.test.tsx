@@ -60,7 +60,7 @@ function fixture(overrides: Partial<DrasiClientOptions> = {}) {
     return <output aria-label={name}>{JSON.stringify({ ...result, error: result.error?.code })}</output>;
   }
   const tree = (children: React.ReactNode) => <DrasiProvider
-    {...refs} queryIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={factory.create}
+    {...refs} outputIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={factory.create}
     reconnect={{ maxReconnectAttempts: 2, initialReconnectDelayMs: 10, maxReconnectDelayMs: 20 }}
     {...overrides}
   >{children}</DrasiProvider>;

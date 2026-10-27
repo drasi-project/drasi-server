@@ -193,8 +193,8 @@ instances:
     queries:
       - id: my-query
         query: "MATCH (n:Node) RETURN n"
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
 
     reactions:
       - kind: log

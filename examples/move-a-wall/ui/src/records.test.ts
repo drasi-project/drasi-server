@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { entity, inputs, key, translate, validate } from './records';
+import { graphRow, graphRowKey } from '@drasi/react/client';
+import { entity, inputs, translate, validate } from './records';
 describe('query-backed scene records',() => {
   const wall = entity({id:'wall',name:'Wall',active:true,shape:{kind:'obstacle',vertices:[[1,1],[2,1],[2,2],[1,2]]}});
   it('uses only scene entity fields in query records and commands',() => {
@@ -8,9 +9,14 @@ describe('query-backed scene records',() => {
       .toEqual([{type:'entity',revision:1,entity:wall}]);
     expect(Object.keys(translate(wall,.5,0)).sort()).toEqual(['active','id','name','shape']);
   });
-  it('uses stable domain IDs rather than unsafe numeric row signatures',() => {
-    expect(key('obstructions',{id:'journey/wall',row_signature:18446744073709551615})).toBe('journey/wall');
-    expect(key('geometry-context',{objects:[]})).toBe('geometry-context');
+  it('keys rows by canonical element identity, not by a row signature or domain field',() => {
+    const identity = (id: string) => ({namespace:'obstructions/out',id});
+    const first = graphRow(identity('00000000000000ff'),{id:'journey/wall'});
+    const same = graphRow(identity('00000000000000ff'),{id:'journey/wall'});
+    const other = graphRow(identity('0000000000000100'),{id:'journey/wall'});
+    expect(graphRowKey(first)).toBe(graphRowKey(same));
+    expect(graphRowKey(first)).not.toBe(graphRowKey(other));
+    expect(() => graphRowKey({id:'journey/wall',row_signature:18446744073709551615})).toThrow();
   });
   it('rejects malformed query data instead of rendering clear state',() => {
     expect(() => inputs({objects:['not JSON']})).toThrow();

@@ -27,11 +27,12 @@ async function assertNativeSnapshot(query) {
   const response = await fetch(`http://127.0.0.1:8422/snapshot/${query}`,{signal:AbortSignal.timeout(5000)});
   assert.equal(response.status,200,`native snapshot for ${query}`);
   assert.match(response.headers.get('content-type') ?? '',/application\/json/);
-  for (const header of ['x-drasi-query-sequence','x-drasi-query-generation']) {
-    assert.match(response.headers.get(header) ?? '',/^\d+$/,`${query}: ${header}`);
-  }
-  const actual = await response.json();
-  assert.ok(Array.isArray(actual),'native snapshots must stream a JSON row array');
+  assert.match(response.headers.get('x-drasi-output-epoch') ?? '',/^[0-9a-f-]{36}$/,`${query}: output epoch`);
+  assert.match(response.headers.get('x-drasi-output-position') ?? '',/^\d+$/,`${query}: output position`);
+  const changes = await response.json();
+  assert.ok(Array.isArray(changes),'native snapshots must stream a JSON array of ADD changes');
+  assert.ok(changes.every(change => change.operation === 'ADD' && change.identity?.id && !('row_signature' in change)),'snapshot rows are canonical ADD changes with identity');
+  const actual = changes.map(change => change.after);
   assertSceneFields(actual);
   const ordered = values => values.map(value => JSON.stringify(value)).sort();
   assert.deepEqual(ordered(actual),ordered(expected),`${query}: SSE and Server must read the same query catalogue`);
@@ -147,16 +148,23 @@ try {
   assert.equal((await rows('geometry-status'))[0].objects,0);
   assert.equal((await rows('obstructions')).length,0);
   await command({action:'reset'});
-  const impactChanges = () => messages.filter(message => message.queryId === 'affected-journeys').flatMap(message => {
-    assert.ok(Array.isArray(message.results),'stock SSE must use the actual untemplated results protocol');
-    return message.results;
+  const impactChanges = () => messages.filter(message =>
+    message.output?.component === 'affected-journeys' && message.output.port === 'out').flatMap(message => {
+    assert.ok(Array.isArray(message.changes),'native SSE must use the canonical graph-change protocol');
+    assert.ok(!('queryId' in message),'native output identity must not masquerade as a query ID');
+    return message.changes;
   });
   await until(async () => {
     const changes = impactChanges();
-    return changes.some(change => change.type === 'ADD' && change.data?.id === 'journey-ada/wall' && change.data.obstacle === 'Movable wall') &&
-      changes.some(change => change.type === 'UPDATE' && change.before?.id === 'journey-ada/wall' && change.before.obstacle === 'Movable wall' && change.after?.id === 'journey-ada/wall' && change.after.obstacle === 'Renamed wall') &&
-      changes.some(change => change.type === 'DELETE' && change.data?.id === 'journey-ada/wall' && change.data.obstacle === 'Renamed wall');
-  },'actual stock SSE ADD, stable-key UPDATE and DELETE with enriched rows');
+    const added = changes.find(change => change.operation === 'ADD' && change.after?.id === 'journey-ada/wall' && change.after.obstacle === 'Movable wall');
+    const replaced = changes.find(change => change.operation === 'REPLACE' && change.before?.id === 'journey-ada/wall' && change.before.obstacle === 'Movable wall' && change.after?.id === 'journey-ada/wall' && change.after.obstacle === 'Renamed wall');
+    const deleted = changes.find(change => change.operation === 'DELETE' && change.before?.id === 'journey-ada/wall' && change.before.obstacle === 'Renamed wall');
+    if (!added || !replaced || !deleted) return false;
+    assert.ok(added.identity?.id,'result nodes must carry their canonical identity');
+    assert.deepEqual(replaced.identity,added.identity,'replacement must keep the result identity');
+    assert.deepEqual(deleted.identity,added.identity,'deletion must name that same result identity');
+    return true;
+  },'actual native SSE ADD, stable-key REPLACE and DELETE with enriched rows');
   for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
     await assertNativeSnapshot(query);
   }

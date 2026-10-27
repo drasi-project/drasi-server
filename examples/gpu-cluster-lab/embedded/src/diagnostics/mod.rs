@@ -160,7 +160,6 @@ impl Recorder {
     fn in_directory(directory: PathBuf) -> Result<Self> {
         let mut codec = EnvelopeCodec::new(NonZeroUsize::new(8 * 1024 * 1024).unwrap());
         codec.register_schema(GraphChangeCodec::schema())?;
-        codec.register_schema(QueryChangeCodec::schema())?;
         let descriptor = ComponentDescriptor::try_new(
             super::id(SINK)?,
             [

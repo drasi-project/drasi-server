@@ -88,7 +88,7 @@ describe('explicit endpoint identity', () => {
     const server = new ReadServer(), factory = fakeEventSourceFactory();
     const observe = vi.fn<(context: DrasiContextValue) => void>();
     const tree = (serverUrl: string) => <DrasiProvider
-      {...refs} serverUrl={serverUrl} queryIds={[...refs.queryIds]}
+      {...refs} serverUrl={serverUrl} outputIds={[...refs.outputIds]}
       reaction={{ ...refs.reaction }} fetch={server.fetch} eventSourceFactory={factory.create}
     ><Probe observe={observe} /></DrasiProvider>;
     const view = render(tree(refs.serverUrl));

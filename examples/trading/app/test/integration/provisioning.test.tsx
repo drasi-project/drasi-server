@@ -198,7 +198,7 @@ describe('app-owned setup using the built package', () => {
       const query = backend.queries.get('portfolio-query')!;
       if (kind === 'text') query.query = 'MATCH (x) RETURN x';
       if (kind === 'language') query.queryLanguage = 'GQL';
-      if (kind === 'source-order') query.sources = [...TRADING_QUERIES[1].sources].reverse();
+      if (kind === 'source-order') query.inputs = [...TRADING_QUERIES[1].inputs].reverse();
       if (kind === 'join') query.joins = [];
       if (kind === 'reaction-port') backend.reaction!.port = 9999;
       if (kind === 'unusable') backend.queryStatuses.set('portfolio-query', 'Error');

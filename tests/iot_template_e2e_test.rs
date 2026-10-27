@@ -148,8 +148,8 @@ queries:
   - id: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
 reactions:
@@ -243,8 +243,8 @@ queries:
   - id: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > 75 RETURN s"
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
 reactions:
@@ -331,8 +331,8 @@ queries:
   - id: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
 reactions:
@@ -414,8 +414,8 @@ queries:
   - id: all-sensors
     query: "MATCH (s:SensorReading) RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity"
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
+    inputs:
+      - sensor-feed
     autoStart: true
 
 reactions:

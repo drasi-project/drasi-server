@@ -49,12 +49,12 @@ pub fn mock_source_manual(id: impl Into<String>) -> SourceConfig {
 pub fn test_query(
     id: impl Into<String>,
     query: impl Into<String>,
-    sources: Vec<String>,
+    inputs: Vec<String>,
 ) -> QueryConfig {
     let mut builder = Query::cypher(id).query(query).auto_start(true);
 
-    for source in sources {
-        builder = builder.from_source(source);
+    for source in inputs {
+        builder = builder.from_input(source);
     }
 
     builder.build()

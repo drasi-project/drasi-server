@@ -37,7 +37,7 @@ export interface Join {
 export interface Query {
   id: string;
   query: string;
-  sources: string[];
+  inputs: string[];
   joins?: Join[];
   auto_start: boolean;
   status?: QueryStatus;
@@ -76,7 +76,7 @@ export interface CreateSourceForm {
 export interface CreateQueryForm {
   id: string;
   query: string;
-  sources: string[];
+  inputs: string[];
   joins?: Join[];
   auto_start: boolean;
 }

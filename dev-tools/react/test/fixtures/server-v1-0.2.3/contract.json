@@ -15,7 +15,7 @@
     "platform": "darwin/arm64",
     "pluginSourceRevision": "3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a",
     "capture": "examples/trading/app/test/live/trading.live.spec.ts; live-giFAwa; server-rest.json",
-    "note": "Unmodified response records from the own rebuilt, committed merged source and fresh signed ABI 0.13 plugins. Earlier server-v1/contract.json remains historical."
+    "note": "Response records from the own rebuilt, committed merged source and fresh signed ABI 0.13 plugins; the only edit is the query config's subscription list, rewritten from the then-current `sources` field to the v1 `inputs` shape that the current server serializes. Earlier server-v1/contract.json remains historical."
   },
   "query": {
     "path": "/api/v1/instances/trading-server/queries/watchlist-query?view=full",
@@ -55,10 +55,7 @@
           "outboxCapacity": 1000,
           "query": "\n    MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
           "queryLanguage": "Cypher",
-          "sources": [
-            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "postgres-stocks" },
-            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "price-feed" }
-          ]
+          "inputs": ["postgres-stocks", "price-feed"]
         }
       },
       "error": null

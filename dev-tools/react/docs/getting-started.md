@@ -132,7 +132,7 @@ function ConnectionBadge() {
 export default function App() {
   return <DrasiProvider
     serverUrl="https://drasi.example" instanceId="analytics"
-    queryIds={QUERY_IDS} reaction={REACTION}
+    outputIds={QUERY_IDS} reaction={REACTION}
   >
     <ConnectionBadge />
     <Readings />

@@ -113,7 +113,7 @@ async fn test_server_with_query() -> Result<()> {
     // Build the core with a query
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(true)
         .build();
 

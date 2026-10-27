@@ -6,6 +6,7 @@
 const messages = {
   INSTANCE_NOT_FOUND: 'The selected Drasi instance does not exist.',
   QUERY_NOT_FOUND: 'The referenced query does not exist.',
+  OUTPUT_NOT_FOUND: 'The referenced graph output does not exist.',
   REACTION_NOT_FOUND: 'The referenced reaction does not exist.',
   RESOURCE_STOPPED: 'The referenced resource is stopped.',
   RESOURCE_STARTING: 'The referenced resource is starting or bootstrapping.',
@@ -20,12 +21,14 @@ const messages = {
   UNROUTABLE_RESULT: 'The result has no usable query identity. Select an adapter and an explicit routing policy.',
   INVALID_ROW_KEY: 'A result row has no valid stable key. Check getKey, including sparse delete records.',
   RESULT_PROCESSING_FAILED: 'A result callback failed. Check the row transform or derived-state callback.',
+  MISSING_BASE_ROW: 'A patch has no base row, so local state diverged. Resynchronizing from a snapshot.',
+  UNSUPPORTED_CAPABILITY: 'The producer does not provide this read capability.',
   SNAPSHOT_OVERLAP: 'Changes overlapped the snapshot. Refreshing because this protocol has no shared ordering cursor.',
   RESULT_BUFFER_OVERFLOW: 'Too many changes arrived during the snapshot. The query must resynchronize.',
 } as const;
 
 export type DrasiErrorCode = keyof typeof messages;
-export type DrasiResourceKind = 'instance' | 'query' | 'reaction';
+export type DrasiResourceKind = 'instance' | 'query' | 'output' | 'reaction';
 
 export interface DrasiErrorDetails {
   instanceId?: string;
@@ -50,7 +53,7 @@ export class DrasiError extends Error {
     super(messages[code]);
     this.retryable = code === 'SERVER_UNAVAILABLE' ||
       code === 'STREAM_UNAVAILABLE' || code === 'RESOURCE_STARTING' ||
-      code === 'SNAPSHOT_OVERLAP' || code === 'RESULT_BUFFER_OVERFLOW';
+      code === 'SNAPSHOT_OVERLAP' || code === 'RESULT_BUFFER_OVERFLOW' || code === 'MISSING_BASE_ROW';
     this.instanceId = details.instanceId;
     this.resourceKind = details.resourceKind;
     this.resourceId = details.resourceId;

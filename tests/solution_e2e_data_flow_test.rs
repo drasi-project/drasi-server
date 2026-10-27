@@ -206,8 +206,8 @@ queries:
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
     queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-source
+    inputs:
+      - sensor-source
     autoStart: true
 
 reactions:
@@ -247,8 +247,8 @@ queries:
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
     queryLanguage: Cypher
-    sources:
-      - sourceId: data-source
+    inputs:
+      - data-source
     autoStart: true
 
 reactions:
@@ -530,8 +530,8 @@ queries:
       MATCH (c:Counter)
       RETURN c.value AS counterValue
     queryLanguage: Cypher
-    sources:
-      - sourceId: counter-source
+    inputs:
+      - counter-source
     autoStart: true
 
 reactions:
@@ -730,8 +730,8 @@ queries:
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
     queryLanguage: Cypher
-    sources:
-      - sourceId: multi-source
+    inputs:
+      - multi-source
     autoStart: true
 
 reactions:

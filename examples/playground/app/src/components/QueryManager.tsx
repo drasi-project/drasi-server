@@ -29,7 +29,7 @@ import { Query } from '@/types';
 interface QueryFormData {
   id: string;
   query: string;
-  sources: string[];
+  inputs: string[];
   auto_start: boolean;
 }
 
@@ -79,12 +79,12 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
     defaultValues: {
       id: '',
       query: 'MATCH (n) RETURN n',
-      sources: defaultSourceId ? [defaultSourceId] : [],
+      inputs: defaultSourceId ? [defaultSourceId] : [],
       auto_start: true,
     },
   });
 
-  const selectedSources = watch('sources');
+  const selectedSources = watch('inputs');
 
   const columns = useMemo<ColumnDef<Query>[]>(
     () => [
@@ -110,7 +110,7 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
         },
       },
       {
-        accessorKey: 'sources',
+        accessorKey: 'inputs',
         header: 'Sources',
         cell: ({ getValue }) => {
           const sources = getValue() as string[] | undefined;
@@ -203,7 +203,7 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
       const queryConfig: Partial<Query> = {
         id: data.id,
         query: data.query,
-        sources: data.sources,
+        inputs: data.inputs,
         auto_start: data.auto_start,
       };
 
@@ -233,9 +233,9 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
   const toggleSource = (sourceId: string) => {
     const current = selectedSources || [];
     if (current.includes(sourceId)) {
-      setValue('sources', current.filter((s) => s !== sourceId));
+      setValue('inputs', current.filter((s) => s !== sourceId));
     } else {
-      setValue('sources', [...current, sourceId]);
+      setValue('inputs', [...current, sourceId]);
     }
   };
 

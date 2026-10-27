@@ -12,7 +12,7 @@ import { DrasiError } from '../src/client/errors';
 import { DrasiSSEClient } from '../src/client/DrasiSSEClient';
 import { isRecord } from '../src/client/resources';
 import { createLegacyResultAdapter, readAdaptedResults, sse034ResultAdapter } from '../src/client/results';
-import type { QueryDelta, QueryResult, ResultChange, ResultRow, RowKey } from '../src/client/types';
+import type { OutputDelta, OutputResult, ResultChange, ResultRow, RowKey } from '../src/client/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
 
 const context = { receivedAt: 10, instanceId: 'warehouse' };
@@ -23,11 +23,11 @@ const key: RowKey = row => {
   if (typeof row.rack !== 'string' || typeof row.slot !== 'string') throw new Error('invalid identity');
   return `${row.rack}/${row.slot}`;
 };
-const delta = (...changes: ResultChange[]): QueryDelta => ({
-  kind: 'delta', queryId: 'inventory', changes, receivedAt: 10,
+const delta = (...changes: ResultChange[]): OutputDelta => ({
+  kind: 'delta', outputId: 'inventory', changes, receivedAt: 10,
 });
-const initial: QueryResult = {
-  kind: 'snapshot', queryId: 'inventory', receivedAt: 10,
+const initial: OutputResult = {
+  kind: 'snapshot', outputId: 'inventory', receivedAt: 10,
   rows: [{ rack: 'north', slot: 'one', value: 8 }, { rack: 'south', slot: 'one', value: 8 }],
 };
 
@@ -53,7 +53,7 @@ describe('versioned observed SSE evidence', () => {
         }
       }
       for (const result of results) {
-        queries.add(result.queryId);
+        queries.add(result.outputId);
         expect(result.receivedAt).toBe(10);
         for (const change of result.changes) {
           kinds.add(change.kind);
@@ -112,10 +112,10 @@ describe('versioned observed SSE evidence', () => {
       expect(Object.fromEntries(observed)).toEqual({ ADD: 3, DELETE: 3, UPDATE: 10, aggregation: 1 });
       expect(watchlist).toHaveBeenCalledTimes(3);
       expect(gainers).toHaveBeenCalledOnce();
-      expect(watchlist.mock.calls[2][0]).toMatchObject({ queryId: 'watchlist-query' });
-      expect(gainers.mock.calls[0][0]).toMatchObject({ queryId: 'top-gainers-query' });
+      expect(watchlist.mock.calls[2][0]).toMatchObject({ outputId: 'watchlist-query' });
+      expect(gainers.mock.calls[0][0]).toMatchObject({ outputId: 'top-gainers-query' });
       expect(sector).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-        queryId: 'sector-performance-query',
+        outputId: 'sector-performance-query',
         changes: [{
           kind: 'update',
           before: { avgChangePercent: 3.75, maxPrice: 180, minPrice: 95, sector: 'Technology', stockCount: 4, totalVolume: 60000000 },
@@ -167,7 +167,7 @@ describe('strict wire and custom adapter validation', () => {
   });
 
   it.each([
-    null, {}, [null], [{ kind: 'snapshot' }], [{ ...delta(), queryId: '' }],
+    null, {}, [null], [{ kind: 'snapshot' }], [{ ...delta(), outputId: '' }],
     [{ ...delta(), receivedAt: NaN }], [{ ...delta(), sourceTimestamp: -1 }],
     [{ ...delta(), changes: [null] }], [{ ...delta(), changes: [{ kind: 'unknown' }] }],
     [{ ...delta(), changes: [{ kind: 'upsert', after: null }] }],
@@ -182,7 +182,7 @@ describe('strict wire and custom adapter validation', () => {
       { kind: 'delete', before: { key: 'two' } },
     );
     expect(readAdaptedResults([value], context)).toEqual([value]);
-    expect(normalize(envelope([], 'not-subscribed'))[0]).toMatchObject({ queryId: 'not-subscribed', changes: [] });
+    expect(normalize(envelope([], 'not-subscribed'))[0]).toMatchObject({ outputId: 'not-subscribed', changes: [] });
   });
 });
 
@@ -194,7 +194,7 @@ describe('explicit compatibility selection and routing', () => {
         queryId, addedResults: [{ value: 1 }], updatedResults: [{ before: { value: 1 }, after: { value: 2 } }],
         deletedResults: [{ before: { value: 3 } }],
       }, context);
-      expect(result[0]).toMatchObject({ queryId, changes: [
+      expect(result[0]).toMatchObject({ outputId: queryId, changes: [
         { kind: 'upsert', after: { value: 1 } },
         { kind: 'update', before: { value: 1 }, after: { value: 2 } },
         { kind: 'delete', before: { value: 3 } },
@@ -229,7 +229,7 @@ describe('explicit compatibility selection and routing', () => {
       deliver('q', rows); deliver('deliberately-unused', rows);
     } });
     const changes = adapter({ updatedResults: [{ before: { key: 'old' }, after: { key: 'new' } }] }, context);
-    expect(changes.map(item => item.queryId)).toEqual(['q', 'deliberately-unused']);
+    expect(changes.map(item => item.outputId)).toEqual(['q', 'deliberately-unused']);
     expect(changes[0].changes).toEqual([
       { kind: 'delete', before: { key: 'old' } }, { kind: 'upsert', after: { key: 'new' } },
     ]);

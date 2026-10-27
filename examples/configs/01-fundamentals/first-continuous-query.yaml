@@ -60,8 +60,8 @@ instances:
           MATCH (n)
           RETURN n
         queryLanguage: Cypher
-        sources:
-          - sourceId: sensor-data
+        inputs:
+          - sensor-data
         enableBootstrap: true
 
   # Query 2: Filtered query with projection
@@ -71,8 +71,8 @@ instances:
           MATCH (s:SensorReading)
           WHERE s.temperature > 25
           RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.timestamp AS Timestamp
-        sources:
-          - sourceId: sensor-data
+        inputs:
+          - sensor-data
         enableBootstrap: true
 
   # Query 3: Aggregation query
@@ -81,8 +81,8 @@ instances:
         query: |
           MATCH (s:SensorReading)
           RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
-        sources:
-          - sourceId: sensor-data
+        inputs:
+          - sensor-data
 
     reactions:
       - kind: log

@@ -42,8 +42,8 @@ instances:
           RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
         queryLanguage: GQL
         middleware: []
-        sources:
-          - sourceId: my-postgres
+        inputs:
+          - component: my-postgres
             nodes: []
             relations: []
             pipeline: []

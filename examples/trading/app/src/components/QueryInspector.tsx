@@ -27,15 +27,21 @@ export function formatQueryConfig(config: QueryConfig): string {
     lines.push('', 'query: |');
     for (const line of query.split('\n')) lines.push(`  ${line}`);
   }
-  if (config.sources.length > 0) {
-    lines.push('', 'sources:');
-    for (const source of config.sources) {
-      lines.push(`  - sourceId: ${source.sourceId}`);
-      if (source.pipeline?.length) lines.push(`    pipeline: [${source.pipeline.join(', ')}]`);
-      if (source.nodes?.length) lines.push(`    nodes: [${source.nodes.join(', ')}]`);
-      if (source.relations?.length) lines.push(`    relations: [${source.relations.join(', ')}]`);
+  if (config.inputs.length > 0) {
+    lines.push('', 'inputs:');
+    for (const input of config.inputs) {
+      if (typeof input === 'string') {
+        lines.push(`  - ${input}`);
+        continue;
+      }
+      lines.push(`  - component: ${input.component}`);
+      if (input.port) lines.push(`    port: ${input.port}`);
+      if (input.pipeline?.length) lines.push(`    pipeline: [${input.pipeline.join(', ')}]`);
+      if (input.nodes?.length) lines.push(`    nodes: [${input.nodes.join(', ')}]`);
+      if (input.relations?.length) lines.push(`    relations: [${input.relations.join(', ')}]`);
     }
   }
+  if (config.result?.label) lines.push('', 'result:', `  label: ${config.result.label}`);
   if (config.joins) {
     lines.push('', 'joins:');
     for (const join of config.joins) {

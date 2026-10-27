@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/react/react';
-import type { ResultRow } from '@drasi/react/client';
+import { useDrasiClient, useDrasiConnectionStatus, useDrasiOutput } from '@drasi/react/react';
+import { graphRowKey, type ResultRow } from '@drasi/react/client';
 import { rowKey, validateRow, text, number, boolean, strings, records, type QueryId } from './rows';
 import { DecisionEvidence, PlacementEvidence, PolicyEvidence, ResilienceEvidence, StatusEvidence,
   TimelineEvidence, timelineMessage, clusterReplicaCounts, correlated, count, currentFeeds, policyCurrent } from './Evidence';
@@ -15,7 +15,8 @@ import { WorkloadPolicyBinding, WorkloadPolicyContext, policyMetadata } from './
 import { DataPolicyPanel, dataPolicyState, editorRules, ruleWorkloads, RuleCriteria } from './DataPolicy';
 
 function useView(id: QueryId) {
-  return useDrasiQuery(id, { getKey: row => rowKey(id, row), transform: row => validateRow(id, row) });
+  // Rows arrive as graph changes keyed by canonical identity; rowKey remains the React display key.
+  return useDrasiOutput(id, { getKey: graphRowKey, transform: row => validateRow(id, row) });
 }
 
 export type Command = (path: string, method: string, body?: unknown, idempotencyKey?: string, expectedRevision?: string) => Promise<void>;

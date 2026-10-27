@@ -44,6 +44,7 @@ import type {
   SourceKind,
   ReactionKind,
 } from "@/api/types";
+import { inputComponent } from "@/api/types";
 
 type CreateStep = "component" | "source-kind" | "reaction-kind" | null;
 
@@ -185,7 +186,7 @@ export default function App() {
     queries: queries.map((q) => ({
       id: q.id,
       status: q.status ?? "Stopped",
-      sourceIds: q.sources.map((s) => s.sourceId),
+      inputIds: q.inputs.map(inputComponent),
       query: q.query,
       queryLanguage: q.queryLanguage,
       error: q.error,
@@ -295,12 +296,12 @@ export default function App() {
         await createSourceApi(req);
         pushEvent(`Created source: ${req.id}`, "success");
       } else if (draft.componentType === "query") {
-        const sourcesArr = (f.sources as string[]) ?? [];
+        const inputsArr = (f.inputs as string[]) ?? [];
         const req: CreateQueryRequest = {
           id: String(f.id ?? ""),
           query: String(f.query ?? ""),
           queryLanguage: String(f.queryLanguage ?? "Cypher"),
-          sources: sourcesArr.map((sid) => ({ sourceId: sid })),
+          inputs: inputsArr,
           autoStart: Boolean(f.autoStart),
         };
         await createQueryApi(req);
@@ -373,7 +374,7 @@ export default function App() {
       const source = sources.find((s) => s.id === selected.id);
       if (!source) return null;
       const connectedQueries = queries
-        .filter((q) => q.sources.some((s) => s.sourceId === selected.id))
+        .filter((q) => q.inputs.some((input) => inputComponent(input) === selected.id))
         .map((q) => ({
           id: q.id,
           type: "query" as ComponentType,
@@ -417,12 +418,17 @@ export default function App() {
     if (selected.type === "query") {
       const query = queries.find((q) => q.id === selected.id);
       if (!query) return null;
-      const connectedSources = query.sources.map((s) => {
-        const src = sources.find((ss) => ss.id === s.sourceId);
+      const connectedSources = query.inputs.map((input) => {
+        const id = inputComponent(input);
+        const src = sources.find((ss) => ss.id === id);
+        const upstreamQuery = src ? undefined : queries.find((q) => q.id === id);
         return {
-          id: s.sourceId,
-          type: "source" as ComponentType,
-          status: observedStatus(s.sourceId, (src?.status ?? "Stopped") as ComponentStatus),
+          id,
+          type: (upstreamQuery ? "query" : "source") as ComponentType,
+          status: observedStatus(
+            id,
+            (src?.status ?? upstreamQuery?.status ?? "Stopped") as ComponentStatus,
+          ),
           kind: src?.kind,
         };
       });
@@ -837,10 +843,12 @@ export default function App() {
               fields={draft.fields}
               errors={draft.errors}
               onChange={updateField}
-              availableSources={sources.map((s) => ({
-                id: s.id,
-                kind: s.kind,
-              }))}
+              availableInputs={[
+                ...sources.map((s) => ({ id: s.id, kind: s.kind })),
+                ...queries
+                  .filter((q) => q.id !== draft.fields.id)
+                  .map((q) => ({ id: q.id, kind: "query" })),
+              ]}
             />
           )}
           {draft.componentType === "reaction" && (

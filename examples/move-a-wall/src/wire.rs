@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use drasi_computation_contracts::*;
+use drasi_computation_plugin_sdk::wire::Scope;
 use drasi_core_types::models::{
     Element, ElementMetadata, ElementPropertyMap, ElementReference, SourceChange,
 };
@@ -32,7 +33,7 @@ pub fn diff(stream: &str, before: &Records, after: &Records, revision: u64) -> V
             properties: ElementPropertyMap::from(value.clone()),
         };
         changes.push(if before.contains_key(&(label.clone(), id.clone())) {
-            SourceChange::Update { element }
+            SourceChange::Replace { element }
         } else {
             SourceChange::Insert { element }
         });
@@ -42,13 +43,26 @@ pub fn diff(stream: &str, before: &Records, after: &Records, revision: u64) -> V
 
 pub struct Emitter {
     stream: StreamId,
+    identity: GraphProducerIdentity,
     sequence: u64,
     records: Records,
 }
 impl Emitter {
-    pub fn new(stream: &str) -> Result<Self> {
+    pub fn new(stream: &str, component: ComponentId, scope: Option<&Scope>) -> Result<Self> {
+        let stream = StreamId::try_new(stream)?;
+        let identity = GraphProducerIdentity::volatile(
+            scope
+                .map_or("volatile", |scope| scope.instance_id.as_str())
+                .into(),
+            scope
+                .map_or("volatile", |scope| scope.graph_id.as_str())
+                .into(),
+            component,
+            stream.clone(),
+        )?;
         Ok(Self {
-            stream: StreamId::try_new(stream)?,
+            stream,
+            identity,
             sequence: 0,
             records: Records::new(),
         })
@@ -73,11 +87,12 @@ impl Emitter {
         if changes.is_empty() {
             return Ok(vec![]);
         }
-        let envelope = if let Some(input) = input {
+        let mut envelope = if let Some(input) = input {
             GraphChangeCodec::derive_changes(input, &changes, self.stream.clone(), next)?
         } else {
             GraphChangeCodec::encode_changes(&changes, self.stream.clone(), next, Some(now))?
         };
+        GraphProducerProgress::annotate(&mut envelope, &self.identity, next)?;
         self.records = records;
         self.sequence = next;
         Ok(vec![OutputEnvelope {
@@ -100,4 +115,22 @@ pub fn port(name: &str, direction: PortDirection, query: bool) -> Result<PortDes
         .clone(),
         PipeRequirements::default(),
     ))
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    use super::*;
+
+    #[test]
+    fn complete_views_replace_fields_instead_of_leaving_omitted_properties() {
+        let key = ("Room".to_string(), "one".to_string());
+        let before = Records::from([(key.clone(), serde_json::json!({"kept":1,"removed":2}))]);
+        let after = Records::from([(key, serde_json::json!({"kept":1}))]);
+        let changes = diff("rooms/out", &before, &after, 2);
+        let [SourceChange::Replace { element }] = changes.as_slice() else {
+            panic!("a changed complete view must produce one full replacement");
+        };
+        assert!(element.get_properties().get("removed").is_none());
+        assert_eq!(element.get_effective_from(), 2);
+    }
 }

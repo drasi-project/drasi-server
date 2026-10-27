@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (breaking)
+- The generic stream boundary is output-named: `QuerySnapshot`, `QueryDelta` and
+  `QueryResult` become `OutputSnapshot`, `OutputDelta` and `OutputResult` with an
+  `outputId` field, `QuerySubscription*` becomes `OutputSubscription*`, and the
+  provider/client option `queryIds` becomes `outputIds`. There are no aliases.
+- Add `useDrasiOutput` for source, transformer or query outputs;
+  `useDrasiQuery` remains the continuous-query facade.
+- Add native graph-change support: `nativeGraphResultAdapter`, identity-keyed
+  rows (`graphRowKey`), `graphSnapshots`, truthful `PATCH`/`DELETE` application
+  with explicit `MISSING_BASE_ROW` and `UNSUPPORTED_CAPABILITY` errors.
+
 ### Fixed
 - Add a tested Handlebars JSON/adapter recipe with explicit routing and raw
   identity; verify its literal YAML against the released SSE plugin.

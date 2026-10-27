@@ -181,10 +181,10 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
 
     for query in &instance.queries {
         anyhow::ensure!(
-            !query.sources.is_empty()
+            !query.inputs.is_empty()
                 && query.middleware.is_empty()
                 && query
-                    .sources
+                    .inputs
                     .iter()
                     .all(|source| source.pipeline.is_empty())
                 && query.enable_bootstrap,
@@ -199,8 +199,8 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             json!({"kind":"sourceProgress","component":query.id}),
         )?;
         let mut providers = Vec::new();
-        for input in &query.sources {
-            let source = input.source_id.as_str();
+        for input in &query.inputs {
+            let source = input.component.as_str();
             let declaration = sources
                 .iter()
                 .find(|candidate| candidate["id"] == source)
@@ -215,7 +215,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 );
                 http_bootstrap.as_ref().context("HTTP bootstrap metadata")?
             };
-            let bootstrap_id = if query.sources.len() == 1 && kind == "postgres" {
+            let bootstrap_id = if query.inputs.len() == 1 && kind == "postgres" {
                 format!("{}-postgres-bootstrap", query.id)
             } else {
                 format!("{}-{source}-bootstrap", query.id)
@@ -290,10 +290,10 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         builder = builder
             .component(specification, query_factory.clone())
             .bind_stream(endpoint(&query.id, "out")?, stream(&query.id)?);
-        for source in &query.sources {
+        for source in &query.inputs {
             builder = builder.connect(
                 EdgeDefinition::new(
-                    endpoint(&source.source_id, "out")?,
+                    endpoint(&source.component, "out")?,
                     endpoint(&query.id, "in")?,
                 ),
                 Box::new(BoundedPipeConfig { capacity: 32 }),
@@ -342,9 +342,9 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             .iter()
             .filter(|query| {
                 query
-                    .sources
+                    .inputs
                     .iter()
-                    .any(|input| input.source_id == source_id)
+                    .any(|input| input.component == source_id)
             })
             .map(|query| (query.id.clone(), format!("{}-progress", query.id)))
             .collect();

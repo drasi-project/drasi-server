@@ -45,8 +45,8 @@ instances:
           RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
         queryLanguage: GQL
         middleware: []
-        sources:
-          - sourceId: my-postgres
+        inputs:
+          - component: my-postgres
             nodes: []
             relations: []
             pipeline: []
@@ -56,8 +56,8 @@ instances:
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher
         middleware: []
-        sources:
-          - sourceId: my-postgres
+        inputs:
+          - component: my-postgres
             nodes: []
             relations: []
             pipeline: []
@@ -67,8 +67,8 @@ instances:
         query: MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count
         queryLanguage: Cypher
         middleware: []
-        sources:
-          - sourceId: my-postgres
+        inputs:
+          - component: my-postgres
             nodes: []
             relations: []
             pipeline: []
@@ -78,8 +78,8 @@ instances:
         query: 'MATCH (m:Message) WITH m.From AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }) OR drasi.trueLater(LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }), LastMessageTimestamp + duration({ seconds: 20 })) RETURN MessageFrom, LastMessageTimestamp'
         queryLanguage: Cypher
         middleware: []
-        sources:
-          - sourceId: my-postgres
+        inputs:
+          - component: my-postgres
             nodes: []
             relations: []
             pipeline: []

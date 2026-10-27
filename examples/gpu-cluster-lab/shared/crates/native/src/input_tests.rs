@@ -3,6 +3,9 @@ use crate::inputs::{
     partition_records, BootstrapBoundary, DatabaseInputs, QueryBootstrapRow,
     QueryBootstrapWatermark, DATABASE_QUERY,
 };
+use drasi_computation_contracts::{
+    ChangeOperation, QueryChangeCodec, QueryRowKind, ResultNodeProjector, ResultOperationMetadata,
+};
 use drasi_core::evaluation::variable_value::VariableValue;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -26,22 +29,48 @@ fn boundary(epoch: Uuid, records: Option<Value>) -> BootstrapBoundary {
     }
 }
 
-fn aggregate(signature: u64, records: Value) -> Result<ChangeOperation> {
+fn aggregate(signature: u64, records: Value) -> Result<(ChangeOperation, ResultOperationMetadata)> {
+    let dataset = drasi_computation_contracts::output_identity::dataset_namespace(
+        "test",
+        "graph",
+        &drasi_computation_contracts::ComponentId::try_new(DATABASE_QUERY)?,
+        &drasi_computation_contracts::PortId::try_new("out")?,
+    )?;
+    let projector = ResultNodeProjector::try_new(&dataset, None)?;
     let after = QueryChangeCodec::encode_row(
-        DATABASE_QUERY,
+        &projector,
         signature,
         &BTreeMap::from([("records".into(), VariableValue::from(records))]),
-        QueryRowKind::Aggregation {
-            grouping_keys: vec![],
-            default_before: false,
-            default_after: false,
-        },
-        RecordImage::Full,
+        0,
     )?;
-    Ok(ChangeOperation::Added {
-        ordinal: signature,
-        after,
-    })
+    let row_identity = ResultNodeProjector::signature_identity(signature)
+        .to_vec()
+        .into();
+    Ok((
+        ChangeOperation::Added {
+            ordinal: signature,
+            after,
+        },
+        ResultOperationMetadata {
+            ordinal: signature,
+            row_identity,
+            kind: QueryRowKind::Aggregation {
+                grouping_keys: vec![],
+                default_before: false,
+                default_after: false,
+            },
+        },
+    ))
+}
+
+fn apply(
+    inputs: &mut DatabaseInputs,
+    query: &str,
+    sequence: u64,
+    changes: &[(ChangeOperation, ResultOperationMetadata)],
+) -> Result<()> {
+    let (operations, projection): (Vec<_>, Vec<_>) = changes.iter().cloned().unzip();
+    inputs.update(query, sequence, &operations, &projection)
 }
 
 pub(super) fn fixture_rows(
@@ -86,7 +115,12 @@ fn bootstrap_requires_complete_single_query_identity_and_epoch() -> Result<()> {
         inputs.take()?.is_none(),
         "undelivered sequence zero is not empty"
     );
-    inputs.update(DATABASE_QUERY, 0, &[aggregate(1, records(epoch)?)?])?;
+    apply(
+        &mut inputs,
+        DATABASE_QUERY,
+        0,
+        &[aggregate(1, records(epoch)?)?],
+    )?;
     assert!(inputs.take()?.is_some());
     assert!(inputs.take()?.is_none());
     inputs.unavailable();
@@ -153,21 +187,13 @@ fn aggregate_identity_and_sequence_errors_are_atomic() -> Result<()> {
     let epoch = Uuid::new_v4();
     let first = aggregate(1, records(epoch)?)?;
     let mut inputs = DatabaseInputs::default();
-    inputs.update(DATABASE_QUERY, 1, std::slice::from_ref(&first))?;
-    inputs.update(DATABASE_QUERY, 1, std::slice::from_ref(&first))?;
-    assert!(inputs
-        .update(DATABASE_QUERY, 0, std::slice::from_ref(&first))
-        .is_err());
-    assert!(inputs
-        .update(DATABASE_QUERY, 2, &[aggregate(2, json!([]))?])
-        .is_err());
-    assert!(inputs
-        .update(DATABASE_QUERY, 1, &[aggregate(1, json!([]))?])
-        .is_err());
-    assert!(inputs
-        .update("input-plan", 2, std::slice::from_ref(&first))
-        .is_err());
-    inputs.update(DATABASE_QUERY, 2, &[first])?;
+    apply(&mut inputs, DATABASE_QUERY, 1, std::slice::from_ref(&first))?;
+    apply(&mut inputs, DATABASE_QUERY, 1, std::slice::from_ref(&first))?;
+    assert!(apply(&mut inputs, DATABASE_QUERY, 0, std::slice::from_ref(&first)).is_err());
+    assert!(apply(&mut inputs, DATABASE_QUERY, 2, &[aggregate(2, json!([]))?]).is_err());
+    assert!(apply(&mut inputs, DATABASE_QUERY, 1, &[aggregate(1, json!([]))?]).is_err());
+    assert!(apply(&mut inputs, "input-plan", 2, std::slice::from_ref(&first)).is_err());
+    apply(&mut inputs, DATABASE_QUERY, 2, &[first])?;
     inputs.bootstrap(boundary(epoch, None))?;
     assert!(inputs.take()?.is_some());
     Ok(())
@@ -182,9 +208,14 @@ fn snapshot_watermark_never_overwrites_a_newer_complete_configuration() -> Resul
     let mut inputs = DatabaseInputs::default();
     inputs.bootstrap(complete.clone())?;
     inputs.take()?;
-    inputs.update(DATABASE_QUERY, 3, &[aggregate(1, json!([]))?])?;
+    apply(&mut inputs, DATABASE_QUERY, 3, &[aggregate(1, json!([]))?])?;
     assert!(inputs.take()?.is_none());
-    inputs.update(DATABASE_QUERY, 4, &[aggregate(1, original.clone())?])?;
+    apply(
+        &mut inputs,
+        DATABASE_QUERY,
+        4,
+        &[aggregate(1, original.clone())?],
+    )?;
     let mut newer = original;
     for record in newer.as_array_mut().unwrap() {
         if record["table"] == "gpu_inventory" {
@@ -192,7 +223,7 @@ fn snapshot_watermark_never_overwrites_a_newer_complete_configuration() -> Resul
         }
     }
     let mut raced = DatabaseInputs::default();
-    raced.update(DATABASE_QUERY, 5, &[aggregate(1, newer)?])?;
+    apply(&mut raced, DATABASE_QUERY, 5, &[aggregate(1, newer)?])?;
     raced.bootstrap(complete)?;
     assert!(raced
         .take()?
@@ -213,7 +244,11 @@ async fn single_configuration_query_projects_every_table_and_live_settings() -> 
         .unwrap();
     let text = crate::inputs::database_queries().remove(0).1;
     let mut query = query(DATABASE_QUERY, &text).await?;
-    let mut source = Emitter::new(StreamId::try_new("database-input-test")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("database-input-test")?,
+        ComponentId::try_new("database-input-fixture")?,
+        None,
+    )?;
     let mut changes = Vec::new();
     for (index, record) in records.as_array().unwrap().iter().enumerate() {
         let mut value = record["value"].clone();
@@ -245,7 +280,9 @@ async fn single_configuration_query_projects_every_table_and_live_settings() -> 
             sequence: snapshot.as_of_sequence,
             row_count: 1,
             rows: Some(vec![QueryBootstrapRow {
-                signature: row.signature,
+                signature: row
+                    .signature
+                    .context("query row has no evaluator signature")?,
                 records: serde_json::from_value(serde_json::to_value(
                     row.values["records"].clone(),
                 )?)?,
@@ -375,7 +412,11 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
     let directory = tempfile::tempdir()?;
     let epoch = Uuid::new_v4();
     let mut records = records(epoch)?.as_array().unwrap().clone();
-    let mut source = Emitter::new(StreamId::try_new("postgres")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("postgres")?,
+        ComponentId::try_new("postgres-fixture")?,
+        None,
+    )?;
     let mut changes = Vec::new();
     for (index, record) in records.iter().enumerate() {
         let mut value = record["value"].clone();
@@ -405,7 +446,9 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
         .rows
         .as_mut()
         .unwrap()[0]
-        .signature = row.signature;
+        .signature = row
+        .signature
+        .context("query row has no evaluator signature")?;
     policy.signals.lock().unwrap().bootstrap = Some(complete);
     let projected = policy.on_wakeup().await?;
     assert_eq!(
@@ -583,7 +626,11 @@ async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<(
         .context("database fixture missing")?;
     let text = crate::inputs::database_queries().remove(0).1;
     let mut database = query(DATABASE_QUERY, &text).await?;
-    let mut source = Emitter::new(StreamId::try_new("policy-revocation-input")?);
+    let mut source = Emitter::new(
+        StreamId::try_new("policy-revocation-input")?,
+        ComponentId::try_new("policy-revocation-fixture")?,
+        None,
+    )?;
     let mut changes = Vec::new();
     let records = records.as_array().context("fixture is not an array")?;
     for (index, record) in records.iter().enumerate() {
@@ -606,7 +653,9 @@ async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<(
         .get_mut(DATABASE_QUERY)
         .context("watermark missing")?;
     watermark.sequence = snapshot.as_of_sequence;
-    watermark.rows.as_mut().context("bootstrap rows missing")?[0].signature = row.signature;
+    watermark.rows.as_mut().context("bootstrap rows missing")?[0].signature = row
+        .signature
+        .context("query row has no evaluator signature")?;
 
     let workers = Arc::new(Workers::default());
     let mut policy = processor(Kind::Policy, workers.clone())?;

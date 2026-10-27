@@ -419,15 +419,15 @@ The Server API (`GET /api/v1/plugins`) reports three different versions:
 
 For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
 The native manifest also exposes its wire version. Current native plugins use
-wire version 2 (binary computation envelopes and bulk MessagePack buffers).
-Rebuild native plugins from the matching SDK; the unreleased wire-version-1
-prototype is rejected. Legacy ABI 0.17 adds versioned storage durability evidence
+wire version 1 (binary computation envelopes and bulk MessagePack buffers).
+Build native plugins and the host from matching sources; unknown wire versions
+are rejected. Legacy ABI 0.17 adds versioned storage durability evidence
 and releases transferred state-store ownership. Existing ABI 0.16 plugins remain
 supported for fast-mode behavior, retaining their original state-store pointer
 lifetime and without new recovery services. ABI 0.15, unknown future contracts,
 malformed/missing metadata and wrong targets are rejected before initialization.
 Provider key-list errors remain explicit, and bootstrap subscription settings and
-context properties are forwarded. Existing data-envelope formats are unchanged.
+context properties are forwarded.
 Loading compatibility and storage durability do not establish end-to-end recovery.
 Header/ABI/wire compatibility
 is checked independently of the legacy SDK; absent legacy-only version fields

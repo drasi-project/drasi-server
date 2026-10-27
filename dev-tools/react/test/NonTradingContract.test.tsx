@@ -54,7 +54,7 @@ describe('non-Trading synthetic contracts', () => {
       <DrasiProvider
         serverUrl="http://building.invalid:8080"
         instanceId="building-a"
-        queryIds={['building-readings', 'archive-readings']}
+        outputIds={['building-readings', 'archive-readings']}
         reaction={{ id: 'building-events', endpoint: 'https://building.invalid/events' }}
         fetch={fetcher}
         eventSourceFactory={factory.create}

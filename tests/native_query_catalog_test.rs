@@ -505,7 +505,7 @@ fn change(sequence: u64, value: Option<i64>) -> Result<OutputEnvelope> {
         if sequence == 1 {
             SourceChange::Insert { element }
         } else {
-            SourceChange::Update { element }
+            SourceChange::Update { element, removed_properties: Default::default() }
         }
     } else {
         SourceChange::Delete { metadata }

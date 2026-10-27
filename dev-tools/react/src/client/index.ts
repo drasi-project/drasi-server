@@ -30,3 +30,7 @@ export type {
 export type * from './types';
 export { sse034ResultAdapter, createLegacyResultAdapter } from './results';
 export { accumulateResult } from './accumulation';
+export {
+  applyGraphChange, elementKey, graphRow, graphRowIdentity, graphRowKey, isGraphChange, nativeGraphResultAdapter,
+  readGraphChange, readGraphSnapshot, readGraphSnapshotResponse,
+} from './graph';

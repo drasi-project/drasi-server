@@ -11,7 +11,7 @@ use drasi_computation_contracts::{
     ChangeOperation, ComponentDescriptor, InputEnvelope, OutputEnvelope, QueryChangeCodec,
     StreamId, WakeupSource,
 };
-use drasi_computation_plugin_sdk::{NativeComponent, NativeTransformer};
+use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeTransformer};
 use drasi_core_types::models::SourceChange;
 use gpu_contracts::*;
 use gpu_placement::{LossKind, Outcome, Resilience, Scenario};
@@ -102,6 +102,7 @@ impl Processor {
         descriptor: ComponentDescriptor,
         configuration: serde_json::Value,
         workers: Arc<Workers>,
+        scope: Option<&Scope>,
     ) -> Result<Self> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -109,13 +110,14 @@ impl Processor {
             stream: StreamId,
         }
         let config: Config = serde_json::from_value(configuration.clone())?;
+        let emitter = Emitter::new(config.stream, descriptor.id().clone(), scope)?;
         Ok(Self {
             signals: Arc::new(Mutex::new(Signals::default())),
             database: DatabaseInputs::default(),
             kind,
             descriptor,
             configuration,
-            emitter: Emitter::new(config.stream),
+            emitter,
             workers,
             timer: Arc::new(Timer {
                 running: AtomicBool::new(false),
@@ -1142,10 +1144,12 @@ impl NativeTransformer for Processor {
                 matches!(self.kind, Kind::Simulator | Kind::Policy),
                 "unexpected database input"
             );
+            let projection = QueryChangeCodec::projection(&input.envelope)?;
             self.database.update(
                 &query,
                 QueryChangeCodec::query_sequence(&input.envelope)?,
                 input.envelope.changes().operations(),
+                projection.operations(),
             )?;
             self.observe_inputs(&mut changes)?;
             self.launch_job()?;

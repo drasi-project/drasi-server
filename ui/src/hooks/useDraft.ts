@@ -17,7 +17,7 @@ const QUERY_DEFAULTS: Record<string, unknown> = {
   autoStart: true,
   queryLanguage: "Cypher",
   query: "",
-  sources: [],
+  inputs: [],
   enableBootstrap: true,
 };
 
@@ -25,7 +25,7 @@ const QUERY_DEFAULTS: Record<string, unknown> = {
 // Schema validation handles field-level requirements.
 const REQUIRED_FIELDS: Record<string, string[]> = {
   // Queries
-  query: ["id", "query", "sources"],
+  query: ["id", "query", "inputs"],
 };
 
 function getDefaults(

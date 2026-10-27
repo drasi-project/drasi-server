@@ -421,6 +421,7 @@ impl Producer {
         descriptor: ComponentDescriptor,
         configuration: serde_json::Value,
         hub: Arc<Hub>,
+        scope: Option<&drasi_computation_plugin_sdk::wire::Scope>,
     ) -> Result<Self> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -428,12 +429,13 @@ impl Producer {
             stream: StreamId,
         }
         let config: Config = serde_json::from_value(configuration.clone())?;
+        let emitter = Emitter::new(config.stream, descriptor.id().clone(), scope)?;
         Ok(Self {
             descriptor,
             configuration,
             changed: hub.changed.subscribe(),
             hub,
-            emitter: Emitter::new(config.stream),
+            emitter,
             observed: None,
             running: false,
             stopped: false,

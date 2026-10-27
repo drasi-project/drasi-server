@@ -40,7 +40,7 @@ export interface SourceInfo {
 export interface QueryInfo {
   id: string;
   status: string;
-  sourceIds: string[];
+  inputIds: string[];
   resultCount?: number;
   query?: string;
   queryLanguage?: string;

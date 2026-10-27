@@ -13,7 +13,7 @@
     "pluginAbi": "0.11.0",
     "platform": "darwin/arm64",
     "capture": "examples/trading/app/test/live/trading.live.spec.ts; live-eCvq2z; server-rest.json",
-    "note": "Unmodified response bodies from owned disposable seed data. The frontend had P3 changes; frozen backend sources/lock were unchanged from serverRevision. Port is the actual ephemeral reaction listener."
+    "note": "Response bodies from owned disposable seed data; the only edit is the query config's subscription list, rewritten from the then-current `sources` field to the v1 `inputs` shape (bare component names) that the current server serializes. The frontend had P3 changes; frozen backend sources/lock were unchanged from serverRevision. Port is the actual ephemeral reaction listener."
   },
   "sseRecording": {
     "file": "sse-0.3.4.ndjson",
@@ -62,10 +62,7 @@
           "outboxCapacity": 1000,
           "query": "\n    MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
           "queryLanguage": "Cypher",
-          "sources": [
-            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "postgres-stocks" },
-            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "price-feed" }
-          ]
+          "inputs": ["postgres-stocks", "price-feed"]
         }
       },
       "error": null

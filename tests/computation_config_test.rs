@@ -107,6 +107,12 @@ fn readable_graph_uses_actual_contracts_and_round_trips_as_an_expanded_definitio
     assert_eq!(restored.resolve(&factories)?.definition, config.definition);
     let old: ComputationConfig = serde_yaml::from_str(&yaml)?;
     assert_eq!(old.definition, config.definition);
+    let mapped_yaml = serde_yaml::to_string(&serde_json::to_value(ComputationConfigInput::from(
+        config.clone(),
+    ))?)?;
+    assert!(!mapped_yaml.contains("!Factory"));
+    let mapped: ComputationConfigInput = serde_yaml::from_str(&mapped_yaml)?;
+    assert_eq!(mapped.resolve(&factories)?.definition, config.definition);
     Ok(())
 }
 
@@ -274,6 +280,7 @@ struct DescribingFactory {
     descriptor: FactoryDescriptor,
     ports: Vec<PortDescriptor>,
     creates: Arc<AtomicUsize>,
+    primary: PortPrimaries,
 }
 
 impl DescribingFactory {
@@ -298,6 +305,7 @@ impl DescribingFactory {
                 })
                 .collect::<Result<_>>()?,
             creates,
+            primary: PortPrimaries::default(),
         })
     }
 }
@@ -306,6 +314,9 @@ impl DescribingFactory {
 impl ComponentFactory for DescribingFactory {
     fn descriptor(&self) -> &FactoryDescriptor {
         &self.descriptor
+    }
+    fn primary_ports(&self) -> PortPrimaries {
+        self.primary.clone()
     }
     fn specification_from_config(
         &self,
@@ -376,11 +387,13 @@ fn factory_versions_and_multi_port_endpoints_must_be_unambiguous() -> Result<()>
         .push(json!({
             "from": "sensor/group", "to": "query", "capacity": 7
         }));
-    assert!(resolve(value.clone(), &factories)
+    let error = resolve(value.clone(), &factories)
         .err()
-        .context("ambiguous output port")?
-        .to_string()
-        .contains("multiple Output ports"));
+        .context("ambiguous output port")?;
+    assert!(
+        format!("{error:#}").contains("ambiguous Output port"),
+        "{error:#}"
+    );
     value["graph"]["connections"][1]["from"] =
         json!({"component": "sensor/group", "port": "right"});
     let config = resolve(value, &factories)?;
@@ -388,6 +401,35 @@ fn factory_versions_and_multi_port_endpoints_must_be_unambiguous() -> Result<()>
     assert_eq!(edge.definition.from.component.as_str(), "sensor/group");
     assert_eq!(edge.definition.from.port.as_str(), "right");
     assert!(matches!(edge.pipe, DesiredPipe::Bounded { capacity: 7 }));
+    assert_eq!(creates.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[test]
+fn readable_graph_uses_the_declared_primary_without_constructing_components() -> Result<()> {
+    let creates = Arc::new(AtomicUsize::new(0));
+    let mut factories = factories()?;
+    let mut factory = DescribingFactory::new("1", &["audit", "data"], creates.clone())?;
+    factory.primary = PortPrimaries::new(None, Some(PortId::try_new("data")?));
+    factories.register(Arc::new(factory))?;
+    let mut value = input();
+    value["graph"]["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"sensor", "kind":"test/source", "version":"1"}));
+    value["graph"]["connections"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"from":"sensor", "to":"query"}));
+    let config = resolve(value, &factories)?;
+    assert_eq!(
+        config.definition.relationships[1]
+            .definition
+            .from
+            .port
+            .as_str(),
+        "data"
+    );
     assert_eq!(creates.load(Ordering::SeqCst), 0);
     Ok(())
 }

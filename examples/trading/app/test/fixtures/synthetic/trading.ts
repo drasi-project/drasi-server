@@ -221,13 +221,13 @@ export class SyntheticTrading {
         return { status: 400, body: { code: 'INVALID_REQUEST' } };
       }
       this.nativeTopology = structuredClone(nativeComputation.definition);
-      for (const { id, query, sources, joins } of ALL_QUERIES) {
-        this.queries.set(id, { id, query, sources, joins, queryLanguage: 'Cypher', autoStart: true });
+      for (const { id, query, inputs, joins } of ALL_QUERIES) {
+        this.queries.set(id, { id, query, inputs, joins, queryLanguage: 'Cypher', autoStart: true });
       }
       return ok({ revision: 1 });
     }
     if (path === '/api/v1/queries' && method === 'POST') {
-      const fields = ['id', 'query', 'sources', 'joins', 'queryLanguage', 'autoStart'];
+      const fields = ['id', 'query', 'inputs', 'joins', 'queryLanguage', 'autoStart'];
       if (Object.keys(body).some(key => !fields.includes(key))) {
         return { status: 400, body: { code: 'INVALID_REQUEST', message: 'Unknown query field' } };
       }
@@ -255,9 +255,6 @@ export class SyntheticTrading {
             autoStart: false, middleware: [], enableBootstrap: true,
             outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
             ...definition,
-            sources: Array.isArray(definition.sources) ? definition.sources.map(source => ({
-              pipeline: [], nodes: [], relations: [], ...source,
-            })) : definition.sources,
           },
         });
     }

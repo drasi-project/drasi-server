@@ -69,12 +69,12 @@ async fn create_test_router_with_id(
     // Reactions require running queries so they can capture a valid subscription head.
     let reaction_query = Query::cypher("reaction-query")
         .query("MATCH (n:Node) RETURN n")
-        .from_source("reaction-source")
+        .from_input("reaction-source")
         .auto_start(true)
         .build();
     let auto_query = Query::cypher("auto-query")
         .query("MATCH (n:Node) RETURN n")
-        .from_source("reaction-source")
+        .from_input("reaction-source")
         .auto_start(true)
         .build();
 
@@ -211,7 +211,7 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
                         "id": "late-api-query",
                         "query": "MATCH (n) RETURN n",
                         "queryLanguage": "Cypher",
-                        "sources": [{"sourceId": "late-api-source"}],
+                        "inputs": ["late-api-source"],
                         "autoStart": true,
                         "enableBootstrap": false
                     })
@@ -517,7 +517,7 @@ async fn test_query_lifecycle_via_api() {
     // Create a query using DrasiLib (not via API - queries can still be created dynamically)
     let query_config = Query::cypher("test-query")
         .query("MATCH (n:Node) RETURN n")
-        .from_source("query-source")
+        .from_input("query-source")
         .auto_start(false)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
@@ -806,7 +806,7 @@ async fn test_query_results_endpoint() {
     // Add a query
     let query_config = Query::cypher("results-query")
         .query("MATCH (n) RETURN n")
-        .from_source("query-source")
+        .from_input("query-source")
         .auto_start(false)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
@@ -864,7 +864,7 @@ async fn test_query_attach_sse_stream() {
     // Add a query to attach to
     let query_config = Query::cypher("attach-query")
         .query("MATCH (n) RETURN n")
-        .from_source("query-source")
+        .from_input("query-source")
         .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
@@ -927,7 +927,7 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
     // Add a query to attach to
     let query_config = Query::cypher("attach-reaction-test")
         .query("MATCH (n) RETURN n")
-        .from_source("query-source")
+        .from_input("query-source")
         .auto_start(true)
         .build();
     core.add_query(query_config.clone()).await.unwrap();

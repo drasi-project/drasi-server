@@ -135,7 +135,7 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     const createdQueries = mutations.filter(item => item.url === `${instancePath}/queries`);
     expect(createdQueries).toHaveLength(11);
     expect(createdQueries.map(item => item.body)).toEqual(ALL_QUERIES.map(query => ({
-      id: query.id, query: query.query, sources: query.sources, joins: query.joins,
+      id: query.id, query: query.query, inputs: query.inputs, joins: query.joins,
       autoStart: true, queryLanguage: 'Cypher',
     })));
     expect(mutations.filter(item => item.url === `${instancePath}/reactions`)).toHaveLength(1);

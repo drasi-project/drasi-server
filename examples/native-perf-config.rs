@@ -234,8 +234,8 @@ fn main() -> Result<()> {
         anyhow::ensure!(
             !query.enable_bootstrap
                 && query.middleware.is_empty()
-                && query.sources.len() == 1
-                && query.sources[0].source_id == source_id,
+                && query.inputs.len() == 1
+                && query.inputs[0].component == source_id,
             "comparison expects one direct source and no query bootstrap/middleware"
         );
         let stream = StreamId::try_new(format!("{}/out", query.id))?;

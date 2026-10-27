@@ -9,7 +9,7 @@ use drasi_server::api::models::observability::{
     ComponentEventDto, ComponentLogTypeDto, ComponentStatusDto, ComponentTypeDto, LogLevelDto,
     LogMessageDto,
 };
-use drasi_server::api::models::queries::query::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::models::queries::query::{QueryConfigDto, QueryInputConfigDto};
 
 #[test]
 fn test_query_config_dto_serializes_camelcase() {
@@ -19,12 +19,7 @@ fn test_query_config_dto_serializes_camelcase() {
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "my-source".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("my-source".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: Some(1000),
@@ -33,6 +28,7 @@ fn test_query_config_dto_serializes_camelcase() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     let json = serde_json::to_value(&dto).unwrap();
@@ -70,13 +66,11 @@ fn test_query_config_dto_serializes_camelcase() {
         "enable_bootstrap should NOT exist"
     );
 
-    // Nested source subscription DTO
-    let source = json["sources"].as_array().unwrap().first().unwrap();
-    assert!(source.get("sourceId").is_some(), "sourceId should exist");
-    assert!(
-        source.get("source_id").is_none(),
-        "source_id should NOT exist"
-    );
+    // Nested query input DTO: a bare component name or an expanded object
+    assert!(json.get("sources").is_none(), "sources was replaced by inputs");
+    let input = json["inputs"].as_array().unwrap().first().unwrap();
+    assert!(input.is_string() || input.get("component").is_some());
+    assert!(input.get("sourceId").is_none(), "sourceId was replaced by component");
 }
 
 #[test]

@@ -65,8 +65,8 @@ instances:
           MATCH (s:SensorReading)
           RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
         queryLanguage: Cypher
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
 
 # Log the query results to console
 # Template variables: query_name, after (for added/updated), before (for deleted/updated)

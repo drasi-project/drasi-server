@@ -66,8 +66,8 @@ instances:
           MATCH (e:Event)
           RETURN e.id AS EventId, e.type AS Type, e.data AS Data
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-volume-stream
+        inputs:
+          - high-volume-stream
 
       - id: event-stats
         autoStart: true
@@ -75,8 +75,8 @@ instances:
           MATCH (e:Event)
           RETURN count(e) AS TotalEvents
         queryLanguage: Cypher
-        sources:
-          - sourceId: high-volume-stream
+        inputs:
+          - high-volume-stream
 
     reactions:
   # HTTP Adaptive Reaction

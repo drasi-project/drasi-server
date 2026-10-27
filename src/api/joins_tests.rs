@@ -122,7 +122,7 @@ mod api_query_joins_tests {
 
     // Helper function to convert QueryConfig to QueryConfigDto for testing
     fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
-        use crate::api::models::query::SourceSubscriptionConfigDto;
+        use crate::api::models::query::QueryResultConfigDto;
 
         QueryConfigDto {
             id: config.id,
@@ -130,16 +130,8 @@ mod api_query_joins_tests {
             query: config.query,
             query_language: config.query_language,
             middleware: vec![], // Simplified for testing - middleware is complex
-            sources: config
-                .sources
-                .iter()
-                .map(|s| SourceSubscriptionConfigDto {
-                    source_id: s.source_id.clone(),
-                    nodes: s.nodes.clone(),
-                    relations: s.relations.clone(),
-                    pipeline: s.pipeline.clone(),
-                })
-                .collect(),
+            inputs: config.inputs.into_iter().map(Into::into).collect(),
+            result: QueryResultConfigDto::default(),
             enable_bootstrap: config.enable_bootstrap,
             joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
             priority_queue_capacity: config.priority_queue_capacity,
@@ -176,8 +168,8 @@ mod api_query_joins_tests {
             .query(
                 "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate",
             )
-            .from_source("vehicles")
-            .from_source("drivers")
+            .from_input("vehicles")
+            .from_input("drivers")
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
             .build();
@@ -234,9 +226,9 @@ mod api_query_joins_tests {
 
         let query_config = Query::cypher("full-order-query")
             .query("MATCH (o:Order)-[:ORDER_TO_RESTAURANT]->(r:Restaurant), (o)-[:ORDER_TO_DRIVER]->(d:Driver) RETURN o.id, r.name, d.name")
-            .from_source("orders")
-            .from_source("restaurants")
-            .from_source("drivers")
+            .from_input("orders")
+            .from_input("restaurants")
+            .from_input("drivers")
             .auto_start(false)
             .with_joins(vec![restaurant_join.clone(), driver_join.clone()])
             .build();
@@ -265,7 +257,7 @@ mod api_query_joins_tests {
         // Create a query without joins
         let query_config = Query::cypher("simple-query")
             .query("MATCH (n:Node) RETURN n")
-            .from_source("source1")
+            .from_input("source1")
             .auto_start(false)
             .build();
 
@@ -293,7 +285,7 @@ mod api_query_joins_tests {
         // Create a query with empty joins array
         let query_config = Query::cypher("empty-joins-query")
             .query("MATCH (n) RETURN n")
-            .from_source("source1")
+            .from_input("source1")
             .auto_start(false)
             .with_joins(vec![]) // Empty joins array
             .build();
@@ -336,8 +328,8 @@ mod api_query_joins_tests {
 
         let query_config = Query::cypher("product-category-query")
             .query("MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name")
-            .from_source("products")
-            .from_source("categories")
+            .from_input("products")
+            .from_input("categories")
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
             .build();
@@ -410,8 +402,8 @@ mod api_query_joins_tests {
 
         let query_config = Query::cypher("test-query")
             .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
-            .from_source("source1")
-            .from_source("source2")
+            .from_input("source1")
+            .from_input("source2")
             .auto_start(true)
             .with_joins(vec![join_config])
             .build();
@@ -425,7 +417,7 @@ mod api_query_joins_tests {
             json["query"],
             "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b"
         );
-        assert_eq!(json["sources"].as_array().unwrap().len(), 2);
+        assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
         assert_eq!(json["auto_start"], true);
 
         assert!(json["joins"].is_array());
@@ -469,7 +461,7 @@ mod api_query_joins_tests {
 
         let query_config = Query::cypher("readonly-test-query")
             .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
-            .from_source("source1")
+            .from_input("source1")
             .auto_start(false)
             .with_joins(vec![join_config])
             .build();

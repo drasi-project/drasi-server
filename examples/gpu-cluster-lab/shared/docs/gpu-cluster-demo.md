@@ -494,7 +494,7 @@ Use database column names as snake_case fields throughout demo records and JSON.
 | `ResilienceAssessment` | `demo` | Input/policy signatures and separate complete worker-loss and region-loss result lists |
 | `RuntimeStatus` / `DemoEvent` | Component ID / epoch and event sequence | Operational status / bounded timeline |
 
-Native computation ports carry `ChangeEnvelope`/`ChangeEvent`, not arbitrary JSON messages. Register schemas and validators; use the public graph/query codecs to cross graph-node and query-row boundaries. A generator output consumed by Cypher must become a labeled graph node through `GraphChangeCodec`; decode query-row outputs using the corresponding query codec. Do not treat bytes from a custom schema as automatically queryable.
+Native computation ports carry `ChangeEnvelope`/`ChangeEvent`, not arbitrary JSON messages. Register schemas and validators once; query outputs use the same graph-change schema, so use the public graph/query codecs to cross graph-node and query-result boundaries. A generator output consumed by Cypher must become a labeled graph node through `GraphChangeCodec`; query outputs are ordinary result nodes in an explicit output scope, and query-only metadata (query ID, row kind) comes from the scoped envelope via `QueryChangeCodec::metadata`/`projection`, not from the record. Do not treat bytes from a custom schema as automatically queryable.
 
 The example native emitter now exposes nested lists/objects as typed graph
 properties alongside its JSON payload. Simulator reports and execution share the
@@ -956,7 +956,7 @@ The Drasi server must expose compatible instance-scoped query/reaction full-view
 import { DrasiProvider } from '@drasi/react/react';
 import '@drasi/react/styles.css';
 
-const queryIds = [
+const outputIds = [
   'ui-gpus', 'ui-workloads', 'ui-placements', 'ui-resilience',
   'ui-decisions', 'ui-status', 'ui-timeline',
   'ui-clusters', 'ui-policy',
@@ -966,7 +966,7 @@ const queryIds = [
 <DrasiProvider
   serverUrl={window.location.origin}
   instanceId="gpu-demo"
-  queryIds={queryIds}
+  outputIds={outputIds}
   reaction={{
     id: 'gpu-demo-ui',
     endpoint: new URL('/events/gpu-demo', window.location.origin).href,
@@ -976,11 +976,11 @@ const queryIds = [
 </DrasiProvider>;
 ```
 
-`GpuDashboard` is application code. Use `useDrasiQuery(queryId, {getKey, transform})` for cards, `DataTable` for shared query-backed tables, `QueryTable` for a standalone view, and `Modal` for forms.
+`GpuDashboard` is application code. Use `useDrasiOutput(outputId, {getKey, transform})` for cards (the native dashboard keys rows with `graphRowKey`), `DataTable` for shared query-backed tables, `QueryTable` for a standalone view, and `Modal` for forms.
 
 Validate unknown raw fields in `transform`; `getKey` must work on sparse deletes. Hoist one hook per query: the provider shares an SSE connection, not a query cache. Do not mount a second subscription merely to render the same rows differently.
 
-Keep the SSE Reaction's untemplated format supported by `sse034ResultAdapter`; verify actual plugin envelopes instead of assuming its name guarantees compatibility. Initialization and recovery use `GET /api/v1/instances/gpu-demo/queries/{id}/results`, not database polling.
+The stock Server SSE Reaction's untemplated format is read by `sse034ResultAdapter`. The native dashboard instead reads the native SSE sink's graph changes with `nativeGraphResultAdapter`: each frame names its output (`alias`, `component`, `port`) and carries `ADD`/`REPLACE`/`PATCH`/`DELETE` changes with canonical identity, and initialization and recovery use the sink's `GET /snapshot/{alias}` (canonical `ADD` changes, proxied by the control service for the nine UI outputs), not database polling.
 
 ### 9.2 Readiness and errors
 

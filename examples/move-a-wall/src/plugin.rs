@@ -48,10 +48,15 @@ impl Factory for NativeFactory {
         Ok(if self.source {
             Component::Source(Box::new(SceneSource::hosted(
                 self.metadata().descriptor(request.id.clone())?,
+                request.scope.as_ref(),
             )?))
             .into()
         } else {
-            Component::Transformer(Box::new(Geometry::new(request.id.clone())?)).into()
+            Component::Transformer(Box::new(Geometry::new(
+                request.id.clone(),
+                request.scope.as_ref(),
+            )?))
+            .into()
         })
     }
 }
@@ -63,6 +68,6 @@ pub fn plugin() -> Result<PluginDefinition> {
             Arc::new(NativeFactory { source: true }),
             Arc::new(NativeFactory { source: false }),
         ],
-        vec![GraphChangeCodec::schema(), QueryChangeCodec::schema()],
+        vec![GraphChangeCodec::schema()],
     )
 }

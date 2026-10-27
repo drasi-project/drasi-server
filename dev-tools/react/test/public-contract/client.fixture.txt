@@ -22,17 +22,17 @@ import {
   type Component,
   type ResultRow,
   type ResultChange,
-  type QuerySnapshot,
-  type QueryDelta,
-  type QueryResult,
+  type OutputSnapshot,
+  type OutputDelta,
+  type OutputResult,
   type RowKey,
   type ResultAdapter,
   type ResultAdapterContext,
   type LegacyResultAdapterOptions,
   type ResultReconciliationOptions,
   type RouteUnidentified,
-  type QuerySubscription,
-  type QuerySubscriptionState,
+  type OutputSubscription,
+  type OutputSubscriptionState,
   type QueryStatus,
   type QueryErrorScope,
 } from '@drasi/react/client';
@@ -40,18 +40,18 @@ import {
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
 export type DefaultRowIsUnknownRecord = Assert<Equal<ResultRow, Record<string, unknown>>>;
-export type DefaultResultIsUnknownRecord = Assert<Equal<Extract<QueryResult, { kind: 'snapshot' }>['rows'][number], Record<string, unknown>>>;
+export type DefaultResultIsUnknownRecord = Assert<Equal<Extract<OutputResult, { kind: 'snapshot' }>['rows'][number], Record<string, unknown>>>;
 export type DefaultChangeIsUnknownRecord = Assert<Equal<Extract<ResultChange, { kind: 'upsert' }>['after'], ResultRow>>;
-export type NormalizedResults = Assert<Equal<QueryResult, QuerySnapshot | QueryDelta>>;
+export type NormalizedResults = Assert<Equal<OutputResult, OutputSnapshot | OutputDelta>>;
 export type NormalizedChangeKinds = Assert<Equal<ResultChange['kind'], 'upsert' | 'update' | 'delete'>>;
 export type RawIdentityInput = Assert<Equal<Parameters<RowKey>[0], Readonly<ResultRow>>>;
 export type RawIdentityOutput = Assert<Equal<ReturnType<RowKey>, string>>;
-export type SnapshotRowsAreReadonly = Assert<Equal<QuerySnapshot['rows'], readonly ResultRow[]>>;
-export type DeltaChangesAreReadonly = Assert<Equal<QueryDelta['changes'], readonly ResultChange[]>>;
+export type SnapshotRowsAreReadonly = Assert<Equal<OutputSnapshot['rows'], readonly ResultRow[]>>;
+export type DeltaChangesAreReadonly = Assert<Equal<OutputDelta['changes'], readonly ResultChange[]>>;
 export type QueryStates = Assert<Equal<QueryStatus,
   'initial-loading' | 'live' | 'empty' | 'reconnecting' | 'resynchronizing' | 'stale-last-good-data' | 'terminal-error'>>;
 export type QueryScopes = Assert<Equal<QueryErrorScope, 'query' | 'connection'>>;
-export type SubscriptionDoesNotInferEmpty = Assert<Equal<QuerySubscriptionState['status'], Exclude<QueryStatus, 'empty'>>>;
+export type SubscriptionDoesNotInferEmpty = Assert<Equal<OutputSubscriptionState['status'], Exclude<QueryStatus, 'empty'>>>;
 
 interface Temperature {
   stationId: string;
@@ -78,7 +78,7 @@ export const reconciliation: ResultReconciliationOptions = { maxPendingChanges: 
 export const options: DrasiClientOptions = {
   serverUrl: 'https://drasi.example',
   instanceId: 'warehouse-west',
-  queryIds: ['temperatures', 'deliveries'],
+  outputIds: ['temperatures', 'deliveries'],
   reaction,
   credentials: 'include',
   headers: { 'X-Consumer': 'packed-contract' },
@@ -133,9 +133,9 @@ export const freshHeaders: DrasiClientOptions = {
 };
 
 // @ts-expect-error Instance identity is mandatory; there is no implicit default instance.
-export const missingInstance: DrasiClientOptions = { serverUrl: options.serverUrl, queryIds: options.queryIds, reaction };
+export const missingInstance: DrasiClientOptions = { serverUrl: options.serverUrl, outputIds: options.outputIds, reaction };
 // @ts-expect-error Resource definitions are not connection options.
-export const queryDefinitions: DrasiClientOptions = { ...options, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', sources: [] }] };
+export const queryDefinitions: DrasiClientOptions = { ...options, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', inputs: [] }] };
 // @ts-expect-error Source deployment is app-owned.
 export const sourceDefinitions: DrasiClientOptions = { ...options, sources: [{ id: 'sensors', kind: 'http' }] };
 // @ts-expect-error Reaction deployment is app-owned.
@@ -157,7 +157,8 @@ const queryConfig: QueryConfig = {
   id: 'temperatures',
   query: 'MATCH (s:Station) RETURN s.stationId AS stationId, s.celsius AS celsius',
   queryLanguage: 'Cypher',
-  sources: [{ sourceId: 'sensors', nodes: ['Station'], relations: [], pipeline: [] }],
+  inputs: [{ component: 'sensors', nodes: ['Station'], relations: [], pipeline: [] }, 'room-comfort'],
+  result: { label: 'Station' },
   autoStart: false,
   middleware: [],
   enableBootstrap: true,
@@ -222,8 +223,8 @@ export async function typedClientCallbacks(client: DrasiClient) {
   const unsafeNumber: number = untypedRows[0].celsius;
   // @ts-expect-error A transport read cannot establish an application's row schema.
   const temperatures: Temperature[] = await client.getQueryResults('temperatures');
-  const unsubscribe: QuerySubscription = client.subscribe('temperatures', result => {
-    const wire: QueryResult = result;
+  const unsubscribe: OutputSubscription = client.subscribe('temperatures', result => {
+    const wire: OutputResult = result;
     if (result.kind === 'snapshot') {
       const raw: readonly ResultRow[] = result.rows;
       // @ts-expect-error Default subscription values are unknown, not any.
@@ -247,7 +248,7 @@ export async function typedClientCallbacks(client: DrasiClient) {
     error.serverSecret;
     void errorCode;
   }, next => {
-    const state: QuerySubscriptionState = next;
+    const state: OutputSubscriptionState = next;
     const scope: QueryErrorScope | null = state.errorScope;
     const error: DrasiError | null = state.error;
     const stale: boolean = state.stale;
@@ -257,12 +258,12 @@ export async function typedClientCallbacks(client: DrasiClient) {
   });
   const cleanup: () => void = unsubscribe;
   const retry: () => void = unsubscribe.retry;
-  const current: QuerySubscriptionState = unsubscribe.getState();
+  const current: OutputSubscriptionState = unsubscribe.getState();
   void [unsafeNumber, temperatures, cleanup, retry, current];
   return unsubscribe;
 }
 
-export function typedBatches(temperatures: QueryResult<Temperature>, deliveries: QueryResult<Delivery>) {
+export function typedBatches(temperatures: OutputResult<Temperature>, deliveries: OutputResult<Delivery>) {
   if (temperatures.kind === 'snapshot' && deliveries.kind === 'snapshot') {
     const celsius: number = temperatures.rows[0].celsius;
     const parcels: number = deliveries.rows[0].parcels;
@@ -271,7 +272,7 @@ export function typedBatches(temperatures: QueryResult<Temperature>, deliveries:
     void [celsius, parcels];
   }
   // @ts-expect-error Generic batches keep distinct non-Trading row models separate.
-  const crossed: QueryResult<Delivery> = temperatures;
+  const crossed: OutputResult<Delivery> = temperatures;
   void crossed;
 }
 
@@ -300,14 +301,14 @@ export function typedChanges(change: ResultChange<Temperature>): number {
   }
 }
 
-export const batch: QueryResult<Delivery> = {
-  kind: 'snapshot', queryId: 'deliveries', receivedAt: 1,
+export const batch: OutputResult<Delivery> = {
+  kind: 'snapshot', outputId: 'deliveries', receivedAt: 1,
   rows: [{ routeId: 'north', parcels: 7, delayed: false }],
 };
 const before: Temperature = { stationId: 'old-station', celsius: 3 };
 const after: Temperature = { stationId: 'new-station', celsius: 4 };
-export const delta: QueryDelta<Temperature> = {
-  kind: 'delta', queryId: 'temperatures', receivedAt: 2, sourceTimestamp: 1,
+export const delta: OutputDelta<Temperature> = {
+  kind: 'delta', outputId: 'temperatures', receivedAt: 2, sourceTimestamp: 1,
   changes: [
     { kind: 'upsert', after },
     { kind: 'update', before, after },
@@ -315,9 +316,9 @@ export const delta: QueryDelta<Temperature> = {
   ],
 };
 // @ts-expect-error Result discriminants are closed and do not accept arbitrary batch kinds.
-export const invalidResultKind: QueryResult = { kind: 'replace', queryId: 'temperatures', rows: [], receivedAt: 1 };
+export const invalidResultKind: OutputResult = { kind: 'replace', queryId: 'temperatures', rows: [], receivedAt: 1 };
 // @ts-expect-error Normalized results do not accept the former data/snapshot/timestamp shape.
-export const legacyBatch: QueryResult = { queryId: 'temperatures', data: [], snapshot: true, timestamp: 1 };
+export const legacyBatch: OutputResult = { queryId: 'temperatures', data: [], snapshot: true, timestamp: 1 };
 // @ts-expect-error Updates require the before identity as well as the after row.
 export const missingBefore: ResultChange<Temperature> = { kind: 'update', after };
 // @ts-expect-error Updates also require the after row.
@@ -329,9 +330,9 @@ export const beforeUpsert: ResultChange<Temperature> = { kind: 'upsert', before 
 // @ts-expect-error Raw default changes require object rows.
 export const primitiveChange: ResultChange = { kind: 'upsert', after: 42 };
 // @ts-expect-error Snapshot receipt metadata is numeric, not a Date or ordering token.
-export const invalidReceipt: QuerySnapshot = { kind: 'snapshot', queryId: 'temperatures', rows: [], receivedAt: new Date() };
+export const invalidReceipt: OutputSnapshot = { kind: 'snapshot', outputId: 'temperatures', rows: [], receivedAt: new Date() };
 // @ts-expect-error Server timestamp metadata is numeric when present.
-export const invalidSourceTime: QueryDelta<Temperature> = { ...delta, sourceTimestamp: 'yesterday' };
+export const invalidSourceTime: OutputDelta<Temperature> = { ...delta, sourceTimestamp: 'yesterday' };
 // @ts-expect-error Snapshot row collections cannot be mutated by consumers.
 batch.rows.push({ routeId: 'east', parcels: 3, delayed: false });
 // @ts-expect-error Delta change collections cannot be mutated by consumers.
@@ -351,15 +352,15 @@ export const customAdapter: ResultAdapter = (payload, context) => {
   void [receivedAt, instance];
   return officialAdapter(wire, context);
 };
-export const adapted: readonly QueryDelta[] = customAdapter(
+export const adapted: readonly OutputDelta[] = customAdapter(
   { queryId: 'temperatures', results: [], timestamp: 1 }, adapterContext,
 );
 // @ts-expect-error Adapters are synchronous, not promise-returning transports.
 export const asynchronousAdapter: ResultAdapter = async () => [];
 // @ts-expect-error An adapter produces deltas, never a REST snapshot.
-export const snapshotAdapter: ResultAdapter = () => [{ kind: 'snapshot', queryId: 'temperatures', rows: [], receivedAt: 1 }];
+export const snapshotAdapter: ResultAdapter = () => [{ kind: 'snapshot', outputId: 'temperatures', rows: [], receivedAt: 1 }];
 // @ts-expect-error An adapter cannot return a typed domain row without validating unknown fields.
-export const primitiveAdapter: ResultAdapter = () => [{ kind: 'delta', queryId: 'temperatures', changes: [{ kind: 'upsert', after: 42 }], receivedAt: 1 }];
+export const primitiveAdapter: ResultAdapter = () => [{ kind: 'delta', outputId: 'temperatures', changes: [{ kind: 'upsert', after: 42 }], receivedAt: 1 }];
 // @ts-expect-error Adapter context requires local receipt metadata.
 export const missingReceipt: ResultAdapterContext = { instanceId: 'warehouse-west' };
 
@@ -368,11 +369,11 @@ export const stableKey: RowKey = row => {
   return row.stationId;
 };
 export const reduced: ResultRow[] = accumulateResult([], {
-  kind: 'delta', queryId: 'temperatures', receivedAt: 3,
+  kind: 'delta', outputId: 'temperatures', receivedAt: 3,
   changes: [{ kind: 'delete', before: { stationId: 'old-station' } }],
 }, stableKey, details);
 // @ts-expect-error The raw reducer requires explicit identity.
-accumulateResult([], { kind: 'snapshot', queryId: 'temperatures', rows: [], receivedAt: 3 });
+accumulateResult([], { kind: 'snapshot', outputId: 'temperatures', rows: [], receivedAt: 3 });
 // @ts-expect-error A raw key cannot claim unvalidated properties are strings.
 export const unknownKey: RowKey = row => row.stationId;
 // @ts-expect-error Numeric keys are not stable string identities.
@@ -384,22 +385,22 @@ export const absentKey: RowKey = () => undefined;
 // @ts-expect-error Keys must accept raw rows, not assume an application's transformed model.
 export const transformedKey: RowKey = (row: Temperature) => row.stationId;
 
-export const subscriptionState: QuerySubscriptionState = {
+export const subscriptionState: OutputSubscriptionState = {
   status: 'resynchronizing', stale: true, error: new DrasiError('SNAPSHOT_OVERLAP'), errorScope: 'query',
 };
 // @ts-expect-error Empty is a projected hook state, not a transport subscription state.
-export const emptySubscription: QuerySubscriptionState = { ...subscriptionState, status: 'empty' };
+export const emptySubscription: OutputSubscriptionState = { ...subscriptionState, status: 'empty' };
 // @ts-expect-error Recovery scope is a closed query/connection union.
-export const unknownScope: QuerySubscriptionState = { ...subscriptionState, errorScope: 'global' };
+export const unknownScope: OutputSubscriptionState = { ...subscriptionState, errorScope: 'global' };
 // @ts-expect-error Subscription errors remain structured DrasiError instances.
-export const untypedSubscriptionError: QuerySubscriptionState = { ...subscriptionState, error: 'offline' };
+export const untypedSubscriptionError: OutputSubscriptionState = { ...subscriptionState, error: 'offline' };
 
 export function typedStreamCallbacks(stream: DrasiSSEClient): () => void {
   const error: DrasiError | null = stream.getQueryError('temperatures');
   const cleanup = stream.subscribe('temperatures', result => {
-    const delta: QueryDelta = result;
+    const delta: OutputDelta = result;
     // @ts-expect-error The low-level stream does not manufacture REST snapshots.
-    const snapshot: QuerySnapshot = result;
+    const snapshot: OutputSnapshot = result;
     void [delta, snapshot];
   }, failure => {
     const code: DrasiErrorCode = failure.code;

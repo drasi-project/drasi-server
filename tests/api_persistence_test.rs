@@ -18,7 +18,7 @@
 mod test_support;
 
 use drasi_lib::config::QueryLanguage;
-use drasi_server::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::models::{ConfigValue, QueryConfigDto, QueryInputConfigDto};
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use std::fs;
 use tempfile::TempDir;
@@ -115,12 +115,7 @@ async fn test_persistence_saves_complete_configuration() {
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "test-source-1".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("test-source-1".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -129,6 +124,7 @@ async fn test_persistence_saves_complete_configuration() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     // Create reaction using enum variant
@@ -192,10 +188,10 @@ async fn test_persistence_saves_complete_configuration() {
         loaded_config.instances[0].queries[0].query,
         "MATCH (n) RETURN n".to_string()
     );
-    assert_eq!(loaded_config.instances[0].queries[0].sources.len(), 1);
+    assert_eq!(loaded_config.instances[0].queries[0].inputs.len(), 1);
     assert_eq!(
-        loaded_config.instances[0].queries[0].sources[0].source_id,
-        "test-source-1".to_string()
+        loaded_config.instances[0].queries[0].inputs[0],
+        QueryInputConfigDto::Component("test-source-1".to_string())
     );
 
     // Verify reactions
@@ -358,12 +354,7 @@ fn test_multiple_queries_persist_correctly() {
         query: "MATCH (n:Node) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "source-1".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -372,6 +363,7 @@ fn test_multiple_queries_persist_correctly() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     let query2 = QueryConfigDto {
@@ -380,12 +372,7 @@ fn test_multiple_queries_persist_correctly() {
         query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "source-1".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
         enable_bootstrap: false,
         joins: None,
         priority_queue_capacity: None,
@@ -394,6 +381,7 @@ fn test_multiple_queries_persist_correctly() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     // Create config with both queries
@@ -458,12 +446,7 @@ fn test_adding_query_preserves_existing_queries() {
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "source-1".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -472,6 +455,7 @@ fn test_adding_query_preserves_existing_queries() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     let initial_config = DrasiServerConfig {
@@ -502,12 +486,7 @@ fn test_adding_query_preserves_existing_queries() {
         query: "MATCH (s:Sensor) RETURN s".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: "source-1".to_string(),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
+        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -516,6 +495,7 @@ fn test_adding_query_preserves_existing_queries() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        result: Default::default(),
     };
 
     loaded_config.instances[0].queries.push(query2);
@@ -571,14 +551,14 @@ instances:
         autoStart: true
         query: "MATCH (n:Node) RETURN n"
         queryLanguage: Cypher
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
       - id: second-query
         autoStart: false
         query: "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s"
         queryLanguage: Cypher
-        sources:
-          - sourceId: test-source
+        inputs:
+          - test-source
     reactions: []
 "#;
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");

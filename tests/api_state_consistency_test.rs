@@ -85,7 +85,7 @@ async fn test_components_with_auto_start() {
 
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(true)
         .build();
 
@@ -130,7 +130,7 @@ async fn test_components_without_auto_start() {
 
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(false)
         .build();
 
@@ -199,7 +199,7 @@ async fn test_restart_with_components() {
 
     let query = Query::cypher("restart-query")
         .query("MATCH (n) RETURN n")
-        .from_source("restart-source")
+        .from_input("restart-source")
         .auto_start(true)
         .build();
 
@@ -268,8 +268,8 @@ async fn test_multiple_query_sources() {
 
     let query = Query::cypher("multi-source-query")
         .query("MATCH (n) RETURN n")
-        .from_source("source1")
-        .from_source("source2")
+        .from_input("source1")
+        .from_input("source2")
         .auto_start(true)
         .build();
 
@@ -313,12 +313,12 @@ async fn test_multiple_reaction_queries() {
 
     let query1 = Query::cypher("query1")
         .query("MATCH (n) RETURN n")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(true)
         .build();
     let query2 = Query::cypher("query2")
         .query("MATCH (m) RETURN m")
-        .from_source("test-source")
+        .from_input("test-source")
         .auto_start(true)
         .build();
 
@@ -363,8 +363,8 @@ async fn test_query_with_joins() {
     use drasi_lib::config::{QueryJoinConfig, QueryJoinKeyConfig};
     let query = Query::cypher("join-query")
         .query("MATCH (a:TypeA)<-[:LINKED]-(b:TypeB) RETURN a, b")
-        .from_source("join-source1")
-        .from_source("join-source2")
+        .from_input("join-source1")
+        .from_input("join-source2")
         .auto_start(true)
         .with_joins(vec![QueryJoinConfig {
             id: "LINKED".to_string(),

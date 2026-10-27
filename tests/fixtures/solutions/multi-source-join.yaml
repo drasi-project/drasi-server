@@ -27,9 +27,9 @@ queries:
       MATCH (d:Device)-[:LOCATED_AT]->(l:Location)
       RETURN d.device_id AS deviceId, d.status AS status, l.name AS locationName
     queryLanguage: Cypher
-    sources:
-      - sourceId: device-source
-      - sourceId: location-source
+    inputs:
+      - device-source
+      - location-source
     joins:
       - id: LOCATED_AT
         keys:

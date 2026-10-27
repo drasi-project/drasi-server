@@ -75,7 +75,9 @@ impl SourceMiddleware for PostgresJson {
         index: &dyn ElementIndex,
     ) -> Result<Vec<SourceChange>, MiddlewareError> {
         let parsers = match &source_change {
-            SourceChange::Insert { element } | SourceChange::Update { element } => element
+            SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. } => element
                 .get_metadata()
                 .labels
                 .iter()
@@ -91,7 +93,13 @@ impl SourceMiddleware for PostgresJson {
             changes = decoded;
         }
         for change in &mut changes {
-            if let SourceChange::Insert { element } | SourceChange::Update { element } = change {
+            if let SourceChange::Update { removed_properties, .. } = change {
+                removed_properties.remove("__gpu_table");
+            }
+            if let SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. } = change
+            {
                 let label = element
                     .get_metadata()
                     .labels
@@ -155,6 +163,7 @@ mod tests {
             let decoded = middleware
                 .process(
                     SourceChange::Update {
+                        removed_properties: Default::default(),
                         element: Element::Node {
                             metadata: ElementMetadata {
                                 reference: ElementReference::new("postgres", label),
@@ -167,7 +176,7 @@ mod tests {
                     &index,
                 )
                 .await?;
-            let SourceChange::Update { element } = &decoded[0] else {
+            let SourceChange::Update { element, .. } = &decoded[0] else {
                 panic!("update changed kind")
             };
             for field in fields {
@@ -206,11 +215,16 @@ mod tests {
             SourceChange::Insert {
                 element: element.clone(),
             },
-            SourceChange::Update { element },
+            SourceChange::Replace {
+                element: element.clone(),
+            },
+            SourceChange::Update { element, removed_properties: Default::default() },
         ] {
             let decoded = middleware.process(original.clone(), &index).await?;
             assert_eq!(decoded.len(), 1);
-            let (SourceChange::Insert { element } | SourceChange::Update { element }) = &decoded[0]
+            let (SourceChange::Insert { element }
+            | SourceChange::Replace { element }
+            | SourceChange::Update { element, .. }) = &decoded[0]
             else {
                 panic!("operation kind changed")
             };

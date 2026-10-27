@@ -73,8 +73,8 @@ instances:
           MATCH (n)
           RETURN n.id AS Id, n.value AS Value
         queryLanguage: Cypher
-        sources:
-          - sourceId: persistent-source
+        inputs:
+          - persistent-source
         enableBootstrap: true
 
   # Aggregation that maintains state
@@ -84,8 +84,8 @@ instances:
           MATCH (n)
           RETURN count(n) AS TotalRecords, sum(n.value) AS TotalValue
         queryLanguage: Cypher
-        sources:
-          - sourceId: persistent-source
+        inputs:
+          - persistent-source
 
     reactions:
       - kind: log

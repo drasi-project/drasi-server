@@ -143,7 +143,7 @@ impl DrasiServerBuilder {
         let mut query_builder = Query::cypher(id).query(query_str);
 
         for source in sources {
-            query_builder = query_builder.from_source(source);
+            query_builder = query_builder.from_input(source);
         }
 
         let builder = self.primary_builder_mut();

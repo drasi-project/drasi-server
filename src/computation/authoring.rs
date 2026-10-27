@@ -26,6 +26,12 @@ pub enum ComputationConfigInput {
     Graph { graph: ComputationGraphConfig },
 }
 
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct CanonicalDefinition(
+    #[serde(with = "serde_yaml::with::singleton_map_recursive")] DesiredTopology,
+);
+
 impl<'de> Deserialize<'de> for ComputationConfigInput {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         struct InputVisitor;
@@ -43,7 +49,7 @@ impl<'de> Deserialize<'de> for ComputationConfigInput {
                 })?;
                 let input = match key.as_str() {
                     "definition" => ComputationConfigInput::from(ComputationConfig {
-                        definition: map.next_value()?,
+                        definition: map.next_value::<CanonicalDefinition>()?.0,
                     }),
                     "graph" => ComputationConfigInput::Graph {
                         graph: map.next_value()?,
@@ -174,32 +180,22 @@ impl GraphEndpoint {
     fn resolve(
         &self,
         components: &BTreeMap<ComponentId, ComponentDescriptor>,
+        primaries: &BTreeMap<ComponentId, PortPrimaries>,
         direction: PortDirection,
     ) -> Result<Endpoint> {
         let id = self.component();
         let descriptor = components
             .get(id)
             .with_context(|| format!("unknown component '{id}'"))?;
-        let mut ports = descriptor
-            .ports()
-            .iter()
-            .filter(|port| port.direction() == direction);
-        let port = match self {
-            Self::Port { port, .. } => ports
-                .find(|candidate| candidate.id() == port)
-                .with_context(|| format!("component '{id}' has no {direction:?} port '{port}'"))?,
-            Self::Component(_) => {
-                let port = ports
-                    .next()
-                    .with_context(|| format!("component '{id}' has no {direction:?} port"))?;
-                anyhow::ensure!(
-                    ports.next().is_none(),
-                    "component '{id}' has multiple {direction:?} ports; specify {{component, port}}"
-                );
-                port
-            }
+        let explicit = match self {
+            Self::Port { port, .. } => Some(port),
+            Self::Component(_) => None,
         };
-        Ok(Endpoint::new(id.clone(), port.id().clone()))
+        let primary = primaries.get(id).cloned().unwrap_or_default();
+        let port = primary
+            .resolve(descriptor.ports(), direction, explicit)
+            .with_context(|| format!("resolve {direction:?} port on component '{id}'"))?;
+        Ok(Endpoint::new(id.clone(), port))
     }
 }
 
@@ -312,6 +308,7 @@ impl ComputationGraphConfig {
             .map(|(id, recipe)| (id.clone(), recipe.role()))
             .collect();
         let mut descriptors = BTreeMap::new();
+        let mut primaries = BTreeMap::new();
         for component in &self.components {
             let factory = factories
                 .get_by_name(&component.kind, component.version.as_deref())
@@ -347,6 +344,9 @@ impl ComputationGraphConfig {
             factory
                 .validate(&specification)
                 .with_context(|| format!("invalid component '{}'", component.id))?;
+            let primary = factory.primary_ports();
+            primary.validate(specification.descriptor.ports())?;
+            primaries.insert(component.id.clone(), primary);
             let mut streams = BTreeMap::new();
             for port in specification
                 .descriptor
@@ -388,8 +388,10 @@ impl ComputationGraphConfig {
                 definition: EdgeDefinition::new(
                     connection
                         .from
-                        .resolve(&descriptors, PortDirection::Output)?,
-                    connection.to.resolve(&descriptors, PortDirection::Input)?,
+                        .resolve(&descriptors, &primaries, PortDirection::Output)?,
+                    connection
+                        .to
+                        .resolve(&descriptors, &primaries, PortDirection::Input)?,
                 ),
                 policy: RelationshipPolicy::default(),
                 pipe: DesiredPipe::Bounded {
