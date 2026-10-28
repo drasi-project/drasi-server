@@ -416,7 +416,9 @@ mod tests {
             .map(|identity| identity.0.load(Ordering::SeqCst));
         let setup = async {
             let registry = plugins.read().await;
-            register_components(config, &core, &registry).await?;
+            register_components(config, &core, &registry)
+                .await?
+                .ensure_committed()?;
             if let Some(identity) = &identity {
                 anyhow::ensure!(
                     Some(identity.0.load(Ordering::SeqCst)) == prior_creations,

@@ -167,7 +167,7 @@ async fn scenario(native: bool) -> Result<()> {
             )?
             .query(config.clone())
             .build()?;
-        core.add_components(batch).await?;
+        core.add_components(batch).await?.ensure_committed()?;
     } else {
         let dto = drasi_server::api::models::QueryConfigDto::try_from(config.clone())?;
         let (status, body) = request(
@@ -497,7 +497,11 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
             anyhow::ensure!(status == StatusCode::OK, "{body}");
         }
     }
-    assert!(core.get_graph().await.contains("component"));
+    assert!(core
+        .get_graph()
+        .await
+        .expect("graph snapshot")
+        .contains("component"));
     let descriptive = core.snapshot_configuration().await?;
     if kind == ComponentSemanticKind::Source {
         assert!(descriptive
@@ -579,7 +583,8 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
             }))
             .build()?,
     )
-    .await?;
+    .await?
+    .ensure_committed()?;
     let (status, body) = request(
         &app,
         "GET",
@@ -608,7 +613,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
             opaque: true,
         }))
         .build()?;
-    core.add_components(opaque).await?;
+    core.add_components(opaque).await?.ensure_committed()?;
     let (status, body) = request(
         &app,
         "GET",

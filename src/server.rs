@@ -493,6 +493,9 @@ impl DrasiServer {
                 if let Some(capacity) = instance.default_dispatch_buffer_capacity {
                     builder = builder.with_dispatch_buffer_capacity(capacity);
                 }
+                if let Some(seconds) = instance.activation_timeout_secs {
+                    builder = builder.with_activation_timeout_secs(seconds);
+                }
 
                 // Filesystem-safe key shared by the persistent index and WAL paths.
                 let safe_id = instance_storage_key(&instance.id);
@@ -625,9 +628,20 @@ impl DrasiServer {
                     let registry = plugin_registry.read().await;
                     let factories = crate::computation::native_factory_registry(&registry)?;
                     let computation = computation.resolve(&factories)?;
-                    crate::computation::register_components(&computation, &core, &registry)
-                        .await
-                        .with_context(|| "Failed to configure instance computation components")?;
+                    let report =
+                        crate::computation::register_components(&computation, &core, &registry)
+                            .await
+                            .with_context(|| {
+                                "Failed to configure instance computation components"
+                            })?;
+                    if !report.committed {
+                        return Err(
+                            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(
+                                report,
+                            )
+                            .into(),
+                        );
+                    }
                 }
             }
             Ok::<_, anyhow::Error>(())

@@ -62,6 +62,10 @@ pub struct CreateInstanceRequest {
     /// Default capacity for dispatch buffers (cascades to queries/reactions)
     #[serde(default)]
     pub default_dispatch_buffer_capacity: Option<usize>,
+    /// Per-component activation deadline in seconds (default: 300).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub activation_timeout_secs: Option<u64>,
     #[serde(default)]
     pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
@@ -120,6 +124,19 @@ pub async fn create_instance(
 
     if let Some(capacity) = request.default_dispatch_buffer_capacity {
         builder = builder.with_dispatch_buffer_capacity(capacity);
+    }
+    if let Some(seconds) = request.activation_timeout_secs {
+        if seconds == 0
+            || std::time::Instant::now()
+                .checked_add(std::time::Duration::from_secs(seconds))
+                .is_none()
+        {
+            return Err(ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "activationTimeoutSecs must be positive and representable",
+            ));
+        }
+        builder = builder.with_activation_timeout_secs(seconds);
     }
 
     // Filesystem-safe key shared by the persistent index and WAL paths.
@@ -216,6 +233,7 @@ pub async fn create_instance(
             default_dispatch_buffer_capacity: request
                 .default_dispatch_buffer_capacity
                 .map(ConfigValue::Static),
+            activation_timeout_secs: request.activation_timeout_secs.map(ConfigValue::Static),
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),

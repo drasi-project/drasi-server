@@ -164,7 +164,7 @@ impl Runtime {
             .iter()
             .map(|component| component.descriptor.id().clone())
             .collect::<Vec<_>>();
-        core.add_components(queries).await?;
+        core.add_components(queries).await?.ensure_committed()?;
         let database = database::components(
             &self.host,
             self.pg_port,
@@ -180,7 +180,9 @@ impl Runtime {
                 .iter()
                 .map(|node| node.descriptor.id().clone()),
         );
-        core.add_components(database.auto_start(false)).await?;
+        core.add_components(database.auto_start(false))
+            .await?
+            .ensure_committed()?;
 
         let secret = ResourceId::try_new("gpu-runtime-secrets")?;
         let mut components = ComponentBatch::builder()
@@ -352,7 +354,9 @@ impl Runtime {
                 .iter()
                 .map(|component| component.descriptor.id().clone()),
         );
-        core.add_components(components.auto_start(false)).await?;
+        core.add_components(components.auto_start(false))
+            .await?
+            .ensure_committed()?;
         let control = core.computation_control()?;
         control
             .set_control_connections(vec![(id(inputs::DATABASE_QUERY)?, id("runtime-status")?)])
@@ -777,7 +781,9 @@ mod tests {
             .components
             .iter()
             .all(|component| matches!(component.role, ComponentRole::Query | ComponentRole::Sink)));
-        core.add_components(batch.auto_start(false)).await?;
+        core.add_components(batch.auto_start(false))
+            .await?
+            .ensure_committed()?;
         let directory = tempfile::tempdir()?;
         let mut middleware = drasi_core::middleware::MiddlewareTypeRegistry::new();
         middleware.register(Arc::new(gpu_native::postgres::PostgresJsonFactory));
@@ -792,7 +798,8 @@ mod tests {
             )?
             .auto_start(false),
         )
-        .await?;
+        .await?
+        .ensure_committed()?;
         core.shutdown().await?;
         Ok(())
     }

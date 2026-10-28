@@ -300,6 +300,10 @@ pub struct DrasiLibInstanceConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Per-component activation deadline in seconds (default: 300).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub activation_timeout_secs: Option<ConfigValue<u64>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
@@ -336,6 +340,7 @@ pub struct ResolvedInstanceConfig {
     pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
+    pub activation_timeout_secs: Option<u64>,
     pub sources: Vec<SourceConfig>,
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
@@ -433,6 +438,20 @@ impl DrasiServerConfig {
             } else {
                 None
             };
+            let activation_timeout_secs = instance
+                .activation_timeout_secs
+                .as_ref()
+                .map(|value| mapper.resolve_typed::<u64>(value))
+                .transpose()?;
+            if let Some(seconds) = activation_timeout_secs {
+                anyhow::ensure!(
+                    seconds > 0
+                        && std::time::Instant::now()
+                            .checked_add(std::time::Duration::from_secs(seconds))
+                            .is_some(),
+                    "Instance '{id}': activationTimeoutSecs must be positive and representable"
+                );
+            }
             let memory_budget_bytes = crate::index_provider::memory_budget_bytes(
                 instance.persist_index,
                 memory_budget_mib,
@@ -481,6 +500,7 @@ impl DrasiServerConfig {
                 secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
+                activation_timeout_secs,
                 sources: instance.sources.clone(),
                 queries,
                 reactions: instance.reactions.clone(),
@@ -546,6 +566,37 @@ impl DrasiServerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn activation_timeout_resolves_and_round_trips_per_instance() {
+        let config: DrasiServerConfig = serde_yaml::from_str(
+            "instances:\n  - id: long-bootstrap\n    activationTimeoutSecs: ${DRASI_TEST_ACTIVATION_MISSING:-900}\n  - id: default\n",
+        ).unwrap();
+        let resolved = config.resolved_instances(&DtoMapper::new()).unwrap();
+        assert_eq!(resolved[0].activation_timeout_secs, Some(900));
+        assert_eq!(resolved[1].activation_timeout_secs, None);
+        let saved = serde_json::to_value(&config).unwrap();
+        let restored: DrasiServerConfig = serde_json::from_value(saved).unwrap();
+        assert_eq!(
+            restored.resolved_instances(&DtoMapper::new()).unwrap()[0].activation_timeout_secs,
+            Some(900)
+        );
+    }
+
+    #[test]
+    fn activation_timeout_rejects_zero_and_unrepresentable_deadlines() {
+        for seconds in [0, u64::MAX] {
+            let config: DrasiServerConfig = serde_json::from_value(serde_json::json!({
+                "instances": [{"id": "invalid", "activationTimeoutSecs": seconds}]
+            }))
+            .unwrap();
+            assert!(config
+                .resolved_instances(&DtoMapper::new())
+                .unwrap_err()
+                .to_string()
+                .contains("activationTimeoutSecs"));
+        }
+    }
 
     #[test]
     fn missing_ids_are_generated_per_load_and_serialized_ids_are_explicit() {

@@ -472,7 +472,7 @@ async fn imperative_server_shared_configuration_executes_actual_query_and_pipe()
         "storage must be acquired by the graph"
     );
     assert_eq!(batch.bindings.resource_constructors.len(), 2);
-    core.add_components(batch).await?;
+    core.add_components(batch).await?.ensure_committed()?;
     core.start().await?;
     let result = tokio::time::timeout(DEADLINE, receive.recv())
         .await?

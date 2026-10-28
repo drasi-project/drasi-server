@@ -168,7 +168,9 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         );
         let setup = async {
             let registry = plugins.read().await;
-            register_components(&current, &core, &registry).await?;
+            register_components(&current, &core, &registry)
+                .await?
+                .ensure_committed()?;
             drop(registry);
             core.start().await?;
             let components = std::iter::once("source".to_owned()).chain(

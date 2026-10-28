@@ -214,7 +214,12 @@ pub async fn create_computation_components(
             })
         })?;
     drop(plugins);
-    core.add_components(components).await?;
+    let report = core.add_components(components).await?;
+    if !report.committed {
+        return Err(ErrorResponse::from(drasi_lib::DrasiError::Internal(
+            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(report).into(),
+        )));
+    }
     persist_after_operation(&persistence, "creating computation components").await?;
     Ok(Json(ApiResponse::success(
         core.computation_info().await?.into(),

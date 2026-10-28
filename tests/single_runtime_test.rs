@@ -71,6 +71,62 @@ async fn request(app: &Router, method: &str, path: &str, body: Value) -> (Status
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
+#[tokio::test]
+async fn api_activation_timeout_is_applied_and_persisted_without_creating_invalid_instances() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("server.yaml");
+    let registry = InstanceRegistry::new();
+    let original = DrasiServerConfig::default();
+    let persistence = Arc::new(
+        ConfigPersistence::new(
+            path.clone(),
+            registry.clone(),
+            "127.0.0.1".into(),
+            8080,
+            "info".into(),
+            true,
+            &original,
+        )
+        .unwrap(),
+    );
+    let app = router(registry.clone(), Some(persistence));
+    let (status, body) = request(
+        &app,
+        "POST",
+        "/api/v1/instances",
+        json!({"id": "long-bootstrap", "activationTimeoutSecs": 900}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let core = registry.get("long-bootstrap").await.unwrap();
+    assert_eq!(
+        core.get_current_config()
+            .await
+            .unwrap()
+            .activation_timeout_secs,
+        Some(900)
+    );
+    let saved = drasi_server::load_config_file(&path).unwrap();
+    assert_eq!(
+        saved.resolved_instances(&DtoMapper::new()).unwrap()[0].activation_timeout_secs,
+        Some(900)
+    );
+    let before = std::fs::read(&path).unwrap();
+    for seconds in [0, u64::MAX] {
+        let (status, body) = request(
+            &app,
+            "POST",
+            "/api/v1/instances",
+            json!({"id": "invalid", "activationTimeoutSecs": seconds}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(registry.get("invalid").await.is_none());
+    }
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    core.shutdown().await.unwrap();
+}
+
 #[test]
 fn configuration_has_no_runtime_selector_and_preserves_instance_settings() {
     let config: DrasiServerConfig = serde_yaml::from_str("instances: [{id: configured}]").unwrap();

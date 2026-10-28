@@ -157,6 +157,7 @@ fn test_empty_config_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![],
@@ -209,6 +210,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
             default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![],
@@ -266,6 +268,7 @@ fn test_mock_source_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
@@ -326,6 +329,7 @@ fn test_http_source_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "http".to_string(),
                 id: "http-source".to_string(),
@@ -385,6 +389,7 @@ fn test_grpc_source_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "grpc".to_string(),
                 id: "grpc-source".to_string(),
@@ -443,6 +448,7 @@ fn test_postgres_source_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "postgres".to_string(),
                 id: "postgres-source".to_string(),
@@ -547,6 +553,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
@@ -633,6 +640,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
@@ -705,6 +713,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
@@ -773,6 +782,7 @@ fn test_log_reaction_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
@@ -832,6 +842,7 @@ fn test_http_reaction_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
@@ -892,6 +903,7 @@ fn test_sse_reaction_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
@@ -955,6 +967,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
@@ -1023,6 +1036,7 @@ fn test_query_generates_valid_yaml() {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             queries: vec![QueryConfigDto {
                 id: "my-query".to_string(),
@@ -1119,6 +1133,7 @@ fn test_full_config_roundtrip() {
             secret_store: None,
             default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
             default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
+            activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),

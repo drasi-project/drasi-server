@@ -437,7 +437,9 @@ async fn instance(
         plugins.transactional_transformer_registry(core.middleware_registry())?,
     )
     .await?;
-    core.add_components(batch.auto_start(false)).await?;
+    core.add_components(batch.auto_start(false))
+        .await?
+        .ensure_committed()?;
     for query in ["one", "two"] {
         core.computation_component(query)?.wait_created().await?;
         assert!(
@@ -505,7 +507,10 @@ fn change(sequence: u64, value: Option<i64>) -> Result<OutputEnvelope> {
         if sequence == 1 {
             SourceChange::Insert { element }
         } else {
-            SourceChange::Update { element, removed_properties: Default::default() }
+            SourceChange::Update {
+                element,
+                removed_properties: Default::default(),
+            }
         }
     } else {
         SourceChange::Delete { metadata }

@@ -484,7 +484,9 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
         assert_eq!(yaml.definition, config.definition);
         let core = DrasiLib::builder().with_id(instance).build().await?;
         let result = async {
-            register_components(&yaml, &core, &plugins).await?;
+            register_components(&yaml, &core, &plugins)
+                .await?
+                .ensure_committed()?;
             core.start().await?;
             tokio::time::timeout(
                 DEADLINE,

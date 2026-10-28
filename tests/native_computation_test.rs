@@ -938,7 +938,9 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         .as_ref()
         .unwrap()
         .resolve(&registry)?;
-    register_components(&restored_config, &restored, &plugins).await?;
+    register_components(&restored_config, &restored, &plugins)
+        .await?
+        .ensure_committed()?;
     std::fs::remove_file(&output)?;
     assert_eq!(
         restored
@@ -973,7 +975,9 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         .add("first".into(), first.clone())
         .await
         .map_err(anyhow::Error::msg)?;
-    register_components(&config, &first, &factories()).await?;
+    register_components(&config, &first, &factories())
+        .await?
+        .ensure_committed()?;
     let persistence = ConfigPersistence::new(
         path.clone(),
         single,
@@ -1207,7 +1211,9 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("rebind").await?;
     let plugins = factories();
-    register_components(&config, &core, &plugins).await?;
+    register_components(&config, &core, &plugins)
+        .await?
+        .ensure_committed()?;
     let control = core.computation_control()?;
     let preview = control
         .preview(
@@ -1265,7 +1271,9 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("required-resources").await?;
-    register_components(&config, &core, &factories()).await?;
+    register_components(&config, &core, &factories())
+        .await?
+        .ensure_committed()?;
     let snapshot = core.snapshot_computation_configuration().await?;
     for kind in [
         "configuration",
@@ -1354,7 +1362,10 @@ async fn external_pipe_bindings_reject_clone_and_save_before_any_mutation() -> R
             StreamId::try_new("counter/out")?,
         )
         .build()?;
-    source.add_components(graph.auto_start(false)).await?;
+    source
+        .add_components(graph.auto_start(false))
+        .await?
+        .ensure_committed()?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),
@@ -1486,7 +1497,10 @@ async fn unsupported_external_bindings_fail_before_partial_clone_or_persistence(
             StreamId::try_new("external/out")?,
         )
         .build()?;
-    source.add_components(graph.auto_start(false)).await?;
+    source
+        .add_components(graph.auto_start(false))
+        .await?
+        .ensure_committed()?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),

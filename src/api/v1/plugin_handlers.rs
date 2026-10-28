@@ -457,7 +457,7 @@ async fn collect_plugin_dependents(
 ) -> Result<Vec<serde_json::Value>, ErrorResponse> {
     let mut dependents = Vec::new();
     for (instance_id, core) in instances.list().await {
-        for node in core.get_graph().await.nodes {
+        for node in core.get_graph().await.map_err(ErrorResponse::from)?.nodes {
             let component_type = match node.kind {
                 ComponentKind::Source => "source",
                 ComponentKind::Reaction => "reaction",

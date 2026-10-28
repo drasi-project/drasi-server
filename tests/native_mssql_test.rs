@@ -83,7 +83,9 @@ async fn real_server() -> Result<()> {
         .resolve(&FactoryRegistry::default())?
         .into_owned();
     let proof = async {
-        register_components(&definition, &core, &registry).await?;
+        register_components(&definition, &core, &registry)
+            .await?
+            .ensure_committed()?;
         core.start().await?;
         for query in ["all", "high"] {
             tokio::time::timeout(

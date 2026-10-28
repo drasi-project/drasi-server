@@ -1286,6 +1286,7 @@ These settings belong inside an `instances` entry, even for a single instance.
 | `configurationStore` | object | none | Managed desired-configuration persistence, separate from `persistConfig`. |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default query/reaction event queue capacity. |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default event dispatch capacity. |
+| `activationTimeoutSecs` | integer / ConfigValue | `300` | Positive per-component deadline for input binding, startup and output binding. Raise it for long bootstrap workloads; it is separate from query snapshot/history readiness timeouts. |
 | `sources`, `queries`, `reactions` | arrays | `[]` | Ordinary graph-backed component declarations. |
 | `identityProviders`, `bootstrapProviders` | arrays | `[]` | Providers scoped to this instance. |
 | `computation` | object | none | Native computation declarations. |
