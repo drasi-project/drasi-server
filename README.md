@@ -1287,9 +1287,28 @@ These settings belong inside an `instances` entry, even for a single instance.
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default query/reaction event queue capacity. |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default event dispatch capacity. |
 | `activationTimeoutSecs` | integer / ConfigValue | `300` | Positive per-component deadline for input binding, startup and output binding. Raise it for long bootstrap workloads; it is separate from query snapshot/history readiness timeouts. |
+| `startupTimeoutSecs` | integer / ConfigValue | `600` | Overall instance `start()` budget, including lifecycle admission and managed reconciliation. |
+| `shutdownTimeoutSecs` | integer / ConfigValue | `60` | Overall instance `stop()` / `shutdown()` budget; unfinished owners remain available for cleanup retry. |
+| `constructionTimeoutSecs` | integer / ConfigValue | `5` | Shared budget for one component's configuration resolution and construction/reconfiguration. |
+| `resourceConstructionTimeoutSecs` | integer / ConfigValue | `30` | Per-resource construction budget. |
+| `cleanupTimeoutSecs` | integer / ConfigValue | `5` | Per-owner cleanup budget, separate from the overall shutdown budget. |
 | `sources`, `queries`, `reactions` | arrays | `[]` | Ordinary graph-backed component declarations. |
 | `identityProviders`, `bootstrapProviders` | arrays | `[]` | Providers scoped to this instance. |
 | `computation` | object | none | Native computation declarations. |
+
+All lifecycle limits must be positive and representable. They support environment
+references in YAML and numeric overrides when creating an instance through the API.
+Omitted values use the defaults above; changing YAML limits for an existing instance
+requires reconstruction. Expiry reports the affected lifecycle phase, not success:
+inspect the instance and retry cleanup. Accepted work may continue, timed-out stops
+block restart, and permanent shutdown does not release configuration storage while
+processing cleanup is unfinished. Deadlines cannot interrupt nonyielding native code.
+
+Stop/shutdown supersede the instance-owned startup wait, including when its
+original caller stopped polling. Managed realization retains accepted graph work
+without holding the instance gate across construction/startup waits. Native
+component preparation captures plugin bindings under the registry lock and
+releases that lock before asynchronous resource construction or graph registration.
 
 > **Note**: In the `persistIndex` data path, `<instance-key>` is `id-` followed
 > by the lowercase hexadecimal encoding of the instance ID.
@@ -3371,6 +3390,14 @@ docker compose restart drasi-server
 ---
 
 ## Building from Source
+
+Dependency security note: the lockfile uses patched Rustls/WebPKI, Tokio and
+OCI signature-verification cryptography. The remaining `zip` 0.6 audit entries
+come from `utoipa-swagger-ui`'s build script, not a runtime archive-upload API.
+That script reads the checksum-verified crate's bundled
+`swagger-ui-5.3.1.zip`; it contains no privileged permission bits or symlinks.
+Do not change this build path to extract user-supplied archives or treat this
+scope assessment as a general exemption for `zip`.
 
 See [source-build prerequisites and checkout layout](#option-2-build-from-source),
 then follow [ComputationGraph Development](#computationgraph-development) for

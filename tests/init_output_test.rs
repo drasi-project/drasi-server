@@ -165,6 +165,7 @@ fn test_empty_config_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -218,6 +219,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -283,6 +285,7 @@ fn test_mock_source_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -344,6 +347,7 @@ fn test_http_source_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -404,6 +408,7 @@ fn test_grpc_source_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -488,6 +493,7 @@ fn test_postgres_source_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -582,6 +588,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -660,6 +667,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -731,6 +739,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -797,6 +806,7 @@ fn test_log_reaction_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -857,6 +867,7 @@ fn test_http_reaction_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -918,6 +929,7 @@ fn test_sse_reaction_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -982,6 +994,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -1066,6 +1079,7 @@ fn test_query_generates_valid_yaml() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
@@ -1176,6 +1190,7 @@ fn test_full_config_roundtrip() {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 

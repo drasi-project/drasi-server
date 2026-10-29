@@ -72,7 +72,7 @@ async fn request(app: &Router, method: &str, path: &str, body: Value) -> (Status
 }
 
 #[tokio::test]
-async fn api_activation_timeout_is_applied_and_persisted_without_creating_invalid_instances() {
+async fn api_lifecycle_timeouts_are_applied_and_persisted_without_creating_invalid_instances() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("server.yaml");
     let registry = InstanceRegistry::new();
@@ -94,11 +94,25 @@ async fn api_activation_timeout_is_applied_and_persisted_without_creating_invali
         &app,
         "POST",
         "/api/v1/instances",
-        json!({"id": "long-bootstrap", "activationTimeoutSecs": 900}),
+        json!({
+            "id": "long-bootstrap",
+            "activationTimeoutSecs": 900,
+            "startupTimeoutSecs": 12,
+            "shutdownTimeoutSecs": 13,
+            "constructionTimeoutSecs": 14,
+            "resourceConstructionTimeoutSecs": 15,
+            "cleanupTimeoutSecs": 16
+        }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let core = registry.get("long-bootstrap").await.unwrap();
+    let current = core.get_current_config().await.unwrap();
+    assert_eq!(current.startup_timeout_secs, Some(12));
+    assert_eq!(current.shutdown_timeout_secs, Some(13));
+    assert_eq!(current.construction_timeout_secs, Some(14));
+    assert_eq!(current.resource_construction_timeout_secs, Some(15));
+    assert_eq!(current.cleanup_timeout_secs, Some(16));
     assert_eq!(
         core.get_current_config()
             .await
@@ -107,21 +121,36 @@ async fn api_activation_timeout_is_applied_and_persisted_without_creating_invali
         Some(900)
     );
     let saved = drasi_server::load_config_file(&path).unwrap();
+    let restored = saved.resolved_instances(&DtoMapper::new()).unwrap();
+    assert_eq!(restored[0].startup_timeout_secs, Some(12));
+    assert_eq!(restored[0].shutdown_timeout_secs, Some(13));
+    assert_eq!(restored[0].construction_timeout_secs, Some(14));
+    assert_eq!(restored[0].resource_construction_timeout_secs, Some(15));
+    assert_eq!(restored[0].cleanup_timeout_secs, Some(16));
     assert_eq!(
         saved.resolved_instances(&DtoMapper::new()).unwrap()[0].activation_timeout_secs,
         Some(900)
     );
     let before = std::fs::read(&path).unwrap();
-    for seconds in [0, u64::MAX] {
-        let (status, body) = request(
-            &app,
-            "POST",
-            "/api/v1/instances",
-            json!({"id": "invalid", "activationTimeoutSecs": seconds}),
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert!(registry.get("invalid").await.is_none());
+    for name in [
+        "activationTimeoutSecs",
+        "startupTimeoutSecs",
+        "shutdownTimeoutSecs",
+        "constructionTimeoutSecs",
+        "resourceConstructionTimeoutSecs",
+        "cleanupTimeoutSecs",
+    ] {
+        for seconds in [0, u64::MAX] {
+            let (status, body) = request(
+                &app,
+                "POST",
+                "/api/v1/instances",
+                json!({"id": "invalid", (name): seconds}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert!(registry.get("invalid").await.is_none());
+        }
     }
     assert_eq!(std::fs::read(&path).unwrap(), before);
     core.shutdown().await.unwrap();

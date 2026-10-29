@@ -66,6 +66,26 @@ pub struct CreateInstanceRequest {
     #[serde(default)]
     #[schema(minimum = 1)]
     pub activation_timeout_secs: Option<u64>,
+    /// Overall instance startup deadline in seconds (default: 600).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub startup_timeout_secs: Option<u64>,
+    /// Overall stop/shutdown deadline in seconds (default: 60).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub shutdown_timeout_secs: Option<u64>,
+    /// Per-component construction/configuration deadline in seconds (default: 5).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub construction_timeout_secs: Option<u64>,
+    /// Per-resource construction deadline in seconds (default: 30).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub resource_construction_timeout_secs: Option<u64>,
+    /// Per-owner cleanup deadline in seconds (default: 5).
+    #[serde(default)]
+    #[schema(minimum = 1)]
+    pub cleanup_timeout_secs: Option<u64>,
     #[serde(default)]
     pub configuration_store: Option<crate::managed_configuration::ConfigurationStoreConfig>,
 }
@@ -125,18 +145,47 @@ pub async fn create_instance(
     if let Some(capacity) = request.default_dispatch_buffer_capacity {
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
-    if let Some(seconds) = request.activation_timeout_secs {
-        if seconds == 0
-            || std::time::Instant::now()
-                .checked_add(std::time::Duration::from_secs(seconds))
-                .is_none()
-        {
-            return Err(ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "activationTimeoutSecs must be positive and representable",
-            ));
+    for (name, value) in [
+        ("activationTimeoutSecs", request.activation_timeout_secs),
+        ("startupTimeoutSecs", request.startup_timeout_secs),
+        ("shutdownTimeoutSecs", request.shutdown_timeout_secs),
+        ("constructionTimeoutSecs", request.construction_timeout_secs),
+        (
+            "resourceConstructionTimeoutSecs",
+            request.resource_construction_timeout_secs,
+        ),
+        ("cleanupTimeoutSecs", request.cleanup_timeout_secs),
+    ] {
+        if let Some(seconds) = value {
+            if seconds == 0
+                || std::time::Instant::now()
+                    .checked_add(std::time::Duration::from_secs(seconds))
+                    .is_none()
+            {
+                return Err(ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    format!("{name} must be positive and representable"),
+                ));
+            }
         }
+    }
+    if let Some(seconds) = request.activation_timeout_secs {
         builder = builder.with_activation_timeout_secs(seconds);
+    }
+    if let Some(seconds) = request.startup_timeout_secs {
+        builder = builder.with_startup_timeout_secs(seconds);
+    }
+    if let Some(seconds) = request.shutdown_timeout_secs {
+        builder = builder.with_shutdown_timeout_secs(seconds);
+    }
+    if let Some(seconds) = request.construction_timeout_secs {
+        builder = builder.with_construction_timeout_secs(seconds);
+    }
+    if let Some(seconds) = request.resource_construction_timeout_secs {
+        builder = builder.with_resource_construction_timeout_secs(seconds);
+    }
+    if let Some(seconds) = request.cleanup_timeout_secs {
+        builder = builder.with_cleanup_timeout_secs(seconds);
     }
 
     // Filesystem-safe key shared by the persistent index and WAL paths.
@@ -234,6 +283,13 @@ pub async fn create_instance(
                 .default_dispatch_buffer_capacity
                 .map(ConfigValue::Static),
             activation_timeout_secs: request.activation_timeout_secs.map(ConfigValue::Static),
+            startup_timeout_secs: request.startup_timeout_secs.map(ConfigValue::Static),
+            shutdown_timeout_secs: request.shutdown_timeout_secs.map(ConfigValue::Static),
+            construction_timeout_secs: request.construction_timeout_secs.map(ConfigValue::Static),
+            resource_construction_timeout_secs: request
+                .resource_construction_timeout_secs
+                .map(ConfigValue::Static),
+            cleanup_timeout_secs: request.cleanup_timeout_secs.map(ConfigValue::Static),
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
@@ -517,7 +573,10 @@ pub async fn clone_instance(
 
     if let Some(config) = computation {
         let registry = plugin_registry.read().await;
-        match crate::computation::register_components(&config, &target_core, &registry).await {
+        let registration =
+            crate::computation::register_components(&config, &target_core, &registry);
+        drop(registry);
+        match registration.await {
             Ok(report) => {
                 if report.committed {
                     components_created.extend(

@@ -496,6 +496,21 @@ impl DrasiServer {
                 if let Some(seconds) = instance.activation_timeout_secs {
                     builder = builder.with_activation_timeout_secs(seconds);
                 }
+                if let Some(seconds) = instance.startup_timeout_secs {
+                    builder = builder.with_startup_timeout_secs(seconds);
+                }
+                if let Some(seconds) = instance.shutdown_timeout_secs {
+                    builder = builder.with_shutdown_timeout_secs(seconds);
+                }
+                if let Some(seconds) = instance.construction_timeout_secs {
+                    builder = builder.with_construction_timeout_secs(seconds);
+                }
+                if let Some(seconds) = instance.resource_construction_timeout_secs {
+                    builder = builder.with_resource_construction_timeout_secs(seconds);
+                }
+                if let Some(seconds) = instance.cleanup_timeout_secs {
+                    builder = builder.with_cleanup_timeout_secs(seconds);
+                }
 
                 // Filesystem-safe key shared by the persistent index and WAL paths.
                 let safe_id = instance_storage_key(&instance.id);
@@ -628,12 +643,12 @@ impl DrasiServer {
                     let registry = plugin_registry.read().await;
                     let factories = crate::computation::native_factory_registry(&registry)?;
                     let computation = computation.resolve(&factories)?;
-                    let report =
-                        crate::computation::register_components(&computation, &core, &registry)
-                            .await
-                            .with_context(|| {
-                                "Failed to configure instance computation components"
-                            })?;
+                    let registration =
+                        crate::computation::register_components(&computation, &core, &registry);
+                    drop(registry);
+                    let report = registration
+                        .await
+                        .with_context(|| "Failed to configure instance computation components")?;
                     if !report.committed {
                         return Err(
                             drasi_lib::computation::v1::LifecycleReportError::Reconciliation(

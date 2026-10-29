@@ -200,20 +200,19 @@ pub async fn create_computation_components(
             ));
         }
     }
-    let components = crate::computation::build_components_with_registry(&config, &core, &plugins)
-        .await
-        .map_err(|error| {
-            ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "Invalid computation component configuration",
-            )
-            .with_details(ErrorDetail {
-                component_type: Some("computation".to_string()),
-                component_id: Some(instance_id.clone()),
-                technical_details: Some(format!("{error:#}")),
-            })
-        })?;
+    let preparation = crate::computation::build_components_with_registry(&config, &core, &plugins);
     drop(plugins);
+    let components = preparation.await.map_err(|error| {
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            "Invalid computation component configuration",
+        )
+        .with_details(ErrorDetail {
+            component_type: Some("computation".to_string()),
+            component_id: Some(instance_id.clone()),
+            technical_details: Some(format!("{error:#}")),
+        })
+    })?;
     let report = core.add_components(components).await?;
     if !report.committed {
         return Err(ErrorResponse::from(drasi_lib::DrasiError::Internal(

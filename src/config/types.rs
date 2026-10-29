@@ -304,6 +304,26 @@ pub struct DrasiLibInstanceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
     pub activation_timeout_secs: Option<ConfigValue<u64>>,
+    /// Overall instance startup deadline in seconds (default: 600).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub startup_timeout_secs: Option<ConfigValue<u64>>,
+    /// Overall stop/shutdown deadline in seconds (default: 60).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub shutdown_timeout_secs: Option<ConfigValue<u64>>,
+    /// Per-component construction/configuration deadline in seconds (default: 5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub construction_timeout_secs: Option<ConfigValue<u64>>,
+    /// Per-resource construction deadline in seconds (default: 30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub resource_construction_timeout_secs: Option<ConfigValue<u64>>,
+    /// Per-owner cleanup deadline in seconds (default: 5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::models::ConfigValueU64Schema>)]
+    pub cleanup_timeout_secs: Option<ConfigValue<u64>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
@@ -341,6 +361,11 @@ pub struct ResolvedInstanceConfig {
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
     pub activation_timeout_secs: Option<u64>,
+    pub startup_timeout_secs: Option<u64>,
+    pub shutdown_timeout_secs: Option<u64>,
+    pub construction_timeout_secs: Option<u64>,
+    pub resource_construction_timeout_secs: Option<u64>,
+    pub cleanup_timeout_secs: Option<u64>,
     pub sources: Vec<SourceConfig>,
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
@@ -438,20 +463,42 @@ impl DrasiServerConfig {
             } else {
                 None
             };
-            let activation_timeout_secs = instance
-                .activation_timeout_secs
-                .as_ref()
-                .map(|value| mapper.resolve_typed::<u64>(value))
-                .transpose()?;
-            if let Some(seconds) = activation_timeout_secs {
-                anyhow::ensure!(
-                    seconds > 0
-                        && std::time::Instant::now()
-                            .checked_add(std::time::Duration::from_secs(seconds))
-                            .is_some(),
-                    "Instance '{id}': activationTimeoutSecs must be positive and representable"
-                );
-            }
+            let resolve_timeout =
+                |name: &str, value: Option<&ConfigValue<u64>>| -> anyhow::Result<Option<u64>> {
+                    let value = value
+                        .map(|value| mapper.resolve_typed::<u64>(value))
+                        .transpose()?;
+                    if let Some(seconds) = value {
+                        anyhow::ensure!(
+                            seconds > 0
+                                && std::time::Instant::now()
+                                    .checked_add(std::time::Duration::from_secs(seconds))
+                                    .is_some(),
+                            "Instance '{id}': {name} must be positive and representable"
+                        );
+                    }
+                    Ok(value)
+                };
+            let activation_timeout_secs = resolve_timeout(
+                "activationTimeoutSecs",
+                instance.activation_timeout_secs.as_ref(),
+            )?;
+            let startup_timeout_secs =
+                resolve_timeout("startupTimeoutSecs", instance.startup_timeout_secs.as_ref())?;
+            let shutdown_timeout_secs = resolve_timeout(
+                "shutdownTimeoutSecs",
+                instance.shutdown_timeout_secs.as_ref(),
+            )?;
+            let construction_timeout_secs = resolve_timeout(
+                "constructionTimeoutSecs",
+                instance.construction_timeout_secs.as_ref(),
+            )?;
+            let resource_construction_timeout_secs = resolve_timeout(
+                "resourceConstructionTimeoutSecs",
+                instance.resource_construction_timeout_secs.as_ref(),
+            )?;
+            let cleanup_timeout_secs =
+                resolve_timeout("cleanupTimeoutSecs", instance.cleanup_timeout_secs.as_ref())?;
             let memory_budget_bytes = crate::index_provider::memory_budget_bytes(
                 instance.persist_index,
                 memory_budget_mib,
@@ -501,6 +548,11 @@ impl DrasiServerConfig {
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 activation_timeout_secs,
+                startup_timeout_secs,
+                shutdown_timeout_secs,
+                construction_timeout_secs,
+                resource_construction_timeout_secs,
+                cleanup_timeout_secs,
                 sources: instance.sources.clone(),
                 queries,
                 reactions: instance.reactions.clone(),
@@ -584,18 +636,47 @@ mod tests {
     }
 
     #[test]
-    fn activation_timeout_rejects_zero_and_unrepresentable_deadlines() {
-        for seconds in [0, u64::MAX] {
-            let config: DrasiServerConfig = serde_json::from_value(serde_json::json!({
-                "instances": [{"id": "invalid", "activationTimeoutSecs": seconds}]
-            }))
-            .unwrap();
-            assert!(config
-                .resolved_instances(&DtoMapper::new())
-                .unwrap_err()
-                .to_string()
-                .contains("activationTimeoutSecs"));
+    fn lifecycle_timeouts_reject_zero_and_unrepresentable_deadlines() {
+        for name in [
+            "activationTimeoutSecs",
+            "startupTimeoutSecs",
+            "shutdownTimeoutSecs",
+            "constructionTimeoutSecs",
+            "resourceConstructionTimeoutSecs",
+            "cleanupTimeoutSecs",
+        ] {
+            for seconds in [0, u64::MAX] {
+                let config: DrasiServerConfig = serde_json::from_value(serde_json::json!({
+                    "instances": [{"id": "invalid", (name): seconds}]
+                }))
+                .unwrap();
+                assert!(config
+                    .resolved_instances(&DtoMapper::new())
+                    .unwrap_err()
+                    .to_string()
+                    .contains(name));
+            }
         }
+    }
+
+    #[test]
+    fn lifecycle_timeouts_resolve_environment_defaults_and_preserve_omission() {
+        let config: DrasiServerConfig = serde_yaml::from_str(
+            "instances:\n  - id: configured\n    startupTimeoutSecs: ${DRASI_TEST_STARTUP_MISSING:-601}\n    shutdownTimeoutSecs: ${DRASI_TEST_SHUTDOWN_MISSING:-61}\n    constructionTimeoutSecs: ${DRASI_TEST_CONSTRUCTION_MISSING:-6}\n    resourceConstructionTimeoutSecs: ${DRASI_TEST_RESOURCE_MISSING:-31}\n    cleanupTimeoutSecs: ${DRASI_TEST_CLEANUP_MISSING:-7}\n  - id: default\n"
+        ).unwrap();
+        let restored: DrasiServerConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        let resolved = restored.resolved_instances(&DtoMapper::new()).unwrap();
+        assert_eq!(resolved[0].startup_timeout_secs, Some(601));
+        assert_eq!(resolved[0].shutdown_timeout_secs, Some(61));
+        assert_eq!(resolved[0].construction_timeout_secs, Some(6));
+        assert_eq!(resolved[0].resource_construction_timeout_secs, Some(31));
+        assert_eq!(resolved[0].cleanup_timeout_secs, Some(7));
+        assert_eq!(resolved[1].startup_timeout_secs, None);
+        assert_eq!(resolved[1].shutdown_timeout_secs, None);
+        assert_eq!(resolved[1].construction_timeout_secs, None);
+        assert_eq!(resolved[1].resource_construction_timeout_secs, None);
+        assert_eq!(resolved[1].cleanup_timeout_secs, None);
     }
 
     #[test]

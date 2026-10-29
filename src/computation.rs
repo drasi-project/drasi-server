@@ -447,21 +447,34 @@ pub async fn build_components(
 }
 
 /// Include all independently negotiated native services from the loaded registry.
-pub async fn build_components_with_registry(
-    config: &ComputationConfig,
-    core: &DrasiLib,
+/// The returned future owns its registry bindings and does not borrow a registry guard.
+pub fn build_components_with_registry<'a>(
+    config: &'a ComputationConfig,
+    core: &'a DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
-) -> Result<ComponentBatch> {
-    build_components_with_resources(
-        config,
-        core,
-        native_factory_registry(registry)?,
-        registry.transactional_transformer_registry(core.middleware_registry())?,
-        registry.computation_bootstrap_factories()?,
-        registry.computation_source_bootstrap_factories()?,
-        registry.computation_identity_providers(),
-    )
-    .await
+) -> impl std::future::Future<Output = Result<ComponentBatch>> + Send + 'a {
+    let bindings: Result<_> = (|| {
+        Ok((
+            native_factory_registry(registry)?,
+            registry.transactional_transformer_registry(core.middleware_registry())?,
+            registry.computation_bootstrap_factories()?,
+            registry.computation_source_bootstrap_factories()?,
+            registry.computation_identity_providers(),
+        ))
+    })();
+    async move {
+        let (factories, transactional, bootstraps, source_bootstraps, identities) = bindings?;
+        build_components_with_resources(
+            config,
+            core,
+            factories,
+            transactional,
+            bootstraps,
+            source_bootstraps,
+            identities,
+        )
+        .await
+    }
 }
 
 async fn build_components_with_resources(
@@ -925,13 +938,13 @@ pub fn configuration_from_snapshot(
     Ok(Some(config))
 }
 
-pub async fn register_components(
-    config: &ComputationConfig,
-    core: &DrasiLib,
+pub fn register_components<'a>(
+    config: &'a ComputationConfig,
+    core: &'a DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
-) -> Result<ReconciliationReport> {
-    let components = build_components_with_registry(config, core, registry).await?;
-    Ok(core.add_components(components).await?)
+) -> impl std::future::Future<Output = Result<ReconciliationReport>> + Send + 'a {
+    let components = build_components_with_registry(config, core, registry);
+    async move { Ok(core.add_components(components.await?).await?) }
 }
 
 /// Retains instances if asynchronous rollback fails, so callers can retry cleanup.
@@ -1027,6 +1040,27 @@ pub(crate) async fn cleanup_failed_preparation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn native_registration_does_not_retain_the_plugin_registry_guard() -> Result<()> {
+        let plugins = tokio::sync::RwLock::new(crate::plugin_registry::PluginRegistry::new());
+        let core = DrasiLib::builder().build().await?;
+        let config = ComputationConfig {
+            definition: drasi_lib::management::DesiredInstance::default().topology,
+        };
+        let registration = {
+            let plugins = plugins.read().await;
+            register_components(&config, &core, &plugins)
+        };
+        let writer =
+            tokio::time::timeout(std::time::Duration::from_secs(2), plugins.write()).await?;
+        let report =
+            tokio::time::timeout(std::time::Duration::from_secs(2), registration).await??;
+        assert!(report.committed);
+        drop(writer);
+        core.shutdown().await?;
+        Ok(())
+    }
 
     struct DeferredIdentity(std::sync::atomic::AtomicUsize);
     #[async_trait]

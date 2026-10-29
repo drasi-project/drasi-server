@@ -40,7 +40,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("vehicle-location-source".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(
+            "vehicle-location-source".to_string(),
+        )],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -64,7 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("vehicle-location-source".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(
+            "vehicle-location-source".to_string(),
+        )],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -125,6 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             bootstrap_providers: vec![],
             computation: None,
             configuration_store: None,
+            ..Default::default()
         }],
     };
 
