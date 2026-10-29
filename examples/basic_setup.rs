@@ -117,6 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            activation_timeout_secs: None,
             sources: vec![],
             reactions: vec![],
             queries: vec![available_drivers_query, pending_orders_query],
