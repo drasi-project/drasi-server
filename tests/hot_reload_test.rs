@@ -90,7 +90,7 @@ fn new_orchestrator() -> Arc<PluginOrchestrator> {
 async fn assert_package_versions_and_component_startup(
     registry: Arc<RwLock<PluginRegistry>>,
 ) -> anyhow::Result<()> {
-    use drasi_lib::{ComponentStatus, DrasiLib, Query};
+    use drasi_lib::{ComponentStatus, Query};
     use drasi_server::api::models::{ReactionConfig, SourceConfig};
     use drasi_server::factories::{create_reaction_locked, create_source_locked};
 
@@ -113,7 +113,7 @@ async fn assert_package_versions_and_component_startup(
             );
         }
     }
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("package-version")
         .build()
         .await?;
@@ -851,3 +851,6 @@ async fn test_watcher_detects_changed_file() {
     );
     watcher.stop();
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

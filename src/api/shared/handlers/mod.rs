@@ -300,7 +300,7 @@ mod tests {
             InputEnvelope, OutputEnvelope, PipeRequirements, PortDescriptor, PortDirection, PortId,
             RealizationState, Transformer,
         },
-        DrasiError, DrasiLib,
+        DrasiError,
     };
     use std::{task::Poll, time::Duration};
 
@@ -335,7 +335,7 @@ mod tests {
 
     #[tokio::test]
     async fn computation_creation_health_inspection_keeps_its_graph_cause() {
-        let core = DrasiLib::builder().build().await.unwrap();
+        let core = crate::query_test_support::builder().build().await.unwrap();
         let error = wait_for_computation_creation(&core, "source", "removed")
             .await
             .unwrap_err();
@@ -353,7 +353,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
-        let core = DrasiLib::builder()
+        let core = crate::query_test_support::builder()
             .with_id("blocked-transformer-timeout")
             .build()
             .await

@@ -114,6 +114,7 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 reqwest_otel = { version = "0.13.4", package = "reqwest", default-features = false, features = ["blocking", "rustls"] }
 
 [dev-dependencies]
+drasi-computation-transformer-query = { path = "../drasi-core/components/computation-plugins/transformers/query" }
 # Testing utilities
 tracing = "0.1"
 tempfile = "3.8"

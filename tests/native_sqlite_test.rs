@@ -2,10 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 use anyhow::{Context, Result};
-use drasi_lib::{
-    computation::v1::{ConfigurationValue, ResourceId},
-    DrasiLib,
-};
+use drasi_lib::computation::v1::{ConfigurationValue, ResourceId};
 use drasi_server::{
     api::v1::routes::build_v1_router,
     computation::{configuration_from_snapshot, register_components, ComputationConfig},
@@ -58,7 +55,7 @@ async fn reject_mismatched_pairings(
         .context("bootstrap object")?
         .remove("sourceBootstrap");
     for invalid in [different_config, two_modes, different_owner, unpaired] {
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(recipe::INSTANCE)
             .build()
             .await?;
@@ -161,7 +158,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
     let mut current = roundtrip;
     for round in 0..2 {
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id(recipe::INSTANCE)
                 .build()
                 .await?,
@@ -372,3 +369,6 @@ async fn native_sqlite_coordinated_server_multi_thread() -> Result<()> {
     }
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

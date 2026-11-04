@@ -38,7 +38,7 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
         },
     )?;
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_test_support::builder()
             .with_id(id)
             .with_source(source)
             .with_query(

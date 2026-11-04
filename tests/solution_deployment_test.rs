@@ -1231,3 +1231,6 @@ async fn test_e2e_multi_instance_deployment() {
         );
     }
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

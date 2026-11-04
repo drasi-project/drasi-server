@@ -95,7 +95,7 @@ mod api_query_joins_tests {
     {
         // Register stub sources for all sources referenced by queries in these tests.
         // Supply each referenced source before starting dependent queries.
-        let core = DrasiLib::builder()
+        let core = crate::query_test_support::builder()
             .with_id("test-server")
             .with_source(StubSource::new("source1"))
             .with_source(StubSource::new("source2"))
@@ -180,6 +180,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
@@ -239,6 +240,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
@@ -267,6 +269,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
@@ -296,6 +299,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
@@ -340,6 +344,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence.clone()),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await
@@ -472,6 +477,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::query_test_support::registry()),
             ConfigBody(query_config_to_dto(query_config)),
         )
         .await;

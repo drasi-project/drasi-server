@@ -32,7 +32,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::{DrasiLib, Query};
+use drasi_lib::Query;
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
@@ -118,7 +118,7 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
         .auto_start(true)
         .build();
 
-    let mut source_builder = DrasiLib::builder()
+    let mut source_builder = crate::query_plugin::builder()
         .with_id(SOURCE_INSTANCE)
         .with_source(mock_src)
         .with_query(clone_query)
@@ -138,7 +138,7 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
         .expect("Failed to start source instance");
 
     // --- Target instance: empty ---
-    let target_core = DrasiLib::builder()
+    let target_core = crate::query_plugin::builder()
         .with_id(TARGET_INSTANCE)
         .build()
         .await
@@ -418,3 +418,6 @@ async fn test_clone_filters_internal_sources() {
     target_ids.sort_unstable();
     assert_eq!(target_ids, ["__component_graph__", "clone-src"]);
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

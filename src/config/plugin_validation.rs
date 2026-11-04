@@ -138,6 +138,17 @@ impl FullValidationResult {
 /// the set of plugin kinds they depend on.
 pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequirement> {
     let mut requirements = Vec::new();
+    if config
+        .instances
+        .iter()
+        .any(|instance| !instance.queries.is_empty())
+    {
+        requirements.push(PluginRequirement {
+            category: "query".into(),
+            kind: "native".into(),
+            referenced_by: "configured continuous queries".into(),
+        });
+    }
 
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
@@ -214,6 +225,12 @@ pub fn check_plugin_availability(
 
     for req in requirements {
         let available = match req.category.as_str() {
+            "query" => registry.computation_plugins().any(|plugin| {
+                plugin
+                    .factories()
+                    .iter()
+                    .any(|factory| factory.supports_ordinary_queries())
+            }),
             "source" => registry.get_source(&req.kind).is_some(),
             "reaction" => registry.get_reaction(&req.kind).is_some(),
             "bootstrap" => registry.get_bootstrapper(&req.kind).is_some(),
@@ -225,6 +242,12 @@ pub fn check_plugin_availability(
             found.push(req.clone());
         } else {
             let available_kinds = match req.category.as_str() {
+                "query" => registry
+                    .computation_plugins()
+                    .flat_map(|plugin| plugin.factories())
+                    .filter(|factory| factory.supports_ordinary_queries())
+                    .map(|factory| factory.metadata().implementation.name.to_string())
+                    .collect(),
                 "source" => registry
                     .source_kinds()
                     .into_iter()

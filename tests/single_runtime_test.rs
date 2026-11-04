@@ -19,7 +19,6 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::DrasiLib;
 use drasi_reaction_application::ApplicationReaction;
 use drasi_server::{
     api::mappings::DtoMapper,
@@ -223,15 +222,20 @@ fn removed_config_selectors_are_rejected_without_echoing_values() {
 
 #[tokio::test]
 async fn builder_uses_graph_for_all_construction_paths() {
-    let core = DrasiServerBuilder::new().build_core().await.unwrap();
+    let core = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
+        .build_core()
+        .await
+        .unwrap();
     core.computation_control()
         .expect("default builder creates the graph");
     core.shutdown().await.unwrap();
 
     let handles = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_id("first")
-        .add_instance_builder(DrasiLib::builder().with_id("second"))
-        .add_instance_builder(DrasiLib::builder().with_id("third"))
+        .add_instance_builder(crate::query_plugin::builder().with_id("second"))
+        .add_instance_builder(crate::query_plugin::builder().with_id("third"))
         .build_with_handles()
         .await
         .unwrap();
@@ -252,7 +256,7 @@ async fn api_creation_and_explicit_routes_preserve_instance_isolation() {
         .add(
             "existing".into(),
             Arc::new(
-                DrasiLib::builder()
+                crate::query_plugin::builder()
                     .with_id("existing")
                     .build()
                     .await
@@ -341,7 +345,13 @@ async fn api_rejects_removed_selectors_in_json_and_yaml_without_leaking_secrets(
 #[tokio::test]
 async fn clone_and_deployment_reject_selectors_before_creating_nodes() {
     let registry = InstanceRegistry::new();
-    let core = Arc::new(DrasiLib::builder().with_id("target").build().await.unwrap());
+    let core = Arc::new(
+        crate::query_plugin::builder()
+            .with_id("target")
+            .build()
+            .await
+            .unwrap(),
+    );
     registry.add("target".into(), core.clone()).await.unwrap();
     let app = router(registry, None);
     for value in [
@@ -442,6 +452,7 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     .unwrap();
     let core = Arc::new(
         DrasiServerBuilder::new()
+            .with_query_factory(crate::query_plugin::factory())
             .with_id(format!("api-{}", uuid::Uuid::new_v4()))
             .with_source(source)
             .build_core()
@@ -541,7 +552,7 @@ async fn persistence_and_reload_preserve_single_and_multi_instance_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("server.yaml");
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id("existing")
             .build()
             .await
@@ -814,3 +825,6 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
         )
     });
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

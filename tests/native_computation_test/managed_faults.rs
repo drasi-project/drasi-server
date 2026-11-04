@@ -111,7 +111,7 @@ async fn cancelled_requests_and_uncertain_confirmation_resolve_through_durable_r
                 reject: false,
             });
             let core = Arc::new(
-                DrasiLib::builder()
+                crate::query_plugin::builder()
                     .with_id("confirmation")
                     .with_configuration_store(Arc::new(GatedStore {
                         inner: RedbConfigurationStore::new(&path, [19; 32])?,

@@ -254,7 +254,7 @@ pub async fn create_test_router_with_solutions(
         .build();
 
     // Build DrasiLib
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(instance_id)
         .with_source(test_source.clone())
         .with_source(reaction_source)
@@ -325,7 +325,7 @@ pub async fn create_multi_instance_test_router(
             .build();
 
         // Build DrasiLib
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(instance_id)
             .with_source(test_source.clone())
             .with_source(reaction_source)

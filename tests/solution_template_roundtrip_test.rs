@@ -247,3 +247,6 @@ async fn test_solution_template_roundtrip() {
 
     println!("\n=== ROUNDTRIP TEST PASSED ===");
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

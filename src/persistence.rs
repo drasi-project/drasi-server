@@ -622,7 +622,7 @@ mod tests {
         queries: Vec<drasi_lib::QueryConfig>,
         reactions: Vec<TestReaction>,
     ) -> Arc<DrasiLib> {
-        let mut builder = DrasiLib::builder().with_id(id);
+        let mut builder = crate::query_test_support::builder().with_id(id);
         for s in sources {
             builder = builder.with_source(s);
         }

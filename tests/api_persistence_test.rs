@@ -603,3 +603,6 @@ instances:
         "Both queries should survive round-trip"
     );
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

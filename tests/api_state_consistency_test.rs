@@ -24,14 +24,14 @@ mod test_support;
 
 use test_support::{create_mock_reaction, create_mock_source};
 
-use drasi_lib::{channels::ComponentStatus, DrasiLib, Query};
+use drasi_lib::{channels::ComponentStatus, Query};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() {
     let test_source = create_mock_source("test-source");
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(test_source)
         .build()
@@ -89,7 +89,7 @@ async fn test_components_with_auto_start() {
         .auto_start(true)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(test_reaction)
@@ -134,7 +134,7 @@ async fn test_components_without_auto_start() {
         .auto_start(false)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(test_reaction)
@@ -203,7 +203,7 @@ async fn test_restart_with_components() {
         .auto_start(true)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(restart_source)
         .with_query(query)
@@ -273,7 +273,7 @@ async fn test_multiple_query_sources() {
         .auto_start(true)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(source1)
         .with_source(source2)
@@ -322,7 +322,7 @@ async fn test_multiple_reaction_queries() {
         .auto_start(true)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(multi_query_reaction)
@@ -381,7 +381,7 @@ async fn test_query_with_joins() {
         }])
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(join_source1)
         .with_source(join_source2)
@@ -410,3 +410,6 @@ async fn test_query_with_joins() {
 
     core.stop().await.ok();
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

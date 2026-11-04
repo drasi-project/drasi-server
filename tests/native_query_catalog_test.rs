@@ -93,7 +93,7 @@ fn configuration() -> Result<ComputationConfig> {
         };
         components.push(desired(ComponentSpecification {
             descriptor: query.descriptor(),
-            role: ComponentRole::Query,
+            role: ComponentRole::Transformer,
             completion: None,
             implementation: ContinuousQueryFactory::default()
                 .descriptor()
@@ -330,7 +330,7 @@ async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
         resource("one-progress"),
         json!({"kind":"sourceProgress","component":"two"}),
     );
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("invalid-progress-owner")
         .build()
         .await?;
@@ -410,7 +410,7 @@ async fn instance(
     mpsc::Receiver<drasi_lib::channels::QueryResult>,
 )> {
     let (reaction, handle) = ApplicationReaction::new("capture", vec!["one".into(), "two".into()]);
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(name)
         .with_reaction(reaction)
         .build()
@@ -568,3 +568,6 @@ async fn server_catalog_feeds_existing_reactions_and_keeps_instances_isolated() 
     second.shutdown().await?;
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

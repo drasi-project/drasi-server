@@ -580,3 +580,6 @@ fn test_server_config_value_env_vars_roundtrip() {
         other => panic!("Expected EnvironmentVariable for port, got: {other:?}"),
     }
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

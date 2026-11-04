@@ -727,7 +727,7 @@ fn queries(catalog: QueryResultsCatalog, diagnostic: bool) -> Result<ComponentBa
             .component(
                 ComponentSpecification {
                     descriptor: definition.descriptor(),
-                    role: ComponentRole::Query,
+                    role: ComponentRole::Transformer,
                     completion: None,
                     implementation: factory.descriptor().implementation.clone(),
                     configuration_version: 1,
@@ -780,7 +780,7 @@ mod tests {
             .definition
             .components
             .iter()
-            .all(|component| matches!(component.role, ComponentRole::Query | ComponentRole::Sink)));
+            .all(|component| matches!(component.role, ComponentRole::Transformer | ComponentRole::Sink)));
         core.add_components(batch.auto_start(false))
             .await?
             .ensure_committed()?;

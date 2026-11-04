@@ -10,7 +10,7 @@ use axum::{
     http::{Method, Request, StatusCode},
     Router,
 };
-use drasi_lib::{channels::ComponentStatus, DrasiLib, Query};
+use drasi_lib::{channels::ComponentStatus, Query};
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_server::{
     api::v1::routes::build_v1_router, instance_registry::InstanceRegistry,
@@ -108,7 +108,7 @@ async fn request(router: &Router, method: Method, uri: &str, body: Value) -> Val
 async fn check_autostart(method: Method, category: &str) {
     for auto_start in [false, true] {
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id("autostart")
                 .with_source(create_mock_source("input"))
                 .with_query(
@@ -223,3 +223,6 @@ async fn post_reaction_autostarts_once() {
 async fn put_reaction_autostarts_once() {
     check_autostart(Method::PUT, "reactions").await;
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

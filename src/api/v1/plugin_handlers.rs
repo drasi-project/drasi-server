@@ -767,7 +767,7 @@ mod tests {
         let registry = InstanceRegistry::new();
         for instance_id in ["first", "second"] {
             let core = Arc::new(
-                drasi_lib::DrasiLib::builder()
+                crate::query_test_support::builder()
                     .with_id(instance_id)
                     .build()
                     .await

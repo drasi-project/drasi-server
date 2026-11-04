@@ -4,8 +4,7 @@ mod test_support;
 
 use axum::Extension;
 use drasi_lib::{
-    config::{QueryJoinConfig, QueryJoinKeyConfig},
-    DrasiLib, Query, QueryConfig,
+    config::{QueryJoinConfig, QueryJoinKeyConfig}, Query, QueryConfig,
 };
 use drasi_server::api::models::query::QueryConfigDto;
 use drasi_server::api::shared::extractor::ConfigBody;
@@ -62,7 +61,7 @@ fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
 #[tokio::test]
 async fn test_create_query_with_joins_via_handler() {
     // Create a minimal DrasiLib with stub sources for the referenced source IDs
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-server")
         .with_source(create_mock_source("postgres-stocks"))
         .with_source(create_mock_source("price-feed"))
@@ -87,6 +86,7 @@ async fn test_create_query_with_joins_via_handler() {
         Extension(read_only.clone()),
         Extension(config_persistence),
         Extension("test-server".to_string()),
+        Extension(crate::query_plugin::registry()),
         ConfigBody(cfg_dto),
     )
     .await
@@ -96,3 +96,6 @@ async fn test_create_query_with_joins_via_handler() {
     let json_response = serde_json::to_value(&response.0).unwrap();
     assert_eq!(json_response["success"], true);
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

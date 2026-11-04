@@ -485,6 +485,14 @@ impl DrasiServer {
         let preparation = async {
             for instance in resolved_instances {
                 let mut builder = DrasiLib::builder().with_id(&instance.id);
+                if !instance.queries.is_empty() {
+                    let registry = plugin_registry.read().await;
+                    builder = builder.with_query_factory(
+                        crate::query_plugin::factory(&registry).with_context(|| {
+                            format!("Query plugin for instance '{}'", instance.id)
+                        })?,
+                    );
+                }
 
                 // Set capacity defaults if configured (resolve env vars)
                 if let Some(capacity) = instance.default_priority_queue_capacity {
@@ -1351,19 +1359,25 @@ mod single_runtime_tests {
         assert_eq!(configured.instances.len(), 2);
         for (instance, id) in configured.instances.iter().zip(["analytics", "monitoring"]) {
             assert_eq!(instance.core.get_current_config().await.unwrap().id, id);
+            assert!(instance.core.query_factory_implementation().is_none());
+            instance
+                .core
+                .register_query_factory(crate::query_test_support::factory())
+                .unwrap();
             assert_graph_runtime(&instance.core).await;
         }
     }
 
     #[tokio::test]
     async fn prebuilt_instances_and_server_builder_use_the_graph() {
-        let core = DrasiLib::builder().build().await.unwrap();
+        let core = crate::query_test_support::builder().build().await.unwrap();
         let server = DrasiServer::from_core(core, false, false, "127.0.0.1".into(), 8080, None);
         assert_graph_runtime(&server.instances[0].core).await;
 
         let server = crate::DrasiServerBuilder::new()
+            .with_query_factory(crate::query_test_support::factory())
             .with_id("first")
-            .add_instance_builder(DrasiLib::builder().with_id("second"))
+            .add_instance_builder(crate::query_test_support::builder().with_id("second"))
             .build()
             .await
             .unwrap();

@@ -318,7 +318,7 @@ async fn remove_components(core: &DrasiLib, config: &ComputationConfig) -> Resul
 
 async fn core(name: &str) -> Result<Arc<DrasiLib>> {
     Ok(Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(name)
             .with_secret_store_provider(Arc::new(
                 drasi_lib::secret_store::MemorySecretStoreProvider::new().with_secret("COUNT", "4"),
@@ -1902,3 +1902,6 @@ fn expanded_native_definitions_validate_before_all_factories_are_available() -> 
     assert_eq!(pending.plugins_loaded, 4);
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

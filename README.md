@@ -387,6 +387,29 @@ These instructions apply to the `agentofreality-parallel-computation-graph`
 branch. Use a [local development build](#computationgraph-development); do not
 assume published binaries, images, or plugins include these changes.
 
+#### Query implementation
+
+Ordinary configured queries and query-creation APIs require a loaded native query
+transformer plugin. Server registers the unique eligible factory from its plugin
+registry before creating queries. A missing plugin is an explicit error
+(`PLUGIN_NOT_FOUND` for API creation); multiple eligible factories require
+explicit host selection. There is no built-in query fallback.
+
+Build `drasi-computation-transformer-query` from the matching Core checkout with
+`--features dynamic-plugin` and place its platform shared library in the configured
+plugin directory. Query YAML and REST bodies keep their existing shape; no
+`queryFactory` field or runtime selector is added. Do not assume automatic OCI
+installation provides an unpublished local query plugin.
+
+An empty or source-only instance still starts without query support. Loading the
+query plugin later allows its first API-created query to register the factory.
+Programmatic hosts may supply `DrasiServerBuilder::with_query_factory`.
+The plugin supports normal memory, persistent atomic and explicitly non-atomic
+providers. Non-atomic publication keeps its weaker guarantees and retained
+recovery markers rather than pretending independent writes are atomic. See
+`components/computation-plugins/transformers/query/README.md` in the matching Core
+checkout for registration, lifecycle and storage details.
+
 #### Configure instances
 
 Save this small configuration as `config/instances.yaml`. Both instances have

@@ -22,7 +22,6 @@
 
 use anyhow::Result;
 use drasi_index_rocksdb::RocksDbIndexProvider;
-use drasi_lib::DrasiLib;
 use drasi_lib::IndexBackendPlugin;
 use drasi_server::DrasiServerConfig;
 use std::sync::Arc;
@@ -106,7 +105,7 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     let provider = RocksDbIndexProvider::new(index_path, true, false);
 
     // Build DrasiLib with the RocksDB provider
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-persist-index")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -142,6 +141,7 @@ async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
 
     // Build using DrasiServerBuilder
     let core = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_id("test-server-persist")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -288,7 +288,7 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
         .query("MATCH (n) RETURN n")
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-directory-creation")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -350,7 +350,7 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
     assert!(!provider2.is_archive_enabled());
 
     // Build two independent cores
-    let core1 = DrasiLib::builder()
+    let core1 = crate::query_plugin::builder()
         .with_id("test-isolation-1")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -359,7 +359,7 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
         .build()
         .await?;
 
-    let core2 = DrasiLib::builder()
+    let core2 = crate::query_plugin::builder()
         .with_id("test-isolation-2")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -407,7 +407,7 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
         }))
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-per-query-override")
         .with_default_index_provider(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
@@ -460,7 +460,7 @@ async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
         .build();
 
     // No index provider registered at all.
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-unregistered-backend")
         .with_query(query)
         .build()
@@ -611,3 +611,6 @@ async fn test_create_instance_memory_budget_via_http() -> Result<()> {
     assert_create_instance_persist_index_via_http("http-persist-index-budget-instance", Some(64))
         .await
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

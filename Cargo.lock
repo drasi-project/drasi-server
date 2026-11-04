@@ -1230,6 +1230,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-transformer-query"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core",
+ "drasi-middleware",
+ "drasi-query-common",
+ "futures-util",
+ "imbl",
+ "log",
+ "ordered-float",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "drasi-core"
 version = "0.5.10"
 dependencies = [
@@ -1273,10 +1295,12 @@ dependencies = [
 name = "drasi-core-types"
 version = "0.11.3"
 dependencies = [
+ "async-trait",
  "bytes",
  "chrono",
  "chrono-tz",
  "drasi-query-ast",
+ "futures-core",
  "itoa",
  "lazy_static",
  "log",
@@ -1322,13 +1346,16 @@ dependencies = [
  "drasi-ffi-primitives",
  "drasi-lib",
  "drasi-plugin-sdk",
+ "drasi-query-common",
  "futures-util",
+ "imbl",
  "indexmap 2.14.0",
  "libloading",
  "log",
  "notify",
  "notify-debouncer-mini",
  "oci-client",
+ "ordered-float",
  "p256",
  "p384",
  "pem",
@@ -1412,6 +1439,7 @@ dependencies = [
  "drasi-functions-gql",
  "drasi-middleware",
  "drasi-query-ast",
+ "drasi-query-common",
  "drasi-query-cypher",
  "drasi-query-gql",
  "drasi-reaction-common",
@@ -1443,7 +1471,6 @@ version = "0.5.11"
 dependencies = [
  "async-trait",
  "base64",
- "drasi-core",
  "drasi-core-types",
  "hex",
  "jq-rs",
@@ -1489,6 +1516,31 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "drasi-query-common"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "drasi-computation-contracts",
+ "drasi-core",
+ "drasi-functions-cypher",
+ "drasi-functions-gql",
+ "drasi-query-ast",
+ "drasi-query-cypher",
+ "drasi-query-gql",
+ "fnv",
+ "imbl",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1551,6 +1603,7 @@ dependencies = [
  "drasi-computation-bridge-common",
  "drasi-computation-sink-bridge",
  "drasi-computation-source-bridge",
+ "drasi-computation-transformer-query",
  "drasi-core",
  "drasi-host-sdk",
  "drasi-index-rocksdb",

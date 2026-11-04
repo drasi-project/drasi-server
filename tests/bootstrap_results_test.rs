@@ -160,6 +160,7 @@ async fn test_bootstrap_data_appears_in_query_results() {
     let source = BootstrapMockSource::new("bootstrap-src", elements);
 
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(source)
         .with_query_config(
             "bootstrap-query",
@@ -220,3 +221,6 @@ async fn test_bootstrap_data_appears_in_query_results() {
 
     server.shutdown().await.expect("Failed to shut down server");
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

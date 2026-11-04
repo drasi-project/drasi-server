@@ -46,6 +46,10 @@ pub use index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
 pub use plugin_registry::PluginRegistry;
 pub use server::register_core_plugins;
 pub use server::DrasiServer;
+mod query_plugin;
+#[cfg(test)]
+#[path = "../tests/query_plugin/mod.rs"]
+mod query_test_support;
 
 // Re-export the Plugin SDK for library users
 pub use drasi_plugin_sdk;

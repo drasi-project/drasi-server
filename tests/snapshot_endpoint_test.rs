@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::{DrasiLib, Query, QueryConfig};
+use drasi_lib::{Query, QueryConfig};
 use drasi_server::api::v1::{handlers, routes::build_v1_router};
 use drasi_server::instance_registry::InstanceRegistry;
 use drasi_server::plugin_registry::PluginRegistry;
@@ -22,7 +22,7 @@ async fn build_snapshot_test_router(
     queries: Vec<QueryConfig>,
     reactions: Vec<test_support::mock_components::MockReaction>,
 ) -> Router {
-    let mut builder = DrasiLib::builder().with_id(instance_id);
+    let mut builder = crate::query_plugin::builder().with_id(instance_id);
 
     for src in sources {
         builder = builder.with_source(src);
@@ -218,3 +218,6 @@ async fn test_snapshot_includes_dependency_edges() {
         "should have query→reaction edge, got: {edges:?}"
     );
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

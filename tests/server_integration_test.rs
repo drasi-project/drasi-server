@@ -21,7 +21,6 @@ mod test_support;
 
 use anyhow::Result;
 use drasi_lib::{channels::ComponentStatus, Query};
-use drasi_server::DrasiLib;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use test_support::mock_components::{create_mock_reaction, create_mock_source};
@@ -50,7 +49,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(&server_id)
             .with_source(counter_source)
             .with_reaction(counter_reaction)
@@ -144,7 +143,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(&server_id)
             .with_source(sensors_source)
             .with_source(vehicles_source)
@@ -214,7 +213,7 @@ async fn test_component_failure_recovery() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(&server_id)
             .with_source(test_source)
             .with_reaction(test_reaction)
@@ -282,7 +281,7 @@ async fn test_concurrent_operations() -> Result<()> {
 
     // Build the core using the new builder API with all sources pre-registered
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(&server_id)
             .with_source(concurrent_source)
             .with_source(extra_source_0)
@@ -333,3 +332,6 @@ async fn test_concurrent_operations() -> Result<()> {
 
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

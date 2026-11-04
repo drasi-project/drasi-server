@@ -256,7 +256,7 @@ fn main() -> Result<()> {
         };
         let specification = ComponentSpecification {
             descriptor: definition.descriptor(),
-            role: ComponentRole::Query,
+            role: ComponentRole::Transformer,
             completion: None,
             implementation: query_factory.descriptor().implementation.clone(),
             configuration_version: 1,

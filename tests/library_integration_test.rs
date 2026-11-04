@@ -32,6 +32,7 @@ async fn test_basic_server_lifecycle() {
 
     // Create a basic server using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(test_source)
         .build_core()
         .await
@@ -66,6 +67,7 @@ async fn test_server_with_components() {
 
     // Create server with components using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(test_source)
         .with_reaction(test_reaction)
         .with_query_config(
@@ -104,6 +106,7 @@ async fn test_source_lifecycle_operations() {
 
     // Start with server with source
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(test_source)
         .build_core()
         .await
@@ -158,6 +161,7 @@ async fn test_server_with_api() {
 
     // Create server with API
     let _server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(test_source)
         .with_port(0) // Use port 0 for random available port
         .build()
@@ -180,6 +184,7 @@ async fn test_config_persistence() {
 
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(persist_source)
         .with_config_file(config_file)
         .build()
@@ -204,6 +209,7 @@ async fn test_concurrent_start_stop_operations() {
 
     // Start with server with all sources pre-registered
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(source1)
         .with_source(source2)
         .with_source(source3)
@@ -293,6 +299,7 @@ async fn test_graceful_shutdown_timeout() {
 
     // Create server with a source
     let server = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_source(timeout_source)
         .build_core()
         .await
@@ -318,3 +325,6 @@ async fn test_graceful_shutdown_timeout() {
     assert!(shutdown_result.is_ok(), "Shutdown timed out");
     shutdown_result.expect("Timeout").expect("Shutdown failed");
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

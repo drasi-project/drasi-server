@@ -43,6 +43,16 @@ impl Default for DrasiServerBuilder {
 }
 
 impl DrasiServerBuilder {
+    /// Explicitly register the query plugin for the primary instance.
+    pub fn with_query_factory(
+        mut self,
+        factory: Arc<dyn drasi_lib::computation::v1::ComponentFactory>,
+    ) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_query_factory(factory);
+        self
+    }
+
     fn primary_builder_mut(&mut self) -> &mut DrasiLibBuilder {
         self.core_builders
             .first_mut()
@@ -281,7 +291,8 @@ mod tests {
 
     #[test]
     fn test_builder_defaults() {
-        let builder = DrasiServerBuilder::new();
+        let builder =
+            DrasiServerBuilder::new().with_query_factory(crate::query_test_support::factory());
         assert_eq!(builder.host, Some("127.0.0.1".to_string()));
         assert_eq!(builder.port, Some(8080));
         assert!(!builder.enable_api);
@@ -290,6 +301,7 @@ mod tests {
     #[test]
     fn test_builder_fluent_api() {
         let builder = DrasiServerBuilder::new()
+            .with_query_factory(crate::query_test_support::factory())
             .with_simple_query(
                 "test_query",
                 "MATCH (n) RETURN n",

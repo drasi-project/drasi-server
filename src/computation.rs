@@ -1044,7 +1044,7 @@ mod tests {
     #[tokio::test]
     async fn native_registration_does_not_retain_the_plugin_registry_guard() -> Result<()> {
         let plugins = tokio::sync::RwLock::new(crate::plugin_registry::PluginRegistry::new());
-        let core = DrasiLib::builder().build().await?;
+        let core = crate::query_test_support::builder().build().await?;
         let config = ComputationConfig {
             definition: drasi_lib::management::DesiredInstance::default().topology,
         };
@@ -1119,7 +1119,7 @@ mod tests {
             definition: topology,
         };
         validate_definition(&config)?;
-        let core = DrasiLib::builder().build().await?;
+        let core = crate::query_test_support::builder().build().await?;
         let batch = build_components_with_registry(&config, &core, &registry).await?;
         batch.bindings.resources[&resource.id]
             .get::<drasi_host_sdk::computation::NativeIdentityResource>()?;

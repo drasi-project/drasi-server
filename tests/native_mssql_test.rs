@@ -10,7 +10,7 @@ mod generator;
 
 use anyhow::{ensure, Context, Result};
 use drasi_lib::{
-    computation::v1::FactoryRegistry, secret_store::MemorySecretStoreProvider, DrasiLib,
+    computation::v1::FactoryRegistry, secret_store::MemorySecretStoreProvider,
 };
 use drasi_server::{
     computation::register_components, plugin_registry::PluginRegistry, DrasiServerConfig,
@@ -71,7 +71,7 @@ async fn real_server() -> Result<()> {
     for plugin in generator::plugins(&libraries())? {
         registry.register_computation_plugin(plugin)?;
     }
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("native-mssql")
         .with_secret_store_provider(secrets)
         .build()
@@ -137,3 +137,6 @@ async fn current_thread_server_consumes_real_sql_server() -> Result<()> {
 async fn multi_thread_server_consumes_real_sql_server() -> Result<()> {
     real_server().await
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

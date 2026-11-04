@@ -23,7 +23,7 @@ async fn managed_instance(
     );
     let builder = stores
         .configure(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id("managed-native")
                 .with_secret_store_provider(secrets.clone()),
             "managed-native",

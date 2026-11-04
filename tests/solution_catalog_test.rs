@@ -467,3 +467,6 @@ async fn test_list_solutions_shows_component_counts() {
     assert_eq!(multi["queryCount"], 1);
     assert_eq!(multi["reactionCount"], 1);
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

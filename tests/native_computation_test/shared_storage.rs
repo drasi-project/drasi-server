@@ -128,7 +128,7 @@ async fn shared_recipes_restore_graph_owned_group_and_journal_from_accepted_conf
             journal: Mutex::new(None),
             storage: Mutex::new(None),
         });
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id("shared")
             .with_configuration_store(Arc::new(
                 drasi_state_store_redb::RedbConfigurationStore::new(
@@ -185,7 +185,7 @@ async fn shared_recipes_restore_graph_owned_group_and_journal_from_accepted_conf
         &PluginRegistry::new(),
         None,
     )?);
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_management_resources(resolver)
         .build()
         .await?;
@@ -391,14 +391,14 @@ fn pipeline(
     let descriptor = query.descriptor();
     config.definition.components.push(DesiredComponent {
         descriptor: descriptor.clone(),
-        role: ComponentRole::Query,
+        role: ComponentRole::Transformer,
         completion: None,
         streams: BTreeMap::from([(PortId::try_new("out")?, query.output_stream.clone())]),
         lifecycle: LifecyclePolicy::default(),
         input_merge: InputMergePolicy::default(),
         construction: ComponentConstruction::Factory(ComponentSpecification {
             descriptor,
-            role: ComponentRole::Query,
+            role: ComponentRole::Transformer,
             completion: None,
             implementation: ContinuousQueryFactory::default()
                 .descriptor()
@@ -459,7 +459,7 @@ async fn imperative_server_shared_configuration_executes_actual_query_and_pipe()
         Arc::new(AtomicBool::new(true)),
         false,
     )?;
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("shared-pipeline")
         .build()
         .await?;
@@ -515,7 +515,7 @@ async fn managed_server_shared_pipeline_replays_unhandled_output_after_reconstru
             storage: Mutex::new(None),
         });
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id("shared-recovery")
                 .with_component_factories(factories)
                 .with_configuration_store(Arc::new(
@@ -695,7 +695,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
         directory.path().join("configuration.redb"),
         [67; 32],
     )?);
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("retired-query")
         .with_component_factories(factories.clone())
         .with_configuration_store(store.clone())
@@ -767,7 +767,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
     assert!(journal.progress().await.is_err());
     drop((control, core, journal));
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("retired-query")
         .with_component_factories(factories)
         .with_configuration_store(store.clone())
@@ -852,7 +852,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
         emit.clone(),
         false,
     )?;
-    let restored = DrasiLib::builder()
+    let restored = crate::query_plugin::builder()
         .with_id("retired-query")
         .with_component_factories(factories)
         .with_configuration_store(store)
@@ -928,7 +928,7 @@ async fn managed_drained_changes(shared: bool) -> Result<()> {
         journal: Mutex::new(None),
         storage: Mutex::new(None),
     });
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("drained")
         .with_component_factories(factories)
         .with_configuration_store(Arc::new(
@@ -1020,7 +1020,7 @@ async fn managed_drained_changes(shared: bool) -> Result<()> {
     let status = core.reconcile_desired_state().await?;
     assert!(status.converged(), "{status:?}");
     core.shutdown().await?;
-    let restored = DrasiLib::builder()
+    let restored = crate::query_plugin::builder()
         .with_id("drained")
         .with_configuration_store(Arc::new(
             drasi_state_store_redb::RedbConfigurationStore::new(
@@ -1074,7 +1074,7 @@ async fn standalone_query_retirement_preserves_unknown_commit_through_reconcile_
             storage: Mutex::new(None),
         });
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id("standalone-query")
                 .with_component_factories(factories.clone())
                 .with_management_resources(resolver.clone())
@@ -1143,7 +1143,7 @@ async fn standalone_query_retirement_preserves_unknown_commit_through_reconcile_
         let expected = if reject { original.desired } else { desired };
         if close {
             tokio::time::timeout(DEADLINE, core.shutdown()).await??;
-            let restored = DrasiLib::builder()
+            let restored = crate::query_plugin::builder()
                 .with_id("standalone-query")
                 .with_component_factories(factories)
                 .with_management_resources(resolver.clone())
@@ -1220,7 +1220,7 @@ async fn shared_retirement_holds_restart_and_storage_until_authoritative_commit_
             storage: Mutex::new(None),
         });
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id("retirement-faults")
                 .with_component_factories(factories)
                 .with_configuration_store(Arc::new(GatedStore {
@@ -1337,7 +1337,7 @@ async fn shared_retirement_holds_restart_and_storage_until_authoritative_commit_
                     Arc::new(AtomicBool::new(false)),
                     false,
                 )?;
-                let restored = DrasiLib::builder()
+                let restored = crate::query_plugin::builder()
                     .with_id("retirement-faults")
                     .with_component_factories(factories)
                     .with_configuration_store(Arc::new(
@@ -1453,7 +1453,7 @@ async fn shared_server_crash_worker() -> Result<()> {
         storage: Mutex::new(None),
     });
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id("server-crash")
             .with_component_factories(factories)
             .with_configuration_store(Arc::new(GatedStore {
@@ -1577,7 +1577,7 @@ async fn shared_server_resources_recover_after_process_exit() -> Result<()> {
             journal: Mutex::new(None),
             storage: Mutex::new(None),
         });
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id("server-crash")
             .with_component_factories(factories)
             .with_configuration_store(Arc::new(

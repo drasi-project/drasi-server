@@ -499,3 +499,6 @@ reactions:
         }
     }
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

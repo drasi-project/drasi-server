@@ -75,6 +75,7 @@ pub async fn create_query(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
+    Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
     ConfigBody(config_dto): ConfigBody<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -85,6 +86,19 @@ pub async fn create_query(
     }
 
     super::require_imperative_configuration(&core)?;
+    crate::query_plugin::ensure_registered(&core, &plugins)
+        .await
+        .map_err(|error| {
+            let code = if error
+                .downcast_ref::<crate::query_plugin::MissingQueryPlugin>()
+                .is_some()
+            {
+                error_codes::PLUGIN_NOT_FOUND
+            } else {
+                error_codes::PLUGIN_LOAD_FAILED
+            };
+            ErrorResponse::new(code, format!("{error:#}"))
+        })?;
     let query_id = config_dto.id.clone();
 
     // Convert QueryConfigDto to drasi-lib's QueryConfig

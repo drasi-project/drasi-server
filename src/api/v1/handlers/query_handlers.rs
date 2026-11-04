@@ -80,6 +80,7 @@ pub async fn create_query(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     ConfigBody(config): ConfigBody<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
@@ -92,6 +93,7 @@ pub async fn create_query(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugins),
         ConfigBody(config),
     )
     .await

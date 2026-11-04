@@ -469,7 +469,7 @@ async fn readable_component_api_preserves_canonical_snapshots_and_duplicate_chec
     use tower::ServiceExt;
 
     let core = Arc::new(
-        drasi_lib::DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id("readable-api")
             .build()
             .await?,
@@ -516,3 +516,6 @@ async fn readable_component_api_preserves_canonical_snapshots_and_duplicate_chec
     core.shutdown().await?;
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

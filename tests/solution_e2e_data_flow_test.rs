@@ -802,3 +802,6 @@ reactions:
         "Should receive multiple sensor readings. Got: {total_payloads}"
     );
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

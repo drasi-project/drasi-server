@@ -24,7 +24,6 @@
 //! crate's own tests, since it only happens once a source appends events.
 
 use anyhow::Result;
-use drasi_lib::DrasiLib;
 use drasi_wal_redb::RedbWalProvider;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -50,7 +49,7 @@ async fn test_drasi_lib_builder_with_redb_wal_provider() -> Result<()> {
 
     let provider = RedbWalProvider::new(&wal_path);
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-wal-provider")
         .with_wal_provider(Arc::new(provider))
         .build()
@@ -69,3 +68,6 @@ async fn test_drasi_lib_builder_with_redb_wal_provider() -> Result<()> {
 
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

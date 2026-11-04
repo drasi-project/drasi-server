@@ -528,7 +528,11 @@ async fn native_root_query_is_exposed_through_ordinary_read_apis() -> Result<()>
         .iter()
         .find(|node| node.descriptor.id().as_str() == "ui-gpus")
         .context("ui-gpus was not declared in the instance root")?;
-    assert_eq!(query.role, ComponentRole::Query);
+    assert_eq!(query.role, ComponentRole::Transformer);
+    assert_eq!(
+        query.descriptor.semantic_kind(),
+        Some(drasi_lib::computation::v1::ComponentSemanticKind::Query)
+    );
     let inventory = drasi.inspect_computation_inventory().await?;
     assert_eq!(
         inventory

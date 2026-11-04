@@ -23,7 +23,6 @@
 
 use anyhow::Result;
 use drasi_lib::state_store::StateStoreProvider;
-use drasi_lib::DrasiLib;
 use drasi_server::models::ConfigValue;
 use drasi_server::{
     create_state_store_provider, DrasiServerBuilder, DrasiServerConfig, StateStoreConfig,
@@ -76,7 +75,7 @@ async fn test_drasi_lib_builder_with_redb_provider() -> Result<()> {
     let provider = RedbStateStoreProvider::new(&state_path)?;
 
     // Build DrasiLib with the REDB provider
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-state-store")
         .with_state_store_provider(Arc::new(provider))
         .build()
@@ -108,6 +107,7 @@ async fn test_drasi_server_builder_with_state_store_provider() -> Result<()> {
 
     // Build using DrasiServerBuilder
     let core = DrasiServerBuilder::new()
+        .with_query_factory(crate::query_plugin::factory())
         .with_id("test-server-state")
         .with_state_store_provider(Arc::new(provider))
         .build_core()
@@ -254,7 +254,7 @@ async fn test_redb_creates_database_file() -> Result<()> {
     let provider = RedbStateStoreProvider::new(&state_path)?;
 
     // Build DrasiLib with the provider
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id("test-file-creation")
         .with_state_store_provider(Arc::new(provider))
         .build()
@@ -321,13 +321,13 @@ async fn test_redb_provider_isolation() -> Result<()> {
     let provider2 = RedbStateStoreProvider::new(temp_dir2.path().join("state2.redb"))?;
 
     // Build two independent cores
-    let core1 = DrasiLib::builder()
+    let core1 = crate::query_plugin::builder()
         .with_id("test-isolation-1")
         .with_state_store_provider(Arc::new(provider1))
         .build()
         .await?;
 
-    let core2 = DrasiLib::builder()
+    let core2 = crate::query_plugin::builder()
         .with_id("test-isolation-2")
         .with_state_store_provider(Arc::new(provider2))
         .build()
@@ -422,3 +422,6 @@ fn test_multi_instance_state_store_config() {
         _ => panic!("Expected REDB state stores for both instances"),
     }
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

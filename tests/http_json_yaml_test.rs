@@ -28,7 +28,6 @@ mod test_support;
 use test_support::create_mock_source;
 
 use axum::Router;
-use drasi_lib::DrasiLib;
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
@@ -43,7 +42,7 @@ use std::time::Duration;
 async fn start_real_server() -> (String, String) {
     let instance_id = format!("http-fmt-{}", uuid::Uuid::new_v4());
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(&instance_id)
         .with_source(create_mock_source("sensors"))
         .build()
@@ -426,3 +425,6 @@ async fn test_reaction_route_accepts_yaml() {
 
     assert_yaml_reached_handler(resp).await;
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

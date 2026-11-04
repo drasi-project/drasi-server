@@ -277,7 +277,13 @@ impl Harness {
             "instances": [{"id": "native"}, {"id": "origin"}],
         }))
         .unwrap();
-        let core = Arc::new(DrasiLib::builder().with_id("native").build().await.unwrap());
+        let core = Arc::new(
+            crate::query_plugin::builder()
+                .with_id("native")
+                .build()
+                .await
+                .unwrap(),
+        );
         if running {
             core.start().await.unwrap();
         }
@@ -937,7 +943,13 @@ async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_
 #[tokio::test]
 async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_failure() {
     let harness = Harness::new(true).await;
-    let origin = Arc::new(DrasiLib::builder().with_id("origin").build().await.unwrap());
+    let origin = Arc::new(
+        crate::query_plugin::builder()
+            .with_id("origin")
+            .build()
+            .await
+            .unwrap(),
+    );
     origin
         .add_source(MockSource::new("clone-source"))
         .await
@@ -1051,3 +1063,6 @@ async fn default_runtime_reports_autostart_failures_as_node_health() {
     assert!(harness.config_path.exists());
     harness.core.stop().await.unwrap();
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

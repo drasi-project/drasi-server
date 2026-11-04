@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::{computation::v1::*, DrasiLib, Query};
+use drasi_lib::{computation::v1::*, Query};
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_reaction_application::{ApplicationReaction, ApplicationReactionHandle};
 use drasi_server::{
@@ -124,14 +124,19 @@ async fn scenario(native: bool) -> Result<()> {
         },
     )?;
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id("first")
             .with_source(source)
             .build()
             .await?,
     );
     core.computation_component("input")?.wait_created().await?;
-    let second = Arc::new(DrasiLib::builder().with_id("second").build().await?);
+    let second = Arc::new(
+        crate::query_plugin::builder()
+            .with_id("second")
+            .build()
+            .await?,
+    );
     let instances = InstanceRegistry::new();
     instances
         .add("first".into(), core.clone())
@@ -433,7 +438,7 @@ impl ComputationService for NativeLifecycleComponent {
 
 async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Result<()> {
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id("native-components")
             .build()
             .await?,
@@ -704,7 +709,12 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
             (ComponentSemanticKind::Source, "sources"),
             (ComponentSemanticKind::Reaction, "reactions"),
         ] {
-            let core = Arc::new(DrasiLib::builder().with_id("failed-native").build().await?);
+            let core = Arc::new(
+                crate::query_plugin::builder()
+                    .with_id("failed-native")
+                    .build()
+                    .await?,
+            );
             let factory = Arc::new(FailingNativeFactory(FactoryDescriptor {
                 implementation: ImplementationIdentity::try_new("fixture/native-role", "1")?,
                 role: ComponentRole::Service,
@@ -790,3 +800,6 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
     })
     .await?
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

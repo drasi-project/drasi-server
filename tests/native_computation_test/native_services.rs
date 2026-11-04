@@ -293,7 +293,7 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
         )?),
         desired(ComponentSpecification {
             descriptor: query.descriptor(),
-            role: ComponentRole::Query,
+            role: ComponentRole::Transformer,
             completion: None,
             implementation: ContinuousQueryFactory::default()
                 .descriptor()
@@ -482,7 +482,10 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
         validate_definition(&config)?;
         let yaml: ComputationConfig = serde_yaml::from_str(&serde_yaml::to_string(&config)?)?;
         assert_eq!(yaml.definition, config.definition);
-        let core = DrasiLib::builder().with_id(instance).build().await?;
+        let core = crate::query_plugin::builder()
+            .with_id(instance)
+            .build()
+            .await?;
         let result = async {
             register_components(&yaml, &core, &plugins)
                 .await?
@@ -555,7 +558,7 @@ async fn native_bootstrap_server_recipes_restore_snapshot_and_preserve_secret_re
         );
         let core = stores
             .configure(
-                DrasiLib::builder().with_secret_store_provider(secrets.clone()),
+                crate::query_plugin::builder().with_secret_store_provider(secrets.clone()),
                 instance,
                 &settings,
                 Some(&yaml.clone().into()),
@@ -628,7 +631,7 @@ async fn native_bootstrap_domain_retires_actual_progress_and_metadata_resources(
                 .with_secret("COUNT", if restart { "9" } else { "3" })
                 .with_secret("BOOTSTRAP", "fixture-only"),
         );
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_secret_store_provider(secrets.clone())
             .with_component_factories(plugins.computation_factory_registry()?)
@@ -703,7 +706,7 @@ async fn native_bootstrap_imperative_api_reconstructs_snapshot_in_another_instan
                 .with_secret("BOOTSTRAP", "fixture-only"),
         );
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id(instance)
                 .with_secret_store_provider(secrets)
                 .build()
@@ -822,7 +825,7 @@ async fn standalone_journal_transition_refuses_pending_delivery_and_preserves_dr
         inner: ServerManagementResources::new(&PluginRegistry::new(), None)?,
         journal: Mutex::new(None),
     });
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(INSTANCE)
         .with_management_resources(resources.clone())
         .with_configuration_store(Arc::new(
@@ -1038,7 +1041,7 @@ async fn retirement_holds_writers_through_commit_and_shutdown(
             journal: Mutex::new(None),
         });
         let core = Arc::new(
-            DrasiLib::builder()
+            crate::query_plugin::builder()
                 .with_id(INSTANCE)
                 .with_component_factories(plugins.computation_factory_registry()?)
                 .with_management_resources(resources.clone())
@@ -1148,7 +1151,7 @@ async fn retirement_holds_writers_through_commit_and_shutdown(
                 stopped?;
                 assert!(write.is_err());
                 assert!(old.progress().await.is_err());
-                let restored = DrasiLib::builder()
+                let restored = crate::query_plugin::builder()
                     .with_id(INSTANCE)
                     .with_component_factories(plugins.computation_factory_registry()?)
                     .with_management_resources(resources.clone())
@@ -1236,7 +1239,7 @@ async fn retirement_api_requires_explicit_scoped_permission_and_persists_it_with
             directory.path().join("configuration.redb"),
             [61; 32],
         )?);
-        let mut builder = DrasiLib::builder()
+        let mut builder = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(plugins.computation_factory_registry()?)
             .with_management_resources(resources.clone());
@@ -1356,7 +1359,7 @@ async fn retirement_api_requires_explicit_scoped_permission_and_persists_it_with
         core.shutdown().await?;
         preserved_retired_storage(&config, 1, false).await?;
 
-        let restored = DrasiLib::builder()
+        let restored = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(factories().computation_factory_registry()?)
             .with_management_resources(resources.clone())
@@ -1406,7 +1409,7 @@ async fn native_transaction_sequence_retires_its_standalone_owner_and_restores_c
             inner: ServerManagementResources::new(&plugins, None)?,
             journal: Mutex::new(None),
         });
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(plugins.computation_factory_registry()?)
             .with_management_resources(resources.clone())
@@ -1729,7 +1732,7 @@ async fn native_consumer_server_crash_worker() -> Result<()> {
         reject: phase == "before-retirement",
     });
     let core = Arc::new(
-        DrasiLib::builder()
+        crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(plugins.computation_factory_registry()?)
             .with_management_resources(resources.clone())
@@ -1820,7 +1823,7 @@ async fn native_consumer_server_recovers_processing_and_retirement_after_process
             inner: ServerManagementResources::new(&plugins, None)?,
             journal: Mutex::new(None),
         });
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(plugins.computation_factory_registry()?)
             .with_management_resources(resources.clone())
@@ -1894,7 +1897,7 @@ async fn native_consumer_server_recipe_restores_partial_completion_and_retains_u
             inner: ServerManagementResources::new(&plugins, None)?,
             journal: Mutex::new(None),
         });
-        let core = DrasiLib::builder()
+        let core = crate::query_plugin::builder()
             .with_id(INSTANCE)
             .with_component_factories(plugins.computation_factory_registry()?)
             .with_management_resources(resources.clone())

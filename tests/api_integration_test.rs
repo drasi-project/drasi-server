@@ -49,7 +49,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 async fn create_test_router_with_id(
     instance_id: &str,
 ) -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
-    use drasi_lib::DrasiLib;
+    
     use drasi_server::api::v1::routes::build_v1_router;
     use drasi_server::plugin_registry::PluginRegistry;
 
@@ -79,7 +79,7 @@ async fn create_test_router_with_id(
         .build();
 
     // Create a minimal DrasiLib using the builder with mock instances
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(instance_id)
         .with_source(test_source.clone())
         .with_source(query_source.clone())
@@ -978,3 +978,6 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
     assert_eq!(core.list_reactions().await.unwrap(), reactions_before);
     core.stop().await.unwrap();
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;

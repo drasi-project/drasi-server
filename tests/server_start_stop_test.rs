@@ -23,7 +23,6 @@ mod test_support;
 
 use anyhow::Result;
 use drasi_lib::Query;
-use drasi_server::DrasiLib;
 use std::sync::Arc;
 use test_support::mock_components::create_mock_source;
 
@@ -36,7 +35,7 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     let test_source = create_mock_source("test-source");
 
     // Build the core using the new builder API
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(&server_id)
         .with_source(test_source)
         .build()
@@ -117,7 +116,7 @@ async fn test_server_with_query() -> Result<()> {
         .auto_start(true)
         .build();
 
-    let core = DrasiLib::builder()
+    let core = crate::query_plugin::builder()
         .with_id(&server_id)
         .with_source(test_source)
         .with_query(query)
@@ -149,3 +148,6 @@ async fn test_server_with_query() -> Result<()> {
 
     Ok(())
 }
+
+#[path = "query_plugin/mod.rs"]
+mod query_plugin;
