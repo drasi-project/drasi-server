@@ -16,7 +16,11 @@
 members = [".", "xtask"]
 exclude = ["examples/sse-cli"]
 
+[workspace.package]
+rust-version = "1.95.0"
+
 [package]
+rust-version.workspace = true
 name = "drasi-server"
 version = "0.2.4"
 edition = "2021"

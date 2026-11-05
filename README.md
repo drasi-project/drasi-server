@@ -214,10 +214,14 @@ curl -N http://localhost:8080/api/v1/instances/main/events
 
 ### Prerequisites
 
-- **Docker** (recommended) OR **Rust 1.70+**
+- A Docker-compatible container engine (local development uses **Podman**) OR **Rust 1.95.0+**
 - **Git** for cloning the repository
 
 ### Option 1: Docker (Fastest)
+
+Published images are release artifacts, not builds of this unreleased
+ComputationGraph branch. Use matching sibling source builds for the interfaces
+and native query/plugin profiles documented for this checkout.
 
 ```bash
 # Start with pre-built image
@@ -229,7 +233,7 @@ DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -
 
 ### Option 2: Build from Source
 
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> **Prerequisites:** Rust 1.95.0+ **and** Node.js / npm (required to build the
 > bundled Web UI). The Docker image (Option 1) bundles a pre-built UI, so npm
 > is only needed for source builds.
 
@@ -505,10 +509,19 @@ This uses the Move-a-Wall scene plugin; see
 [setup instructions](examples/move-a-wall/README.md) for the complete runnable
 solution. No configuration-generation program is needed.
 
+This particular scene example explicitly selects the retained
+`drasi/continuous-query` linked-reference recipe. It is not the ordinary
+`queries:` path's default. To use the native query authoring recipe, load the
+query library and select `drasi.experimental/indexed-query/ordinary`; its
+configuration/resource authoring contract is shared, but its implementation
+identity remains distinct. Export that actual selection rather than rewriting
+the identity of existing processing state.
+
 The Server obtains ports, schemas, roles and completion contracts from the
 selected factories. A `version` can be omitted only when exactly one matching
 factory is registered; the Server never guesses the newest version. Native
-loaded factories and the built-in continuous-query/result-outlet factories
+loaded factories (including supported native query-authoring facades) and the
+explicit linked-query/result-outlet factories
 support this description step without constructing components or opening
 resources. A factory that cannot describe itself must use the expanded format.
 Unknown fields, duplicate component/resource IDs, incompatible connections and
@@ -522,7 +535,7 @@ Multiple ports without a primary are ambiguous. To select a different port, use 
 `{from: {component: producer, port: output}, to: consumer}`.
 Output stream names default to `component-id/port-id`; `streams` can override
 them. A factory's own stream setting, if provided, must agree with that binding.
-The built-in query factory supplies the default `stream` setting when omitted.
+Query-authoring factories supply the default `stream` setting when omitted.
 Component `resources` maps factory dependency names to a resource ID or list of
 IDs. Resource roles and ownership come from their recipes; optional
 `resourceDependencies` lists prerequisite resource IDs. `config` values are

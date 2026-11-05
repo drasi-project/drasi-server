@@ -9,7 +9,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ## Development Commands
 
 ### Build and Run
-- Default builds use the reviewed released registry dependencies and need no sibling checkout. `make prepare-build` checks the locked release identities or explicitly selected matching local SDKs without fetching source.
+- This branch uses path dependencies in the existing sibling Core checkout and requires Rust 1.95.0. `make prepare-build` checks the selected dependency origin without fetching another checkout; historical registry-release configurations are not this branch's default.
 - Build: `cargo build`
 - Build release: `cargo build --release`
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
@@ -34,7 +34,15 @@ Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`)
 - Check plugin origin without building: `python3 scripts/plugin_origin.py mode`
 - Test the plugin origin/setup policy: `make test-tooling`
 
-Trading's native `./start-demo.sh` defaults to local mode and requires the matched build from `examples/trading/build-local-plugins.sh`: native PostgreSQL/HTTP source and bootstrap libraries plus the existing SSE output adapter. The build also generates the canonical native group from actual factory metadata and the app's query definitions; secret settings remain configuration references. Startup checks source/binary fingerprints, starts an empty instance, and lets the app install its complete fixed-member source/query group before live prices begin. It rejects registry fallback and never recreates configured slots. `scripts/prepare-trading.sh` retains its dependency-origin and Node preparation policy, including unrelated reviewed registry tooling; the older registry-based devcontainer preparation alone is not the native Trading build. `scripts/install_plugins.py` still provides independent hash checks for its reviewed registry groups. The released runtime uses core/functions 0.5.10, library 0.9.3, host/plugin/FFI SDK 0.11.3, index 0.6.4 and middleware 0.5.11 from release `22125bf1`. All eight plugin kinds use that release and native ABI 0.14.0; the Darwin SSE signature was repaired under the same trusted publisher without changing its binary. No older-plugin fallback or temporary source checkout is used. Explicit matching local-SDK development remains separate. Python 3.11 or later is required for preparation. See `docs/main-runtime-integration.md` for current provenance, validation and upgrade warnings; older source-pin evidence is labeled historical.
+Trading's native `./start-demo.sh` defaults to local mode and requires the matched build from `examples/trading/build-local-plugins.sh`: the native query plugin, PostgreSQL/HTTP source and bootstrap libraries, and the existing SSE output adapter. The build generates the canonical native group from actual factory metadata and the app's query definitions; secret settings remain references. Startup checks source/binary fingerprints, starts an empty instance, and lets the app install its complete fixed-member group before live prices begin. It rejects registry fallback and never recreates configured slots. The ownership-checked Learning tutorial launcher runs this same application with isolated loopback ports and disposable data. Older registry-based devcontainer preparation alone is not the native Trading build. `scripts/install_plugins.py` still supports its separately reviewed registry groups; their historical versions do not describe the current local native ABI or factories. Python 3.11 or later is required. See `docs/main-runtime-integration.md` for provenance and upgrade boundaries.
+
+Ordinary queries require the explicitly selected native query factory.
+Server resolves the unique eligible loaded plugin before configured/API query
+creation; a source-only instance needs none. Include
+`drasi-computation-transformer-query` in local plugin bundles, with the middleware
+features the queries use. Registration also makes its query-authoring recipe
+identity available for canonical native definitions, without selecting an
+implicit default or falling back to the linked reference constructor.
 
 **Persistent-state upgrade:** all affected numeric groups, including ordinary integer and nested compound keys, need complete authoritative reconstruction of grouping/default state, lazy min/max sets, indexes and output together. The one-time source-rank configuration-hash rebootstrap and named MessagePack writer do not repair malformed old positional records. Strict errors remain visible. Do not delete user state, clear only output rows, or claim an automatic migration.
 
@@ -161,11 +169,12 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 #   - "http://localhost:3000"
 #   - "https://dashboard.example.com"
 
-# Optional top-level bootstrap providers, referenced by sources via
+# Optional PER-INSTANCE bootstrap providers, under instances[].bootstrapProviders,
+# referenced by that instance's sources via
 # `bootstrapProvider: <id>`. Declaring a provider here lets multiple sources
 # share one definition. Each referencing source instantiates its own provider
 # instance from this config (non-singleton).
-# bootstrapProviders:
+#   bootstrapProviders:  # inside the same instance as the source
 #   - kind: postgres
 #     id: pg-bootstrap
 #     host: localhost
@@ -179,7 +188,7 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 #   sources:
 #     - kind: postgres
 #       id: my-source
-#       bootstrapProvider: pg-bootstrap   # reference to the top-level entry
+#       bootstrapProvider: pg-bootstrap   # reference to that instance's entry
 #
 # Sources may also define a bootstrap provider INLINE (a mapping instead of a
 # string). An inline provider of the SAME kind as its source inherits the

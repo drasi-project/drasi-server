@@ -1575,12 +1575,17 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         )
         .await;
         if recipe["kind"] == "memoryIndexes" {
-            let error = result
-                .err()
-                .context("durable transactions must reject volatile indexes")?;
+            let report = core.add_components(result?.auto_start(false)).await?;
+            assert!(report.committed);
+            let state = core.computation_component("transaction")?.observed()?;
+            assert_eq!(state.realization, RealizationState::CreationFailed);
+            let error = state
+                .failure
+                .context("volatile indexes must fail construction")?;
             assert!(
-                error.to_string().contains("persistent and atomic"),
-                "{error:#}"
+                error.cause.to_string().contains("persistent and atomic"),
+                "{:#}",
+                error.cause
             );
             core.shutdown().await?;
             continue;

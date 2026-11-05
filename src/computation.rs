@@ -25,7 +25,7 @@ use drasi_host_sdk::{
         CompositeBootstrapConfig, ConsumerProgressConfig, HostConfigurationResolver,
         NativeBootstrapConfig, NativeConsumerConfig, NativeIdentityConfig,
         NativeOutputSnapshotsConfig, NativeSourceBootstrapConfig, QosRecoveryConfig,
-        SharedQosConfig,
+        SharedQosConfig, SourceTimeMergeStorageConfig,
     },
 };
 use drasi_lib::{
@@ -85,6 +85,7 @@ pub enum ComputationResourceConfig {
         component: ComponentId,
     },
     SharedQos(#[schema(value_type = serde_json::Value)] SharedQosConfig),
+    SourceTimeMergeStorage(#[schema(value_type = serde_json::Value)] SourceTimeMergeStorageConfig),
     NativeConsumer(#[schema(value_type = serde_json::Value)] NativeConsumerConfig),
     NativeBootstrap(#[schema(value_type = serde_json::Value)] NativeBootstrapConfig),
     NativeSourceBootstrap(#[schema(value_type = serde_json::Value)] NativeSourceBootstrapConfig),
@@ -130,6 +131,7 @@ impl ComputationResourceConfig {
             Self::MemoryIndexes {}
             | Self::RocksdbIndexes { .. }
             | Self::SharedStorage { .. }
+            | Self::SourceTimeMergeStorage(_)
             | Self::NativeConsumer(_) => ResourceRole::IndexBackend,
             Self::QueryCatalog {} => ResourceRole::QueryCatalog,
             Self::NativeOutputSnapshots(_) => ResourceRole::OutputCatalogue,
@@ -221,6 +223,9 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             );
         } else if let ComputationResourceConfig::NativeConsumer(config) = &recipe {
             config.validate_dependencies(resource, &dependencies)?;
+        } else if let ComputationResourceConfig::SourceTimeMergeStorage(config) = &recipe {
+            config.validate(resource, &dependencies)?;
+            config.validate_owner(&resource.id, definition)?;
         } else if let ComputationResourceConfig::NativeBootstrap(config) = &recipe {
             config.validate(resource, &dependencies)?;
             config.validate_owner(&resource.id, definition)?;
@@ -487,15 +492,6 @@ async fn build_components_with_resources(
     identity_providers: NativeIdentityProviders,
 ) -> Result<ComponentBatch> {
     validate_definition(config)?;
-    for component in &config.definition.components {
-        if let ComponentConstruction::Factory(specification) = &component.construction {
-            if let Some(factory) = factories.get(&specification.implementation) {
-                factory.validate(specification).with_context(|| {
-                    format!("invalid component '{}'", specification.descriptor.id())
-                })?;
-            }
-        }
-    }
     let services = core.computation_plugin_services()?;
     let resolver = Arc::new(ServerManagementResources {
         factories: factories.clone(),
@@ -512,48 +508,30 @@ async fn build_components_with_resources(
     )?;
     let mut bindings = TopologyBindings {
         factories,
+        deferred_management_validation: true,
         ..Default::default()
     };
-    if !config.definition.resource_dependencies.is_empty() {
-        for resource in &config.definition.resources {
-            let recipe = config
-                .definition
-                .resource_configurations
-                .get(&resource.id)
-                .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
-            bindings.resource_constructors.insert(
-                resource.id.clone(),
-                drasi_lib::management::resource_constructor(
-                    resolver.clone(),
-                    services.scope.as_ref(),
-                    &config.definition.graph_id,
-                    resource.clone(),
-                    recipe.clone(),
-                ),
-            );
-        }
-        return Ok(ComponentBatch {
-            definition: config.definition.clone(),
-            bindings,
-        });
-    }
     for resource in &config.definition.resources {
         let recipe = config
             .definition
             .resource_configurations
             .get(&resource.id)
             .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
-        let handle = resolver
-            .resolve(
-                &services.scope,
+        bindings.resource_constructors.insert(
+            resource.id.clone(),
+            drasi_lib::management::resource_constructor(
+                resolver.clone(),
+                services.scope.as_ref(),
                 &config.definition.graph_id,
-                resource,
-                recipe,
-            )
-            .await?;
-        bindings.resources.insert(resource.id.clone(), handle);
+                resource.clone(),
+                recipe.clone(),
+            ),
+        );
     }
-    Ok(config.definition.build_components(bindings)?)
+    Ok(ComponentBatch {
+        definition: config.definition.clone(),
+        bindings,
+    })
 }
 
 /// The same recipes serve imperative construction and durable reconciliation.
@@ -606,20 +584,36 @@ impl ManagementResourceResolver for ServerManagementResources {
                 ComputationResourceConfig::NativeBootstrap(config) => {
                     config.validate(resource, &dependencies)?;
                     config.validate_owner(&resource.id, desired)?;
-                    config.validate_configuration(
-                        &self.bootstraps,
-                        &dependencies,
-                        &BTreeMap::new(),
-                    )?;
+                    if self
+                        .bootstraps
+                        .get(&config.implementation)
+                        .is_some_and(|factory| {
+                            factory.metadata().configuration_version == config.configuration_version
+                        })
+                    {
+                        config.validate_configuration(
+                            &self.bootstraps,
+                            &dependencies,
+                            &BTreeMap::new(),
+                        )?;
+                    }
                 }
                 ComputationResourceConfig::NativeSourceBootstrap(config) => {
                     config.validate(resource, &dependencies)?;
                     config.validate_owner(&resource.id, desired)?;
-                    config.validate_configuration(
-                        &self.source_bootstraps,
-                        &dependencies,
-                        &BTreeMap::new(),
-                    )?;
+                    if self
+                        .source_bootstraps
+                        .get(&config.implementation)
+                        .is_some_and(|factory| {
+                            factory.metadata().configuration_version == config.configuration_version
+                        })
+                    {
+                        config.validate_configuration(
+                            &self.source_bootstraps,
+                            &dependencies,
+                            &BTreeMap::new(),
+                        )?;
+                    }
                 }
                 ComputationResourceConfig::CompositeBootstrap(config) => {
                     config.validate(resource, &dependencies)?;
@@ -627,6 +621,10 @@ impl ManagementResourceResolver for ServerManagementResources {
                 }
                 ComputationResourceConfig::NativeConsumer(config) => {
                     config.validate_dependencies(resource, &dependencies)?
+                }
+                ComputationResourceConfig::SourceTimeMergeStorage(config) => {
+                    config.validate(resource, &dependencies)?;
+                    config.validate_owner(&resource.id, desired)?;
                 }
                 ComputationResourceConfig::NativeOutputSnapshots(config) => {
                     config.validate(resource, &dependencies)?
@@ -651,6 +649,7 @@ impl ManagementResourceResolver for ServerManagementResources {
                 ComputationResourceConfig::RocksdbIndexes { .. }
                 | ComputationResourceConfig::SharedStorage { .. }
                 | ComputationResourceConfig::SharedQos(_)
+                | ComputationResourceConfig::SourceTimeMergeStorage(_)
                 | ComputationResourceConfig::NativeConsumer(_) => true,
                 ComputationResourceConfig::Qos { path, recovery, .. } => {
                     path.is_some() || recovery.is_some()
@@ -697,6 +696,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                 .await;
         }
         if let ComputationResourceConfig::NativeConsumer(config) = recipe {
+            return config.resolve(instance, graph, resource, dependencies);
+        }
+        if let ComputationResourceConfig::SourceTimeMergeStorage(config) = recipe {
             return config.resolve(instance, graph, resource, dependencies);
         }
         if let ComputationResourceConfig::NativeBootstrap(config) = recipe {
@@ -794,6 +796,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             }
             ComputationResourceConfig::NativeConsumer(_) => {
                 unreachable!("native consumer resolved with dependencies")
+            }
+            ComputationResourceConfig::SourceTimeMergeStorage(_) => {
+                unreachable!("time merge storage resolved with dependencies")
             }
             ComputationResourceConfig::NativeBootstrap(_) => {
                 unreachable!("native bootstrap resolved with dependencies")
@@ -931,7 +936,9 @@ pub fn configuration_from_snapshot(
         return Ok(None);
     };
     let mut config = ComputationConfig {
-        definition: native.topology.clone(),
+        definition: native
+            .reconstructible_topology()
+            .context("native components cannot be persisted or cloned")?,
     };
     config.definition.revision = GraphRevision(0);
     validate_definition(&config).context("native components cannot be persisted or cloned")?;
