@@ -29,6 +29,7 @@ cargo build --locked --bin drasi-server --example native-postgres
     -p drasi-computation-bootstrap-postgres \
     -p drasi-computation-source-http \
     -p drasi-computation-bootstrap-http \
+    -p drasi-computation-transformer-query \
     -p drasi-reaction-log -p drasi-reaction-http -p drasi-reaction-sse
 )
 ```
@@ -37,7 +38,8 @@ Use `--offline` when dependencies are already available. Follow the repository's
 normal platform/toolchain setup, including its jq library settings on macOS.
 Build UI assets with `make build-ui` if you also need the embedded Server UI.
 The existing log, HTTP and SSE output adapters remain connected through the
-native query-results outlet; these examples do not add a second execution engine.
+native query-results outlet. The generator selects the loaded query plugin's
+ordinary-query factory explicitly; these examples do not add a second execution engine.
 
 ## Generate and run a configuration
 

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NATIVE_TRADING_CRATES = {
     "drasi-computation-source-http", "drasi-computation-source-postgres",
     "drasi-computation-bootstrap-http", "drasi-computation-bootstrap-postgres",
+    "drasi-computation-transformer-query",
     "drasi-reaction-sse",
 }
 sys.modules["plugin_origin"] = plugin_origin
@@ -358,7 +359,11 @@ if "metadata" in sys.argv:
                 events = self.commands()
                 self.assertIn(["registry-install" if mode == "registry" else "local-build"], events)
                 self.assertNotIn(["local-build" if mode == "registry" else "registry-install"], events)
-                self.assertIn(["cargo", "test", "--locked", "--tests", "--", "--include-ignored"], events)
+                self.assertIn([
+                    "cargo", "test", "--locked", "--tests", "--no-fail-fast", "--",
+                    "--include-ignored", "--skip", "native_consumer_server_crash_worker",
+                    "--skip", "shared_server_crash_worker",
+                ], events)
                 self.assertIn(["cargo", "test", "--locked", "--doc"], events)
                 if mode == "registry":
                     result = subprocess.run(
@@ -545,14 +550,14 @@ if "psql" in sys.argv:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
         )
 
-    def test_explicit_local_build_and_start_use_only_five_matched_plugins(self):
+    def test_explicit_local_build_and_start_use_exact_matched_plugins(self):
         trading, _ = self.local_trading_fixture()
         manifest = self.build_local_fixture(trading)
-        self.assertEqual(len(manifest["plugins"]), 5)
+        self.assertEqual(len(manifest["plugins"]), len(NATIVE_TRADING_CRATES))
         self.assertIn("drasi-ffi-primitives", manifest["resolved_versions"])
         self.assertEqual(manifest["ffi_abi"], "0.14.0")
         builds = [event for event in self.commands() if event[:2] == ["cargo", "build"]]
-        self.assertEqual(len(builds), 6)
+        self.assertEqual(len(builds), len(NATIVE_TRADING_CRATES) + 1)
         library_builds = [event for event in builds if "-p" in event]
         self.assertEqual(
             {event[event.index("-p") + 1] for event in library_builds},
@@ -603,7 +608,7 @@ if "psql" in sys.argv:
         manifest_path.write_text(json.dumps(manifest))
         result = self.start_local_fixture(trading)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("exactly the five", result.stderr)
+        self.assertIn("exactly the required", result.stderr)
 
     def test_local_build_validation_failure_preserves_installed_set(self):
         trading, _ = self.local_trading_fixture()

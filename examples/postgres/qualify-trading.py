@@ -21,6 +21,7 @@ class Trading(Qualification):
     def __init__(self, args):
         super().__init__(args, [
             "drasi_computation_source_postgres", "drasi_computation_bootstrap_postgres",
+            "drasi_computation_transformer_query",
             "drasi_computation_source_http", "drasi_computation_bootstrap_http", "drasi_reaction_sse",
         ])
         self.api_process = None
@@ -146,7 +147,12 @@ class Trading(Qualification):
         assert sources == {"price-feed": "drasi.network/http-source",
                            "postgres-stocks": "drasi.postgres/shared-changes",
                            "postgres-broker": "drasi.postgres/shared-changes"}, sources
-        queries = [node["id"] for node in components if node["role"] == "Query"]
+        query_nodes = [node for node in components
+                       if node.get("implementation") is not None
+                       and node["implementation"]["name"]
+                       == "drasi.experimental/indexed-query/ordinary"]
+        assert all(node["role"] == "Transformer" for node in query_nodes)
+        queries = [node["id"] for node in query_nodes]
         assert len(queries) == 11, queries
         self.until("PG and HTTP bootstrap jointly initialize Trading", lambda:
                    len(self.rows("price-ticker-query")) == 50

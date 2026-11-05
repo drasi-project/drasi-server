@@ -114,7 +114,8 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         })
         .context("native MySQL row bootstrap factory")?
         .metadata();
-    let query_factory = Arc::new(ContinuousQueryFactory::default());
+    let query_plugin = load(directory, "drasi-computation-transformer-query")?;
+    let query_factory = query_plugin.query_factory()?;
     let outlet_factory = Arc::new(QueryResultsOutletFactory::default());
     let mut builder = ComponentBatch::builder();
     for (name, role, recipe) in [

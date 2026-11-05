@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds a matched Drasi Server and the five libraries required by the trading
+# Builds a matched Drasi Server and the libraries required by the trading
 # demo. Shared origin checks require an explicitly selected, coherent local
 # Cargo graph; the presence of a sibling checkout never selects it.
 
@@ -111,6 +111,7 @@ REQUIRED_PLUGIN_CRATES=(
     drasi-computation-source-postgres
     drasi-computation-bootstrap-http
     drasi-computation-bootstrap-postgres
+    drasi-computation-transformer-query
     drasi-reaction-sse
 )
 REQUIRED_PLUGIN_FILES=(
@@ -118,10 +119,11 @@ REQUIRED_PLUGIN_FILES=(
     "${PLUGIN_PREFIX}drasi_computation_source_postgres.${PLUGIN_EXT}"
     "${PLUGIN_PREFIX}drasi_computation_bootstrap_http.${PLUGIN_EXT}"
     "${PLUGIN_PREFIX}drasi_computation_bootstrap_postgres.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_computation_transformer_query.${PLUGIN_EXT}"
     "${PLUGIN_PREFIX}drasi_reaction_sse.${PLUGIN_EXT}"
 )
 
-echo "Building the five trading demo plugins..."
+echo "Building the required trading demo plugins..."
 for crate_name in "${REQUIRED_PLUGIN_CRATES[@]}"; do
     cargo build \
         --manifest-path "$DRASI_CORE_ROOT/Cargo.toml" \

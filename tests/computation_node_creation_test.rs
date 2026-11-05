@@ -26,7 +26,10 @@ use axum::{
 };
 use drasi_lib::{
     channels::{ComponentStatus, QueryResult, SubscriptionResponse},
-    computation::v1::{GraphEntity, GraphEntityId, GraphError, PluginIdentity, RealizationState},
+    computation::v1::{
+        FailureDisposition, GraphEntity, GraphEntityId, GraphError, PluginIdentity,
+        RealizationState,
+    },
     context::{ReactionRuntimeContext, SourceRuntimeContext},
     DrasiLib, Query, Reaction, Source,
 };
@@ -840,7 +843,7 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
     let message = errors[0]["message"].as_str().unwrap();
     assert!(message.contains("Node was added"), "{message}");
     assert!(
-        message.contains(&GraphError::ReconciliationTimeout.to_string()),
+        message.contains("component construction exceeded 5s"),
         "{message}"
     );
     let saved = harness.saved();
@@ -856,7 +859,9 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
     assert_eq!(observed.realization, RealizationState::CreationFailed);
     assert!(matches!(
         observed.failure.unwrap().cause.as_ref(),
-        GraphError::ReconciliationTimeout
+        GraphError::Creation { component, disposition: FailureDisposition::Retryable, source }
+            if component.as_str() == "deferred"
+                && source.downcast_ref::<tokio::time::error::Elapsed>().is_some()
     ));
     assert_status(&harness, "sources", "deferred", "Error").await;
     assert_eq!(harness.source_probe.starts.load(Ordering::SeqCst), 0);

@@ -254,10 +254,11 @@ else:
 required_plugins = {
     f"{prefix}drasi_{kind}.{extension}"
     for kind in ("computation_source_http", "computation_source_postgres",
-                 "computation_bootstrap_http", "computation_bootstrap_postgres", "reaction_sse")
+                 "computation_bootstrap_http", "computation_bootstrap_postgres",
+                 "computation_transformer_query", "reaction_sse")
 }
 if set(manifest.get("plugins", {})) != required_plugins:
-    errors.append("manifest must contain exactly the five required trading plugins")
+    errors.append("manifest must contain exactly the required trading plugin set")
 for filename in sorted(required_plugins):
     expected_hash = manifest.get("plugins", {}).get(filename)
     plugin_path = plugins_dir / filename

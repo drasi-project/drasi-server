@@ -37,6 +37,10 @@ instances:
               - all-items-progress
             descriptor:
               id: all-items
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -362,13 +366,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: all-items
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -694,10 +703,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: all-items/out
       - completion: null
@@ -725,6 +735,10 @@ instances:
               - selected-items-progress
             descriptor:
               id: selected-items
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -1050,13 +1064,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: selected-items
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -1382,10 +1401,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: selected-items/out
       - completion: null

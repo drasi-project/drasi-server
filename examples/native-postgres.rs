@@ -155,7 +155,8 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 .context("native HTTP bootstrap factory")
         })
         .transpose()?;
-    let query_factory = Arc::new(ContinuousQueryFactory::default());
+    let query_plugin = load(libraries, "drasi-computation-transformer-query")?;
+    let query_factory = query_plugin.query_factory()?;
     let outlet_factory = Arc::new(QueryResultsOutletFactory::default());
     let mut builder = ComponentBatch::builder();
     builder = declare(
@@ -183,10 +184,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         anyhow::ensure!(
             !query.inputs.is_empty()
                 && query.middleware.is_empty()
-                && query
-                    .inputs
-                    .iter()
-                    .all(|source| source.pipeline.is_empty())
+                && query.inputs.iter().all(|source| source.pipeline.is_empty())
                 && query.enable_bootstrap,
             "query {} requires an explicitly composed bootstrap/middleware contract",
             query.id

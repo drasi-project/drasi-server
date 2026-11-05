@@ -20,7 +20,8 @@ CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
   -p drasi-computation-source-counter -p drasi-computation-transformer-middleware \
   -p drasi-computation-transformer-arithmetic -p drasi-computation-sink-capture \
   -p drasi-computation-bootstrap-sqlite \
-  -p drasi-source-mock -p drasi-reaction-log \
+  -p drasi-computation-transformer-query \
+  -p drasi-source-mock -p drasi-source-http -p drasi-reaction-http -p drasi-reaction-log \
   -p drasi-bootstrap-scriptfile \
   --features dynamic-plugin
 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_computation_test
@@ -29,7 +30,9 @@ CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_comput
 The default fixture directory is `target/debug`; override it with
 `DRASI_SERVER_TEST_PLUGINS_DIR`. That directory must contain the four native
 component libraries, the native SQLite file-bootstrap library and the legacy
-fixtures. Each processing library exposes exactly its own factory; the SQLite
+fixtures. Stock-binary and directory-loaded query cases also require the matching
+native query library; registering a linked factory inside a test process cannot
+supply that factory to the separate Server binary. Each processing library exposes exactly its own factory; the SQLite
 library exposes a bootstrap factory without a dummy processing component.
 
 ```bash
@@ -155,12 +158,17 @@ not false resource-not-found responses or fabricated component instances.
 The complete functional gate includes existing ignored/E2E tests:
 
 ```bash
-cargo test --locked --tests -- --include-ignored
+cargo test --locked --tests --no-fail-fast -- --include-ignored \
+  --skip native_consumer_server_crash_worker --skip shared_server_crash_worker
+cargo test --locked --doc
 ```
 
 Run it with the required local plugin fixtures available. Plain `cargo test`
 does not include ignored cases. A smoke script reporting skipped cases is not
 evidence that those plugin scenarios executed.
+The two excluded entries are subprocess workers, not independent tests. Their
+required parent tests launch them with the crash-phase environment and verify
+the resulting recovery; running either worker directly is an invocation error.
 
 The live-generator HTTP data-flow fixture accepts a valid ADD or UPDATE as its
 first received event because the source starts before the reaction subscribes.

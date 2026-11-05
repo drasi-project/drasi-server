@@ -706,7 +706,13 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
     let created = core
         .apply_desired_state(0, "create", original.clone())
         .await?;
-    core.start().await?;
+    let inspector = core.inspect_computation_graph()?;
+    core.start().await.with_context(|| {
+        format!(
+            "initial managed query startup: {:?}",
+            inspector.snapshot().observed
+        )
+    })?;
     let output = tokio::time::timeout(DEADLINE, receive.recv())
         .await?
         .context("pending output")?;

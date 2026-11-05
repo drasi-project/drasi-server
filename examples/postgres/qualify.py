@@ -55,6 +55,7 @@ class Qualification:
         suffix = ".dylib" if os.uname().sysname == "Darwin" else ".so"
         for library in libraries or [
             "drasi_computation_source_postgres", "drasi_computation_bootstrap_postgres",
+            "drasi_computation_transformer_query",
             "drasi_reaction_log", "drasi_reaction_sse", "drasi_reaction_http",
         ]:
             source = args.plugins.resolve() / f"lib{library}{suffix}"
@@ -252,7 +253,11 @@ class Qualification:
         assert instance["sources"] == [] and instance["queries"] == []
         definition = instance["computation"]["definition"]
         sources = [node for node in definition["components"] if node["role"] == "Source"]
-        queries = [node["descriptor"]["id"] for node in definition["components"] if node["role"] == "Query"]
+        query_nodes = [node for node in definition["components"]
+                       if node["construction"].get("Factory", {}).get("implementation", {}).get("name")
+                       == "drasi.experimental/indexed-query/ordinary"]
+        assert all(node["role"] == "Transformer" for node in query_nodes)
+        queries = [node["descriptor"]["id"] for node in query_nodes]
         assert len(sources) == 1 and len(queries) >= 1
         assert sources[0]["construction"]["Factory"]["implementation"]["name"] == "drasi.postgres/shared-changes"
         source_id = sources[0]["descriptor"]["id"]

@@ -48,6 +48,10 @@ instances:
               - hello-world-from-progress
             descriptor:
               id: hello-world-from
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -373,13 +377,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: hello-world-from
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -705,10 +714,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: hello-world-from/out
       - completion: null
@@ -744,6 +754,10 @@ instances:
               - message-count-progress
             descriptor:
               id: message-count
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -1069,13 +1083,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: message-count
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -1401,10 +1420,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: message-count/out
       - completion: null
@@ -1446,6 +1466,10 @@ instances:
               - inactive-people-progress
             descriptor:
               id: inactive-people
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -1771,13 +1795,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: inactive-people
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -2103,10 +2132,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: inactive-people/out
       - completion: null

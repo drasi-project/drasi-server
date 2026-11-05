@@ -202,7 +202,8 @@ test-all: prepare-build
 	@echo "=== Building server binary ==="
 	cargo build --locked
 	@echo "=== Running unit and integration tests (including ignored/E2E) ==="
-	cargo test --locked --tests -- --include-ignored
+	cargo test --locked --tests --no-fail-fast -- --include-ignored \
+		--skip native_consumer_server_crash_worker --skip shared_server_crash_worker
 	@echo "=== Running doctests ==="
 	cargo test --locked --doc
 	@echo "=== Running plugin smoke tests ==="

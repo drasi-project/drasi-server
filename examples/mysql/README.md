@@ -23,13 +23,15 @@ From `drasi-server`, with the shared `CARGO_TARGET_DIR` pointing at its `target`
 cargo build --offline --locked --manifest-path ../drasi-core/Cargo.toml \
   -p drasi-computation-source-mysql \
   -p drasi-computation-bootstrap-mysql \
+  -p drasi-computation-transformer-query \
   -p drasi-computation-sink-storedproc-mysql --features dynamic-plugin
 cargo build --offline --locked --example native-mysql --bin drasi-server
 target/debug/examples/native-mysql generate target/debug \
   examples/mysql/recipe.json examples/mysql/server.yaml
 ```
 
-The native libraries reject literal secret settings in a canonical definition.
+The generator explicitly selects the loaded native query plugin, not the linked
+reference constructor. The native libraries reject literal secret settings in a canonical definition.
 The generated configuration uses `env-json:DRASI_MYSQL_SOURCE_SETTINGS` and
 `env-json:DRASI_MYSQL_SINK_SETTINGS` through the real configuration resource.
 Both environment variables contain JSON objects, resolved at construction, not

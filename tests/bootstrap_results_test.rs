@@ -173,6 +173,16 @@ async fn test_bootstrap_data_appears_in_query_results() {
 
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        server
+            .computation_component("bootstrap-query")
+            .expect("query declaration")
+            .wait_started(),
+    )
+    .await
+    .expect("query startup deadline")
+    .expect("query bootstrap must complete");
 
     let results = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

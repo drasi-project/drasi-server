@@ -466,7 +466,16 @@ async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
         .build()
         .await?;
 
-    core.start().await?;
+    let start_error = core
+        .start()
+        .await
+        .expect_err("unknown backend must be reported by instance startup");
+    assert!(
+        start_error
+            .downcast_ref::<drasi_lib::error::PartialStartError>()
+            .is_some(),
+        "{start_error:#}"
+    );
     let error = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         core.computation_component("needs-rocksdb")?.wait_started(),
@@ -505,7 +514,6 @@ async fn assert_create_instance_persist_index_via_http(
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use axum::Router;
-    use drasi_lib::Query;
     use drasi_server::api::v1::handlers;
     use drasi_server::api::v1::routes::build_v1_router;
     use drasi_server::instance_registry::InstanceRegistry;
@@ -527,10 +535,11 @@ async fn assert_create_instance_persist_index_via_http(
     let _ = std::fs::remove_dir_all(&data_dir);
     let _guard = DataDirGuard(data_dir.clone());
 
-    // Empty registry; retain a clone to reach the instance created by the handler.
+    // Retain a clone to inspect the instance created by the real handlers.
     let registry = InstanceRegistry::new();
     let mut plugin_registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugin_registry);
+    plugin_registry.register_computation_plugin(crate::query_plugin::plugin())?;
 
     let router = Router::new()
         .route("/health", axum::routing::get(handlers::health_check))
@@ -548,6 +557,7 @@ async fn assert_create_instance_persist_index_via_http(
         body["memoryBudgetMiB"] = serde_json::json!(memory_budget_mib);
     }
     let response = router
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -573,13 +583,27 @@ async fn assert_create_instance_persist_index_via_http(
         .await
         .expect("created instance should be registered");
     let query_id = format!("{instance_id}-query");
-    core.add_query(
-        Query::cypher(query_id.clone())
-            .query("MATCH (n) RETURN n")
-            .auto_start(true)
-            .build(),
-    )
-    .await?;
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/instances/{instance_id}/queries"))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                    "id": query_id,
+                    "query": "MATCH (n) RETURN n",
+                    "autoStart": true,
+                }))?))?,
+        )
+        .await?;
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create native query: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
         core.computation_component(&query_id)?.wait_started(),

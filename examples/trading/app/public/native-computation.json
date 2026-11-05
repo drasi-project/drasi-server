@@ -75,6 +75,11 @@
             },
             "descriptor": {
               "id": "watchlist-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -410,18 +415,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "watchlist-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -757,13 +768,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "watchlist-query/out"
         }
@@ -841,6 +853,11 @@
             },
             "descriptor": {
               "id": "portfolio-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -1176,18 +1193,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "portfolio-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -1523,13 +1546,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "portfolio-query/out"
         }
@@ -1594,6 +1618,11 @@
             },
             "descriptor": {
               "id": "top-gainers-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -1929,18 +1958,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "top-gainers-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -2276,13 +2311,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "top-gainers-query/out"
         }
@@ -2347,6 +2383,11 @@
             },
             "descriptor": {
               "id": "top-losers-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -2682,18 +2723,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "top-losers-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -3029,13 +3076,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "top-losers-query/out"
         }
@@ -3100,6 +3148,11 @@
             },
             "descriptor": {
               "id": "high-volume-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -3435,18 +3488,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "high-volume-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -3782,13 +3841,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "high-volume-query/out"
         }
@@ -3838,6 +3898,11 @@
             },
             "descriptor": {
               "id": "price-ticker-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -4173,18 +4238,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "price-ticker-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -4520,13 +4591,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "price-ticker-query/out"
         }
@@ -4591,6 +4663,11 @@
             },
             "descriptor": {
               "id": "sector-performance-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -4926,18 +5003,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "sector-performance-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -5273,13 +5356,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "sector-performance-query/out"
         }
@@ -5357,6 +5441,11 @@
             },
             "descriptor": {
               "id": "portfolio-summary-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -5692,18 +5781,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "portfolio-summary-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -6039,13 +6134,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "portfolio-summary-query/out"
         }
@@ -6110,6 +6206,11 @@
             },
             "descriptor": {
               "id": "active-orders-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -6445,18 +6546,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "active-orders-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -6792,13 +6899,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "active-orders-query/out"
         }
@@ -6848,6 +6956,11 @@
             },
             "descriptor": {
               "id": "stale-orders-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -7183,18 +7296,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "stale-orders-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -7530,13 +7649,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "stale-orders-query/out"
         }
@@ -7586,6 +7706,11 @@
             },
             "descriptor": {
               "id": "expiring-orders-query",
+              "output_progress": "Origin",
+              "plugin_identity": {
+                "id": "drasi-computation-transformer-query",
+                "version": "0.11.3"
+              },
               "ports": [
                 {
                   "direction": "Input",
@@ -7921,18 +8046,24 @@
                     "version": 1
                   }
                 }
-              ]
+              ],
+              "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi/continuous-query",
+              "name": "drasi.experimental/indexed-query/ordinary",
               "plugin": null,
               "version": "1"
             },
-            "role": "Query"
+            "role": "Transformer"
           }
         },
         "descriptor": {
           "id": "expiring-orders-query",
+          "output_progress": "Origin",
+          "plugin_identity": {
+            "id": "drasi-computation-transformer-query",
+            "version": "0.11.3"
+          },
           "ports": [
             {
               "direction": "Input",
@@ -8268,13 +8399,14 @@
                 "version": 1
               }
             }
-          ]
+          ],
+          "semantic_kind": "Query"
         },
         "input_merge": "Arrival",
         "lifecycle": {
           "auto_start": true
         },
-        "role": "Query",
+        "role": "Transformer",
         "streams": {
           "out": "expiring-orders-query/out"
         }

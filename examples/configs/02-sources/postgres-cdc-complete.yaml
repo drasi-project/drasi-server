@@ -45,6 +45,10 @@ instances:
               - user-changes-progress
             descriptor:
               id: user-changes
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -370,13 +374,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: user-changes
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -702,10 +711,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: user-changes/out
       - completion: null
@@ -742,6 +752,10 @@ instances:
               - high-value-orders-progress
             descriptor:
               id: high-value-orders
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -1067,13 +1081,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: high-value-orders
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -1399,10 +1418,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: high-value-orders/out
       - completion: null
@@ -1439,6 +1459,10 @@ instances:
               - low-inventory-progress
             descriptor:
               id: low-inventory
+              output_progress: Origin
+              plugin_identity:
+                id: drasi-computation-transformer-query
+                version: 0.11.3
               ports:
               - direction: Input
                 id: in
@@ -1764,13 +1788,18 @@ instances:
                   encoding: drasi-element-msgpack-v1
                   id: drasi.graph-change
                   version: 1
+              semantic_kind: Query
             implementation:
-              name: drasi/continuous-query
+              name: drasi.experimental/indexed-query/ordinary
               plugin: null
               version: '1'
-            role: Query
+            role: Transformer
         descriptor:
           id: low-inventory
+          output_progress: Origin
+          plugin_identity:
+            id: drasi-computation-transformer-query
+            version: 0.11.3
           ports:
           - direction: Input
             id: in
@@ -2096,10 +2125,11 @@ instances:
               encoding: drasi-element-msgpack-v1
               id: drasi.graph-change
               version: 1
+          semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
-        role: Query
+        role: Transformer
         streams:
           out: low-inventory/out
       - completion: null
