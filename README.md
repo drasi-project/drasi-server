@@ -121,18 +121,18 @@ An omitted or empty `instances` list starts an empty Server.
 
 1. Click **+ Add** in the top toolbar
 2. Select **Source** → **Mock** → Fill in:
-   - ID: `sensor-feed`
+   - Name: `sensor-feed`
    - Data Type: `sensorReading`
    - Auto Start: checked
 3. Click **Save**
 4. Click **+ Add** again → **Query** → Fill in:
-   - ID: `high-temp`
+   - Name: `high-temp`
    - Query: `MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s`
    - Sources: select `sensor-feed`
    - Auto Start: checked
 5. Click **Save**
 6. Click **+ Add** → **Reaction** → **Log** → Fill in:
-   - ID: `temp-logger`
+   - Name: `temp-logger`
    - Queries: select `high-temp`
    - Auto Start: checked
 7. Click **Save**
@@ -151,14 +151,14 @@ instances:
   - id: main
     sources:
       - kind: mock
-        id: sensor-feed
+        name: sensor-feed
         autoStart: true
         dataType:
           type: sensorReading
           sensorCount: 5
         intervalMs: 3000
     queries:
-      - id: high-temp
+      - name: high-temp
         query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
         queryLanguage: Cypher
         inputs:
@@ -166,7 +166,7 @@ instances:
         autoStart: true
     reactions:
       - kind: log
-        id: temp-logger
+        name: temp-logger
         queries:
           - high-temp
         autoStart: true
@@ -481,10 +481,10 @@ computation:
       indexes: {kind: memoryIndexes}
       results: {kind: queryCatalog}
     components:
-      - id: scene
+      - name: scene
         kind: move-a-wall/scene
         version: "1"
-      - id: scene-inputs
+      - name: scene-inputs
         kind: drasi/continuous-query
         version: "1"
         config:
@@ -494,7 +494,7 @@ computation:
         resources:
           indexes: indexes
           catalog: results
-      - id: query-results
+      - name: query-results
         kind: drasi/query-results-outlet
         version: "1"
         resources:
@@ -1015,7 +1015,7 @@ instances:
   - id: production
     sources:
       - kind: postgres
-        id: main-db
+        name: main-db
         # ...
     queries: []
     reactions: []
@@ -1023,7 +1023,7 @@ instances:
   - id: staging
     sources:
       - kind: mock
-        id: test-data
+        name: test-data
     queries: []
     reactions: []
 ```
@@ -1109,7 +1109,7 @@ Templates can include variables using `${VAR_NAME:-default}` syntax:
 # Template with variables
 name: IoT Monitor
 queries:
-  - id: high-temp
+  - name: high-temp
     query: "MATCH (s:Sensor) WHERE s.temp > ${TEMP_THRESHOLD:-75} RETURN s"
 ```
 
@@ -1139,11 +1139,11 @@ defaultInstanceId: my-instance
 
 sources:
   - kind: mock
-    id: data-source
+    name: data-source
     autoStart: true
 
 queries:
-  - id: my-query
+  - name: my-query
     query: "MATCH (n) WHERE n.value > ${THRESHOLD:-10} RETURN n"
     inputs:
       - data-source
@@ -1151,7 +1151,7 @@ queries:
 
 reactions:
   - kind: log
-    id: logger
+    name: logger
     queries:
       - my-query
     autoStart: true
@@ -1171,7 +1171,8 @@ You can upload custom template YAML files directly in the Web UI:
 
 Manage dynamic plugins — install, upgrade, list, search, and remove plugin shared libraries.
 
-> **Note:** Plugin management requires the `dynamic-plugins` feature. Build with `cargo build --no-default-features --features dynamic-plugins`.
+> **Note:** Plugin management is built into the Server binary. Plugins are shared
+> libraries loaded at runtime; there is no `dynamic-plugins` Cargo feature.
 
 ##### `plugin install`
 
@@ -1521,7 +1522,8 @@ Sources connect to data systems and stream changes to queries. Each source type 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `kind` | string | (required) | Source type: `postgres`, `http`, `grpc`, `mock`, `platform` |
-| `id` | string | (required) | Unique source identifier |
+| `name` | string | (required) | Editable source name used by configuration references |
+| `id` | UUID | (none) | Optional immutable component ID; explicit IDs require instance `allowExternalComponentIds: true` |
 | `autoStart` | boolean | `true` | Start source automatically on server startup |
 | `bootstrapProvider` | object | (none) | Bootstrap provider configuration |
 
@@ -1532,7 +1534,7 @@ Streams changes from PostgreSQL using logical replication (WAL).
 ```yaml
 sources:
   - kind: postgres
-    id: my-postgres
+    name: my-postgres
     autoStart: true
     host: localhost
     port: 5432
@@ -1586,7 +1588,7 @@ Receives events via HTTP endpoints. Supports two modes:
 ```yaml
 sources:
   - kind: http
-    id: my-http
+    name: my-http
     autoStart: true
     host: 0.0.0.0
     port: 9000
@@ -1610,7 +1612,7 @@ Webhook mode enables receiving events from third-party services (GitHub, Stripe,
 ```yaml
 sources:
   - kind: http
-    id: github-webhook
+    name: github-webhook
     autoStart: true
     host: 0.0.0.0
     port: 9000
@@ -1778,7 +1780,7 @@ Receives events via gRPC streaming.
 ```yaml
 sources:
   - kind: grpc
-    id: my-grpc
+    name: my-grpc
     autoStart: true
     host: 0.0.0.0
     port: 50051
@@ -1799,7 +1801,7 @@ Generates synthetic test data for development and demonstrations. Supports three
 ```yaml
 sources:
   - kind: mock
-    id: test-source
+    name: test-source
     autoStart: true
     dataType:
       type: generic    # or "counter", "sensorReading"
@@ -1810,7 +1812,7 @@ sources:
 ```yaml
 sources:
   - kind: mock
-    id: sensor-source
+    name: sensor-source
     autoStart: true
     dataType:
       type: sensorReading
@@ -1844,7 +1846,7 @@ Consumes events from Redis Streams for Drasi Platform integration.
 ```yaml
 sources:
   - kind: platform
-    id: platform-source
+    name: platform-source
     autoStart: true
     redisUrl: redis://localhost:6379
     streamKey: my-stream
@@ -1929,7 +1931,7 @@ Continuous queries process data changes and maintain materialized results.
 
 ```yaml
 queries:
-  - id: active-orders
+  - name: active-orders
     query: |
       MATCH (o:Order)
       WHERE o.status = 'active'
@@ -1943,7 +1945,8 @@ queries:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `id` | string | (required) | Unique query identifier |
+| `name` | string | (required) | Editable query name used by configuration references |
+| `id` | UUID | (none) | Optional immutable component ID; explicit IDs require instance `allowExternalComponentIds: true` |
 | `query` | string | (required) | Query string (Cypher or GQL) |
 | `queryLanguage` | string | `GQL` | Query language: `Cypher` or `GQL` |
 | `inputs` | array | (required) | Upstream components to consume: a source, another query or a transformer. Each entry is a component name (its primary output) or an object `{component, port?, nodes?, relations?, pipeline?}`. |
@@ -1964,7 +1967,7 @@ keep label selectors and a middleware `pipeline`:
 
 ```yaml
 queries:
-  - id: room-comfort
+  - name: room-comfort
     inputs: [facilities]
     result:
       label: RoomComfort          # node label of this query's published results
@@ -1972,7 +1975,7 @@ queries:
       MATCH (r:Room)
       RETURN r.id AS RoomId, r.floor AS FloorId, r.comfort AS ComfortLevel
 
-  - id: floor-comfort
+  - name: floor-comfort
     inputs:
       - room-comfort              # shorthand for { component: room-comfort }
     result:
@@ -1981,7 +1984,7 @@ queries:
       MATCH (r:RoomComfort)
       RETURN r.FloorId AS FloorId, avg(r.ComfortLevel) AS ComfortLevel
 
-  - id: filtered
+  - name: filtered
     inputs:
       - component: facilities
         port: out                 # explicit output port (otherwise primary/only output)
@@ -2007,12 +2010,12 @@ It accepts either a **named provider** (a string) or an **inline specification**
 queries:
   # Reference the instance's persistent provider by name.
   # Requires `persistIndex: true` so the `rocksdb` provider is registered.
-  - id: persistent-query
+  - name: persistent-query
     query: "MATCH (n) RETURN n"
     storageBackend: rocksdb
 
   # Force in-memory indexes for this query, even when persistIndex is true.
-  - id: volatile-query
+  - name: volatile-query
     query: "MATCH (n) RETURN n"
     storageBackend:
       kind: memory
@@ -2058,7 +2061,7 @@ Create virtual relationships between nodes from different sources:
 
 ```yaml
 queries:
-  - id: order-customer-join
+  - name: order-customer-join
     query: |
       MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
       RETURN o.id, c.name
@@ -2085,8 +2088,9 @@ Reactions respond to query result changes.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `kind` | string | (required) | Reaction type |
-| `id` | string | (required) | Unique reaction identifier |
-| `queries` | array | (required) | Query IDs to subscribe to |
+| `name` | string | (required) | Editable reaction name |
+| `id` | UUID | (none) | Optional immutable component ID; explicit IDs require instance `allowExternalComponentIds: true` |
+| `queries` | array | (required) | Query names or explicit UUID references to subscribe to |
 | `autoStart` | boolean | `true` | Start reaction automatically |
 
 #### Log Reaction (`log`)
@@ -2096,7 +2100,7 @@ Writes query results to console output.
 ```yaml
 reactions:
   - kind: log
-    id: log-output
+    name: log-output
     queries: [my-query]
     autoStart: true
     defaultTemplate:
@@ -2120,7 +2124,7 @@ Sends query results to HTTP endpoints.
 ```yaml
 reactions:
   - kind: http
-    id: webhook
+    name: webhook
     queries: [my-query]
     baseUrl: https://api.example.com
     timeoutMs: 5000
@@ -2148,7 +2152,7 @@ HTTP reaction with adaptive batching and retry logic.
 ```yaml
 reactions:
   - kind: http-adaptive
-    id: adaptive-webhook
+    name: adaptive-webhook
     queries: [my-query]
     baseUrl: https://api.example.com
     timeoutMs: 5000
@@ -2172,7 +2176,7 @@ Streams query results via gRPC.
 ```yaml
 reactions:
   - kind: grpc
-    id: grpc-stream
+    name: grpc-stream
     queries: [my-query]
     endpoint: grpc://localhost:50052
     timeoutMs: 5000
@@ -2198,7 +2202,7 @@ gRPC reaction with adaptive batching.
 ```yaml
 reactions:
   - kind: grpc-adaptive
-    id: adaptive-grpc
+    name: adaptive-grpc
     queries: [my-query]
     endpoint: grpc://localhost:50052
     adaptiveMinBatchSize: 1
@@ -2225,7 +2229,7 @@ Streams query results via Server-Sent Events.
 ```yaml
 reactions:
   - kind: sse
-    id: sse-stream
+    name: sse-stream
     queries: [my-query]
     host: 0.0.0.0
     port: 8081
@@ -2247,7 +2251,7 @@ Publishes query results to Redis Streams in CloudEvent format.
 ```yaml
 reactions:
   - kind: platform
-    id: redis-publisher
+    name: redis-publisher
     queries: [my-query]
     redisUrl: redis://localhost:6379
     emitControlEvents: false
@@ -2274,7 +2278,7 @@ Collects performance metrics for queries.
 ```yaml
 reactions:
   - kind: profiler
-    id: query-profiler
+    name: query-profiler
     queries: [my-query]
     windowSize: 100
     reportIntervalSecs: 60
@@ -2309,33 +2313,33 @@ instances:
       path: ./data/analytics-state.redb
     sources:
       - kind: postgres
-        id: analytics-db
+        name: analytics-db
         # ... source config
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
         inputs:
           - analytics-db
     reactions:
       - kind: log
-        id: analytics-log
+        name: analytics-log
         queries: [high-value-orders]
 
   - id: monitoring
     persistIndex: false
     sources:
       - kind: http
-        id: metrics-api
+        name: metrics-api
         host: 0.0.0.0
         port: 9001
     queries:
-      - id: alert-threshold
+      - name: alert-threshold
         query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
         inputs:
           - metrics-api
     reactions:
       - kind: sse
-        id: alert-stream
+        name: alert-stream
         queries: [alert-threshold]
         port: 8082
 ```
@@ -2359,7 +2363,7 @@ port: ${SERVER_PORT:-8080}
 instances:
   - sources:
       - kind: postgres
-        id: production-db
+        name: production-db
         host: ${DB_HOST}
         password: ${DB_PASSWORD} # Required - fails if not set
 ```
@@ -2384,7 +2388,7 @@ When no `Content-Type` is provided, the body is parsed as JSON.
 # Create a query using a YAML body
 curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
   -H "Content-Type: application/yaml" \
-  --data-binary $'id: high-values\nquery: "MATCH (n) WHERE n.value > 75 RETURN n"\nautoStart: true'
+  --data-binary $'name: high-values\nquery: "MATCH (n) WHERE n.value > 75 RETURN n"\nautoStart: true'
 ```
 
 ### API Documentation
@@ -2419,7 +2423,7 @@ curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/sources \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "mock",
-    "id": "test-source",
+    "name": "test-source",
     "autoStart": true,
     "dataType": {"type": "sensorReading", "sensorCount": 5},
     "intervalMs": 2000
@@ -2451,7 +2455,7 @@ curl http://localhost:8080/api/v1/instances/{instanceId}/queries
 curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "high-values",
+    "name": "high-values",
     "query": "MATCH (n:Item) WHERE n.value > 100 RETURN n",
     "queryLanguage": "Cypher",
     "inputs": ["test-source"],
@@ -2491,7 +2495,7 @@ curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "log",
-    "id": "my-logger",
+    "name": "my-logger",
     "queries": ["high-values"],
     "autoStart": true
   }'
@@ -2501,7 +2505,7 @@ curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/reactions \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "http",
-    "id": "my-webhook",
+    "name": "my-webhook",
     "queries": ["high-values"],
     "autoStart": true,
     "baseUrl": "https://api.example.com",
@@ -2874,7 +2878,7 @@ docker compose down -v  # Also remove volumes
 
 ```yaml
 queries:
-  - id: low-stock-alert
+  - name: low-stock-alert
     query: |
       MATCH (p:Product)
       WHERE p.quantity <= p.reorder_point
@@ -2884,7 +2888,7 @@ queries:
 
 reactions:
   - kind: http
-    id: reorder-webhook
+    name: reorder-webhook
     queries: [low-stock-alert]
     baseUrl: https://purchasing.example.com
     routes:
@@ -2898,7 +2902,7 @@ reactions:
 
 ```yaml
 queries:
-  - id: suspicious-transactions
+  - name: suspicious-transactions
     query: |
       MATCH (t:Transaction)
       WHERE t.amount > 10000
@@ -2909,7 +2913,7 @@ queries:
 
 reactions:
   - kind: sse
-    id: fraud-alerts
+    name: fraud-alerts
     queries: [suspicious-transactions]
     port: 8081
 ```
@@ -2939,7 +2943,7 @@ instances:
 
     sources:
       - kind: postgres
-        id: orders-db
+        name: orders-db
         autoStart: true
         host: ${DB_HOST}
         port: ${DB_PORT:-5432}
@@ -2965,7 +2969,7 @@ instances:
           tables: [orders, customers, products]
 
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: |
           MATCH (o:orders)
           WHERE o.total > ${ORDER_THRESHOLD:-1000}
@@ -2976,7 +2980,7 @@ instances:
         autoStart: true
         enableBootstrap: true
 
-      - id: new-customers
+      - name: new-customers
         query: |
           MATCH (c:customers)
           WHERE c.created_at > datetime() - duration('P7D')
@@ -2988,7 +2992,7 @@ instances:
 
     reactions:
       - kind: http
-        id: order-webhook
+        name: order-webhook
         queries:
           - high-value-orders
         autoStart: true
@@ -3011,7 +3015,7 @@ instances:
               method: POST
 
       - kind: log
-        id: debug-logger
+        name: debug-logger
         queries:
           - high-value-orders
           - new-customers
@@ -3038,7 +3042,7 @@ instances:
       path: ./data/analytics-state.redb
     sources:
       - kind: postgres
-        id: analytics-db
+        name: analytics-db
         autoStart: true
         host: ${ANALYTICS_DB_HOST}
         port: 5432
@@ -3049,14 +3053,14 @@ instances:
         bootstrapProvider:
           kind: postgres
     queries:
-      - id: active-users
+      - name: active-users
         query: "MATCH (u:users) WHERE u.last_active > datetime() - duration('PT1H') RETURN count(u) as active_count"
         inputs:
           - analytics-db
         autoStart: true
     reactions:
       - kind: sse
-        id: metrics-stream
+        name: metrics-stream
         queries: [active-users]
         host: 0.0.0.0
         port: 8082
@@ -3067,21 +3071,21 @@ instances:
     persistIndex: false
     sources:
       - kind: mock
-        id: test-data
+        name: test-data
         autoStart: true
         dataType:
           type: sensorReading
           sensorCount: 10
         intervalMs: 1000
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (s:SensorReading) WHERE s.temperature > 28 RETURN s"
         inputs:
           - test-data
         autoStart: true
     reactions:
       - kind: log
-        id: test-logger
+        name: test-logger
         queries: [test-query]
         autoStart: true
 ```
@@ -3101,7 +3105,7 @@ instances:
   - sources:
   # GitHub webhook source
       - kind: http
-        id: github-events
+        name: github-events
         autoStart: true
         host: 0.0.0.0
         port: 9000
@@ -3155,7 +3159,7 @@ instances:
 
   # Stripe webhook source
       - kind: http
-        id: stripe-events
+        name: stripe-events
         autoStart: true
         host: 0.0.0.0
         port: 9001
@@ -3187,13 +3191,13 @@ instances:
                       status: "{{payload.data.object.status}}"
 
     queries:
-      - id: new-commits
+      - name: new-commits
         query: "MATCH (c:Commit) RETURN c ORDER BY c.timestamp DESC"
         inputs:
           - github-events
         autoStart: true
 
-      - id: large-payments
+      - name: large-payments
         query: "MATCH (p:Payment) WHERE p.amount > 10000 RETURN p"
         inputs:
           - stripe-events
@@ -3201,7 +3205,7 @@ instances:
 
     reactions:
       - kind: log
-        id: event-logger
+        name: event-logger
         queries:
           - new-commits
           - large-payments
@@ -3236,7 +3240,7 @@ instances:
 
     sources:
       - kind: postgres
-        id: main-db
+        name: main-db
         autoStart: true # Boolean fields don't support env var substitution
         host: "${DB_HOST}"
         port: "${DB_PORT:-5432}"
@@ -3251,7 +3255,7 @@ instances:
           kind: postgres
 
     queries:
-      - id: monitored-changes
+      - name: monitored-changes
         query: "${MAIN_QUERY:-MATCH (n) RETURN n}"
         queryLanguage: Cypher
         inputs:
@@ -3261,7 +3265,7 @@ instances:
 
     reactions:
       - kind: log # Enum fields don't support env var substitution
-        id: main-reaction
+        name: main-reaction
         queries:
           - monitored-changes
         autoStart: true
@@ -3366,7 +3370,7 @@ persistConfig: true  # Default - saves API changes to config file
 1. Ensure `enableBootstrap: true` on the query (default):
    ```yaml
    queries:
-     - id: my-query
+     - name: my-query
        enableBootstrap: true  # Default
    ```
 
@@ -3374,7 +3378,7 @@ persistConfig: true  # Default - saves API changes to config file
    ```yaml
    sources:
      - kind: postgres
-       id: my-db
+       name: my-db
        bootstrapProvider:
          kind: postgres
          # ... config

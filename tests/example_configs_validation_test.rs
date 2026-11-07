@@ -116,13 +116,62 @@ fn test_config_server_minimal() {
 #[test]
 fn test_config_server_docker() {
     let path = "config/server-docker.yaml";
-    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+    let config =
+        load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+    let instance = config
+        .instances
+        .first()
+        .expect("server-docker config should declare one instance");
+
+    assert!(!instance.allow_external_component_ids);
+    assert_eq!(
+        instance
+            .sources
+            .iter()
+            .map(|source| source.name())
+            .collect::<Vec<_>>(),
+        ["vehicle-location-source", "order-status-source"]
+    );
+    assert_eq!(
+        instance
+            .queries
+            .iter()
+            .map(|query| query.name.as_str())
+            .collect::<Vec<_>>(),
+        ["available-drivers-query", "pending-orders-query"]
+    );
+    assert_eq!(
+        instance
+            .reactions
+            .iter()
+            .map(|reaction| reaction.name())
+            .collect::<Vec<_>>(),
+        ["driver-availability-logger", "order-notification-handler"]
+    );
+    assert!(instance.sources.iter().all(|source| source.id().is_none()));
+    assert!(instance.queries.iter().all(|query| query.id.is_none()));
+    assert!(instance
+        .reactions
+        .iter()
+        .all(|reaction| reaction.id().is_none()));
 }
 
 #[test]
 fn test_config_server_with_env_vars() {
     let path = "config/server-with-env-vars.yaml";
-    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+    let config =
+        load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+    let instance = config
+        .instances
+        .first()
+        .expect("environment-variable config should declare one instance");
+
+    assert!(instance.sources.iter().all(|source| source.id().is_none()));
+    assert!(instance.queries.iter().all(|query| query.id.is_none()));
+    assert!(instance
+        .reactions
+        .iter()
+        .all(|reaction| reaction.id().is_none()));
 }
 
 // ==================== Integration Test Configs ====================

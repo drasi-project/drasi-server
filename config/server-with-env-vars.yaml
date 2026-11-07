@@ -39,7 +39,7 @@ instances:
     sources:
   # PostgreSQL source with CDC (Change Data Capture)
       - kind: postgres
-        id: my-postgres-db
+        name: my-postgres-db
         autoStart: true
 
     # Connection details - all use environment variables for security
@@ -56,14 +56,14 @@ instances:
 
   # HTTP source for receiving events
       - kind: http
-        id: webhook-receiver
+        name: webhook-receiver
         autoStart: true
         host: "${WEBHOOK_HOST:-0.0.0.0}"
         port: "${WEBHOOK_PORT:-9000}"
 
 # Continuous queries
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: |
           MATCH (o:Order)
           WHERE o.total > 1000
@@ -79,14 +79,14 @@ instances:
     reactions:
   # Log reaction for debugging
       - kind: log
-        id: log-high-value-orders
+        name: log-high-value-orders
         queries:
           - high-value-orders
         autoStart: true
 
   # HTTP webhook reaction
       - kind: http
-        id: notify-high-value-orders
+        name: notify-high-value-orders
         queries:
           - high-value-orders
         autoStart: true
@@ -105,7 +105,7 @@ instances:
 
   # Server-Sent Events (SSE) for real-time updates
       - kind: sse
-        id: sse-high-value-orders
+        name: sse-high-value-orders
         queries:
           - high-value-orders
         autoStart: true

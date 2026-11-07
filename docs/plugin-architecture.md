@@ -1,7 +1,6 @@
 # Drasi Plugin Architecture
 
-This document describes the plugin system architecture for Drasi Server, covering both
-the static (builtin) and dynamic (cdylib) plugin loading approaches.
+This document describes the runtime shared-library plugin architecture for Drasi Server.
 
 ## Overview
 
@@ -752,22 +751,22 @@ config_schema_json() → JSON string  →  Parse JSON
 
 ## Build System
 
-### Static Build (default)
+### Server Build
 
 ```sh
 cargo build                    # debug
 cargo build --release          # release
 ```
 
-All plugins are statically linked. No `.so` files needed.
+The Server always loads plugin shared libraries at runtime. There is no
+`builtin-plugins` or `dynamic-plugins` Cargo feature selector.
 
-### Dynamic Build
+### Local Plugin Builds
 
 ```sh
-make build-dynamic             # build server + all plugins (debug)
-make build-dynamic-release     # build server + all plugins (release)
-make build-dynamic-server      # server only
-make build-dynamic-plugins     # plugins only
+make build-local-plugins         # release plugins from the matching drasi-core checkout
+make build-local-plugins-debug   # debug plugins from the matching drasi-core checkout
+make build-local-test-plugins    # test-only mock/log/http/scriptfile plugins
 ```
 
 Plugins are built individually (not in batch) to avoid feature unification issues
@@ -776,12 +775,12 @@ where adaptive plugins inherit cdylib entry points from their base dependencies.
 ### Testing
 
 ```sh
-# Static tests
+# Server tests
 cargo test --lib                                                    # 196 tests
 cargo test --test error_resilience_test                             # 11 tests
 
-# Dynamic tests (requires: make build-dynamic-plugins)
-cargo test --no-default-features --features dynamic-plugins --lib   # 185 tests
+# Plugin dependency-origin and setup policy
+make test-tooling
 
 # Host-SDK integration tests (requires pre-built cdylib plugins)
 cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test  # 22 tests

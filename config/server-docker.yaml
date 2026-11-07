@@ -12,7 +12,7 @@ instances:
   - id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
     persistIndex: false
     sources:
-      - id: vehicle-location-source
+      - name: vehicle-location-source
         autoStart: true
         kind: mock
         intervalMs: 5000
@@ -20,7 +20,7 @@ instances:
           type: sensorReading
           sensorCount: 10
 
-      - id: order-status-source
+      - name: order-status-source
         autoStart: true
         kind: mock
         dataType:
@@ -28,7 +28,7 @@ instances:
         intervalMs: 3000
 
     queries:
-      - id: available-drivers-query
+      - name: available-drivers-query
         query: |
           MATCH (d:Driver {status: 'available'})
           WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
@@ -40,7 +40,7 @@ instances:
         inputs:
           - vehicle-location-source
 
-      - id: pending-orders-query
+      - name: pending-orders-query
         query: |
           MATCH (o:Order)
           WHERE o.status IN ['pending', 'preparing', 'ready']
@@ -53,13 +53,13 @@ instances:
           - vehicle-location-source
 
     reactions:
-      - id: driver-availability-logger
+      - name: driver-availability-logger
         queries:
           - available-drivers-query
         autoStart: true
         kind: log
 
-      - id: order-notification-handler
+      - name: order-notification-handler
         queries:
           - available-drivers-query
         autoStart: true
@@ -70,4 +70,3 @@ instances:
             added:
               url: /notifications
               method: POST
-

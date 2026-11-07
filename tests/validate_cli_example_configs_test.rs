@@ -125,6 +125,28 @@ fn test_validate_all_example_configs_via_cli() {
     }
 }
 
+#[test]
+fn test_validate_server_docker_config_via_cli() {
+    let config = "config/server-docker.yaml";
+    let plugins = tempfile::tempdir().expect("empty plugin directory");
+    let output = Command::new(get_binary_path())
+        .args(["validate", "--config", config, "--plugins-dir"])
+        .arg(plugins.path())
+        .output()
+        .expect("Failed to execute validate command");
+    let success = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        success,
+        "validate should accept {config}.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("[OK] YAML syntax valid"),
+        "validate should report valid YAML for {config}.\nGot:\n{stdout}"
+    );
+}
+
 /// Verify that the validate command output contains the expected sections
 /// for a known-good config file.
 #[test]
@@ -217,7 +239,9 @@ fn test_version_distinguishes_sdk_crate_and_native_abi() {
 fn run_validate_raw(config_content: &str) -> (bool, String) {
     let dir = tempfile::TempDir::new().expect("create temp dir");
     let config_path = dir.path().join("test-config.yaml");
+    let plugins_path = dir.path().join("plugins");
     std::fs::write(&config_path, config_content).expect("write temp config");
+    std::fs::create_dir(&plugins_path).expect("create empty plugin directory");
 
     let output = Command::new(get_binary_path())
         .args([
@@ -226,7 +250,9 @@ fn run_validate_raw(config_content: &str) -> (bool, String) {
             config_path
                 .to_str()
                 .expect("config path should be valid UTF-8"),
+            "--plugins-dir",
         ])
+        .arg(&plugins_path)
         .output()
         .expect("Failed to execute validate command");
 
@@ -244,7 +270,7 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
         password: "${THIS_VAR_DEFINITELY_DOES_NOT_EXIST}"
     queries: []
     reactions: []
@@ -270,7 +296,7 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
         someField: "${NONEXISTENT_VAR:-fallback_value}"
     queries: []
     reactions: []
@@ -292,7 +318,7 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
         password:
           kind: EnvironmentVariable
           name: ABSOLUTELY_NOT_SET_VAR_12345
@@ -320,7 +346,7 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
         password:
           kind: EnvironmentVariable
           name: ALSO_NOT_SET_VAR_67890
@@ -345,11 +371,11 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
     queries: []
     reactions:
       - kind: log
-        id: my-log
+        name: my-log
         queries:
           - some-query
         routes:
@@ -393,7 +419,7 @@ host: "0.0.0.0"
 port: 8080
 instances:
   - sources:
-      - id: my-source
+      - name: my-source
     queries: []
     reactions: []
 "#;
@@ -408,9 +434,9 @@ instances:
     );
 }
 
-/// Missing required 'id' field on a source should fail.
+/// Missing required 'name' field on a source should fail.
 #[test]
-fn test_validate_rejects_source_missing_id() {
+fn test_validate_rejects_source_missing_name() {
     let config = r#"
 apiVersion: drasi.io/v1
 host: "0.0.0.0"
@@ -422,10 +448,35 @@ instances:
     reactions: []
 "#;
     let (success, stdout) = run_validate_raw(config);
-    assert!(!success, "validate should fail when source is missing 'id'");
+    assert!(
+        !success,
+        "validate should fail when source is missing 'name'"
+    );
     assert!(
         stdout.contains("[ERR]"),
         "Output should contain an error.\nGot:\n{stdout}"
+    );
+}
+
+#[test]
+fn test_validate_rejects_name_shaped_component_id() {
+    let config = r#"
+apiVersion: drasi.io/v1
+host: "0.0.0.0"
+port: 8080
+instances:
+  - sources:
+      - kind: mock
+        name: my-source
+        id: my-source
+    queries: []
+    reactions: []
+"#;
+    let (success, stdout) = run_validate_raw(config);
+    assert!(!success, "validate should reject a component name in `id`");
+    assert!(
+        stdout.contains("expected a UUID"),
+        "Output should explain that component IDs are UUIDs.\nGot:\n{stdout}"
     );
 }
 
@@ -439,7 +490,7 @@ port: 8080
 instances:
   - sources:
       - kind: mock
-        id: my-source
+        name: my-source
         field_a: "${MISSING_VAR_AAA}"
         field_b: "${MISSING_VAR_BBB}"
     queries: []
@@ -465,7 +516,7 @@ instances:
     queries: []
     reactions:
       - kind: log
-        id: my-log
+        name: my-log
 "#;
     let (success, stdout) = run_validate_raw(config);
     assert!(

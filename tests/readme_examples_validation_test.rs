@@ -16,6 +16,7 @@
 //!
 //! This ensures documentation examples remain valid as the configuration schema evolves.
 
+use drasi_lib::config::ComponentId;
 use drasi_server::config::loader::load_config_file;
 use std::fs;
 use std::io::Write;
@@ -85,6 +86,72 @@ fn is_incomplete_fragment(yaml: &str) -> bool {
 /// Check if a YAML block contains placeholder comments that would break parsing.
 fn has_placeholder_comments(yaml: &str) -> bool {
     yaml.contains("# ...")
+}
+
+fn mapping_value<'a>(
+    mapping: &'a serde_yaml::Mapping,
+    expected_key: &str,
+) -> Option<&'a serde_yaml::Value> {
+    mapping
+        .iter()
+        .find_map(|(key, value)| (key.as_str() == Some(expected_key)).then_some(value))
+}
+
+fn check_component_declarations(
+    value: &serde_yaml::Value,
+    block_line: usize,
+    failures: &mut Vec<String>,
+) {
+    match value {
+        serde_yaml::Value::Mapping(mapping) => {
+            for (key, nested) in mapping {
+                if matches!(
+                    key.as_str(),
+                    Some("sources" | "queries" | "reactions" | "components")
+                ) {
+                    if let serde_yaml::Value::Sequence(entries) = nested {
+                        for (index, entry) in entries.iter().enumerate() {
+                            let serde_yaml::Value::Mapping(declaration) = entry else {
+                                continue;
+                            };
+
+                            if mapping_value(declaration, "name")
+                                .and_then(serde_yaml::Value::as_str)
+                                .is_none()
+                            {
+                                failures.push(format!(
+                                    "YAML block at line {block_line}, declaration {} in `{}` is missing `name`",
+                                    index + 1,
+                                    key.as_str().expect("matched string key")
+                                ));
+                            }
+
+                            if let Some(id) = mapping_value(declaration, "id") {
+                                let valid_uuid = id
+                                    .as_str()
+                                    .is_some_and(|id| ComponentId::try_new(id).is_ok());
+                                if !valid_uuid {
+                                    failures.push(format!(
+                                        "YAML block at line {block_line}, declaration {} in `{}` uses a name-shaped `id`; use `name` or an explicit UUID",
+                                        index + 1,
+                                        key.as_str().expect("matched string key")
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                check_component_declarations(nested, block_line, failures);
+            }
+        }
+        serde_yaml::Value::Sequence(values) => {
+            for nested in values {
+                check_component_declarations(nested, block_line, failures);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[test]
@@ -176,6 +243,50 @@ fn test_readme_complete_configs_validate() {
     );
 }
 
+#[test]
+fn test_readme_component_declarations_use_current_identity_fields() {
+    let readme_content = fs::read_to_string("README.md").expect("Failed to read README.md");
+    let yaml_blocks = extract_yaml_blocks(&readme_content);
+    let mut failures = Vec::new();
+
+    for (line_num, yaml) in yaml_blocks {
+        if has_placeholder_comments(&yaml) {
+            continue;
+        }
+        let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(&yaml) else {
+            continue;
+        };
+        check_component_declarations(&value, line_num, &mut failures);
+    }
+
+    assert!(
+        failures.is_empty(),
+        "README component declarations must use required names and reserve `id` for UUIDs:\n{}",
+        failures.join("\n")
+    );
+    assert!(readme_content.contains("      - name: scene"));
+    assert!(readme_content.contains("    name: my-postgres"));
+}
+
+#[test]
+fn test_removed_dynamic_plugins_feature_is_not_recommended() {
+    for path in ["README.md", "docs/plugin-architecture.md"] {
+        let content = fs::read_to_string(path).unwrap_or_else(|error| {
+            panic!("Failed to read {path}: {error}");
+        });
+        for stale_guidance in [
+            "--features dynamic-plugins",
+            "requires the `dynamic-plugins` feature",
+            "make build-dynamic-plugins",
+        ] {
+            assert!(
+                !content.contains(stale_guidance),
+                "{path} must not recommend removed guidance `{stale_guidance}`"
+            );
+        }
+    }
+}
+
 /// Test the specific "Minimal Configuration Example" from README.md
 #[test]
 fn test_readme_minimal_config_example() {
@@ -187,18 +298,18 @@ logLevel: info
 instances:
   - sources:
       - kind: mock
-        id: test-source
+        name: test-source
         autoStart: true
 
     queries:
-      - id: my-query
+      - name: my-query
         query: "MATCH (n:Node) RETURN n"
         inputs:
           - test-source
 
     reactions:
       - kind: log
-        id: log-output
+        name: log-output
         queries: [my-query]
 "#;
 
