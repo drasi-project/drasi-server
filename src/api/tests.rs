@@ -61,10 +61,12 @@ mod serialization_tests {
             .from_input("source1")
             .from_input("source2")
             .auto_start(false)
-            .build();
+            .build()
+            .unwrap();
 
         let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-query");
+        assert_eq!(json["name"], "test-query");
+        assert!(config.id.is_none());
         assert_eq!(json["query"], "MATCH (n) RETURN n");
         assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
 

@@ -31,7 +31,7 @@ async function fixture(overrides: Partial<DrasiClientOptions> = {}) {
   factory.instances[0].open();
   await ready;
   const source = factory.instances[0];
-  const emit = (results: unknown[], timestamp = 1) => source.message({ queryId: 'stocks', results, timestamp });
+  const emit = (results: unknown[], timestamp = 1) => source.message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', results, timestamp });
   return { client, server, factory, emit, source };
 }
 
@@ -41,7 +41,7 @@ describe('bounded best-effort reconciliation', () => {
       const f = await fixture(), pending = deferred<Response>();
       f.server.snapshot = () => pending.promise;
       const delivered = vi.fn(), errors = vi.fn();
-      const subscription = f.client.subscribe('stocks', delivered, errors);
+      const subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', delivered, errors);
       await flush();
       f.emit(mode === 'duplicate'
         ? [{ type: 'ADD', data: { id: 'A', value: 1 } }, { type: 'ADD', data: { id: 'A', value: 1 } }]
@@ -69,7 +69,7 @@ describe('bounded best-effort reconciliation', () => {
       return request.promise;
     };
     const delivered = vi.fn(), errors = vi.fn();
-    const subscription = f.client.subscribe('stocks', delivered, errors);
+    const subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', delivered, errors);
     await flush();
     for (let attempt = 0; attempt < 2; attempt++) {
       f.emit([{ type: 'ADD', data: { id: 'A', value: attempt } }]);
@@ -94,7 +94,7 @@ describe('bounded best-effort reconciliation', () => {
     const f = await fixture();
     f.server.snapshot = async () => json([{ id: 'A', value: 10 }]);
     let rows: ResultRow[] = [];
-    const subscription = f.client.subscribe('stocks', result => {
+    const subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', result => {
       rows = accumulateResult(rows, result, row => String(row.id));
     });
     await flush();
@@ -111,7 +111,7 @@ describe('bounded best-effort reconciliation', () => {
     const f = await fixture(), pending = deferred<Response>();
     f.server.snapshot = () => pending.promise;
     const results = vi.fn();
-    const subscription = f.client.subscribe('stocks', results);
+    const subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', results);
     f.source.message({ type: 'heartbeat', ts: 0 });
     f.emit([{ type: 'noop' }]);
     f.emit([]);
@@ -125,7 +125,7 @@ describe('bounded best-effort reconciliation', () => {
   it('cancels replaced/late replies and subscriber work, including retries after unsubscribe', async () => {
     const f = await fixture(), old = deferred<Response>(), current = deferred<Response>();
     f.server.snapshot = vi.fn().mockImplementationOnce(() => old.promise).mockImplementation(() => current.promise);
-    const delivered = vi.fn(), subscription = f.client.subscribe('stocks', delivered);
+    const delivered = vi.fn(), subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', delivered);
     await flush();
     const oldCall = f.server.fetch.mock.calls.filter(([url]) => String(url).endsWith('/results'))[0];
     subscription.retry();
@@ -148,13 +148,13 @@ describe('bounded best-effort reconciliation', () => {
     const f = await fixture();
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const other = vi.fn();
-    const subscription = f.client.subscribe('stocks', () => { throw new Error('private row body'); },
+    const subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => { throw new Error('private row body'); },
       () => { throw new Error('private error listener body'); },
       () => { throw new Error('private status listener body'); });
-    f.client.subscribe('stocks', other);
+    f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', other);
     await flush();
     expect(subscription.getState()).toMatchObject({
-      status: 'terminal-error', error: { code: 'RESULT_PROCESSING_FAILED', resourceId: 'stocks' },
+      status: 'terminal-error', error: { code: 'RESULT_PROCESSING_FAILED', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' },
     });
     f.emit([{ type: 'ADD', data: { id: 'B' } }]);
     expect(other).toHaveBeenCalledTimes(2);
@@ -167,7 +167,7 @@ describe('bounded best-effort reconciliation', () => {
     f.server.snapshot = vi.fn().mockResolvedValueOnce(failure(503)).mockImplementation(async () => json([]));
     const results = vi.fn();
     let subscription: OutputSubscription;
-    subscription = f.client.subscribe('stocks', results, () => subscription.retry());
+    subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', results, () => subscription.retry());
     await flush();
     expect(subscription.getState().status).toBe('live');
     await vi.advanceTimersByTimeAsync(1000);
@@ -179,11 +179,11 @@ describe('bounded best-effort reconciliation', () => {
     const f = await fixture();
     let subscription: OutputSubscription;
     const result = vi.fn<(result: OutputResult) => void>(() => subscription());
-    subscription = f.client.subscribe('stocks', result);
+    subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', result);
     await flush();
     expect(result).toHaveBeenCalledOnce();
     expect(subscription.getState().status).toBe('initial-loading');
-    const second = f.client.subscribe('stocks', vi.fn(), undefined, state => {
+    const second = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', vi.fn(), undefined, state => {
       if (state.status === 'resynchronizing') second();
     });
     await flush();
@@ -195,7 +195,7 @@ describe('bounded best-effort reconciliation', () => {
 
   it('keeps explicit query retry disconnected until the shared connection is repaired', async () => {
     const f = await fixture({ reconnect: { maxReconnectAttempts: 0 } });
-    const errors = vi.fn(), subscription = f.client.subscribe('stocks', vi.fn(), errors);
+    const errors = vi.fn(), subscription = f.client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', vi.fn(), errors);
     await flush();
     f.source.fail();
     await flush();

@@ -191,7 +191,11 @@ pub async fn create_source(
 
     // All registry borrows are done — create instances without holding the registry
     let source = descriptor
-        .create_source(&config.id, &config.config, config.auto_start)
+        .create_source(
+            config.assigned_id()?.as_str(),
+            &config.config,
+            config.auto_start,
+        )
         .await?;
 
     if let (Some(bootstrap_config), Some(bp_descriptor)) = (
@@ -204,7 +208,7 @@ pub async fn create_source(
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
-        info!("Setting bootstrap provider for source '{}'", config.id());
+        info!("Setting bootstrap provider for source '{}'", config.name());
         source.set_bootstrap_provider(provider).await;
     }
 
@@ -247,7 +251,11 @@ pub async fn create_source_locked(
     }; // lock dropped here
 
     let source = descriptor
-        .create_source(&config.id, &config.config, config.auto_start)
+        .create_source(
+            config.assigned_id()?.as_str(),
+            &config.config,
+            config.auto_start,
+        )
         .await?;
 
     if let (Some(bootstrap_config), Some(bp_descriptor)) = (
@@ -260,11 +268,183 @@ pub async fn create_source_locked(
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
-        info!("Setting bootstrap provider for source '{}'", config.id());
+        info!("Setting bootstrap provider for source '{}'", config.name());
         source.set_bootstrap_provider(provider).await;
     }
 
     Ok((source, plugin_meta))
+}
+
+pub async fn create_source_instance(
+    core: &drasi_lib::DrasiLib,
+    registry: Arc<tokio::sync::RwLock<PluginRegistry>>,
+    mut config: SourceConfig,
+) -> drasi_lib::Result<drasi_lib::computation::v1::ComponentHandle> {
+    core.create_source_async(
+        config.name.clone(),
+        config.id.clone(),
+        config.auto_start,
+        move |id| async move {
+            config.id = Some(id);
+            create_source_locked(&registry, config).await
+        },
+    )
+    .await
+}
+
+pub fn bind_reaction_inputs(
+    config: &mut ReactionConfig,
+    ids: Vec<drasi_lib::config::ComponentId>,
+) -> Result<()> {
+    use drasi_lib::config::ComponentReference;
+    anyhow::ensure!(
+        config.queries.len() == ids.len(),
+        "reaction input assignment does not match its declarations"
+    );
+    let mut bindings = HashMap::new();
+    for (reference, id) in config.queries.iter().zip(&ids) {
+        let label = match reference {
+            ComponentReference::Name(name) => name.as_str(),
+            ComponentReference::Id { id: requested } => {
+                anyhow::ensure!(requested == id, "reaction UUID input was changed");
+                requested.as_str()
+            }
+        };
+        if reaction_uses_query_reference(&config.kind, &config.config, label) {
+            if let Some(previous) = bindings.insert(label.to_owned(), id.to_string()) {
+                anyhow::ensure!(
+                    previous == id.as_str(),
+                    "ambiguous reaction route '{label}'"
+                );
+            }
+        }
+    }
+    remap_reaction_references(&config.kind, &mut config.config, &bindings)?;
+    config.queries = ids.into_iter().map(ComponentReference::by_id).collect();
+    Ok(())
+}
+
+fn has_query_routes(kind: &str) -> bool {
+    matches!(
+        kind,
+        "http" | "http-adaptive" | "grpc" | "grpc-adaptive" | "log" | "sse"
+    )
+}
+
+pub(crate) fn reaction_uses_query_reference(
+    kind: &str,
+    configuration: &serde_json::Value,
+    label: &str,
+) -> bool {
+    if has_query_routes(kind) {
+        return configuration
+            .get("routes")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|routes| routes.contains_key(label));
+    }
+    kind == "dashboard"
+        && configuration
+            .get("predefinedDashboards")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|dashboard| {
+                dashboard
+                    .get("widgets")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .any(|widget| {
+                widget
+                    .get("config")
+                    .and_then(|config| config.get("queryId"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some(label)
+            })
+}
+
+pub(crate) fn remap_reaction_references(
+    kind: &str,
+    configuration: &mut serde_json::Value,
+    bindings: &HashMap<String, String>,
+) -> Result<()> {
+    if has_query_routes(kind) {
+        if let Some(routes) = configuration
+            .get_mut("routes")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            let original = std::mem::take(routes);
+            for (key, value) in original {
+                let key = bindings.get(&key).cloned().unwrap_or(key);
+                anyhow::ensure!(
+                    routes.insert(key.clone(), value).is_none(),
+                    "duplicate reaction route for resolved query '{key}'"
+                );
+            }
+        }
+    }
+    if kind == "dashboard" {
+        if let Some(dashboards) = configuration.get_mut("predefinedDashboards") {
+            for dashboard in dashboards
+                .as_array_mut()
+                .context("predefinedDashboards must be an array")?
+            {
+                if let Some(widgets) = dashboard.get_mut("widgets") {
+                    for widget in widgets
+                        .as_array_mut()
+                        .context("dashboard widgets must be an array")?
+                    {
+                        if let Some(query) = widget
+                            .get_mut("config")
+                            .and_then(|config| config.get_mut("queryId"))
+                        {
+                            let label = query.as_str().context(
+                                "dashboard queryId must be a component reference string",
+                            )?;
+                            if let Some(id) = bindings.get(label) {
+                                *query = serde_json::Value::String(id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn named_reference(
+    reference: &drasi_lib::config::ComponentReference,
+    names: &HashMap<String, String>,
+) -> Result<drasi_lib::config::ComponentReference> {
+    if let Some(id) = reference.as_id() {
+        if let Some(name) = names.get(id.as_str()) {
+            return Ok(drasi_lib::config::ComponentReference::by_name(
+                name.as_str(),
+            )?);
+        }
+    }
+    Ok(reference.clone())
+}
+
+pub async fn create_reaction_instance(
+    core: &drasi_lib::DrasiLib,
+    registry: Arc<tokio::sync::RwLock<PluginRegistry>>,
+    mut config: ReactionConfig,
+) -> drasi_lib::Result<drasi_lib::computation::v1::ComponentHandle> {
+    core.create_reaction_async(
+        config.name.clone(),
+        config.id.clone(),
+        config.queries.clone(),
+        config.auto_start,
+        move |id, inputs| async move {
+            config.id = Some(id);
+            bind_reaction_inputs(&mut config, inputs)?;
+            create_reaction_locked(&registry, config).await
+        },
+    )
+    .await
 }
 
 /// Create a bootstrap provider from configuration using the plugin registry.
@@ -340,12 +520,12 @@ pub fn resolve_source_bootstrap_provider(
             // (debug only) for operator troubleshooting instead.
             log::debug!(
                 "Unknown bootstrapProvider '{id}' referenced by source '{}'. Declared providers: {:?}",
-                config.id(),
+                config.name(),
                 bootstrap_providers.keys().collect::<Vec<_>>()
             );
             anyhow::anyhow!(
                 "Source '{}' references unknown bootstrapProvider '{id}'",
-                config.id(),
+                config.name(),
             )
         })?;
         config.bootstrap_provider =
@@ -377,8 +557,8 @@ pub async fn create_reaction(
 
     descriptor
         .create_reaction(
-            &config.id,
-            config.queries.clone(),
+            config.assigned_id()?.as_str(),
+            config.resolved_query_ids()?,
             &config.config,
             config.auto_start,
         )
@@ -406,8 +586,8 @@ pub async fn create_reaction_locked(
 
     let reaction = descriptor
         .create_reaction(
-            &config.id,
-            config.queries.clone(),
+            config.assigned_id()?.as_str(),
+            config.resolved_query_ids()?,
             &config.config,
             config.auto_start,
         )
@@ -818,7 +998,8 @@ mod tests {
         // source-creation path can instantiate and wire it live.
         let source = SourceConfig {
             kind: "postgres".to_string(),
-            id: "src1".to_string(),
+            name: "src1".to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
                 "pg-bootstrap".to_string(),
@@ -850,7 +1031,8 @@ mod tests {
     fn test_resolve_source_bootstrap_provider_unknown_reference_errors() {
         let source = SourceConfig {
             kind: "postgres".to_string(),
-            id: "src1".to_string(),
+            name: "src1".to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
                 "does-not-exist".to_string(),
@@ -870,7 +1052,8 @@ mod tests {
         // Inline providers (and sources without one) are left unchanged.
         let source = SourceConfig {
             kind: "postgres".to_string(),
-            id: "src1".to_string(),
+            name: "src1".to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Inline(
                 BootstrapProviderConfig {
@@ -900,7 +1083,8 @@ mod tests {
         let registry = test_registry();
         let config = SourceConfig {
             kind: "nonexistent".to_string(),
-            id: "test".to_string(),
+            name: "test".to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: None,
             identity_provider: None,
@@ -921,7 +1105,8 @@ mod tests {
         let registry = test_registry();
         let config = ReactionConfig {
             kind: "nonexistent".to_string(),
-            id: "test".to_string(),
+            name: "test".to_string(),
+            id: None,
             queries: vec![],
             auto_start: true,
             identity_provider: None,

@@ -103,7 +103,7 @@ pub struct FieldError {
 pub struct ComponentValidationReport {
     /// "source", "reaction", or "bootstrap".
     pub component_type: String,
-    pub component_id: String,
+    pub component_name: String,
     pub plugin_kind: String,
     pub errors: Vec<FieldError>,
 }
@@ -159,14 +159,14 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
         requirements.push(PluginRequirement {
             category: "source".to_string(),
             kind: src.kind.clone(),
-            referenced_by: format!("source '{}'", src.id),
+            referenced_by: format!("source '{}'", src.name),
         });
 
         if let Some(bp) = src.bootstrap_provider().and_then(|r| r.as_inline()) {
             requirements.push(PluginRequirement {
                 category: "bootstrap".to_string(),
                 kind: bp.kind.clone(),
-                referenced_by: format!("source '{}' bootstrapProvider", src.id),
+                referenced_by: format!("source '{}' bootstrapProvider", src.name),
             });
         }
     }
@@ -185,7 +185,7 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
         requirements.push(PluginRequirement {
             category: "reaction".to_string(),
             kind: rxn.kind.clone(),
-            referenced_by: format!("reaction '{}'", rxn.id),
+            referenced_by: format!("reaction '{}'", rxn.name),
         });
     }
 
@@ -295,7 +295,7 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
     let all_bootstrap_providers = collect_all_bootstrap_providers(config);
 
     for src in &all_sources {
-        let prefix = format!("sources['{}']", src.id);
+        let prefix = format!("sources['{}']", src.name);
         walk_json_env_refs(&src.config, &prefix, &mut warnings);
         if let Some(bp) = src.bootstrap_provider().and_then(|r| r.as_inline()) {
             let bp_prefix = format!("{prefix}.bootstrapProvider");
@@ -309,7 +309,7 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
     }
 
     for rxn in &all_reactions {
-        let prefix = format!("reactions['{}']", rxn.id);
+        let prefix = format!("reactions['{}']", rxn.name);
         walk_json_env_refs(&rxn.config, &prefix, &mut warnings);
     }
 
@@ -461,7 +461,12 @@ pub fn validate_with_plugins(
     {
         let validation = (|| {
             let factories = crate::computation::native_factory_registry(&registry)?;
-            let graph = graph.resolve(&factories)?;
+            let graph = graph.resolve_with_ids(&factories, |component| {
+                Ok(component
+                    .id
+                    .clone()
+                    .unwrap_or_else(drasi_lib::config::ComponentId::generate))
+            })?;
             graph
                 .definition
                 .build(drasi_lib::computation::v1::TopologyBindings {
@@ -474,7 +479,7 @@ pub fn validate_with_plugins(
         if let Err(error) = validation {
             config_errors.push(ComponentValidationReport {
                 component_type: "computation".into(),
-                component_id: drasi_lib::management::DesiredInstance::default()
+                component_name: drasi_lib::management::DesiredInstance::default()
                     .topology
                     .graph_id,
                 plugin_kind: "computationGraph".into(),
@@ -676,7 +681,8 @@ mod tests {
     fn source(kind: &str, id: &str) -> SourceConfig {
         SourceConfig {
             kind: kind.to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: None,
             identity_provider: None,
@@ -687,7 +693,8 @@ mod tests {
     fn source_with_bootstrap(kind: &str, id: &str, bp_kind: &str) -> SourceConfig {
         SourceConfig {
             kind: kind.to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             auto_start: true,
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -701,7 +708,8 @@ mod tests {
     fn reaction(kind: &str, id: &str) -> ReactionConfig {
         ReactionConfig {
             kind: kind.to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             queries: vec![],
             auto_start: true,
             identity_provider: None,
@@ -873,7 +881,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -896,7 +905,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -926,7 +936,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -953,7 +964,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -979,7 +991,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -1002,7 +1015,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "s1".to_string(),
+                name: "s1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,

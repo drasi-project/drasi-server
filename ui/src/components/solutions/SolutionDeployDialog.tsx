@@ -76,9 +76,9 @@ export default function SolutionDeployDialog({
             id: "uploaded",
             name: "Uploaded Template",
             variables: extractVariablesFromYaml(uploadedYaml),
-            sourceIds: [],
-            queryIds: [],
-            reactionIds: [],
+            sourceNames: [],
+            queryNames: [],
+            reactionNames: [],
           });
         }
       } catch (e) {
@@ -202,9 +202,9 @@ export default function SolutionDeployDialog({
   }
 
   const totalComponents =
-    (template?.sourceIds.length ?? 0) +
-    (template?.queryIds.length ?? 0) +
-    (template?.reactionIds.length ?? 0);
+    (template?.sourceNames.length ?? 0) +
+    (template?.queryNames.length ?? 0) +
+    (template?.reactionNames.length ?? 0);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
@@ -249,18 +249,18 @@ export default function SolutionDeployDialog({
                     </h3>
                   </div>
                   <div className="p-4 space-y-3">
-                    {template.sourceIds.length > 0 && (
+                    {template.sourceNames.length > 0 && (
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 rounded-lg bg-drasi-source/10 flex items-center justify-center shrink-0">
                           <Database size={16} className="text-drasi-source" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
-                            {template.sourceIds.length} Source
-                            {template.sourceIds.length !== 1 ? "s" : ""}
+                            {template.sourceNames.length} Source
+                            {template.sourceNames.length !== 1 ? "s" : ""}
                           </div>
                           <div className="text-xs text-drasi-text-secondary mt-0.5 flex flex-wrap gap-1.5">
-                            {template.sourceIds.map((id) => (
+                            {template.sourceNames.map((id) => (
                               <span
                                 key={id}
                                 className="px-2 py-0.5 rounded bg-drasi-card"
@@ -272,18 +272,18 @@ export default function SolutionDeployDialog({
                         </div>
                       </div>
                     )}
-                    {template.queryIds.length > 0 && (
+                    {template.queryNames.length > 0 && (
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 rounded-lg bg-drasi-query/10 flex items-center justify-center shrink-0">
                           <Search size={16} className="text-drasi-query" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
-                            {template.queryIds.length} Quer
-                            {template.queryIds.length !== 1 ? "ies" : "y"}
+                            {template.queryNames.length} Quer
+                            {template.queryNames.length !== 1 ? "ies" : "y"}
                           </div>
                           <div className="text-xs text-drasi-text-secondary mt-0.5 flex flex-wrap gap-1.5">
-                            {template.queryIds.map((id) => (
+                            {template.queryNames.map((id) => (
                               <span
                                 key={id}
                                 className="px-2 py-0.5 rounded bg-drasi-card"
@@ -295,18 +295,18 @@ export default function SolutionDeployDialog({
                         </div>
                       </div>
                     )}
-                    {template.reactionIds.length > 0 && (
+                    {template.reactionNames.length > 0 && (
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 rounded-lg bg-drasi-reaction/10 flex items-center justify-center shrink-0">
                           <Zap size={16} className="text-drasi-reaction" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
-                            {template.reactionIds.length} Reaction
-                            {template.reactionIds.length !== 1 ? "s" : ""}
+                            {template.reactionNames.length} Reaction
+                            {template.reactionNames.length !== 1 ? "s" : ""}
                           </div>
                           <div className="text-xs text-drasi-text-secondary mt-0.5 flex flex-wrap gap-1.5">
-                            {template.reactionIds.map((id) => (
+                            {template.reactionNames.map((id) => (
                               <span
                                 key={id}
                                 className="px-2 py-0.5 rounded bg-drasi-card"

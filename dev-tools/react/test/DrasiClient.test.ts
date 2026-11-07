@@ -57,42 +57,42 @@ describe('connect-only DrasiClient', () => {
     expect(factory.instances).toHaveLength(1);
     expect(factory.instances[0].url).toBe(refs.reaction.endpoint);
     expect(client.isInitialized()).toBe(true);
-    expect(await client.getQueryConfig('stocks')).toMatchObject({ queryLanguage: 'Cypher', inputs: [] });
-    expect(await client.getQueryResults('stocks')).toEqual([{ id: 'A', value: '10', price: 10 }]);
+    expect(await client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')).toMatchObject({ queryLanguage: 'Cypher', inputs: [] });
+    expect(await client.getQueryResults('b20c42ee-59a1-441f-a549-87a72be1f1e9')).toEqual([{ id: 'A', value: '10', price: 10 }]);
     expect(client.getServerUiUrl()).toBe(`${refs.serverUrl}/ui?instance=${encodeURIComponent(refs.instanceId)}`);
     expect(server.fetch.mock.calls.length).toBeGreaterThan(3);
   });
 
   it('overlaps independent validation reads but waits for every query before opening SSE', async () => {
-    const { client, server, factory } = setup({ outputIds: ['stocks', 'other'] });
-    server.reaction.queries = ['stocks', 'other'];
+    const { client, server, factory } = setup({ outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'] });
+    server.reaction.queries = [{ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }, { id: 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481' }];
     const first = deferred<Response>(), second = deferred<Response>();
     const read = server.fetch.getMockImplementation()!;
     server.fetch.mockImplementation((input, init) => {
-      if (String(input).includes('/queries/stocks?')) return first.promise;
-      if (String(input).includes('/queries/other?')) return second.promise;
+      if (String(input).includes('/queries/b20c42ee-59a1-441f-a549-87a72be1f1e9?')) return first.promise;
+      if (String(input).includes('/queries/e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481?')) return second.promise;
       return read(input, init);
     });
     const connected = client.initialize();
     expect(server.fetch).toHaveBeenCalledTimes(2);
     expect(factory.instances).toHaveLength(0);
-    second.resolve(json(component('queries', 'other', queryConfig('other'))));
+    second.resolve(json(component('queries', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481', queryConfig('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'))));
     await Promise.resolve();
     expect(factory.instances).toHaveLength(0);
-    first.resolve(json(component('queries', 'stocks', queryConfig('stocks'))));
+    first.resolve(json(component('queries', 'b20c42ee-59a1-441f-a549-87a72be1f1e9', queryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9'))));
     await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
     factory.instances[0].open();
     await connected;
   });
 
   it('drains failed parallel validation before handing off to an app retry', async () => {
-    const { client, server } = setup({ outputIds: ['stocks', 'other'] });
+    const { client, server } = setup({ outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'] });
     const other = deferred<Response>();
     const read = server.fetch.getMockImplementation()!;
     let otherSignal: AbortSignal | null | undefined;
     server.fetch.mockImplementation((input, init) => {
-      if (String(input).includes('/queries/stocks?')) return Promise.resolve(failure(404, 'QUERY_NOT_FOUND'));
-      if (String(input).includes('/queries/other?')) {
+      if (String(input).includes('/queries/b20c42ee-59a1-441f-a549-87a72be1f1e9?')) return Promise.resolve(failure(404, 'QUERY_NOT_FOUND'));
+      if (String(input).includes('/queries/e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481?')) {
         otherSignal = init?.signal;
         return other.promise;
       }
@@ -104,13 +104,13 @@ describe('connect-only DrasiClient', () => {
     expect(settled).not.toHaveBeenCalled();
     expect(otherSignal?.aborted).toBe(false);
     other.resolve(failure(404, 'QUERY_NOT_FOUND'));
-    expect(await result).toMatchObject({ code: 'QUERY_NOT_FOUND', resourceId: 'stocks' });
+    expect(await result).toMatchObject({ code: 'QUERY_NOT_FOUND', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' });
     expect(otherSignal?.aborted).toBe(false);
   });
 
   it.each([
-    ['query', 'QUERY_NOT_FOUND', 'stocks'],
-    ['reaction', 'REACTION_NOT_FOUND', 'stream'],
+    ['query', 'QUERY_NOT_FOUND', 'b20c42ee-59a1-441f-a549-87a72be1f1e9'],
+    ['reaction', 'REACTION_NOT_FOUND', 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d'],
     ['instance', 'INSTANCE_NOT_FOUND', refs.instanceId],
   ] as const)('surfaces missing %s without provisioning or retrying', async (kind, code, resourceId) => {
     const { client, server, factory } = setup();
@@ -167,8 +167,8 @@ describe('connect-only DrasiClient', () => {
     failure(404),
     new Response('bad json'),
     json({ status: 'Running', config: {} }),
-    json({ id: 'stocks', status: 'Mystery', config: {} }),
-    json({ id: 'stocks', status: 'Running', config: { id: 'stocks', query: 7, queryLanguage: 'Cypher', inputs: [] } }),
+    json({ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', status: 'Mystery', config: {} }),
+    json({ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', status: 'Running', config: { id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', query: 7, queryLanguage: 'Cypher', inputs: [] } }),
     new Response(JSON.stringify({ success: false, data: [] })),
   ])('rejects unsupported DTOs/opaque 404s rather than inventing absence', async response => {
     const { client, server } = setup();
@@ -180,16 +180,16 @@ describe('connect-only DrasiClient', () => {
     const { client, server } = setup();
     if (mode === 'wrong-kind') server.reaction.kind = 'log';
     else server.reaction.queries = [];
-    await expect(client.initialize()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', resourceId: 'stream' });
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', resourceId: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d' });
   });
 
   it('rejects malformed reaction membership before opening a stream', async () => {
     const { client, server, factory } = setup();
     const read = server.fetch.getMockImplementation()!;
     server.fetch.mockImplementation((input, init) => String(input).includes('/reactions/')
-      ? Promise.resolve(json({ id: 'stream', status: 'Running', config: { ...server.reaction, queries: [7] } }))
+      ? Promise.resolve(json({ id: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d', status: 'Running', config: { ...server.reaction, queries: [7] } }))
       : read(input, init));
-    await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', resourceId: 'stream' });
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', resourceId: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d' });
     expect(factory.instances).toHaveLength(0);
   });
 
@@ -198,8 +198,8 @@ describe('connect-only DrasiClient', () => {
       { serverUrl: 'file:///private' }, { serverUrl: 'https://name:secret@host' },
       { serverUrl: 'https://host?secret=1' }, { serverUrl: 'http://0.0.0.0' },
       { instanceId: '' }, { instanceId: '..' }, { instanceId: '\uD800' },
-      { outputIds: ['stocks', 'stocks'] }, { outputIds: [''] }, { outputIds: ['.'] },
-      { reaction: { id: 'stream', endpoint: '/relative' } }, { requestTimeoutMs: 0 },
+      { outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'b20c42ee-59a1-441f-a549-87a72be1f1e9'] }, { outputIds: [''] }, { outputIds: ['.'] },
+      { reaction: { id: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d', endpoint: '/relative' } }, { requestTimeoutMs: 0 },
       { reconnect: { maxReconnectAttempts: Infinity } },
     ]) expect(() => new DrasiClient({ ...refs, ...overrides })).toThrow(DrasiError);
   });
@@ -214,7 +214,7 @@ describe('connect-only DrasiClient', () => {
     const { client, server, factory, open } = setup({ reconnect: { maxReconnectAttempts: 3 } });
     await open();
     const onError = vi.fn();
-    client.subscribe('stocks', vi.fn(), onError);
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', vi.fn(), onError);
     server.missing = 'reaction';
     factory.instances[0].fail();
     await vi.waitFor(() => expect(onError).toHaveBeenCalled());
@@ -274,7 +274,7 @@ describe('connect-only DrasiClient', () => {
     factory.instances[0].fail();
     await vi.advanceTimersByTimeAsync(0);
     expect(await pending).toMatchObject({
-      code: 'RESOURCE_STOPPED', instanceId: refs.instanceId, resourceKind: 'reaction', resourceId: 'stream',
+      code: 'RESOURCE_STOPPED', instanceId: refs.instanceId, resourceKind: 'reaction', resourceId: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d',
     });
     expect(factory.instances[0].closed).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
@@ -319,7 +319,7 @@ describe('connect-only DrasiClient', () => {
     const connected = client.initialize();
     const rejected = expect(connected).rejects.toMatchObject({ name: 'AbortError' });
     await client.disconnect();
-    pending.resolve(json({ id: 'stocks', status: 'Running', config: {} }));
+    pending.resolve(json({ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', status: 'Running', config: {} }));
     await rejected;
     expect(factory.instances).toHaveLength(0);
     expect(client.isInitialized()).toBe(false);
@@ -331,12 +331,12 @@ describe('connect-only DrasiClient', () => {
     server.fetch.mockImplementation((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
     }));
-    const request = client.getQueryConfig('stocks');
+    const request = client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9');
     const rejected = expect(request).rejects.toMatchObject({ code: 'SERVER_UNAVAILABLE' });
     await vi.advanceTimersByTimeAsync(20);
     await rejected;
     const controller = new AbortController();
-    const aborted = client.getQueryConfig('stocks', controller.signal);
+    const aborted = client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9', controller.signal);
     controller.abort();
     await expect(aborted).rejects.toBe(controller.signal.reason);
   });
@@ -351,12 +351,12 @@ describe('connect-only DrasiClient', () => {
           else init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason), { once: true });
         },
       })));
-      const pending = client.getQueryConfig('stocks').catch((error: unknown) => error);
+      const pending = client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9').catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(20);
       const error = await pending;
       expect(error).toBeInstanceOf(DrasiError);
       expect(error).toMatchObject({
-        code: 'SERVER_UNAVAILABLE', retryable: true, instanceId: refs.instanceId, resourceId: 'stocks',
+        code: 'SERVER_UNAVAILABLE', retryable: true, instanceId: refs.instanceId, resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
       });
     },
   );
@@ -383,12 +383,12 @@ describe('connect-only DrasiClient', () => {
         },
       }), { status });
     });
-    const pending = client.getQueryConfig('stocks').catch((error: unknown) => error);
+    const pending = client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9').catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(20);
     const error = await pending;
     expect(error).toBeInstanceOf(DrasiError);
     expect(error).toMatchObject({
-      code, status, instanceId: refs.instanceId, resourceKind: 'query', resourceId: 'stocks',
+      code, status, instanceId: refs.instanceId, resourceKind: 'query', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
     });
     expect((error as DrasiError).message).not.toContain('private');
     expect(server.fetch).toHaveBeenCalledOnce();
@@ -401,7 +401,7 @@ describe('snapshot/live lifecycle', () => {
     await open();
     server.snapshot = async () => json([42]);
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    client.subscribe('stocks', vi.fn());
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', vi.fn());
     await vi.waitFor(() => expect(log).toHaveBeenCalledExactlyOnceWith(
       'Drasi query subscription failed:', 'INVALID_PAYLOAD',
     ));
@@ -416,9 +416,9 @@ describe('snapshot/live lifecycle', () => {
     server.snapshot = () => snapshot.promise;
     await open();
     const batches = vi.fn(), errors = vi.fn();
-    const subscription = client.subscribe('stocks', batches, errors);
+    const subscription = client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', batches, errors);
     factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
     });
     expect(batches).not.toHaveBeenCalled();
     snapshot.resolve(json([{ id: 'A', price }]));
@@ -439,11 +439,11 @@ describe('snapshot/live lifecycle', () => {
     server.snapshot = vi.fn().mockResolvedValueOnce(failure(503)).mockResolvedValue(json([{ id: 'A', price: 12 }]));
     await open();
     const onResult = vi.fn(), onError = vi.fn();
-    client.subscribe('stocks', onResult, onError);
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', onResult, onError);
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
     expect(onError.mock.calls[0][0]).toBeInstanceOf(DrasiError);
     factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
     });
     expect(onResult).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
@@ -457,7 +457,7 @@ describe('snapshot/live lifecycle', () => {
     });
     await open();
     const onResult = vi.fn(), onError = vi.fn();
-    const stop = client.subscribe('stocks', onResult, onError);
+    const stop = client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', onResult, onError);
     await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
     const snapshot = deferred<Response>();
     server.snapshot = () => snapshot.promise;
@@ -466,7 +466,7 @@ describe('snapshot/live lifecycle', () => {
     expect(factory.instances).toHaveLength(2);
     factory.instances[1].open();
     factory.instances[1].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 13 } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 13 } }],
     });
     expect(onResult).toHaveBeenCalledOnce();
     snapshot.resolve(json([{ id: 'A', price: 12 }]));
@@ -488,12 +488,12 @@ describe('snapshot/live lifecycle', () => {
     server.snapshot = vi.fn(async () => failure(503));
     await open();
     const onError = vi.fn(), onResult = vi.fn();
-    client.subscribe('stocks', onResult, onError);
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', onResult, onError);
     await vi.runAllTimersAsync();
     expect(server.snapshot).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledTimes(3);
     factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A' } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A' } }],
     });
     expect(onResult).not.toHaveBeenCalled();
   });
@@ -508,7 +508,7 @@ describe('snapshot/live lifecycle', () => {
       if (mode === 'malformed') server.snapshot = async () => json({ not: 'an array' });
       if (mode === 'forbidden') server.snapshot = async () => failure(403);
       const onError = vi.fn();
-      client.subscribe('stocks', vi.fn(), onError);
+      client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', vi.fn(), onError);
       await vi.runAllTimersAsync();
       expect(onError).toHaveBeenCalledOnce();
       expect(onError.mock.calls[0][0]).toMatchObject({ retryable: false });
@@ -525,7 +525,7 @@ describe('snapshot/live lifecycle', () => {
     const snapshot = deferred<Response>();
     server.snapshot = () => snapshot.promise;
     const result = vi.fn();
-    const stop = client.subscribe('stocks', result);
+    const stop = client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', result);
     stop();
     snapshot.resolve(json([{ id: 'A' }]));
     await Promise.resolve();

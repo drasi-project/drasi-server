@@ -384,8 +384,8 @@ Existing Source/Reaction and dynamic-plugin adapters remain supported; this is
 not a migration of existing plugin ABIs or stored data. The same host also loads
 independent native ComputationGraph ABI 1.0 plugins alongside the existing
 Source/Reaction/Bootstrap ABI 0.15 libraries.
-The built-in `__component_graph__` observability source still exposes the live
-graph's topology; its historical name does not imply a second runtime.
+Graph inspection and lifecycle events use direct graph-backed APIs. An empty
+instance has no implicit sources or other component nodes.
 
 These instructions apply to the `agentofreality-parallel-computation-graph`
 branch. Use a [local development build](#computationgraph-development); do not
@@ -651,11 +651,13 @@ not a temporary disconnect, retires its retention obligation. See the core
 [QoS guide](../drasi-core/lib/docs/computation-graph-qos.md) for backpressure,
 explicit lossy retention and durable handoff semantics.
 
-Persistence reads actual graph snapshots, including resource recipes, rather than
-keeping a second component registry. Removing all native declarations leaves no
-`computation` section; save, restart, and clone preserve each instance's component
-definitions. Clone disables component auto-start. Opaque components, external pipes, or resources
-without recipes are rejected before a partial clone or config-file overwrite.
+The configuration owner retains accepted component definitions and resource
+recipes, rather than reconstructing them from live objects when saving Server
+settings. Removing all native declarations leaves an accepted empty native
+configuration; restarting does not reapply the original file seed.
+Administrative exports and clone still require reconstructible recipes.
+Clone disables component auto-start. Opaque components, external pipes, or resources
+without recipes are rejected rather than being exported as empty configuration.
 This includes every resource referenced by factory dependencies, configuration
 references, component attachments, or retained/ranked pipes. A live resource
 rebind that clears its recipe makes the definition unexportable; Server never restores
@@ -668,10 +670,14 @@ Administrative endpoints under `/api/v1/instances/{instanceId}/computation`:
 | Endpoint | Behavior |
 |----------|----------|
 | `GET /` | The instance's components, connections, resources and observed status, without configuration values |
-| `POST /components` | Add a `ComputationConfig` component batch (JSON or YAML) |
-| `POST /start` or `/stop` | Start or stop the native IDs in `{"components":["counter","capture"]}` and await the outcome |
+| `POST /components` | Add a native group with `expectedRevision`, `requestId`, and a `configuration` containing readable `graph` declarations or an assigned `definition`; returns UUID assignments in a receipt |
+| `POST /start` or `/stop` | Start or stop the native UUIDs in `{"components":["<counter-uuid>","<capture-uuid>"]}` and await the outcome |
 | `DELETE /components` | Remove selected native component IDs and explicitly listed resource IDs in `{"components":[...],"resources":[...]}` |
-| `GET /configuration` | Full versioned ordinary/native configuration snapshot (`Cache-Control: no-store`) |
+| `GET /configuration` | Full versioned ordinary/native configuration export (`Cache-Control: no-store`) |
+| `GET /desired` | Accepted definitions, current revision, and persistence status |
+| `PUT /desired` | Revisioned replacement state and/or new definitions under `additions` |
+| `POST /ordinary-definitions` | Revisioned Source/Query/Reaction creation, with an omitted ID assigned by Core |
+| `GET /receipts/{requestId}` | Inspect the actual acceptance receipt, including all creation-time names and UUIDs |
 
 Registration acknowledges the declarations, not successful creation or activation
 of every node. Inspect realization and lifecycle state after adding components.
@@ -716,7 +722,7 @@ Server does not add authentication here. They are never published by topology-as
 `/plugins/kinds` adds a `computation` collection without changing legacy categories.
 Native plugin IDs are `computation:<id>@<version>`. Loading, installation, and watcher
 discovery share family dispatch and verification. Invalid native declarations never
-fall back to ABI 0.15. Replacing a loaded plugin or overwriting an installed binary
+fall back to the ordinary Source/Reaction ABI. Replacing a loaded plugin or overwriting an installed binary
 at runtime is rejected: restart to replace it. There is no hot unloading.
 
 Native `configurationSchemas` include each component's descriptions, defaults,
@@ -725,7 +731,8 @@ description extension. The kind-schema endpoint and OpenAPI expose the same
 schema. For example, adaptive ingress allows only `false`, and native gRPC
 `batchSize` allows only `1`; descriptions do not enable unimplemented features.
 `detailsAvailable: false` identifies older binaries with only field/type metadata.
-The base native ABI and wire format are unchanged.
+The base native C ABI remains 1.0; the UUID-based serialized native wire format is
+version 2. Rebuild the Host and its plugins from matching sources.
 
 Known invalid values in a fully literal configuration are rejected before graph
 changes are accepted. Checks involving combinations of fields or external
@@ -735,22 +742,62 @@ Percent-encode namespaced kinds in schema URLs, for example:
 
 #### Creation, persistence, and restarts
 
-With `persistConfig: true` (the default) and a writable configuration file, an API
-change saves graph-backed configuration without an engine selector. Per-instance
-index, state-store, capacity, and plugin settings retain their existing meanings.
-Use `persistConfig: false` if API changes should not be saved to YAML.
+Each component has an immutable UUID and a separate unique, editable `name`.
+Omit `id` in a new definition to have DrasiLib assign its UUID. Supplying an ID
+requires the instance's construction-time `allowExternalComponentIds: true`
+option; the default rejects supplied IDs rather than silently replacing them.
+Using an existing UUID for lookup, update, connection or rename is not assigning
+an external identity to a new component.
 
-`configurationStore` is a separate, per-instance authority for managed desired
-definitions. An uninitialized stored instance is seeded from the file once.
-After that, accepted definitions (including an empty definition) are loaded from
-the store; later file seeds do not overwrite them. An omitted instance ID is
-generated on the first load and recovered from that store on subsequent starts.
-Without `configurationStore`, an omitted ID is generated afresh on each file load
-unless a YAML save has written it explicitly. Store paths, keys, and Server-wide
-bootstrap settings still come from the file, which must remain syntactically
-valid. Shared stores require explicit instance IDs to avoid ambiguous selection.
+DrasiLib uses a configuration store in both modes. With no persistent backend,
+its internal memory store retains configuration and identities for the instance's
+lifetime. Stop/start preserves those identities; reconstructing a fresh
+memory-only instance generates new UUIDs for ID-omitting definitions.
 
-Successful create/upsert responses acknowledge an added graph node, not completed
+With `persistConfig: true` (the Server default), instances without an explicit
+`configurationStore` use a companion YAML store named
+`<config-file>.drasi-state.yaml`. Component definitions, assigned UUIDs and
+creation receipts are saved before construction. The original YAML retains
+Server/instance settings and the store location. Saved YAML-store references
+disable initialization of missing state, so losing the store produces an error,
+not an empty replacement. Protect and back up the record file as configuration
+data; it may contain credentials.
+
+`ConfigPersistence::save()` writes only Server/instance settings and store
+locations. It neither snapshots running components nor keeps separate
+per-component provider-reference maps. Writes are serialized and use private,
+unique staging files, file synchronization, atomic replacement and directory
+synchronization. Pending or failed constructors do not erase accepted definitions.
+
+Use `persistConfig: false` without an explicit persistent `configurationStore`
+for memory-only configuration. An explicitly configured persistent store remains
+authoritative even when Server YAML updates are disabled. Configuration storage
+does not itself make query indexes, source history or external effects durable.
+
+Managed live updates require a registered, update-capable factory recipe.
+Accepted plans and operation identities are stored before execution so recovery
+can distinguish a retry from a new change. The host confirms exact completion
+before resuming processing; receipts and saved configuration snapshots remain
+unchanged. Externally constructed objects without that support require explicit
+graph changes and remove/add. Ordinary Source/Reaction ABI 0.18 lifecycle hooks
+alone do not add managed update support.
+
+**Rebootstrap updates are not currently supported by Core.** Semantic query
+changes that require rebuilding state are rejected even when a bootstrap
+provider is configured; this does not disable initial bootstrap. The missing
+snapshot/live and downstream-reset coordination is tracked in
+[CW-92](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-remaining-work.md#cw-92).
+
+The update journal uses YAML record format 3 or redb record formats 7/8. Older
+record files are rejected and left untouched; no migration is performed.
+
+A previously uninitialized store is seeded from the initial definitions once.
+Restarts load the accepted configuration, including its UUIDs and renamed names;
+later file seeds do not overwrite it. A saved empty configuration stays empty.
+Store locations, keys and instance-wide provider settings still come from the
+file. Shared stores require explicit instance IDs to avoid ambiguous selection.
+
+Successful creation responses acknowledge an accepted declaration, not completed
 initialization or activation. Inspect component status, events, and errors for
 readiness; explicit start operations wait for startup and report failures. Clone
 and solution deployment retain added nodes and report creation/start health
@@ -1251,7 +1298,7 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `persistConfig` | boolean | `true` | Enable saving API changes to config file |
+| `persistConfig` | boolean | `true` | Save Server/instance settings and select a companion YAML configuration store for instances without an explicit store |
 | `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
 | `verifyPlugins` | boolean | `true` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
@@ -1319,7 +1366,8 @@ These settings belong inside an `instances` entry, even for a single instance.
 | `memoryBudgetMiB` | integer | RocksDB provider default | Shared RocksDB memory budget for this instance; requires `persistIndex: true`. |
 | `stateStore` | object | none | Plugin state persistence. |
 | `secretStore` | object | none | Instance secret resolution. |
-| `configurationStore` | object | none | Managed desired-configuration persistence, separate from `persistConfig`. |
+| `configurationStore` | object | companion YAML with `persistConfig: true`; otherwise internal memory | Accepted definitions, identity assignments, revisions and snapshots; separate from processing-state storage. |
+| `allowExternalComponentIds` | boolean | `false` | Construction-time opt-in to caller-supplied UUIDs on new definitions; omitted IDs are always assigned by Core. |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default query/reaction event queue capacity. |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default event dispatch capacity. |
 | `activationTimeoutSecs` | integer / ConfigValue | `300` | Positive per-component deadline for input binding, startup and output binding. Raise it for long bootstrap workloads; it is separate from query snapshot/history readiness timeouts. |

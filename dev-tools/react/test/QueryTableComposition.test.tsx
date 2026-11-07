@@ -23,7 +23,7 @@ const queryOptions: UseDrasiQueryOptions<Reading> = {
   },
 };
 const props: QueryTableProps<Reading> = {
-  queryId: 'stocks', queryOptions, rowKey: row => row.code,
+  queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', queryOptions, rowKey: row => row.code,
   columns: [{ key: 'code', label: 'Rack' }, { key: 'amount', label: 'Amount' }],
 };
 
@@ -68,7 +68,7 @@ it('exposes the full query state to loading, empty and retained-data slots throu
 
 it('keeps errors typed and query-local retry isolated from another real table subscription', async () => {
   const server = new ReadServer();
-  server.reaction.queries = ['stocks', 'other'];
+  server.reaction.queries = [{ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }, { id: 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481' }];
   server.snapshot = async () => json([{ id: 'a', value: 42 }]);
   const stream = fakeEventSourceFactory();
   const errorSlot = vi.fn<NonNullable<QueryTableProps<Reading>['renderError']>>(
@@ -82,27 +82,27 @@ it('keeps errors typed and query-local retry isolated from another real table su
       return <button onClick={state.retry}>{error.code}: retry one</button>;
     },
   );
-  render(<DrasiProvider {...refs} outputIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={stream.create}>
+  render(<DrasiProvider {...refs} outputIds={['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481']} fetch={server.fetch} eventSourceFactory={stream.create}>
     <section aria-label="First"><QueryTable {...props} renderError={errorSlot} /></section>
-    <section aria-label="Second"><QueryTable {...props} queryId="other" /></section>
+    <section aria-label="Second"><QueryTable {...props} queryId="e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481" /></section>
   </DrasiProvider>);
   await waitFor(() => expect(stream.instances).toHaveLength(1));
   act(() => stream.instances[0].open());
   await waitFor(() => expect(screen.getAllByText('42')).toHaveLength(2));
   const snapshots = (id: string) => server.fetch.mock.calls.filter(([input]) => String(input).endsWith(`/queries/${id}/results`)).length;
-  const firstBefore = snapshots('stocks');
-  const secondBefore = snapshots('other');
-  act(() => stream.instances[0].message({ queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: false }] }));
+  const firstBefore = snapshots('b20c42ee-59a1-441f-a549-87a72be1f1e9');
+  const secondBefore = snapshots('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481');
+  act(() => stream.instances[0].message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: false }] }));
   const slot = errorSlot.mock.calls[errorSlot.mock.calls.length - 1]?.[0];
   expect(slot?.error).toBeInstanceOf(DrasiError);
-  expect(slot?.error.resourceId).toBe('stocks');
+  expect(slot?.error.resourceId).toBe('b20c42ee-59a1-441f-a549-87a72be1f1e9');
   expect(slot?.query.status).toBe('terminal-error');
   expect(slot?.query.stale).toBe(true);
   expect(within(screen.getByRole('region', { name: 'Second' })).queryByRole('alert')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /retry one/ }));
   await waitFor(() => expect(screen.queryByRole('button', { name: /retry one/ })).toBeNull());
-  expect(snapshots('stocks')).toBe(firstBefore + 1);
-  expect(snapshots('other')).toBe(secondBefore);
+  expect(snapshots('b20c42ee-59a1-441f-a549-87a72be1f1e9')).toBe(firstBefore + 1);
+  expect(snapshots('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481')).toBe(secondBefore);
   expect(stream.instances).toHaveLength(1);
   expect(stream.instances[0].closed).toBe(false);
 });
@@ -154,7 +154,7 @@ it('forwards controlled sort and header composition without conflating raw and r
   expect(changed).toHaveBeenCalledExactlyOnceWith(null);
   rendered.rerender(table(null));
   expect(screen.getAllByRole('row')[1].textContent).toContain('rack-a');
-  act(() => stream.instances[0].message({ queryId: 'stocks', timestamp: 1, results: [{ type: 'DELETE', data: { id: 'a' } }] }));
+  act(() => stream.instances[0].message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'DELETE', data: { id: 'a' } }] }));
   expect(screen.queryByText('rack-a')).toBeNull();
   expect(stream.instances).toHaveLength(1);
 });

@@ -302,6 +302,10 @@ impl DrasiServer {
             .await;
 
         let configuration_stores = crate::managed_configuration::ConfigurationStores::default();
+        crate::managed_configuration::ConfigurationStores::configure_file_persistence(
+            &mut config,
+            &config_path,
+        )?;
         configuration_stores
             .resolve_instance_ids(&mut config)
             .await?;
@@ -408,7 +412,16 @@ impl DrasiServer {
             use crate::config::plugin_validation::{
                 check_plugin_availability, extract_plugin_requirements,
             };
-            let requirements = extract_plugin_requirements(&config);
+            let mut authoring = config.clone();
+            for instance in &mut authoring.instances {
+                if instance.configuration_store.is_some() {
+                    instance.sources.clear();
+                    instance.queries.clear();
+                    instance.reactions.clear();
+                    instance.computation = None;
+                }
+            }
+            let requirements = extract_plugin_requirements(&authoring);
             let reg = plugin_registry.read().await;
             let (_found, missing) = check_plugin_availability(&requirements, &reg);
             if !missing.is_empty() {
@@ -484,8 +497,18 @@ impl DrasiServer {
 
         let preparation = async {
             for instance in resolved_instances {
-                let mut builder = DrasiLib::builder().with_id(&instance.id);
-                if !instance.queries.is_empty() {
+                let mut builder = DrasiLib::builder()
+                    .with_id(&instance.id)
+                    .with_allow_external_component_ids(instance.allow_external_component_ids);
+                builder = crate::managed_configuration::ConfigurationStores::configure_host(
+                    builder,
+                    plugin_registry.clone(),
+                    process_secret_store
+                        .clone()
+                        .filter(|_| instance.secret_store.is_some()),
+                )
+                .await?;
+                if !instance.queries.is_empty() && instance.configuration_store.is_none() {
                     let registry = plugin_registry.read().await;
                     builder = builder.with_query_factory(
                         crate::query_plugin::factory(&registry).with_context(|| {
@@ -573,52 +596,119 @@ impl DrasiServer {
                 // referencing source instantiates its own provider from the config.
                 let bootstrap_providers =
                     build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
+                builder = builder.with_ordinary_component_resolver(Arc::new(
+                    crate::managed_configuration::ordinary::ServerOrdinaryComponents {
+                        plugins: plugin_registry.clone(),
+                        identity_providers: identity_providers.clone(),
+                        bootstrap_providers: bootstrap_providers.clone(),
+                    },
+                ));
+                let mut ordinary = Vec::new();
+                if instance.configuration_store.is_some() {
+                    for source in instance.sources.clone() {
+                        ordinary.push(crate::managed_configuration::ordinary::source_definition(
+                            source,
+                        )?);
+                    }
+                    for query in instance.queries.clone() {
+                        ordinary.push(drasi_lib::management::OrdinaryComponentDefinition::query(
+                            query,
+                        )?);
+                    }
+                    for reaction in instance.reactions.clone() {
+                        ordinary.push(crate::managed_configuration::ordinary::reaction_definition(
+                            reaction,
+                        )?);
+                    }
+                }
                 // Create and add sources from config
                 info!(
                     "Loading {} source(s) from configuration for instance '{}'",
                     instance.sources.len(),
                     instance.id
                 );
-                for source_config in instance.sources.clone() {
-                    let source_config =
+                for source_config in instance
+                    .sources
+                    .iter()
+                    .filter(|_| instance.configuration_store.is_none())
+                    .cloned()
+                {
+                    let mut source_config =
                         resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
                     let identity_ref = source_config.identity_provider().map(str::to_string);
-                    let (source, plugin_meta) =
-                        create_source_locked(&plugin_registry, source_config).await?;
-                    if let Some(id) = identity_ref {
-                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Source references unknown identityProvider '{id}'. \
+                    let provider = identity_ref
+                        .map(|id| {
+                            identity_providers.get(&id).cloned().ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Source references unknown identityProvider '{id}'. \
                              Declared providers: {:?}",
-                                identity_providers.keys().collect::<Vec<_>>()
-                            )
-                        })?;
-                        source.set_identity_provider(provider).await;
-                    }
-                    builder = builder.with_source_metadata(source, plugin_meta);
+                                    identity_providers.keys().collect::<Vec<_>>()
+                                )
+                            })
+                        })
+                        .transpose()?;
+                    let plugins = plugin_registry.clone();
+                    builder = builder.with_source_factory_async(
+                        source_config.name.clone(),
+                        source_config.id.clone(),
+                        source_config.auto_start,
+                        move |id| async move {
+                            source_config.id = Some(id);
+                            let (source, metadata) =
+                                create_source_locked(&plugins, source_config).await?;
+                            if let Some(provider) = provider {
+                                source.set_identity_provider(provider).await;
+                            }
+                            Ok((source, metadata))
+                        },
+                    );
                 }
 
                 // Add queries from config (already resolved in config/types.rs)
-                for query_config in &instance.queries {
+                for query_config in instance
+                    .queries
+                    .iter()
+                    .filter(|_| instance.configuration_store.is_none())
+                {
                     builder = builder.with_query(query_config.clone());
                 }
 
                 // Create and add reactions from config
-                for reaction_config in instance.reactions.clone() {
+                for mut reaction_config in instance
+                    .reactions
+                    .iter()
+                    .filter(|_| instance.configuration_store.is_none())
+                    .cloned()
+                {
                     let identity_ref = reaction_config.identity_provider().map(str::to_string);
-                    let (reaction, plugin_meta) =
-                        create_reaction_locked(&plugin_registry, reaction_config).await?;
-                    if let Some(id) = identity_ref {
-                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Reaction references unknown identityProvider '{id}'. \
+                    let provider = identity_ref
+                        .map(|id| {
+                            identity_providers.get(&id).cloned().ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Reaction references unknown identityProvider '{id}'. \
                              Declared providers: {:?}",
-                                identity_providers.keys().collect::<Vec<_>>()
-                            )
-                        })?;
-                        reaction.set_identity_provider(provider).await;
-                    }
-                    builder = builder.with_reaction_metadata(reaction, plugin_meta);
+                                    identity_providers.keys().collect::<Vec<_>>()
+                                )
+                            })
+                        })
+                        .transpose()?;
+                    let plugins = plugin_registry.clone();
+                    builder = builder.with_reaction_inputs_factory_async(
+                        reaction_config.name.clone(),
+                        reaction_config.id.clone(),
+                        reaction_config.queries.clone(),
+                        reaction_config.auto_start,
+                        move |id, inputs| async move {
+                            reaction_config.id = Some(id);
+                            crate::factories::bind_reaction_inputs(&mut reaction_config, inputs)?;
+                            let (reaction, metadata) =
+                                create_reaction_locked(&plugins, reaction_config).await?;
+                            if let Some(provider) = provider {
+                                reaction.set_identity_provider(provider).await;
+                            }
+                            Ok((reaction, metadata))
+                        },
+                    );
                 }
 
                 // Build and initialize the core
@@ -627,8 +717,10 @@ impl DrasiServer {
                         .configure(
                             builder,
                             &instance.id,
+                            instance.allow_external_component_ids,
                             store,
                             instance.computation.as_ref(),
+                            ordinary,
                             plugin_registry.clone(),
                             process_secret_store
                                 .clone()
@@ -649,22 +741,12 @@ impl DrasiServer {
                     .filter(|_| instance.configuration_store.is_none())
                 {
                     let registry = plugin_registry.read().await;
-                    let factories = crate::computation::native_factory_registry(&registry)?;
-                    let computation = computation.resolve(&factories)?;
                     let registration =
-                        crate::computation::register_components(&computation, &core, &registry);
+                        crate::computation::register_component_input(computation, &core, &registry);
                     drop(registry);
-                    let report = registration
+                    registration
                         .await
                         .with_context(|| "Failed to configure instance computation components")?;
-                    if !report.committed {
-                        return Err(
-                            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(
-                                report,
-                            )
-                            .into(),
-                        );
-                    }
                 }
             }
             Ok::<_, anyhow::Error>(())
@@ -907,16 +989,20 @@ impl DrasiServer {
 
                 if persistence_enabled {
                     // Persistence is enabled - create ConfigPersistence instance
-                    let persistence = Arc::new(ConfigPersistence::new(
-                        PathBuf::from(config_file),
-                        registry.clone(),
-                        self.host.clone(),
-                        self.port,
-                        resolved_settings.log_level,
-                        true, // persist_config = true
-                        &config,
-                    )?);
+                    let persistence = Arc::new(
+                        ConfigPersistence::new(
+                            PathBuf::from(config_file),
+                            registry.clone(),
+                            self.host.clone(),
+                            self.port,
+                            resolved_settings.log_level,
+                            true, // persist_config = true
+                            &config,
+                        )
+                        .await?,
+                    );
 
+                    persistence.save().await?;
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
                 } else {
@@ -1393,18 +1479,19 @@ mod single_runtime_tests {
             drasi_lib::Query::cypher("graph-node")
                 .query("MATCH (n) RETURN n")
                 .auto_start(false)
-                .build(),
+                .build()
+                .unwrap(),
         )
         .await
         .unwrap();
-        let handle = core.computation_component("graph-node").unwrap();
+        let handle = core.component_by_name("graph-node").unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(10), handle.wait_created())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
             core.snapshot_configuration().await.unwrap().queries[0].id,
-            "graph-node"
+            handle.id().as_str()
         );
         core.shutdown().await.unwrap();
     }

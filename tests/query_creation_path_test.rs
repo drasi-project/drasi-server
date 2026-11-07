@@ -424,7 +424,7 @@ impl ComputationComponent for NativeLifecycleComponent {
     async fn stop(&mut self) -> Result<()> {
         Ok(())
     }
-    async fn deprovision(&mut self) -> Result<()> {
+    async fn delete_owned_resources(&mut self) -> Result<()> {
         Ok(())
     }
 }

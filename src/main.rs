@@ -496,7 +496,7 @@ fn validate_config(
         for report in &result.config_errors {
             println!(
                 "  [ERR] {} '{}' ({}):",
-                report.component_type, report.component_id, report.plugin_kind
+                report.component_type, report.component_name, report.plugin_kind
             );
             for err in &report.errors {
                 println!("        - {}: {}", err.field, err.message);
@@ -558,23 +558,23 @@ fn validate_config(
     Ok(())
 }
 
-/// Collect (id, kind) pairs for all sources in the config.
+/// Collect (name, kind) pairs for all sources in the config.
 fn collect_all_sources_for_display(config: &DrasiServerConfig) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for inst in &config.instances {
         for src in &inst.sources {
-            out.push((src.id.clone(), src.kind.clone()));
+            out.push((src.name.clone(), src.kind.clone()));
         }
     }
     out
 }
 
-/// Collect (id, kind) pairs for all reactions in the config.
+/// Collect (name, kind) pairs for all reactions in the config.
 fn collect_all_reactions_for_display(config: &DrasiServerConfig) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for inst in &config.instances {
         for rxn in &inst.reactions {
-            out.push((rxn.id.clone(), rxn.kind.clone()));
+            out.push((rxn.name.clone(), rxn.kind.clone()));
         }
     }
     out

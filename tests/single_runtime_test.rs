@@ -389,14 +389,7 @@ async fn clone_and_deployment_reject_selectors_before_creating_nodes() {
         }
     }
     let snapshot = core.snapshot_configuration().await.unwrap();
-    assert_eq!(
-        snapshot
-            .sources
-            .iter()
-            .map(|source| source.id.as_str())
-            .collect::<Vec<_>>(),
-        ["__component_graph__"]
-    );
+    assert!(snapshot.sources.is_empty());
     assert!(snapshot.queries.is_empty());
     assert!(snapshot.reactions.is_empty());
     core.shutdown().await.unwrap();

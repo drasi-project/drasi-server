@@ -79,6 +79,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
 
         let config = QueryConfig {
             id: dto.id.clone(),
+            name: dto.name.clone(),
             auto_start: dto.auto_start,
             query: dto.query.clone(),
             query_language: dto.query_language.clone(),

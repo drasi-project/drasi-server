@@ -18,7 +18,7 @@
 //! Body: { "sourceInstanceId": "..." }
 //!
 //! These tests validate that cloning captures all components from a source
-//! instance and recreates them in a target instance, filtering internal sources.
+//! instance and recreates them in a target instance.
 
 #![allow(clippy::unwrap_used)]
 
@@ -104,10 +104,6 @@ impl ReactionPluginDescriptor for MockReactionDescriptor {
 
 /// Build a router with two DrasiLib instances: a populated source and an empty target.
 async fn create_clone_test_router() -> Router {
-    create_clone_test_router_with_internal_source(false).await
-}
-
-async fn create_clone_test_router_with_internal_source(include_internal: bool) -> Router {
     // --- Source instance: has a source, query, and reaction ---
     let mock_src = create_mock_source("clone-src");
     let mock_reaction = create_mock_reaction("clone-rx", vec!["clone-query".to_string()]);
@@ -118,15 +114,11 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
         .auto_start(true)
         .build();
 
-    let mut source_builder = crate::query_plugin::builder()
+    let source_core = crate::query_plugin::builder()
         .with_id(SOURCE_INSTANCE)
         .with_source(mock_src)
         .with_query(clone_query)
-        .with_reaction(mock_reaction);
-    if include_internal {
-        source_builder = source_builder.with_source(create_mock_source("__internal_hidden"));
-    }
-    let source_core = source_builder
+        .with_reaction(mock_reaction)
         .build()
         .await
         .expect("Failed to build source instance");
@@ -373,50 +365,6 @@ async fn test_clone_preserves_query_config() {
         source_ids.contains(&"clone-src"),
         "Cloned query should reference clone-src: {source_ids:?}"
     );
-}
-
-/// Clone filters out internal sources (those starting with "__").
-#[tokio::test]
-async fn test_clone_filters_internal_sources() {
-    let router = create_clone_test_router_with_internal_source(true).await;
-
-    let source_sources = get_list(router.clone(), SOURCE_INSTANCE, "sources").await;
-    let source_ids: Vec<&str> = source_sources["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["id"].as_str().unwrap())
-        .collect();
-    assert!(source_ids.contains(&"__internal_hidden"));
-
-    // Clone
-    let (status, json) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
-    assert_eq!(status, StatusCode::OK);
-
-    let data = &json["data"];
-    assert_eq!(data["success"], true);
-
-    // Verify no internal sources were created
-    let sources_created = data["sourcesCreated"].as_array().unwrap();
-    for src in sources_created {
-        let id = src.as_str().unwrap();
-        assert!(
-            !id.starts_with("__"),
-            "Internal source '{id}' should not be cloned"
-        );
-    }
-
-    // Also verify target sources list has no internal sources
-    let target_sources = get_list(router.clone(), TARGET_INSTANCE, "sources").await;
-    let mut target_ids: Vec<&str> = target_sources["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["id"].as_str().unwrap())
-        .collect();
-
-    target_ids.sort_unstable();
-    assert_eq!(target_ids, ["__component_graph__", "clone-src"]);
 }
 
 #[path = "query_plugin/mod.rs"]

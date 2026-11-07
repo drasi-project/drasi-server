@@ -77,7 +77,8 @@ impl TopLevelBootstrapProviderConfig {
 /// bootstrap provider configuration across multiple sources. The inline form
 /// (a mapping) preserves the legacy behavior where the bootstrap provider can
 /// inherit fields from the owning source's config.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum BootstrapProviderRef {
     /// Reference to a top-level `bootstrapProviders` entry by id.
     Reference(String),

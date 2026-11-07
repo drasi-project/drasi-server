@@ -44,7 +44,8 @@ import type {
   SourceKind,
   ReactionKind,
 } from "@/api/types";
-import { inputComponent } from "@/api/types";
+import { inputComponent, referenceComponent } from "@/api/types";
+import { renameComponent, apiErrorMessage } from "@/api/client";
 
 type CreateStep = "component" | "source-kind" | "reaction-kind" | null;
 
@@ -88,6 +89,7 @@ export default function App() {
     start: startSource,
     stop: stopSource,
     remove: removeSource,
+    refresh: refreshSources,
   } = useSources(selectedInstanceId);
   const {
     queries,
@@ -95,6 +97,7 @@ export default function App() {
     start: startQuery,
     stop: stopQuery,
     remove: removeQuery,
+    refresh: refreshQueries,
   } = useQueries(selectedInstanceId);
   const {
     reactions,
@@ -102,6 +105,7 @@ export default function App() {
     start: startReaction,
     stop: stopReaction,
     remove: removeReaction,
+    refresh: refreshReactions,
   } = useReactions(selectedInstanceId);
   const { data: computation, loading: graphLoading, error: graphError, refresh: refreshGraph } = useComputation(selectedInstanceId);
   const [showInternal, setShowInternal] = useState(false);
@@ -176,6 +180,7 @@ export default function App() {
     computation,
     sources: sources.map((s) => ({
       id: s.id,
+      name: s.name,
       kind: s.kind,
       status: s.status,
       autoStart: s.autoStart,
@@ -185,8 +190,10 @@ export default function App() {
     })),
     queries: queries.map((q) => ({
       id: q.id,
+      name: q.name,
       status: q.status ?? "Stopped",
-      inputIds: q.inputs.map(inputComponent),
+      inputIds: q.inputs.map((input) => inputComponent(input, computation?.components ?? [...sources, ...queries]))
+        .filter((id): id is string => id !== undefined),
       query: q.query,
       queryLanguage: q.queryLanguage,
       error: q.error,
@@ -194,9 +201,11 @@ export default function App() {
     })),
     reactions: reactions.map((r) => ({
       id: r.id,
+      name: r.name,
       kind: r.kind,
       status: r.status,
-      queryIds: r.queries,
+      queryIds: r.queries.map((reference) => referenceComponent(reference, computation?.components ?? queries))
+        .filter((id): id is string => id !== undefined),
       properties: r.properties,
       error: r.error,
       instanceId: selectedInstanceId,
@@ -239,8 +248,16 @@ export default function App() {
   );
 
   const handleNodeClick = useCallback((id: string, type: CanvasComponentType) => {
-    setSelected({ id, type });
-  }, []);
+    const component = computation?.components.find((component) => component.id === id);
+    setSelected({ id, type: component ? canvasComponentType(component, pipelineData) : type });
+  }, [computation, pipelineData]);
+
+  const handleRename = useCallback(async (id: string, name: string) => {
+    if (!selectedInstanceId) throw new Error("Select an instance before renaming a component");
+    await renameComponent(id, name, selectedInstanceId);
+    await Promise.all([refreshSources(), refreshQueries(), refreshReactions(), refreshGraph()]);
+    pushEvent(`Renamed component to ${name}`, "success");
+  }, [selectedInstanceId, refreshSources, refreshQueries, refreshReactions, refreshGraph, pushEvent]);
 
   const handlePaneClick = useCallback(() => {
     setSelected(null);
@@ -287,43 +304,47 @@ export default function App() {
     try {
       const f = draft.fields;
       if (draft.componentType === "source") {
+        const { id: _id, name: _name, kind: _kind, autoStart: _auto, ...config } = f;
         const req: CreateSourceRequest = {
+          ...config,
           kind: draft.kind as SourceKind,
-          id: String(f.id ?? ""),
+          name: String(f.name ?? ""),
+          ...(f.id ? { id: String(f.id) } : {}),
           autoStart: Boolean(f.autoStart),
-          ...f,
         };
         await createSourceApi(req);
-        pushEvent(`Created source: ${req.id}`, "success");
+        pushEvent(`Created source: ${req.name}`, "success");
       } else if (draft.componentType === "query") {
         const inputsArr = (f.inputs as string[]) ?? [];
         const req: CreateQueryRequest = {
-          id: String(f.id ?? ""),
+          name: String(f.name ?? ""),
+          ...(f.id ? { id: String(f.id) } : {}),
           query: String(f.query ?? ""),
           queryLanguage: String(f.queryLanguage ?? "Cypher"),
-          inputs: inputsArr,
+          inputs: inputsArr.map((id) => ({ id })),
           autoStart: Boolean(f.autoStart),
         };
         await createQueryApi(req);
-        pushEvent(`Created query: ${req.id}`, "success");
+        pushEvent(`Created query: ${req.name}`, "success");
       } else if (draft.componentType === "reaction") {
         const apiKind = reactionApiKind(draft.kind);
-        const { id: _id, queries: _q, autoStart: _a, kind: _k, ...rest } = f;
+        const { id: _id, name: _name, queries: _q, autoStart: _a, kind: _k, ...rest } = f;
         const req: CreateReactionRequest = {
           kind: apiKind,
-          id: String(f.id ?? ""),
-          queries: (f.queries as string[]) ?? [],
+          name: String(f.name ?? ""),
+          ...(f.id ? { id: String(f.id) } : {}),
+          queries: ((f.queries as string[]) ?? []).map((id) => ({ id })),
           autoStart: Boolean(f.autoStart),
           ...rest,
         };
         await createReactionApi(req);
-        pushEvent(`Created reaction: ${req.id}`, "success");
+        pushEvent(`Created reaction: ${req.name}`, "success");
       }
       discard();
       // SSE "Added" events will update the canvas reactively
     } catch (err) {
       pushEvent(
-        `Failed to create: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `Failed to create: ${apiErrorMessage(err)}`,
         "error",
       );
     } finally {
@@ -344,6 +365,7 @@ export default function App() {
   const handleCreateInstance = useCallback(
     async (data: {
       id: string;
+      allowExternalComponentIds?: boolean;
       persistIndex?: boolean;
       memoryBudgetMiB?: number;
     }) => {
@@ -374,9 +396,10 @@ export default function App() {
       const source = sources.find((s) => s.id === selected.id);
       if (!source) return null;
       const connectedQueries = queries
-        .filter((q) => q.inputs.some((input) => inputComponent(input) === selected.id))
+        .filter((q) => q.inputs.some((input) => inputComponent(input, computation?.components ?? [...sources, ...queries]) === selected.id))
         .map((q) => ({
           id: q.id,
+          name: q.name,
           type: "query" as ComponentType,
           status: observedStatus(q.id, (q.status ?? "Stopped") as ComponentStatus),
         }));
@@ -384,6 +407,8 @@ export default function App() {
       return {
         isSource: true as const,
         id: source.id,
+        name: source.name,
+        onRename: (name: string) => handleRename(source.id, name),
         kind: source.kind,
         status: observedStatus(source.id, source.status as ComponentStatus),
         error: source.error,
@@ -418,12 +443,14 @@ export default function App() {
     if (selected.type === "query") {
       const query = queries.find((q) => q.id === selected.id);
       if (!query) return null;
-      const connectedSources = query.inputs.map((input) => {
-        const id = inputComponent(input);
+      const connectedSources = query.inputs.flatMap((input) => {
+        const id = inputComponent(input, computation?.components ?? [...sources, ...queries]);
+        if (!id) return [];
         const src = sources.find((ss) => ss.id === id);
         const upstreamQuery = src ? undefined : queries.find((q) => q.id === id);
         return {
           id,
+          name: src?.name ?? upstreamQuery?.name ?? computation?.components.find((component) => component.id === id)?.name,
           type: (upstreamQuery ? "query" : "source") as ComponentType,
           status: observedStatus(
             id,
@@ -433,9 +460,10 @@ export default function App() {
         };
       });
       const connectedReactions = reactions
-        .filter((r) => r.queries.includes(selected.id))
+        .filter((r) => r.queries.some((reference) => referenceComponent(reference, computation?.components ?? queries) === selected.id))
         .map((r) => ({
           id: r.id,
+          name: r.name,
           type: "reaction" as ComponentType,
           status: observedStatus(r.id, r.status as ComponentStatus),
           kind: r.kind,
@@ -444,6 +472,8 @@ export default function App() {
       return {
         isQuery: true as const,
         id: query.id,
+        name: query.name,
+        onRename: (name: string) => handleRename(query.id, name),
         status: observedStatus(query.id, (query.status ?? "Stopped") as ComponentStatus),
         error: query.error,
         query: query.query,
@@ -478,10 +508,13 @@ export default function App() {
     if (selected.type === "reaction") {
       const reaction = reactions.find((r) => r.id === selected.id);
       if (!reaction) return null;
-      const connectedQs = reaction.queries.map((qId) => {
+      const connectedQs = reaction.queries.flatMap((reference) => {
+        const qId = referenceComponent(reference, computation?.components ?? queries);
+        if (!qId) return [];
         const q = queries.find((qq) => qq.id === qId);
         return {
           id: qId,
+          name: q?.name,
           type: "query" as ComponentType,
           status: observedStatus(qId, (q?.status ?? "Stopped") as ComponentStatus),
         };
@@ -490,6 +523,8 @@ export default function App() {
       return {
         isReaction: true as const,
         id: reaction.id,
+        name: reaction.name,
+        onRename: (name: string) => handleRename(reaction.id, name),
         kind: reaction.kind,
         status: observedStatus(reaction.id, reaction.status as ComponentStatus),
         error: reaction.error,
@@ -522,7 +557,7 @@ export default function App() {
     }
 
     return null;
-  }, [selected, computation, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]) as InspectorData | null;
+  }, [selected, computation, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent, handleRename]) as InspectorData | null;
 
   // Auto-switch to component tab when user selects a NEW component on the canvas
   useEffect(() => {
@@ -686,6 +721,7 @@ export default function App() {
                   component={selectedGraphComponent}
                   inspection={computation}
                   standalone={selected?.type === "computation"}
+                  onRename={(name) => handleRename(selectedGraphComponent.id, name)}
                   onNavigate={(id) => {
                     const component = computation.components.find((c) => c.id === id);
                     if (!component) return;
@@ -844,10 +880,10 @@ export default function App() {
               errors={draft.errors}
               onChange={updateField}
               availableInputs={[
-                ...sources.map((s) => ({ id: s.id, kind: s.kind })),
+                ...sources.map((s) => ({ id: s.id, name: s.name, kind: s.kind })),
                 ...queries
                   .filter((q) => q.id !== draft.fields.id)
-                  .map((q) => ({ id: q.id, kind: "query" })),
+                  .map((q) => ({ id: q.id, name: q.name, kind: "query" })),
               ]}
             />
           )}
@@ -857,7 +893,7 @@ export default function App() {
               fields={draft.fields}
               errors={draft.errors}
               onChange={updateField}
-              availableQueries={queries.map((q) => ({ id: q.id }))}
+              availableQueries={queries.map((q) => ({ id: q.id, name: q.name }))}
             />
           )}
         </CreatePanel>

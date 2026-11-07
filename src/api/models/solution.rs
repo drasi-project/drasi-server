@@ -118,14 +118,14 @@ pub struct SolutionTemplateDetail {
     /// Variables that can be configured when deploying
     pub variables: Vec<SolutionVariable>,
 
-    /// List of source IDs in the template
-    pub source_ids: Vec<String>,
+    /// Source names; deployments allocate their own UUIDs.
+    pub source_names: Vec<String>,
 
-    /// List of query IDs in the template
-    pub query_ids: Vec<String>,
+    /// Query names; deployments allocate their own UUIDs.
+    pub query_names: Vec<String>,
 
-    /// List of reaction IDs in the template
-    pub reaction_ids: Vec<String>,
+    /// Reaction names; deployments allocate their own UUIDs.
+    pub reaction_names: Vec<String>,
 }
 
 /// Request to deploy a solution template.
@@ -296,6 +296,8 @@ pub struct SolutionDeployError {
     /// The component ID that failed (if applicable)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_name: Option<String>,
 
     /// Error message
     pub message: String,
@@ -308,6 +310,7 @@ impl SolutionDeployError {
             phase: DeployPhase::Validation,
             component_type: None,
             component_id: None,
+            component_name: None,
             message: message.into(),
         }
     }
@@ -315,15 +318,21 @@ impl SolutionDeployError {
     /// Creates a creation error for a specific component.
     pub fn creation(
         component_type: impl Into<String>,
-        component_id: impl Into<String>,
+        component_name: impl Into<String>,
         message: impl Into<String>,
     ) -> Self {
         Self {
             phase: DeployPhase::Creation,
             component_type: Some(component_type.into()),
-            component_id: Some(component_id.into()),
+            component_id: None,
+            component_name: Some(component_name.into()),
             message: message.into(),
         }
+    }
+
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.component_id = Some(id.into());
+        self
     }
 
     /// Creates a start error for a specific component.
@@ -336,6 +345,7 @@ impl SolutionDeployError {
             phase: DeployPhase::Start,
             component_type: Some(component_type.into()),
             component_id: Some(component_id.into()),
+            component_name: None,
             message: message.into(),
         }
     }

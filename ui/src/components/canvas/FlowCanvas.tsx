@@ -88,11 +88,9 @@ export default function FlowCanvas({ data, instanceId, showInternal, onNodeClick
     return {
       edges: graph.edges,
       nodes: graph.nodes.map((n) => {
-        const component = data.computation?.components.find((c) => c.id === n.data.id);
-        const oldId = `${component?.role.toLowerCase()}-${n.data.id}`;
-        const pos = persisted.positions[n.id] ?? persisted.positions[oldId];
-        const exp = persisted.expanded[n.id] ?? persisted.expanded[oldId];
-        const lock = persisted.locked?.[n.id] ?? persisted.locked?.[oldId];
+        const pos = persisted.positions[n.id];
+        const exp = persisted.expanded[n.id];
+        const lock = persisted.locked?.[n.id];
         return {
           ...n,
           position: pos ?? n.position,

@@ -12,6 +12,8 @@ import type {
   CreateInstanceRequest,
   CloneInstanceResult,
   ComputationInspection,
+  ComponentIdentity,
+  ComponentCreatedResponse,
 } from "./types";
 import {
   normalizeSource,
@@ -67,6 +69,112 @@ export async function inspectComputation(
   return unwrap(await api.get(instancePath(instanceId, "computation"), { signal }));
 }
 
+export function apiErrorMessage(error: unknown): string {
+  if (axios.isAxiosError<{ message?: unknown }>(error)
+    && typeof error.response?.data?.message === "string") {
+    return error.response.data.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function componentByName(
+  name: string,
+  instanceId: string,
+): Promise<ComponentIdentity> {
+  return unwrap(await api.get(instancePath(instanceId, "components", "by-name", name)));
+}
+
+interface ManagedConfiguration {
+  revision: number;
+  persistent: boolean;
+  desired: {
+    topology: { components: { descriptor: { id: string } }[] };
+    ordinary?: { id: string }[];
+  };
+}
+
+async function managedConfiguration(instanceId: string): Promise<ManagedConfiguration | undefined> {
+  try {
+    const current = unwrap<ManagedConfiguration>(
+      await api.get(instancePath(instanceId, "computation", "desired")));
+    if (typeof current.persistent !== "boolean") throw new Error("Invalid configuration ownership response");
+    return current;
+  } catch (error) {
+    if (axios.isAxiosError<{ code?: string }>(error)
+      && error.response?.data?.code === "MANAGED_CONFIGURATION_REQUIRED") return undefined;
+    throw error;
+  }
+}
+
+type OrdinaryKind = "source" | "query" | "reaction";
+const ordinaryPaths = { source: "sources", query: "queries", reaction: "reactions" };
+type OrdinaryRequest = CreateSourceRequest | CreateQueryRequest | CreateReactionRequest;
+
+async function createOrdinary(kind: OrdinaryKind, definition: OrdinaryRequest, instanceId: string): Promise<ComponentCreatedResponse> {
+  const current = await managedConfiguration(instanceId);
+  if (!current?.persistent) {
+    return unwrap(await api.post(instancePath(instanceId, ordinaryPaths[kind]), definition));
+  }
+  const receipt = unwrap<{ components: ComponentIdentity[] }>(await api.post(
+    instancePath(instanceId, "computation", "ordinary-definitions"), {
+      expectedRevision: current.revision, requestId: crypto.randomUUID(),
+      component: { type: kind, definition },
+    }));
+  if (receipt.components?.length !== 1 || receipt.components[0].name !== definition.name) {
+    throw new Error("Configuration receipt did not confirm the requested component assignment");
+  }
+  return { ...receipt.components[0], message: "Component declaration accepted" };
+}
+
+async function updateOrdinary(kind: OrdinaryKind, id: string, definition: OrdinaryRequest, instanceId: string): Promise<void> {
+  const current = await managedConfiguration(instanceId);
+  if (current?.desired.ordinary?.some(component => component.id === id)) {
+    await api.put(instancePath(instanceId, "computation", "ordinary-definitions", id), {
+      expectedRevision: current.revision, requestId: crypto.randomUUID(),
+      component: { type: kind, definition },
+    });
+  } else {
+    await api.put(instancePath(instanceId, ordinaryPaths[kind], id), definition);
+  }
+}
+
+async function deleteOrdinary(kind: OrdinaryKind, id: string, instanceId: string): Promise<void> {
+  const current = await managedConfiguration(instanceId);
+  if (current?.desired.ordinary?.some(component => component.id === id)) {
+    await api.delete(instancePath(instanceId, "computation", "ordinary-definitions", id), {
+      data: { expectedRevision: current.revision, requestId: crypto.randomUUID() },
+    });
+  } else {
+    await api.delete(instancePath(instanceId, ordinaryPaths[kind], id));
+  }
+}
+
+export async function renameComponent(
+  id: string,
+  name: string,
+  instanceId: string,
+): Promise<ComponentIdentity> {
+  let request: { name: string; expectedRevision?: number; requestId?: string } = { name };
+  const current = await managedConfiguration(instanceId);
+  if (current && (current.desired.topology.components.some((component) => component.descriptor.id === id)
+    || current.desired.ordinary?.some(component => component.id === id))) {
+    request = { name, expectedRevision: current.revision, requestId: crypto.randomUUID() };
+  }
+  return unwrap(await api.post(instancePath(instanceId, "components", id, "rename"), request));
+}
+
+export async function updateSource(id: string, req: CreateSourceRequest, instanceId: string): Promise<void> {
+  await updateOrdinary("source", id, req, instanceId);
+}
+
+export async function updateQuery(id: string, req: CreateQueryRequest, instanceId: string): Promise<void> {
+  await updateOrdinary("query", id, req, instanceId);
+}
+
+export async function updateReaction(id: string, req: CreateReactionRequest, instanceId: string): Promise<void> {
+  await updateOrdinary("reaction", id, req, instanceId);
+}
+
 export async function createInstance(req: CreateInstanceRequest): Promise<void> {
   await api.post("/instances", req);
 }
@@ -87,11 +195,9 @@ export async function listSources(
   const path = instancePath(instanceId, "sources");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const summaries: any[] = unwrap(await api.get(path));
-  // Filter out internal components (introspection source, etc.)
-  const visible = summaries.filter((s) => !s.id?.startsWith("__"));
   // Fetch full details in parallel for kind/config
   const results = await Promise.all(
-    visible.map(async (s) => {
+    summaries.map(async (s) => {
       try {
         const fullPath = `${instancePath(instanceId, "sources", s.id)}?view=full`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,17 +222,15 @@ export async function getSource(
 export async function createSource(
   req: CreateSourceRequest,
   instanceId: string,
-): Promise<void> {
-  const path = instancePath(instanceId, "sources");
-  await api.post(path, req);
+): Promise<ComponentCreatedResponse> {
+  return createOrdinary("source", req, instanceId);
 }
 
 export async function deleteSource(
   id: string,
   instanceId: string,
 ): Promise<void> {
-  const path = instancePath(instanceId, "sources", id);
-  await api.delete(path);
+  await deleteOrdinary("source", id, instanceId);
 }
 
 export async function startSource(
@@ -178,17 +282,15 @@ export async function getQuery(
 export async function createQuery(
   req: CreateQueryRequest,
   instanceId: string,
-): Promise<void> {
-  const path = instancePath(instanceId, "queries");
-  await api.post(path, req);
+): Promise<ComponentCreatedResponse> {
+  return createOrdinary("query", req, instanceId);
 }
 
 export async function deleteQuery(
   id: string,
   instanceId: string,
 ): Promise<void> {
-  const path = instancePath(instanceId, "queries", id);
-  await api.delete(path);
+  await deleteOrdinary("query", id, instanceId);
 }
 
 export async function startQuery(
@@ -222,10 +324,8 @@ export async function listReactions(
   const path = instancePath(instanceId, "reactions");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const summaries: any[] = unwrap(await api.get(path));
-  // Filter out internal components (attach reactions, etc.)
-  const visible = summaries.filter((r) => !r.id?.startsWith("__"));
   const results = await Promise.all(
-    visible.map(async (r) => {
+    summaries.map(async (r) => {
       try {
         const fullPath = `${instancePath(instanceId, "reactions", r.id)}?view=full`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -250,17 +350,15 @@ export async function getReaction(
 export async function createReaction(
   req: CreateReactionRequest,
   instanceId: string,
-): Promise<void> {
-  const path = instancePath(instanceId, "reactions");
-  await api.post(path, req);
+): Promise<ComponentCreatedResponse> {
+  return createOrdinary("reaction", req, instanceId);
 }
 
 export async function deleteReaction(
   id: string,
   instanceId: string,
 ): Promise<void> {
-  const path = instancePath(instanceId, "reactions", id);
-  await api.delete(path);
+  await deleteOrdinary("reaction", id, instanceId);
 }
 
 export async function startReaction(

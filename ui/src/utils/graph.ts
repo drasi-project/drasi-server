@@ -29,6 +29,7 @@ export interface PipelineData {
 
 export interface SourceInfo {
   id: string;
+  name: string;
   kind: string;
   status: string;
   autoStart: boolean;
@@ -39,6 +40,7 @@ export interface SourceInfo {
 
 export interface QueryInfo {
   id: string;
+  name: string;
   status: string;
   inputIds: string[];
   resultCount?: number;
@@ -50,6 +52,7 @@ export interface QueryInfo {
 
 export interface ReactionInfo {
   id: string;
+  name: string;
   kind: string;
   status: string;
   queryIds: string[];
@@ -80,13 +83,14 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       : undefined;
     const internal = isInternalComponent(component);
     return {
-      id: `component-${component.id}`,
+      id: component.id,
       type: componentType === "computation" ? "computationNode" : `${componentType}Node`,
       position: { x: 0, y: 0 },
       hidden: internal && !showInternal,
       data: {
         ...details,
         id: component.id,
+        name: component.name,
         role: component.role,
         componentType,
         status: computationStatus(component),

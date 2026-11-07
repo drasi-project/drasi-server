@@ -29,7 +29,9 @@ use drasi_host_sdk::{
     },
 };
 use drasi_lib::{
-    computation::v1::*, management::ManagementResourceResolver, secret_store::SecretStoreProvider,
+    computation::v1::*,
+    management::{AcceptanceReceipt, ManagementResourceResolver},
+    secret_store::SecretStoreProvider,
     DrasiLib,
 };
 use serde::{Deserialize, Serialize};
@@ -155,10 +157,10 @@ impl ComputationResourceConfig {
 pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
     let definition = &config.definition;
     anyhow::ensure!(
-        definition.version == 1,
+        definition.version == DESIRED_TOPOLOGY_VERSION,
         "unsupported computation graph configuration version"
     );
-    ComponentId::try_new(definition.graph_id.as_str())?;
+    validate_identifier("graph", &definition.graph_id)?;
     anyhow::ensure!(
         definition.graph_id
             == drasi_lib::management::DesiredInstance::default()
@@ -491,7 +493,6 @@ async fn build_components_with_resources(
     source_bootstraps: NativeSourceBootstrapFactories,
     identity_providers: NativeIdentityProviders,
 ) -> Result<ComponentBatch> {
-    validate_definition(config)?;
     let services = core.computation_plugin_services()?;
     let resolver = Arc::new(ServerManagementResources {
         factories: factories.clone(),
@@ -502,36 +503,67 @@ async fn build_components_with_resources(
         identity_providers,
         secrets: services.secrets,
     });
-    resolver.validate_transition(
-        &drasi_lib::management::DesiredInstance::default().topology,
-        &config.definition,
-    )?;
-    let mut bindings = TopologyBindings {
-        factories,
-        deferred_management_validation: true,
-        ..Default::default()
-    };
-    for resource in &config.definition.resources {
-        let recipe = config
-            .definition
-            .resource_configurations
-            .get(&resource.id)
-            .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
-        bindings.resource_constructors.insert(
-            resource.id.clone(),
-            drasi_lib::management::resource_constructor(
-                resolver.clone(),
-                services.scope.as_ref(),
-                &config.definition.graph_id,
-                resource.clone(),
-                recipe.clone(),
-            ),
-        );
+    resolver.bind(config, services.scope.as_ref())
+}
+
+impl ServerManagementResources {
+    fn for_instance(
+        core: &DrasiLib,
+        registry: &crate::plugin_registry::PluginRegistry,
+    ) -> Result<(Arc<Self>, String)> {
+        let services = core.computation_plugin_services()?;
+        Ok((
+            Arc::new(Self {
+                factories: native_factory_registry(registry)?,
+                transactional: registry
+                    .transactional_transformer_registry(core.middleware_registry())?,
+                middleware: core.middleware_registry(),
+                bootstraps: registry.computation_bootstrap_factories()?,
+                source_bootstraps: registry.computation_source_bootstrap_factories()?,
+                identity_providers: registry.computation_identity_providers(),
+                secrets: services.secrets,
+            }),
+            services.scope.to_string(),
+        ))
     }
-    Ok(ComponentBatch {
-        definition: config.definition.clone(),
-        bindings,
-    })
+
+    fn bind(
+        self: &Arc<Self>,
+        config: &ComputationConfig,
+        instance: &str,
+    ) -> Result<ComponentBatch> {
+        validate_definition(config)?;
+        self.validate_transition(
+            &drasi_lib::management::DesiredInstance::default().topology,
+            &config.definition,
+        )?;
+        let mut bindings = TopologyBindings {
+            factories: self.factories.clone(),
+            deferred_management_validation: true,
+            ..Default::default()
+        };
+        for resource in &config.definition.resources {
+            let recipe = config
+                .definition
+                .resource_configurations
+                .get(&resource.id)
+                .with_context(|| format!("resource {} has no construction recipe", resource.id))?;
+            bindings.resource_constructors.insert(
+                resource.id.clone(),
+                drasi_lib::management::resource_constructor(
+                    self.clone(),
+                    instance,
+                    &config.definition.graph_id,
+                    resource.clone(),
+                    recipe.clone(),
+                ),
+            );
+        }
+        Ok(ComponentBatch {
+            definition: config.definition.clone(),
+            bindings,
+        })
+    }
 }
 
 /// The same recipes serve imperative construction and durable reconciliation.
@@ -929,7 +961,7 @@ pub fn configuration_from_snapshot(
     snapshot: &InstanceConfigurationSnapshot,
 ) -> Result<Option<ComputationConfig>> {
     anyhow::ensure!(
-        snapshot.version == 1,
+        snapshot.version == 2,
         "unsupported instance configuration snapshot version"
     );
     let Some(native) = &snapshot.native_components else {
@@ -949,9 +981,42 @@ pub fn register_components<'a>(
     config: &'a ComputationConfig,
     core: &'a DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
-) -> impl std::future::Future<Output = Result<ReconciliationReport>> + Send + 'a {
+) -> impl std::future::Future<Output = Result<AcceptanceReceipt>> + Send + 'a {
     let components = build_components_with_registry(config, core, registry);
     async move { Ok(core.add_components(components.await?).await?) }
+}
+
+/// Allocate new identities through DrasiLib while resolving names exactly once.
+/// Registry bindings are captured before returning, never held across activation.
+pub fn register_component_input<'a>(
+    input: &'a ComputationConfigInput,
+    core: &'a DrasiLib,
+    registry: &crate::plugin_registry::PluginRegistry,
+) -> impl std::future::Future<Output = Result<AcceptanceReceipt>> + Send + 'a {
+    let prepared = ServerManagementResources::for_instance(core, registry);
+    let input = input.clone();
+    async move {
+        let (resolver, instance) = prepared?;
+        input.validate()?;
+        match &input {
+            ComputationConfigInput::Definition(config) => Ok(core
+                .add_components(resolver.bind(config, &instance)?)
+                .await?),
+            ComputationConfigInput::Graph { .. } => Ok(core
+                .create_components(move |ids| {
+                    let config = input
+                        .resolve_with_ids(&resolver.factories, |component| {
+                            ids.allocate_requested(component.id.clone())
+                                .map_err(Into::into)
+                        })
+                        .map_err(|source| GraphError::ReferenceResolution { source })?;
+                    resolver
+                        .bind(&config, &instance)
+                        .map_err(|source| GraphError::ReferenceResolution { source })
+                })
+                .await?),
+        }
+    }
 }
 
 /// Retains instances if asynchronous rollback fails, so callers can retry cleanup.
@@ -1061,9 +1126,10 @@ mod tests {
         };
         let writer =
             tokio::time::timeout(std::time::Duration::from_secs(2), plugins.write()).await?;
-        let report =
+        let receipt =
             tokio::time::timeout(std::time::Duration::from_secs(2), registration).await??;
-        assert!(report.committed);
+        assert_eq!(receipt.revision, core.desired_configuration()?.revision);
+        assert!(!receipt.durable);
         drop(writer);
         core.shutdown().await?;
         Ok(())

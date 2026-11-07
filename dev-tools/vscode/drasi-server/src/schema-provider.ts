@@ -208,7 +208,7 @@ function buildUnionSchema(openapi: any) {
     sourceSchemaNames,
     discriminatorMap,
     getSourceCommonProperties(convertedDefinitions),
-    ['id'],
+    ['name'],
     (schema, kind) => applySourceBootstrapSchema(schema, kind, convertedDefinitions),
   );
   const reactionUnion = buildKindUnion(
@@ -216,7 +216,7 @@ function buildUnionSchema(openapi: any) {
     reactionSchemaNames,
     discriminatorMap,
     getReactionCommonProperties(),
-    ['id', 'queries'],
+    ['name', 'queries'],
   );
 
   const sourceRef = sourceUnion ? { $ref: '#/definitions/SourceConfig' } : minimalSourceSchema();
@@ -251,12 +251,13 @@ function buildUnionSchema(openapi: any) {
     properties: {
       apiVersion: { type: 'string' },
       kind: { enum: ['Source', 'Query', 'Reaction'] },
-      id: { type: 'string' },
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
       spec: {
         oneOf: [sourceRef, queryRef, reactionRef],
       },
     },
-    required: ['kind', 'id', 'spec'],
+    required: ['kind', 'name', 'spec'],
     additionalProperties: true,
   };
 
@@ -383,7 +384,8 @@ function extractDiscriminatorMap(schemas: Record<string, any>): Map<string, stri
 
 function getSourceCommonProperties(definitions: Record<string, any>) {
   return {
-    id: { type: 'string' },
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
     autoStart: { type: 'boolean' },
     bootstrapProvider: getBootstrapProviderSchemaRef(definitions),
   };
@@ -391,8 +393,9 @@ function getSourceCommonProperties(definitions: Record<string, any>) {
 
 function getReactionCommonProperties() {
   return {
-    id: { type: 'string' },
-    queries: { type: 'array', items: { type: 'string' } },
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
+    queries: { type: 'array', items: componentReferenceSchema() },
     autoStart: { type: 'boolean' },
   };
 }
@@ -420,7 +423,7 @@ function isObjectSchema(schema: any) {
 function isQuerySchema(schema: any) {
   return isObjectSchema(schema)
     && !!schema.properties?.query
-    && !!schema.properties?.id;
+    && !!schema.properties?.name;
 }
 
 function applySourceBootstrapSchema(
@@ -540,10 +543,11 @@ function minimalSourceSchema() {
   return {
     type: 'object',
     properties: {
-      id: { type: 'string' },
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
       kind: { type: 'string' },
     },
-    required: ['id', 'kind'],
+    required: ['name', 'kind'],
   };
 }
 
@@ -551,11 +555,12 @@ function minimalReactionSchema() {
   return {
     type: 'object',
     properties: {
-      id: { type: 'string' },
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
       kind: { type: 'string' },
-      queries: { type: 'array', items: { type: 'string' } },
+      queries: { type: 'array', items: componentReferenceSchema() },
     },
-    required: ['id', 'queries'],
+    required: ['name', 'kind', 'queries'],
   };
 }
 
@@ -563,10 +568,25 @@ function minimalQuerySchema() {
   return {
     type: 'object',
     properties: {
-      id: { type: 'string' },
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', minLength: 1, pattern: '^\\S+$' },
       query: { type: 'string' },
     },
-    required: ['id', 'query'],
+    required: ['name', 'query'],
+  };
+}
+
+function componentReferenceSchema() {
+  return {
+    oneOf: [
+      { type: 'string', minLength: 1, description: 'Component name, even when it looks like a UUID' },
+      {
+        type: 'object',
+        properties: { id: { type: 'string', format: 'uuid' } },
+        required: ['id'],
+        additionalProperties: false,
+      },
+    ],
   };
 }
 

@@ -58,10 +58,7 @@ async fn test_drasi_lib_builder_with_redb_wal_provider() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
     assert!(core.computation_control().is_ok());
-    assert_eq!(
-        core.get_source_status("__component_graph__").await?,
-        drasi_lib::ComponentStatus::Running
-    );
+    assert!(core.list_sources().await?.is_empty());
 
     core.stop().await?;
     assert!(!core.is_running().await);

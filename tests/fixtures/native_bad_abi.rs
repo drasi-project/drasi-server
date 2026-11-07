@@ -12,7 +12,7 @@ pub struct Header {
 }
 
 static HEADER: Header = Header {
-    magic: 0x4452_4153_4943_4731,
+    magic: 0x4452_4153_4943_4732,
     major: 99,
     minor: 0,
     size: 16,

@@ -50,9 +50,6 @@ export function useComponentEventLog(instanceId?: string) {
     setEntries([]);
     if (!instanceId) return;
     const unsub = subscribeComponentEvents((event: ComponentEvent) => {
-      // Skip internal components (prefixed with __)
-      if (event.componentId.startsWith("__")) return;
-
       const entry: EventEntry = {
         id: `sse-${++idCounter}`,
         timestamp: event.timestamp || new Date().toISOString(),

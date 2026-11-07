@@ -58,6 +58,9 @@ pub mod error_codes {
 
     pub const CONFIG_READ_ONLY: &str = "CONFIG_READ_ONLY";
     pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
+    pub const DUPLICATE_COMPONENT_ID: &str = "DUPLICATE_COMPONENT_ID";
+    pub const DUPLICATE_COMPONENT_NAME: &str = "DUPLICATE_COMPONENT_NAME";
+    pub const EXTERNAL_COMPONENT_ID_REJECTED: &str = "EXTERNAL_COMPONENT_ID_REJECTED";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
     /// Returned when an in-memory mutation succeeded but the configuration
@@ -96,6 +99,10 @@ pub struct ErrorResponse {
     /// Additional error details
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<ErrorDetail>,
+    /// Safe metadata for an already registered UUID or name; never configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<serde_json::Value>)]
+    pub conflicting_component: Option<drasi_lib::computation::v1::ComponentConflict>,
 }
 
 /// Additional error details
@@ -119,6 +126,7 @@ impl ErrorResponse {
             code: code.into(),
             message: message.into(),
             details: None,
+            conflicting_component: None,
         }
     }
 
@@ -146,14 +154,19 @@ impl ErrorResponse {
     /// return `impl IntoResponse` with `serde_json::Value` success bodies.
     pub fn into_json_response(self) -> (StatusCode, axum::Json<serde_json::Value>) {
         let status = status_from_code(&self.code);
-        let mut body = serde_json::json!({
-            "code": self.code,
-            "message": self.message,
-        });
-        if let Some(details) = &self.details {
-            body["details"] = serde_json::to_value(details).unwrap_or_default();
+        match serde_json::to_value(&self) {
+            Ok(body) => (status, axum::Json(body)),
+            Err(error) => {
+                log::error!("Failed to serialize API error response: {error}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({
+                        "code": error_codes::INTERNAL_ERROR,
+                        "message": "Failed to serialize API error response",
+                    })),
+                )
+            }
         }
-        (status, axum::Json(body))
     }
 }
 
@@ -208,6 +221,16 @@ impl IntoResponse for ErrorResponse {
 /// with 500 status.
 impl From<anyhow::Error> for ErrorResponse {
     fn from(err: anyhow::Error) -> Self {
+        let err = match err.downcast::<DrasiError>() {
+            Ok(error) => return Self::from(error),
+            Err(error) => error,
+        };
+        if let Some(response) = err
+            .downcast_ref::<drasi_lib::computation::v1::GraphError>()
+            .and_then(graph_identity_error)
+        {
+            return response;
+        }
         ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
     }
 }
@@ -226,12 +249,15 @@ fn status_from_code(code: &str) -> StatusCode {
 
         error_codes::CONFIG_READ_ONLY
         | error_codes::DUPLICATE_RESOURCE
+        | error_codes::DUPLICATE_COMPONENT_ID
+        | error_codes::DUPLICATE_COMPONENT_NAME
         | error_codes::MANAGED_CONFIGURATION_REQUIRED
         | error_codes::CONFIGURATION_CONFLICT
         | error_codes::CONFIGURATION_TRANSITION_REQUIRED => StatusCode::CONFLICT,
         error_codes::CONFIGURATION_UNCONFIRMED => StatusCode::SERVICE_UNAVAILABLE,
 
         error_codes::INVALID_REQUEST
+        | error_codes::EXTERNAL_COMPONENT_ID_REJECTED
         | error_codes::PLUGIN_INVALID_PATH
         | error_codes::PLUGIN_INVALID_CATEGORY => StatusCode::BAD_REQUEST,
 
@@ -252,10 +278,50 @@ fn status_from_code(code: &str) -> StatusCode {
     }
 }
 
+pub(crate) fn graph_identity_error(
+    error: &drasi_lib::computation::v1::GraphError,
+) -> Option<ErrorResponse> {
+    use drasi_lib::computation::v1::GraphError;
+    match error {
+        GraphError::AdditionRejected { cause, .. } => graph_identity_error(cause),
+        GraphError::Reported { cause } => graph_identity_error(cause),
+        GraphError::DuplicateComponentId { existing }
+        | GraphError::DuplicateComponentName { existing } => {
+            let code = if matches!(error, GraphError::DuplicateComponentId { .. }) {
+                error_codes::DUPLICATE_COMPONENT_ID
+            } else {
+                error_codes::DUPLICATE_COMPONENT_NAME
+            };
+            let mut response = ErrorResponse::new(code, error.to_string());
+            response.conflicting_component = Some(existing.as_ref().clone());
+            Some(response)
+        }
+        GraphError::ExternalComponentId { .. } => Some(ErrorResponse::new(
+            error_codes::EXTERNAL_COMPONENT_ID_REJECTED,
+            error.to_string(),
+        )),
+        GraphError::ReferenceResolution { source } => Some(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Component configuration or reference resolution failed: {source:#}"),
+        )),
+        _ => None,
+    }
+}
+
 /// Convert DrasiError to ErrorResponse
 impl From<DrasiError> for ErrorResponse {
     fn from(err: DrasiError) -> Self {
         use DrasiError::*;
+
+        if let Some(response) = err
+            .downcast_ref::<drasi_lib::computation::v1::GraphError>()
+            .and_then(graph_identity_error)
+        {
+            return response;
+        }
+        if let Some(error) = err.downcast_ref::<drasi_lib::computation::v1::ContractError>() {
+            return ErrorResponse::new(error_codes::INVALID_REQUEST, error.to_string());
+        }
 
         match err.classification() {
             ComponentNotFound {
@@ -305,6 +371,19 @@ impl From<DrasiError> for ErrorResponse {
 /// Convert DrasiError to HTTP status code
 pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
     use DrasiError::*;
+
+    if let Some(response) = err
+        .downcast_ref::<drasi_lib::computation::v1::GraphError>()
+        .and_then(graph_identity_error)
+    {
+        return status_from_code(&response.code);
+    }
+    if err
+        .downcast_ref::<drasi_lib::computation::v1::ContractError>()
+        .is_some()
+    {
+        return StatusCode::BAD_REQUEST;
+    }
 
     match err.classification() {
         ComponentNotFound { .. } => StatusCode::NOT_FOUND,

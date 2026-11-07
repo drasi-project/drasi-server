@@ -17,6 +17,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use drasi_lib::config::ComponentReference;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::StateStoreConfig;
@@ -247,7 +248,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
     println!("Configuring PostgreSQL Source");
     println!("------------------------------");
 
-    let id = Text::new("Source ID:")
+    let id = Text::new("Source name:")
         .with_default("postgres-source")
         .prompt()?;
 
@@ -294,7 +295,8 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
 
     Ok(SourceConfig {
         kind: "postgres".to_string(),
-        id,
+        name: id,
+        id: None,
         auto_start: true,
         bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
@@ -418,7 +420,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
     println!("Configuring HTTP Source");
     println!("-----------------------");
 
-    let id = Text::new("Source ID:")
+    let id = Text::new("Source name:")
         .with_default("http-source")
         .prompt()?;
 
@@ -433,7 +435,8 @@ fn prompt_http_source() -> Result<SourceConfig> {
 
     Ok(SourceConfig {
         kind: "http".to_string(),
-        id,
+        name: id,
+        id: None,
         auto_start: true,
         bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
@@ -450,7 +453,7 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
     println!("Configuring gRPC Source");
     println!("-----------------------");
 
-    let id = Text::new("Source ID:")
+    let id = Text::new("Source name:")
         .with_default("grpc-source")
         .prompt()?;
 
@@ -465,7 +468,8 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
 
     Ok(SourceConfig {
         kind: "grpc".to_string(),
-        id,
+        name: id,
+        id: None,
         auto_start: true,
         bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
@@ -482,7 +486,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
     println!("Configuring Mock Source");
     println!("-----------------------");
 
-    let id = Text::new("Source ID:")
+    let id = Text::new("Source name:")
         .with_default("mock-source")
         .prompt()?;
 
@@ -511,7 +515,8 @@ fn prompt_mock_source() -> Result<SourceConfig> {
 
     Ok(SourceConfig {
         kind: "mock".to_string(),
-        id,
+        name: id,
+        id: None,
         auto_start: true,
         bootstrap_provider: None,
         identity_provider: None,
@@ -560,14 +565,15 @@ fn prompt_log_reaction() -> Result<ReactionConfig> {
     println!("Configuring Log Reaction");
     println!("------------------------");
 
-    let id = Text::new("Reaction ID:")
+    let id = Text::new("Reaction name:")
         .with_default("log-reaction")
         .prompt()?;
 
     Ok(ReactionConfig {
         kind: "log".to_string(),
-        id,
-        queries: vec!["my-query".to_string()],
+        name: id,
+        id: None,
+        queries: vec![ComponentReference::by_name("my-query")?],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -581,7 +587,7 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
     println!("Configuring HTTP Webhook Reaction");
     println!("----------------------------------");
 
-    let id = Text::new("Reaction ID:")
+    let id = Text::new("Reaction name:")
         .with_default("http-reaction")
         .prompt()?;
 
@@ -592,8 +598,9 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
 
     Ok(ReactionConfig {
         kind: "http".to_string(),
-        id,
-        queries: vec!["my-query".to_string()],
+        name: id,
+        id: None,
+        queries: vec![ComponentReference::by_name("my-query")?],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -609,7 +616,7 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
     println!("Configuring SSE Reaction");
     println!("------------------------");
 
-    let id = Text::new("Reaction ID:")
+    let id = Text::new("Reaction name:")
         .with_default("sse-reaction")
         .prompt()?;
 
@@ -625,8 +632,9 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
 
     Ok(ReactionConfig {
         kind: "sse".to_string(),
-        id,
-        queries: vec!["my-query".to_string()],
+        name: id,
+        id: None,
+        queries: vec![ComponentReference::by_name("my-query")?],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -644,7 +652,7 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
     println!("Configuring gRPC Reaction");
     println!("-------------------------");
 
-    let id = Text::new("Reaction ID:")
+    let id = Text::new("Reaction name:")
         .with_default("grpc-reaction")
         .prompt()?;
 
@@ -655,8 +663,9 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
 
     Ok(ReactionConfig {
         kind: "grpc".to_string(),
-        id,
-        queries: vec!["my-query".to_string()],
+        name: id,
+        id: None,
+        queries: vec![ComponentReference::by_name("my-query")?],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -824,7 +833,7 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
     println!("Configuring {kind} Source");
     println!("{}", "-".repeat(25 + kind.len()));
 
-    let id = Text::new("Source ID:")
+    let id = Text::new("Source name:")
         .with_default(&format!("{kind}-source"))
         .prompt()?;
 
@@ -840,7 +849,8 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
 
     Ok(SourceConfig {
         kind: kind.to_string(),
-        id,
+        name: id,
+        id: None,
         auto_start: true,
         identity_provider: None,
         bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
@@ -907,7 +917,7 @@ pub fn attach_bootstrap_to_source(
 ///
 /// If the kind matches a known built-in reaction, uses the dedicated prompt.
 /// Otherwise, uses a generic JSON config prompt.
-pub fn prompt_reaction_by_kind(kind: &str, _source_ids: &[String]) -> Result<ReactionConfig> {
+pub fn prompt_reaction_by_kind(kind: &str, _source_names: &[String]) -> Result<ReactionConfig> {
     match kind {
         "log" => prompt_log_reaction(),
         "http" => prompt_http_reaction(),
@@ -925,7 +935,7 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
     println!("Configuring {kind} Reaction");
     println!("{}", "-".repeat(25 + kind.len()));
 
-    let id = Text::new("Reaction ID:")
+    let id = Text::new("Reaction name:")
         .with_default(&format!("{kind}-reaction"))
         .prompt()?;
 
@@ -939,8 +949,9 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
 
     Ok(ReactionConfig {
         kind: kind.to_string(),
-        id,
-        queries: vec!["my-query".to_string()],
+        name: id,
+        id: None,
+        queries: vec![ComponentReference::by_name("my-query")?],
         auto_start: true,
         identity_provider: None,
         config,

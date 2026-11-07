@@ -20,7 +20,7 @@ async function liveTable(onSortChange = vi.fn()) {
     <StrictMode>
       <DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={stream.create}>
         <components.QueryTable
-          queryId="stocks"
+          queryId="b20c42ee-59a1-441f-a549-87a72be1f1e9"
           queryOptions={{ getKey: row => String(row.id), transform: row => row }}
           rowKey={row => String(row.id)}
           columns={[{ key: 'id', label: 'Rack' }, { key: 'value', label: 'Units' }]}

@@ -6,7 +6,7 @@ interface ReactionFormProps {
   fields: Record<string, unknown>;
   errors: Record<string, string>;
   onChange: (field: string, value: unknown) => void;
-  availableQueries: { id: string }[];
+  availableQueries: { id: string; name: string }[];
 }
 
 function QueryMultiSelect({
@@ -16,7 +16,7 @@ function QueryMultiSelect({
   error,
 }: {
   selected: string[];
-  available: { id: string }[];
+  available: { id: string; name: string }[];
   onChange: (field: string, value: unknown) => void;
   error?: string;
 }) {
@@ -51,7 +51,7 @@ function QueryMultiSelect({
                 onChange={() => toggle(q.id)}
                 className="rounded border-drasi-border text-drasi-reaction focus:ring-drasi-reaction"
               />
-              <span className="text-sm text-drasi-text-primary">{q.id}</span>
+              <span className="text-sm text-drasi-text-primary">{q.name}</span>
             </label>
           ))}
         </div>
@@ -70,14 +70,17 @@ export default function ReactionForm({
   return (
     <>
       <FormField
-        label="Reaction ID"
-        field="id"
-        value={fields.id}
+        label="Reaction name"
+        field="name"
+        value={fields.name}
         onChange={onChange}
-        error={errors.id}
+        error={errors.name}
         required
         placeholder={`my-${kind}-reaction`}
       />
+      <FormField label="UUID (optional)" field="id" value={fields.id}
+        onChange={onChange} error={errors.id}
+        helpText="Leave blank for an assigned UUID. Supplying one requires instance opt-in." />
       <QueryMultiSelect
         selected={(fields.queries as string[]) ?? []}
         available={availableQueries}
@@ -92,13 +95,13 @@ export default function ReactionForm({
         onChange={(data) => {
           // Atomic replacement: clear old config keys, apply new ones
           const configKeys = Object.keys(fields).filter(
-            (k) => k !== "id" && k !== "autoStart" && k !== "kind" && k !== "queries",
+            (k) => k !== "id" && k !== "name" && k !== "autoStart" && k !== "kind" && k !== "queries",
           );
           for (const key of configKeys) {
             if (!(key in data)) onChange(key, undefined);
           }
           for (const [key, val] of Object.entries(data)) {
-            if (key !== "id" && key !== "autoStart" && key !== "queries") {
+            if (key !== "id" && key !== "name" && key !== "autoStart" && key !== "queries") {
               onChange(key, val);
             }
           }

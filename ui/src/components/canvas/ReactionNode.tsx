@@ -26,6 +26,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 interface ReactionNodeData {
   id: string;
+  name: string;
   kind: string;
   status: string;
   expanded?: boolean;
@@ -76,7 +77,7 @@ export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-drasi-text-primary truncate">
-              {d.id}
+              {d.name}
             </div>
             <div className="text-[10px] text-drasi-text-secondary uppercase tracking-wider">
               {d.kind}

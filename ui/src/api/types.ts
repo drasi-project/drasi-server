@@ -30,6 +30,7 @@ export interface ComputationPort {
 
 export interface ComputationComponent {
   id: string;
+  name: string;
   role: string;
   implementation?: {
     name: string;
@@ -81,6 +82,7 @@ interface ComponentLinks {
 
 interface RawComponentSummary {
   id: string;
+  name: string;
   status: ComponentStatus;
   links: ComponentLinks;
   errorMessage?: string;
@@ -90,6 +92,7 @@ interface RawSourceFull extends RawComponentSummary {
   config: {
     kind: SourceKind;
     id: string;
+    name: string;
     autoStart?: boolean;
     [key: string]: unknown;
   };
@@ -98,6 +101,7 @@ interface RawSourceFull extends RawComponentSummary {
 interface RawQueryFull extends RawComponentSummary {
   config: {
     id: string;
+    name: string;
     query: string;
     queryLanguage?: string;
     inputs: QueryInput[];
@@ -112,7 +116,8 @@ interface RawReactionFull extends RawComponentSummary {
   config: {
     kind: ReactionKind;
     id: string;
-    queries: string[];
+    name: string;
+    queries: ComponentReference[];
     autoStart?: boolean;
     [key: string]: unknown;
   };
@@ -121,6 +126,7 @@ interface RawReactionFull extends RawComponentSummary {
 // Normalized types used by UI components
 export interface SourceStatusResponse {
   id: string;
+  name: string;
   kind: SourceKind;
   status: ComponentStatus;
   autoStart: boolean;
@@ -130,13 +136,15 @@ export interface SourceStatusResponse {
 
 export interface CreateSourceRequest {
   kind: SourceKind;
-  id: string;
+  name: string;
+  id?: string;
   autoStart?: boolean;
   [key: string]: unknown;
 }
 
 export interface QueryConfigResponse {
   id: string;
+  name: string;
   query: string;
   queryLanguage?: string;
   inputs: QueryInput[];
@@ -149,7 +157,7 @@ export interface QueryConfigResponse {
 
 /** Expanded query input; the server omits unset and empty optional fields. */
 export interface QueryInputObject {
-  component: string;
+  component: ComponentReference;
   port?: string;
   nodes?: string[];
   relations?: string[];
@@ -157,18 +165,43 @@ export interface QueryInputObject {
 }
 
 /** A bare upstream component name (its primary output) or an expanded input object. */
-export type QueryInput = string | QueryInputObject;
+export type ComponentReference = string | { id: string };
+export type QueryInput = ComponentReference | QueryInputObject;
+
+export interface ComponentIdentity {
+  id: string;
+  name: string;
+}
+
+export interface ComponentCreatedResponse extends ComponentIdentity {
+  message: string;
+}
 
 export interface QueryResultOptions {
   label?: string;
 }
 
-export function inputComponent(input: QueryInput): string {
-  return typeof input === "string" ? input : input.component;
+export function referenceComponent(
+  reference: ComponentReference,
+  components: readonly ComponentIdentity[],
+): string | undefined {
+  return typeof reference === "string"
+    ? components.find((component) => component.name === reference)?.id
+    : reference.id;
+}
+
+export function inputComponent(
+  input: QueryInput,
+  components: readonly ComponentIdentity[],
+): string | undefined {
+  const reference = typeof input === "object" && "component" in input
+    ? input.component : input;
+  return referenceComponent(reference, components);
 }
 
 export interface CreateQueryRequest {
-  id: string;
+  name: string;
+  id?: string;
   query: string;
   queryLanguage?: string;
   inputs: QueryInput[];
@@ -192,9 +225,10 @@ export type ReactionKind =
 
 export interface ReactionStatusResponse {
   id: string;
+  name: string;
   kind: ReactionKind;
   status: ComponentStatus;
-  queries: string[];
+  queries: ComponentReference[];
   autoStart: boolean;
   properties?: Record<string, unknown>;
   error?: string;
@@ -202,8 +236,9 @@ export interface ReactionStatusResponse {
 
 export interface CreateReactionRequest {
   kind: ReactionKind;
-  id: string;
-  queries: string[];
+  name: string;
+  id?: string;
+  queries: ComponentReference[];
   autoStart?: boolean;
   [key: string]: unknown;
 }
@@ -233,6 +268,7 @@ export interface InstanceInfo {
 
 export interface CreateInstanceRequest {
   id: string;
+  allowExternalComponentIds?: boolean;
   persistIndex?: boolean;
   memoryBudgetMiB?: number;
   defaultPriorityQueueCapacity?: number;
@@ -247,9 +283,10 @@ export interface ChangeEvent {
 
 // Normalization helpers
 export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
-  const { kind: _kind, id: _id, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
+  const { kind: _kind, id: _id, name: _name, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
   return {
     id: raw.id,
+    name: raw.name,
     kind: raw.config?.kind ?? "mock",
     status: raw.status,
     autoStart: raw.config?.autoStart ?? false,
@@ -261,6 +298,7 @@ export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
 export function normalizeSourceSummary(raw: RawComponentSummary): SourceStatusResponse {
   return {
     id: raw.id,
+    name: raw.name,
     kind: "mock", // Unknown from summary, will be refined on detail fetch
     status: raw.status,
     autoStart: false,
@@ -271,6 +309,7 @@ export function normalizeSourceSummary(raw: RawComponentSummary): SourceStatusRe
 export function normalizeQuery(raw: RawQueryFull): QueryConfigResponse {
   return {
     id: raw.id,
+    name: raw.name,
     query: raw.config?.query ?? "",
     queryLanguage: raw.config?.queryLanguage,
     inputs: raw.config?.inputs ?? [],
@@ -285,6 +324,7 @@ export function normalizeQuery(raw: RawQueryFull): QueryConfigResponse {
 export function normalizeQuerySummary(raw: RawComponentSummary): QueryConfigResponse {
   return {
     id: raw.id,
+    name: raw.name,
     query: "",
     inputs: [],
     status: raw.status,
@@ -293,9 +333,10 @@ export function normalizeQuerySummary(raw: RawComponentSummary): QueryConfigResp
 }
 
 export function normalizeReaction(raw: RawReactionFull): ReactionStatusResponse {
-  const { kind: _kind, id: _id, queries: _q, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
+  const { kind: _kind, id: _id, name: _name, queries: _q, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
   return {
     id: raw.id,
+    name: raw.name,
     kind: raw.config?.kind ?? "log",
     status: raw.status,
     queries: raw.config?.queries ?? [],
@@ -308,6 +349,7 @@ export function normalizeReaction(raw: RawReactionFull): ReactionStatusResponse 
 export function normalizeReactionSummary(raw: RawComponentSummary): ReactionStatusResponse {
   return {
     id: raw.id,
+    name: raw.name,
     kind: "log",
     status: raw.status,
     queries: [],
@@ -347,9 +389,9 @@ export interface SolutionTemplateDetail {
   license?: string;
   defaultInstanceId?: string;
   variables: SolutionVariable[];
-  sourceIds: string[];
-  queryIds: string[];
-  reactionIds: string[];
+  sourceNames: string[];
+  queryNames: string[];
+  reactionNames: string[];
 }
 
 export interface SolutionDeployRequest {
@@ -364,6 +406,7 @@ export interface SolutionDeployError {
   phase: DeployPhase;
   componentType?: string;
   componentId?: string;
+  componentName?: string;
   message: string;
 }
 

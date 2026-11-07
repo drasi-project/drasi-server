@@ -128,7 +128,7 @@ impl SourceTrait for BootstrapMockSource {
         self
     }
 
-    async fn initialize(&self, _context: SourceRuntimeContext) {
+    async fn bind_runtime_context(&self, _context: SourceRuntimeContext) {
         // No-op
     }
 }

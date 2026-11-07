@@ -18,11 +18,13 @@ use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use drasi_lib::config::{ComponentId, ComponentName};
+
 use super::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 
 /// Source configuration with kind discriminator.
 ///
-/// A generic struct that holds the plugin kind, common fields (id, auto_start,
+/// A generic struct that holds the plugin kind, common fields (name, optional id, auto_start,
 /// bootstrap_provider), and plugin-specific configuration as a JSON value.
 /// The PluginRegistry is used at runtime to create the actual source instance.
 ///
@@ -31,21 +33,22 @@ use super::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 /// ```yaml
 /// sources:
 ///   - kind: mock
-///     id: test-source
+///     name: test-source
 ///     autoStart: true
 ///     dataType:
 ///       type: sensorReading
 ///     intervalMs: 1000
 ///
 ///   - kind: http
-///     id: http-source
+///     name: http-source
 ///     host: "0.0.0.0"
 ///     port: 9000
 /// ```
 #[derive(Debug, Clone)]
 pub struct SourceConfig {
     pub kind: String,
-    pub id: String,
+    pub name: String,
+    pub id: Option<ComponentId>,
     pub auto_start: bool,
     pub bootstrap_provider: Option<BootstrapProviderRef>,
     /// Reference (by `id`) to an entry in the top-level
@@ -64,7 +67,10 @@ impl Serialize for SourceConfig {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("kind", &self.kind)?;
-        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("name", &self.name)?;
+        if let Some(id) = &self.id {
+            map.serialize_entry("id", id)?;
+        }
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(bp) = &self.bootstrap_provider {
             match bp {
@@ -99,7 +105,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
             type Value = SourceConfig;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a source configuration with 'kind' and 'id' fields")
+                formatter.write_str("a source configuration with 'kind' and 'name' fields")
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -108,7 +114,8 @@ impl<'de> Deserialize<'de> for SourceConfig {
             {
                 // Storage for common fields
                 let mut kind: Option<String> = None;
-                let mut id: Option<String> = None;
+                let mut name: Option<String> = None;
+                let mut id: Option<Option<ComponentId>> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut bootstrap_provider: Option<serde_json::Value> = None;
                 let mut identity_provider: Option<String> = None;
@@ -129,6 +136,12 @@ impl<'de> Deserialize<'de> for SourceConfig {
                                 return Err(de::Error::duplicate_field("id"));
                             }
                             id = Some(map.next_value()?);
+                        }
+                        "name" => {
+                            if name.is_some() {
+                                return Err(de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
                         }
                         "autoStart" => {
                             if auto_start.is_some() {
@@ -174,7 +187,9 @@ impl<'de> Deserialize<'de> for SourceConfig {
 
                 // Validate required fields
                 let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
-                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
+                ComponentName::try_new(name.as_str()).map_err(de::Error::custom)?;
+                let id = id.flatten();
                 let auto_start = auto_start.unwrap_or(true);
 
                 let remaining_value = serde_json::Value::Object(remaining);
@@ -193,14 +208,14 @@ impl<'de> Deserialize<'de> for SourceConfig {
                         let config: BootstrapProviderConfig = serde_json::from_value(merged)
                             .map_err(|e| {
                                 de::Error::custom(format!(
-                                    "in source '{id}' bootstrapProvider: {e}"
+                                    "in source '{name}' bootstrapProvider: {e}"
                                 ))
                             })?;
                         Some(BootstrapProviderRef::Inline(config))
                     }
                     Some(_) => {
                         return Err(de::Error::custom(format!(
-                            "in source '{id}' bootstrapProvider: expected a string reference \
+                            "in source '{name}' bootstrapProvider: expected a string reference \
                              to a top-level bootstrapProviders entry or an inline mapping"
                         )));
                     }
@@ -208,6 +223,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
 
                 Ok(SourceConfig {
                     kind,
+                    name,
                     id,
                     auto_start,
                     bootstrap_provider,
@@ -222,9 +238,18 @@ impl<'de> Deserialize<'de> for SourceConfig {
 }
 
 impl SourceConfig {
-    /// Get the source ID
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn id(&self) -> Option<&ComponentId> {
+        self.id.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn assigned_id(&self) -> anyhow::Result<&ComponentId> {
+        self.id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("source '{}' has no assigned component UUID", self.name))
     }
 
     /// Check if auto_start is enabled
@@ -305,14 +330,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn component_name_is_required_and_uuid_is_optional() {
+        let id = "08f93596-5c0d-4c5d-890a-cf015bb3d809";
+        let omitted: SourceConfig = serde_json::from_value(serde_json::json!({
+            "kind": "mock", "name": id,
+        }))
+        .unwrap();
+        assert_eq!(omitted.name(), id);
+        assert!(omitted.id().is_none());
+        assert!(serde_json::to_value(&omitted).unwrap().get("id").is_none());
+
+        let assigned: SourceConfig = serde_json::from_value(serde_json::json!({
+            "kind": "mock", "name": "readings", "id": id,
+        }))
+        .unwrap();
+        assert_eq!(assigned.assigned_id().unwrap().as_str(), id);
+        assert_eq!(assigned.name(), "readings");
+        assert!(serde_json::from_value::<SourceConfig>(serde_json::json!({
+            "kind": "mock", "id": id,
+        }))
+        .is_err());
+        assert!(serde_json::from_value::<SourceConfig>(serde_json::json!({
+            "kind": "mock", "name": "readings", "id": "not-a-uuid",
+        }))
+        .is_err());
+    }
+
+    #[test]
     fn test_source_deserialize_mock_minimal() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source"
+            "name": "test-source"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert!(source.auto_start()); // default is true
     }
 
@@ -320,7 +372,7 @@ mod tests {
     fn test_source_deserialize_auto_start_defaults_true() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source"
+            "name": "test-source"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
@@ -331,7 +383,7 @@ mod tests {
     fn test_source_deserialize_auto_start_explicit_false() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "autoStart": false
         }"#;
 
@@ -343,7 +395,7 @@ mod tests {
     fn test_source_deserialize_http_valid() {
         let json = r#"{
             "kind": "http",
-            "id": "http-source",
+            "name": "http-source",
             "autoStart": true,
             "host": "localhost",
             "port": 8080,
@@ -351,7 +403,7 @@ mod tests {
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "http-source");
+        assert_eq!(source.name(), "http-source");
         assert_eq!(source.kind(), "http");
     }
 
@@ -359,12 +411,12 @@ mod tests {
     fn test_source_deserialize_grpc_valid() {
         let json = r#"{
             "kind": "grpc",
-            "id": "grpc-source",
+            "name": "grpc-source",
             "endpoint": "http://localhost:50051"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "grpc-source");
+        assert_eq!(source.name(), "grpc-source");
         assert_eq!(source.kind(), "grpc");
     }
 
@@ -372,7 +424,7 @@ mod tests {
     fn test_source_deserialize_postgres_valid() {
         let json = r#"{
             "kind": "postgres",
-            "id": "pg-source",
+            "name": "pg-source",
             "host": "localhost",
             "port": 5432,
             "database": "testdb",
@@ -383,7 +435,7 @@ mod tests {
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "pg-source");
+        assert_eq!(source.name(), "pg-source");
         assert_eq!(source.kind(), "postgres");
     }
 
@@ -391,20 +443,20 @@ mod tests {
     fn test_source_deserialize_platform_valid() {
         let json = r#"{
             "kind": "platform",
-            "id": "platform-source",
+            "name": "platform-source",
             "redisUrl": "redis://localhost:6379",
             "streamKey": "events"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "platform-source");
+        assert_eq!(source.name(), "platform-source");
         assert_eq!(source.kind(), "platform");
     }
 
     #[test]
     fn test_source_deserialize_missing_kind() {
         let json = r#"{
-            "id": "test-source"
+            "name": "test-source"
         }"#;
 
         let result: Result<SourceConfig, _> = serde_json::from_str(json);
@@ -414,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn test_source_deserialize_missing_id() {
+    fn test_source_deserialize_missing_name() {
         let json = r#"{
             "kind": "mock"
         }"#;
@@ -422,7 +474,7 @@ mod tests {
         let result: Result<SourceConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("id"), "Error should mention 'id': {err}");
+        assert!(err.contains("name"), "Error should mention 'name': {err}");
     }
     #[test]
     fn test_source_deserialize_unknown_kind_accepted() {
@@ -430,12 +482,12 @@ mod tests {
         // and rejected at creation time by the registry.
         let json = r#"{
             "kind": "unknown-source-type",
-            "id": "test-source"
+            "name": "test-source"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.kind(), "unknown-source-type");
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
     }
 
     #[test]
@@ -443,12 +495,12 @@ mod tests {
         // Extra fields are stored in the config JSON value for the plugin to validate.
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "extraField": "value"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert_eq!(source.config["extraField"], "value");
     }
 
@@ -458,12 +510,12 @@ mod tests {
         // and only validated at creation time via the plugin registry.
         let json = r#"{
             "kind": "unknown-source-type",
-            "id": "test-source"
+            "name": "test-source"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.kind(), "unknown-source-type");
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
     }
 
     #[test]
@@ -471,12 +523,12 @@ mod tests {
         // Extra/unknown fields are stored in the config JSON for plugin validation.
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "unknownField": "value"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert_eq!(source.config["unknownField"], "value");
     }
 
@@ -485,7 +537,7 @@ mod tests {
         // snake_case auto_start is explicitly rejected with a helpful hint.
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "auto_start": true
         }"#;
 
@@ -507,12 +559,12 @@ mod tests {
         // snake_case fields go into config JSON.
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "data_type": "sensor"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert_eq!(source.config["data_type"], "sensor");
     }
 
@@ -521,12 +573,12 @@ mod tests {
         // Extra fields are stored; kind is available for context.
         let json = r#"{
             "kind": "mock",
-            "id": "my-unique-source",
+            "name": "my-unique-source",
             "badField": "value"
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "my-unique-source");
+        assert_eq!(source.name(), "my-unique-source");
         assert_eq!(source.kind(), "mock");
         assert_eq!(source.config["badField"], "value");
     }
@@ -535,7 +587,7 @@ mod tests {
     fn test_source_deserialize_kind_preserved() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "badField": "value"
         }"#;
 
@@ -547,14 +599,14 @@ mod tests {
     fn test_source_deserialize_with_bootstrap_provider() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "bootstrapProvider": {
                 "kind": "noop"
             }
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert!(source.bootstrap_provider().is_some());
     }
 
@@ -562,7 +614,7 @@ mod tests {
     fn test_bootstrap_provider_inherits_postgres_fields() {
         let yaml = r#"
 kind: postgres
-id: source-with-bootstrap
+name: source-with-bootstrap
 host: localhost
 port: 5432
 database: drasi
@@ -595,7 +647,7 @@ bootstrapProvider:
     fn test_bootstrap_provider_postgres_override() {
         let yaml = r#"
 kind: postgres
-id: source-with-bootstrap
+name: source-with-bootstrap
 host: localhost
 port: 5432
 database: drasi
@@ -630,7 +682,7 @@ bootstrapProvider:
         // does not itself set. This exercises a kind that was never special-cased.
         let yaml = r#"
 kind: mysql
-id: mysql-source
+name: mysql-source
 host: db.internal
 port: 3306
 database: shop
@@ -663,7 +715,7 @@ bootstrapProvider:
         // source must be configured explicitly and inherits nothing.
         let yaml = r#"
 kind: mysql
-id: mysql-source
+name: mysql-source
 host: db.internal
 port: 3306
 database: shop
@@ -692,7 +744,7 @@ bootstrapProvider:
     fn test_source_deserialize_yaml_format() {
         let yaml = r#"
 kind: mock
-id: yaml-source
+name: yaml-source
 autoStart: true
 dataType:
   type: sensorReading
@@ -700,7 +752,7 @@ intervalMs: 1000
 "#;
 
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(source.id(), "yaml-source");
+        assert_eq!(source.name(), "yaml-source");
         assert!(source.auto_start());
     }
 
@@ -708,7 +760,8 @@ intervalMs: 1000
     fn test_source_serialize_deserialize_roundtrip() {
         let original = SourceConfig {
             kind: "mock".to_string(),
-            id: "roundtrip-source".to_string(),
+            name: "roundtrip-source".to_string(),
+            id: None,
             auto_start: false,
             bootstrap_provider: None,
             identity_provider: None,
@@ -721,7 +774,7 @@ intervalMs: 1000
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: SourceConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.id(), "roundtrip-source");
+        assert_eq!(deserialized.name(), "roundtrip-source");
         assert!(!deserialized.auto_start());
     }
 
@@ -730,8 +783,8 @@ intervalMs: 1000
         // JSON with duplicate fields - serde_json rejects this
         let json = r#"{
             "kind": "mock",
-            "id": "first-id",
-            "id": "second-id"
+            "name": "first-id",
+            "name": "second-id"
         }"#;
 
         let result: Result<SourceConfig, _> = serde_json::from_str(json);
@@ -747,13 +800,13 @@ intervalMs: 1000
     fn test_source_deserialize_with_enum_data_type() {
         let json = r#"{
             "kind": "mock",
-            "id": "test-source",
+            "name": "test-source",
             "dataType": { "type": "sensorReading", "sensorCount": 10 },
             "intervalMs": 1000
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.name(), "test-source");
         assert_eq!(source.kind(), "mock");
         let config = &source.config;
         assert_eq!(config["dataType"]["type"], "sensorReading");

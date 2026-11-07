@@ -31,12 +31,13 @@ use crate::api::models::SourceConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
-use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
-use crate::factories::{create_source_locked, resolve_source_bootstrap_provider};
+use crate::api::shared::responses::{
+    ApiResponse, ComponentCreatedResponse, ComponentListItem, StatusResponse,
+};
+use crate::factories::{create_source_instance, resolve_source_bootstrap_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::channels::ComponentStatus;
 use drasi_lib::DrasiLib;
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
@@ -47,31 +48,16 @@ pub async fn list_sources(
     Extension(instance_id): Extension<String>,
     Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
-    let sources = core.list_sources().await.map_err(ErrorResponse::from)?;
-    let mut items = Vec::with_capacity(sources.len());
-    for (id, status) in sources {
-        let links = component_links(&api_prefix.0, &instance_id, "sources", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_source_info(&id).await {
-                Ok(info) => info.error_message,
-                Err(e) => {
-                    log::warn!("Failed to fetch source info for '{id}': {e}");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        items.push(ComponentListItem {
-            id,
-            status,
-            error_message,
-            links,
-            config: None,
-        });
-    }
-
-    Ok(Json(ApiResponse::success(items)))
+    Ok(Json(ApiResponse::success(
+        super::component_list(
+            &core,
+            drasi_lib::ComponentKind::Source,
+            "sources",
+            &instance_id,
+            &api_prefix.0,
+        )
+        .await?,
+    )))
 }
 
 /// Resolve a source's `bootstrapProvider: <id>` reference (if any) against the
@@ -101,7 +87,7 @@ async fn resolve_source_bootstrap_ref(
         )
         .with_details(ErrorDetail {
             component_type: Some("source".to_string()),
-            component_id: Some(config.id().to_string()),
+            component_id: config.id().map(ToString::to_string),
             technical_details: Some(e.to_string()),
         })
     })
@@ -116,7 +102,7 @@ pub async fn create_source_handler(
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Extension(instance_registry): Extension<InstanceRegistry>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+) -> Result<Json<ApiResponse<ComponentCreatedResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
             error_codes::CONFIG_READ_ONLY,
@@ -133,71 +119,21 @@ pub async fn create_source_handler(
         )
     })?;
 
-    let source_id = config.id().to_string();
-
-    // Resolve any top-level `bootstrapProvider: <id>` reference against this
-    // instance's declared providers so the source is wired (and bootstraps)
-    // live. The original `config` retains the reference for persistence.
+    // Resolve bootstrap references against the owning instance's providers.
     let create_config =
         resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create source instance: {e}");
-            ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to create source: {e}"),
-            )
-        })?;
-
-    // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_source_with_metadata(source, plugin_meta).await {
-        Ok(_) => {
-            log::info!("Source '{source_id}' created successfully");
-
-            // Track any `identityProvider` reference so persistence can
-            // round-trip it (snapshot_configuration() doesn't carry it).
-            if let Some(p) = &config_persistence {
-                p.register_source_identity_provider(
-                    &instance_id,
-                    &source_id,
-                    config.identity_provider(),
-                )
-                .await;
-                // Track the source's bootstrapProvider (inline or reference)
-                // so it round-trips through persistence — snapshot_configuration()
-                // does not reliably carry it (issue #105).
-                p.register_source_bootstrap_provider(
-                    &instance_id,
-                    &source_id,
-                    config.bootstrap_provider(),
-                )
-                .await;
-            }
-
-            persist_after_operation(&config_persistence, "creating source").await?;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Source '{source_id}' created successfully"),
-            })))
-        }
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") {
-                log::info!("Source '{source_id}' already exists - use PUT for upsert");
-                return Err(ErrorResponse::new(
-                    error_codes::DUPLICATE_RESOURCE,
-                    "Resource already exists",
-                ));
-            }
-            log::error!("Failed to add source: {e}");
-            Err(ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                error_msg,
-            ))
-        }
+    let handle = create_source_instance(&core, plugin_registry, create_config).await?;
+    let source_id = handle.id().to_string();
+    if config_persistence.is_some() {
+        super::wait_for_computation_creation(&core, "source", &source_id).await?;
     }
+    persist_after_operation(&config_persistence, "creating source").await?;
+    Ok(Json(ApiResponse::success(ComponentCreatedResponse {
+        id: source_id,
+        name: config.name,
+        message: "Source declaration accepted".into(),
+    })))
 }
 
 /// Upsert a source (create or update)
@@ -220,7 +156,7 @@ pub async fn upsert_source_handler(
     }
 
     super::require_imperative_configuration(&core)?;
-    let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
+    let mut config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse source config: {e}");
         ErrorResponse::new(
             error_codes::INVALID_REQUEST,
@@ -228,113 +164,54 @@ pub async fn upsert_source_handler(
         )
     })?;
 
-    if config.id() != path_id {
+    let id = drasi_lib::config::ComponentId::try_new(path_id)
+        .map_err(|error| ErrorResponse::new(error_codes::INVALID_REQUEST, error.to_string()))?;
+    if config.id.as_ref().is_some_and(|requested| requested != &id) {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
-            format!(
-                "Path id '{path_id}' does not match body id '{}'",
-                config.id()
-            ),
+            "The component UUID cannot be changed",
         ));
     }
 
-    let source_id = config.id().to_string();
+    config.id = Some(id.clone());
+    let source_id = id.to_string();
 
-    // Resolve any top-level `bootstrapProvider: <id>` reference so the source
-    // is wired live; `config` keeps the reference for persistence.
+    // Validate provider references without constructing a replacement object.
     let create_config =
         resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
 
-    // Check if source already exists
-    let exists = core.get_source_status(&source_id).await.is_ok();
+    let snapshot = core.computation_control()?.desired_snapshot();
+    let existing = snapshot.component(&id);
 
-    if exists {
-        // Create a new source instance and use update_source to replace in place
-        let (new_source, _meta) = create_source_locked(&plugin_registry, create_config)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create source instance for update: {e}");
-                ErrorResponse::new(
-                    error_codes::SOURCE_CREATE_FAILED,
-                    format!("Failed to create source for update: {e}"),
-                )
-            })?;
-        if let Err(e) = core.update_source(&source_id, new_source).await {
-            log::error!("Failed to update source '{source_id}': {e}");
+    if let Some(existing) = existing {
+        core.get_source_status(&source_id).await?;
+        if existing.name.as_str() != config.name {
             return Err(ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to update source: {e}"),
+                error_codes::INVALID_REQUEST,
+                "Use the component rename endpoint to change its name",
             ));
         }
+        let definition =
+            crate::managed_configuration::ordinary::source_definition(config)?.with_assigned_id(id);
+        core.update_source(&source_id, definition).await?;
 
-        log::info!("Source '{source_id}' updated successfully");
-
-        if let Some(p) = &config_persistence {
-            p.register_source_identity_provider(
-                &instance_id,
-                &source_id,
-                config.identity_provider(),
-            )
-            .await;
-            p.register_source_bootstrap_provider(
-                &instance_id,
-                &source_id,
-                config.bootstrap_provider(),
-            )
-            .await;
-        }
+        log::info!("Source '{source_id}' definition update accepted");
 
         persist_after_operation(&config_persistence, "upserting source").await?;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
-            message: format!("Source '{source_id}' updated successfully"),
+            message: format!("Source '{source_id}' update accepted"),
         })));
     }
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create source instance: {e}");
-            ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to create source: {e}"),
-            )
-        })?;
-
-    // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_source_with_metadata(source, plugin_meta).await {
-        Ok(_) => {
-            log::info!("Source '{source_id}' created successfully");
-
-            if let Some(p) = &config_persistence {
-                p.register_source_identity_provider(
-                    &instance_id,
-                    &source_id,
-                    config.identity_provider(),
-                )
-                .await;
-                p.register_source_bootstrap_provider(
-                    &instance_id,
-                    &source_id,
-                    config.bootstrap_provider(),
-                )
-                .await;
-            }
-
-            persist_after_operation(&config_persistence, "upserting source").await?;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Source '{source_id}' created successfully"),
-            })))
-        }
-        Err(e) => {
-            log::error!("Failed to add source: {e}");
-            Err(ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                e.to_string(),
-            ))
-        }
+    create_source_instance(&core, plugin_registry, create_config).await?;
+    if config_persistence.is_some() {
+        super::wait_for_computation_creation(&core, "source", &source_id).await?;
     }
+    persist_after_operation(&config_persistence, "upserting source").await?;
+    Ok(Json(ApiResponse::success(StatusResponse {
+        message: format!("Source '{source_id}' declaration accepted"),
+    })))
 }
 
 /// Get source status by ID
@@ -346,6 +223,18 @@ pub async fn get_source(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
+    if let Some(component) = super::managed_component(
+        &core,
+        &id,
+        "sources",
+        &instance_id,
+        &api_prefix.0,
+        view.include_config(),
+    )
+    .await?
+    {
+        return Ok(Json(ApiResponse::success(component)));
+    }
     // Read authoritative graph-backed source information.
     let info = core
         .get_source_info(&id)
@@ -354,16 +243,16 @@ pub async fn get_source(
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
-        let mut config_map = serde_json::Map::new();
+        let mut config_map: serde_json::Map<_, _> = info.properties.clone().into_iter().collect();
         config_map.insert(
             "kind".to_string(),
             serde_json::Value::String(info.source_type.clone()),
         );
         config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
-        // Include properties from runtime
-        for (key, value) in &info.properties {
-            config_map.insert(key.clone(), value.clone());
-        }
+        config_map.insert(
+            "name".to_string(),
+            serde_json::Value::String(info.name.clone()),
+        );
         Some(serde_json::Value::Object(config_map))
     } else {
         None
@@ -371,6 +260,7 @@ pub async fn get_source(
 
     Ok(Json(ApiResponse::success(ComponentListItem {
         id: info.id,
+        name: info.name,
         status: info.status,
         error_message: info.error_message,
         links: component_links(&api_prefix.0, &instance_id, "sources", &id),
@@ -480,7 +370,7 @@ pub async fn delete_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -493,12 +383,6 @@ pub async fn delete_source(
     super::require_imperative_configuration(&core)?;
     match core.remove_source(&id, true).await {
         Ok(_) => {
-            if let Some(p) = &config_persistence {
-                p.unregister_source_identity_provider(&instance_id, &id)
-                    .await;
-                p.unregister_source_bootstrap_provider(&instance_id, &id)
-                    .await;
-            }
             persist_after_operation(&config_persistence, "deleting source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {

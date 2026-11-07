@@ -23,7 +23,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Check compilation: `cargo check`
 
 ### Plugin Loading
-Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Legacy Source/Reaction/Bootstrap ABI 0.17 (also accepting 0.16 fast-mode plugins) and independent native ComputationGraph ABI 1.0 coexist in the same host. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
+Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Ordinary Source/Reaction/Bootstrap ABI 0.18 and independent native ComputationGraph ABI 2.0 coexist in the same host; older layouts are rejected. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the ordinary ABI. Plugin building is managed by drasi-core, not this repository.
 
 **Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. `scripts/plugin_origin.py` checks the locked Cargo graph: this branch's sibling SDK, host and FFI path dependencies select local mode, so use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 
@@ -109,8 +109,8 @@ ComputationGraph owns dataflow and readiness. Existing source/reaction plugin
 interfaces remain adapters, including their channel and subscription contracts.
 The server must use DrasiLib's public graph-backed APIs, not construct a shadow
 runtime graph or call removed managers.
-The built-in `__component_graph__` source remains a graph-backed observability
-adapter, not a legacy runtime. Preserve its public inspection behavior.
+Use direct graph-backed inspection and lifecycle-event APIs for observability.
+Do not create an implicit inspection source or filter components by ID prefixes.
 
 ## Configuration
 
@@ -187,7 +187,7 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 # A source then references it by id (see the sources block below):
 #   sources:
 #     - kind: postgres
-#       id: my-source
+#       name: my-source
 #       bootstrapProvider: pg-bootstrap   # reference to that instance's entry
 #
 # Sources may also define a bootstrap provider INLINE (a mapping instead of a
@@ -204,12 +204,12 @@ instances:
     persistIndex: false # Use RocksDB for persistent indexing (default: false, uses in-memory)
     sources:
       - kind: mock
-        id: "sensors"
+        name: "sensors"
         autoStart: true
 
 # Queries
     queries:
-      - id: "high-temp"
+      - name: "high-temp"
         query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
         queryLanguage: Cypher
         inputs:
@@ -219,7 +219,7 @@ instances:
 # Reactions
     reactions:
       - kind: log
-        id: "log-temps"
+        name: "log-temps"
         queries:
           - "high-temp"
         autoStart: true
@@ -242,10 +242,10 @@ instances:
       path: ./data/analytics-state.redb
     sources:
       - kind: mock
-        id: "sensors"
+        name: "sensors"
         autoStart: true
     queries:
-      - id: "high-temp"
+      - name: "high-temp"
         query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
         queryLanguage: Cypher
         inputs:
@@ -280,13 +280,38 @@ volume for `./data/` in containerized deployments.
 
 ### Configuration Persistence
 
-Persistence uses a snapshot-based approach: `ConfigPersistence::save()` calls
-`snapshot_computation_configuration()` on each DrasiLib instance. ComputationGraph is the
-authoritative runtime state. The server preserves config-only references and
-settings separately, but must not keep a shadow runtime graph. YAML is
-reconstructed from the live graph and preserved configuration without selectors.
+Every DrasiLib has a configuration owner, with an internal memory store when no
+persistent backend is configured. Component UUIDs are immutable graph-node IDs;
+names are separate, unique and editable. Omitted IDs are assigned by Core.
+Supplied IDs on new definitions reject by default; only the immutable
+`allowExternalComponentIds` opt-in permits them. Updates and actual stored
+restoration retain existing identities.
+
+With `persistConfig: true`, Server selects a companion YAML configuration store
+for instances without an explicit store. Definitions, UUID assignments and
+receipts are committed before construction. `ConfigPersistence::save()` writes
+only host settings and store locations; it does not reconstruct components from
+runtime snapshots or maintain provider-reference caches. The configuration
+store retains those references, including for pending and failed declarations.
+Writes use an owned serialization guard, private unique staging files and
+file/directory synchronization around atomic replacement.
+
+Accepted factory update plans and operation identities are stored with the
+target definitions. Completion acknowledgment removes only the exact pending
+operation, without changing its revision, receipt or saved snapshots; uncertain
+completion must not resume processing. YAML record format 3 and redb formats 7/8
+carry these records. Older formats fail without migration or deletion. The
+ordinary plugin ABI remains creation-only for managed updates: lifecycle hooks
+do not grant update support, and Server must not construct opaque replacement
+objects or use one-off callbacks to bypass the factory planner.
+
+Core rejects every managed Rebootstrap update, including persisted pending
+intent; provider availability is not an exception. Initial bootstrap is
+unaffected. The user deferred the missing snapshot/live, queued-work and
+downstream-reset protocol to CW-92 in Core's remaining-work document.
+
 The optional per-instance `computation` section accepts readable `graph`
-declarations or a version-1 factory-only `DesiredTopology` under `definition`.
+declarations or a version-2 factory-only `DesiredTopology` under `definition`.
 Resolve readable declarations using the actual registered factories, without
 constructing components or opening resources just to discover metadata.
 Both use the same graph owner, explicit host resource recipes and startup
@@ -300,7 +325,7 @@ components. Full configuration snapshots are administrative data, not public top
 
 DrasiServer separates two independent concepts:
 
-1. **Persistence** - Whether API changes are saved to the config file
+1. **Host settings persistence** - Whether Server/instance settings are saved to the config file; this also selects a default component store
 2. **Read-Only Mode** - Whether API changes are allowed at all
 
 **Persistence is enabled when:**
@@ -317,22 +342,24 @@ DrasiServer separates two independent concepts:
 - Config file is not writable (file permissions prevent writing)
 
 **Important distinction:**
-- `persistConfig: false` → API mutations are allowed but NOT saved to config file
+- `persistConfig: false` → API mutations are allowed but Server settings are not saved to the file; an explicitly configured durable component store remains authoritative
 - Read-only config file → API mutations are blocked entirely
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
 **Behavior:**
-- When persistence enabled: `save()` snapshots component state from ComputationGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
-- When persistence disabled: API mutations work but changes are lost on restart
+- With a durable component store: accepted definitions and UUIDs survive restart, even if a constructor has not succeeded
+- With the internal memory store: stop/start retains IDs; reconstruction of a fresh instance generates new omitted IDs
 - When read-only: all create/delete operations via API are rejected
 
 ### Builder-Based Configuration
 
-DrasiServer also supports a builder pattern for programmatic configuration. Sources, reactions, and state store providers are provided as plugin instances:
+Programmatic construction supplies metadata and deferred factories. Source and
+reaction factories receive the UUIDs assigned by Core; reaction inputs are bound
+before construction. Select the query factory explicitly.
 
 ```rust
 use drasi_server::DrasiServerBuilder;
-use drasi_lib::Query;
+use drasi_lib::{Query, config::ComponentReference};
 use drasi_state_store_redb::RedbStateStoreProvider;
 use std::sync::Arc;
 
@@ -341,21 +368,33 @@ let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
 
 let server = DrasiServerBuilder::new()
     .with_id("my-server")
+    .with_query_factory(query_factory)
     .with_host_port("0.0.0.0", 8080)
     .with_state_store_provider(Arc::new(state_store))  // Optional: for plugin state persistence
-    .with_source(my_source_instance)  // Plugin instance
+    .with_source_factory("my-source", true, make_source)
     .add_query(
         Query::cypher("my-query")
             .query("MATCH (n) RETURN n")
             .from_input("my-source")
-            .build()
+            .build()?
     )
-    .with_reaction(my_reaction_instance)  // Plugin instance
+    .with_reaction_inputs_factory(
+        "my-reaction",
+        vec![ComponentReference::by_name("my-query")?],
+        true,
+        make_reaction,
+    )
     .build()
     .await?;
 
 server.run().await?;
 ```
+
+The application supplies `query_factory`, `make_source`, and `make_reaction`.
+Already-constructed objects require external-ID opt-in and valid UUIDs, and are
+memory-only. A durable builder intentionally rejects initial component
+additions: register factories/resolvers and the store, build the instance, then
+submit revisioned definitions.
 
 ### Component Types
 

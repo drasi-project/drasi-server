@@ -30,7 +30,9 @@ use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
-use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
+use crate::api::shared::responses::{
+    ApiResponse, ComponentCreatedResponse, ComponentListItem, StatusResponse,
+};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
 use futures_util::{stream, StreamExt};
@@ -42,31 +44,16 @@ pub async fn list_queries(
     Extension(instance_id): Extension<String>,
     Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
-    let queries = core.list_queries().await.map_err(ErrorResponse::from)?;
-    let mut items = Vec::with_capacity(queries.len());
-    for (id, status) in queries {
-        let links = component_links(&api_prefix.0, &instance_id, "queries", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_query_info(&id).await {
-                Ok(info) => info.error_message,
-                Err(e) => {
-                    log::warn!("Failed to fetch query info for '{id}': {e}");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        items.push(ComponentListItem {
-            id,
-            status,
-            error_message,
-            links,
-            config: None,
-        });
-    }
-
-    Ok(Json(ApiResponse::success(items)))
+    Ok(Json(ApiResponse::success(
+        super::component_list(
+            &core,
+            drasi_lib::ComponentKind::Query,
+            "queries",
+            &instance_id,
+            &api_prefix.0,
+        )
+        .await?,
+    )))
 }
 
 /// Create a new query
@@ -77,7 +64,7 @@ pub async fn create_query(
     Extension(_instance_id): Extension<String>,
     Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
     ConfigBody(config_dto): ConfigBody<QueryConfigDto>,
-) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+) -> Result<Json<ApiResponse<ComponentCreatedResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
             error_codes::CONFIG_READ_ONLY,
@@ -99,7 +86,7 @@ pub async fn create_query(
             };
             ErrorResponse::new(code, format!("{error:#}"))
         })?;
-    let query_id = config_dto.id.clone();
+    let query_id = config_dto.name.clone();
 
     // Convert QueryConfigDto to drasi-lib's QueryConfig
     let mapper = DtoMapper::default();
@@ -147,33 +134,47 @@ pub async fn create_query(
         log::debug!("Registering query '{query_id}' with no synthetic joins");
     }
 
-    match core.add_query(config.clone()).await {
-        Ok(_) => {
+    match core.add_query_with_handle(config).await {
+        Ok(handle) => {
             log::info!("Query '{query_id}' created successfully");
 
             persist_after_operation(&config_persistence, "creating query").await?;
 
-            Ok(Json(ApiResponse::success(StatusResponse {
+            Ok(Json(ApiResponse::success(ComponentCreatedResponse {
+                id: handle.id().to_string(),
+                name: config_dto.name,
                 message: "Query created successfully".to_string(),
             })))
         }
         Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!("Query '{query_id}' already exists");
-                return Err(ErrorResponse::new(
-                    error_codes::DUPLICATE_RESOURCE,
-                    "Resource already exists",
-                ));
-            }
-
             log::error!("Failed to create query: {e}");
-            Err(ErrorResponse::new(
-                error_codes::INTERNAL_ERROR,
-                "Internal server error",
-            ))
+            Err(ErrorResponse::from(e))
         }
     }
+}
+
+pub async fn update_query_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+    ConfigBody(config_dto): ConfigBody<QueryConfigDto>,
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+    if *read_only {
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is read-only",
+        ));
+    }
+    super::require_imperative_configuration(&core)?;
+    let config = DtoMapper::default()
+        .map_with(&config_dto, &QueryConfigMapper)
+        .map_err(|error| ErrorResponse::new(error_codes::INVALID_REQUEST, error.to_string()))?;
+    core.update_query(&id, config).await?;
+    persist_after_operation(&config_persistence, "updating query").await?;
+    Ok(Json(ApiResponse::success(StatusResponse {
+        message: "Query updated without changing its UUID".into(),
+    })))
 }
 
 /// Get query by ID
@@ -185,6 +186,11 @@ pub async fn get_query(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
+    if let Some(component) = super::managed_component(
+        &core, &id, "queries", &instance_id, &api_prefix.0, view.include_config(),
+    ).await? {
+        return Ok(Json(ApiResponse::success(component)));
+    }
     match core.get_query_config(&id).await {
         Ok(query_config) => {
             let config = if view.include_config() {
@@ -216,6 +222,7 @@ pub async fn get_query(
             };
             Ok(Json(ApiResponse::success(ComponentListItem {
                 id: query_config.id.clone(),
+                name: query_config.name.clone(),
                 status,
                 error_message,
                 links: component_links(&api_prefix.0, &instance_id, "queries", &id),

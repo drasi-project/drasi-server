@@ -5,7 +5,7 @@
 
 import type {
   Component, ComponentStatus, JsonValue, QueryConfig, QueryJoin, QueryMiddleware,
-  QueryInput, ReactionConfig, ResultRow,
+  ComponentReference, QueryInput, ReactionConfig, ResultRow,
 } from './types';
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 
@@ -50,6 +50,20 @@ export function isIdentifier(value: unknown): value is string {
   }
 }
 
+/** Component UUIDs are returned in canonical lowercase form by the server. */
+export function isComponentId(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+function isComponentName(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !/[\s\p{Cc}]/u.test(value);
+}
+
+function isComponentReference(value: unknown): value is ComponentReference {
+  return isComponentName(value) ||
+    (isRecord(value) && Object.keys(value).length === 1 && isComponentId(value.id));
+}
+
 /** Validate and serialize without trimming meaningful path or query content. */
 export function validateHttpUrl(value: string, details: DrasiErrorDetails): string {
   try {
@@ -83,15 +97,17 @@ export function instancePath(base: string, instanceId: string, ...segments: stri
 
 const statuses: readonly ComponentStatus[] = [
   'Starting', 'Running', 'Stopping', 'Stopped', 'Error', 'Reconfiguring', 'Added', 'Removed',
+  'Failed', 'TerminalError', 'Unknown',
 ];
 
 export function readComponent(
   value: unknown,
   details: DrasiErrorDetails,
 ): Component<Record<string, unknown>> {
-  if (!isRecord(value) || !isIdentifier(value.id) || value.id !== details.resourceId ||
+  if (!isRecord(value) || !isComponentId(value.id) || value.id !== details.resourceId ||
+      !isComponentName(value.name) ||
       !isRecord(value.config) || !isRecord(value.links) ||
-      (value.error_message !== undefined && typeof value.error_message !== 'string')) {
+      (value.errorMessage !== undefined && typeof value.errorMessage !== 'string')) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
   const status = statuses.find(status => status === value.status);
@@ -106,9 +122,9 @@ export function readComponent(
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
   return {
-    id: value.id, status, config: value.config,
+    id: value.id, name: value.name, status, config: value.config,
     links: { self: encoded, full: `${encoded}?view=full` },
-    ...(value.error_message === undefined ? {} : { error_message: value.error_message }),
+    ...(value.errorMessage === undefined ? {} : { errorMessage: value.errorMessage }),
   };
 }
 
@@ -117,8 +133,8 @@ function isOptionalStringArray(value: unknown): boolean {
 }
 
 function isInput(value: unknown): value is QueryInput {
-  if (isIdentifier(value)) return true;
-  return isRecord(value) && isIdentifier(value.component) &&
+  if (isComponentReference(value)) return true;
+  return isRecord(value) && isComponentReference(value.component) &&
     (value.port === undefined || isIdentifier(value.port)) &&
     isOptionalStringArray(value.nodes) && isOptionalStringArray(value.relations) &&
     isOptionalStringArray(value.pipeline) &&
@@ -141,7 +157,8 @@ function isMiddleware(value: unknown): value is QueryMiddleware {
 }
 
 function isQueryConfig(value: unknown): value is QueryConfig {
-  return isRecord(value) && isIdentifier(value.id) && typeof value.query === 'string' &&
+  return isRecord(value) && isComponentId(value.id) && isComponentName(value.name) &&
+    typeof value.query === 'string' &&
     (value.queryLanguage === 'Cypher' || value.queryLanguage === 'GQL') &&
     typeof value.autoStart === 'boolean' && typeof value.enableBootstrap === 'boolean' &&
     isUnsignedInteger(value.outboxCapacity) &&
@@ -158,15 +175,16 @@ function isQueryConfig(value: unknown): value is QueryConfig {
 export function readQuery(value: unknown, details: DrasiErrorDetails): Component<QueryConfig> {
   const component = readComponent(value, details);
   const config = component.config;
-  if (!isQueryConfig(config) || config.id !== component.id) {
+  if (!isQueryConfig(config) || config.id !== component.id || config.name !== component.name) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
   return { ...component, config };
 }
 
 function isReactionConfig(value: unknown): value is ReactionConfig {
-  return isJsonObject(value) && isIdentifier(value.id) && typeof value.kind === 'string' &&
-    isStringArray(value.queries) && value.queries.every(isIdentifier) &&
+  return isJsonObject(value) && isComponentId(value.id) && isComponentName(value.name) &&
+    typeof value.kind === 'string' &&
+    Array.isArray(value.queries) && value.queries.every(isComponentReference) &&
     (value.autoStart === undefined || typeof value.autoStart === 'boolean') &&
     (value.identityProvider === undefined || isIdentifier(value.identityProvider)) &&
     (value.kind !== 'sse' || (
@@ -180,7 +198,7 @@ function isReactionConfig(value: unknown): value is ReactionConfig {
 export function readReaction(value: unknown, details: DrasiErrorDetails): Component<ReactionConfig> {
   const component = readComponent(value, details);
   const config = component.config;
-  if (!isReactionConfig(config) || config.id !== component.id) {
+  if (!isReactionConfig(config) || config.id !== component.id || config.name !== component.name) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
   return { ...component, config };

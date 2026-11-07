@@ -43,8 +43,8 @@ export class ComponentYamlGenerator {
       return;
     }
 
-    const id = await promptForRequiredText(`${kind} id`, `${kind.toLowerCase()}-id`);
-    if (!id) {
+    const name = await promptForRequiredText(`${kind} name`, `${kind.toLowerCase()}-name`);
+    if (!name) {
       return;
     }
 
@@ -80,7 +80,7 @@ export class ComponentYamlGenerator {
     }
 
     const collected = collectSchema(specSchema, definitions);
-    const skipFields = new Set(['id', 'kind']);
+    const skipFields = new Set(['id', 'name', 'kind']);
     const values = await promptForSchemaFields(
       collected,
       definitions,
@@ -92,7 +92,7 @@ export class ComponentYamlGenerator {
     }
 
     const spec: Record<string, unknown> = {
-      id,
+      name,
       ...values,
     };
     if (specKind) {
@@ -101,7 +101,7 @@ export class ComponentYamlGenerator {
 
     const resource = {
       kind,
-      id,
+      name,
       spec,
     };
 
@@ -149,8 +149,8 @@ async function insertYaml(resource: Record<string, unknown>, spec: Record<string
 
   const separator = docText.trim().length > 0 ? '\n---\n' : '';
   const insertText = `${separator}${yamlText}\n`;
+  const position = editor.selection.active;
   await editor.edit((edit) => {
-    const position = editor.selection.active;
     edit.insert(position, insertText);
   });
 }
@@ -265,7 +265,8 @@ async function promptForValue(
   const promptLabel = `${kindLabel} ${name}`;
 
   if (resolved?.enum) {
-    const options = resolved.enum.map((value: string) => ({ label: String(value), value }));
+    const options: Array<vscode.QuickPickItem & { value: unknown }> =
+      resolved.enum.map((value: unknown) => ({ label: String(value), value }));
     if (!required) {
       options.unshift({ label: 'Skip', value: undefined });
     }
@@ -274,7 +275,7 @@ async function promptForValue(
   }
 
   if (resolved?.type === 'boolean' && !isConfigValue) {
-    const options = [
+    const options: Array<vscode.QuickPickItem & { value: boolean | undefined }> = [
       { label: 'true', value: true },
       { label: 'false', value: false },
     ];
@@ -441,13 +442,14 @@ function isConfigValueSchema(schema: any): boolean {
   if (!schema || !Array.isArray(schema.oneOf)) {
     return false;
   }
-  return schema.oneOf.some((entry) => entry?.properties?.kind?.enum?.includes('Secret'));
+  return schema.oneOf.some((entry: { properties?: { kind?: { enum?: unknown[] } } } | null) =>
+    entry?.properties?.kind?.enum?.includes('Secret'));
 }
 
 function isQuerySchema(schema: any): boolean {
   const resolved = schema && typeof schema === 'object' ? schema : {};
   const props = resolved.properties ?? {};
-  return !!props.query && !!props.id;
+  return !!props.query && !!props.name;
 }
 
 function kindToConfigKey(kind: ComponentKind) {

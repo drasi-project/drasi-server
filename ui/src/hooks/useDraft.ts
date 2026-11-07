@@ -21,11 +21,12 @@ const QUERY_DEFAULTS: Record<string, unknown> = {
   enableBootstrap: true,
 };
 
-// All sources and reactions just need "id"; reactions also need "queries".
+// Names are required; UUIDs are optional and assigned by the instance by default.
 // Schema validation handles field-level requirements.
 const REQUIRED_FIELDS: Record<string, string[]> = {
   // Queries
-  query: ["id", "query", "inputs"],
+  query: ["name", "query", "inputs"],
+  reaction: ["name", "queries"],
 };
 
 function getDefaults(
@@ -44,7 +45,7 @@ function validate(
   kind: string,
   fields: Record<string, unknown>,
 ): Record<string, string> {
-  const required = REQUIRED_FIELDS[kind] ?? ["id"];
+  const required = REQUIRED_FIELDS[kind] ?? ["name"];
   const errors: Record<string, string> = {};
   for (const key of required) {
     const val = fields[key];
@@ -52,6 +53,13 @@ function validate(
       errors[key] = "Required";
     } else if (Array.isArray(val) && val.length === 0) {
       errors[key] = "At least one required";
+    }
+    if (typeof fields.name === "string" && /[\s\p{Cc}]/u.test(fields.name)) {
+      errors.name = "Names cannot contain whitespace or control characters";
+    }
+    if (fields.id && (typeof fields.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fields.id))) {
+      errors.id = "Enter a UUID, or leave blank for an assigned identity";
     }
   }
   return errors;
@@ -85,14 +93,14 @@ export function useDraft() {
         ...prev,
         fields: newFields,
         dirty: true,
-        errors: validate(prev.kind, newFields),
+        errors: validate(prev.componentType, newFields),
       };
     });
   }, []);
 
   const isValid = useCallback((): boolean => {
     if (!draft) return false;
-    const errors = validate(draft.kind, draft.fields);
+    const errors = validate(draft.componentType, draft.fields);
     setDraft((prev) => (prev ? { ...prev, errors } : prev));
     return Object.keys(errors).length === 0;
   }, [draft]);

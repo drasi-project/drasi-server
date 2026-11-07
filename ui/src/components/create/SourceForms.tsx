@@ -17,14 +17,17 @@ export default function SourceForm({
   return (
     <>
       <FormField
-        label="Source ID"
-        field="id"
-        value={fields.id}
+        label="Source name"
+        field="name"
+        value={fields.name}
         onChange={onChange}
-        error={errors.id}
+        error={errors.name}
         required
         placeholder={`my-${kind}-source`}
       />
+      <FormField label="UUID (optional)" field="id" value={fields.id}
+        onChange={onChange} error={errors.id}
+        helpText="Leave blank for an assigned UUID. Supplying one requires instance opt-in." />
       <ConfigEditor
         category="source"
         kind={kind}
@@ -32,13 +35,13 @@ export default function SourceForm({
         onChange={(data) => {
           // Atomic replacement: clear old config keys, apply new ones
           const configKeys = Object.keys(fields).filter(
-            (k) => k !== "id" && k !== "autoStart" && k !== "kind",
+            (k) => k !== "id" && k !== "name" && k !== "autoStart" && k !== "kind",
           );
           for (const key of configKeys) {
             if (!(key in data)) onChange(key, undefined);
           }
           for (const [key, val] of Object.entries(data)) {
-            if (key !== "id" && key !== "autoStart" && key !== "kind") onChange(key, val);
+            if (key !== "id" && key !== "name" && key !== "autoStart" && key !== "kind") onChange(key, val);
           }
         }}
       />

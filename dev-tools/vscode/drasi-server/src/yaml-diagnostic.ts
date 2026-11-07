@@ -1,17 +1,18 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
-import Ajv from 'ajv';
+import Ajv, { ValidateFunction } from 'ajv';
 import { parseDrasiApiVersion } from './drasi-yaml';
 
 export class DrasiYamlDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
   private ajv: Ajv;
-  private validator: ((data: any) => boolean) | undefined;
-  private configValidator: ((data: any) => boolean) | undefined;
+  private validator: ValidateFunction | undefined;
+  private configValidator: ValidateFunction | undefined;
 
   constructor() {
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('drasi-yaml');
     this.ajv = new Ajv({ strict: false, allErrors: true });
+    this.ajv.addFormat('uuid', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   }
 
   activate(context: vscode.ExtensionContext) {
@@ -79,7 +80,8 @@ export class DrasiYamlDiagnosticProvider {
                 continue;
               }
               // Skip "must be string" errors when the value is a number (YAML coercion)
-              if (error.keyword === 'type' && error.params?.type === 'string') {
+              if (error.keyword === 'type' && error.params?.type === 'string'
+                && !/\/(id|name)$/.test(error.instancePath)) {
                 continue;
               }
               const diagnostic = this.createDiagnostic(document, doc, error, currentLine, item.kindLabel);

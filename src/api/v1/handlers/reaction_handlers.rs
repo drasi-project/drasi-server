@@ -27,7 +27,9 @@ use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
-use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
+use crate::api::shared::{
+    ApiResponse, ComponentCreatedResponse, ComponentListItem, StatusResponse,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -100,7 +102,7 @@ pub async fn create_reaction_handler(
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+) -> Result<Json<ApiResponse<ComponentCreatedResponse>>, ErrorResponse> {
     let core = registry
         .get(&instance_id)
         .await

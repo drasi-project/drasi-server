@@ -267,6 +267,9 @@ pub struct DrasiLibInstanceConfig {
     #[serde(default)]
     #[schema(value_type = ConfigValueStringSchema)]
     pub id: InstanceIdConfig,
+    /// Accept caller-selected component UUIDs. Immutable after instance creation.
+    #[serde(default)]
+    pub allow_external_component_ids: bool,
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
@@ -353,6 +356,7 @@ pub struct DrasiLibInstanceConfig {
 #[derive(Debug, Clone)]
 pub struct ResolvedInstanceConfig {
     pub id: String,
+    pub allow_external_component_ids: bool,
     pub persist_index: bool,
     pub enable_archive: bool,
     pub memory_budget_bytes: Option<usize>,
@@ -428,10 +432,6 @@ impl DrasiServerConfig {
             seen.insert(id.clone());
             if let Some(store) = &instance.configuration_store {
                 store.validate()?;
-                anyhow::ensure!(
-                    instance.sources.is_empty() && instance.queries.is_empty() && instance.reactions.is_empty(),
-                    "Instance '{id}': configurationStore requires reconstructible computation definitions; ordinary sources/queries/reactions cannot be adopted automatically"
-                );
             }
             if let Some(computation) = instance
                 .computation
@@ -532,7 +532,7 @@ impl DrasiServerConfig {
                     if !bootstrap_ids.contains(bp_ref) {
                         return Err(anyhow::anyhow!(
                             "Instance '{id}': source '{}' references unknown bootstrapProvider '{bp_ref}'",
-                            src.id()
+                            src.name()
                         ));
                     }
                 }
@@ -540,6 +540,7 @@ impl DrasiServerConfig {
 
             resolved.push(ResolvedInstanceConfig {
                 id,
+                allow_external_component_ids: instance.allow_external_component_ids,
                 persist_index: instance.persist_index,
                 enable_archive: instance.enable_archive,
                 memory_budget_bytes,

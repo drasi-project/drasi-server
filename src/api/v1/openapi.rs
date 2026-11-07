@@ -26,17 +26,18 @@ use crate::api::models::solution::{
     SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
 };
 use crate::api::models::{
-    ComponentEventDto, ComponentLogTypeDto, ComponentStatusDto, ComponentTypeDto,
-    ConfigValueBoolSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
-    ConfigValueU64Schema, ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto,
-    QueryInputConfigDto, QueryInputObjectDto, QueryResultConfigDto, RedbStateStoreConfigDto,
-    SourceMiddlewareConfigDto,
+    ComponentEventDto, ComponentLogTypeDto, ComponentReferenceDto, ComponentStatusDto,
+    ComponentTypeDto, ConfigValueBoolSchema, ConfigValueStringSchema, ConfigValueU16Schema,
+    ConfigValueU32Schema, ConfigValueU64Schema, ConfigValueUsizeSchema, LogLevelDto, LogMessageDto,
+    QueryConfigDto, QueryInputConfigDto, QueryInputObjectDto, QueryResultConfigDto,
+    RedbStateStoreConfigDto, SourceMiddlewareConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::handlers::{CloneInstanceRequest, CloneInstanceResponse};
 use crate::api::shared::{
-    ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
-    HealthResponse, InstanceLinks, InstanceListItem, InstanceRuntimeInfo, StatusResponse,
+    ApiResponseSchema, ApiVersionsResponse, ComponentCreatedResponse, ComponentListItem,
+    ErrorDetail, ErrorResponse, HealthResponse, InstanceLinks, InstanceListItem,
+    InstanceRuntimeInfo, StatusResponse,
 };
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 use crate::plugin_registry::PluginRegistry;
@@ -53,6 +54,8 @@ use utoipa::openapi::RefOr;
         super::handlers::create_instance,
         super::handlers::get_instance_snapshot,
         super::handlers::get_instance_runtime,
+        super::handlers::lookup_component,
+        super::handlers::rename_component,
         super::handlers::get_computation_configuration,
         super::handlers::apply_computation_desired,
         super::handlers::get_computation_desired,
@@ -60,6 +63,15 @@ use utoipa::openapi::RefOr;
         super::handlers::reconcile_computation_desired,
         super::handlers::get_computation_receipt,
         super::handlers::create_computation_components,
+        super::handlers::create_managed_component,
+        super::handlers::create_managed_ordinary,
+        super::handlers::update_managed_ordinary,
+        super::handlers::delete_managed_ordinary,
+        super::handlers::list_configuration_snapshots,
+        super::handlers::create_configuration_snapshot,
+        super::handlers::get_configuration_snapshot,
+        super::handlers::restore_configuration_snapshot,
+        super::handlers::delete_configuration_snapshot,
         super::handlers::inspect_computation_graph,
         super::handlers::start_computation_components,
         super::handlers::stop_computation_components,
@@ -77,6 +89,7 @@ use utoipa::openapi::RefOr;
         super::handlers::stop_source,
         super::handlers::list_queries,
         super::handlers::create_query,
+        super::handlers::update_query_handler,
         super::handlers::get_query,
         super::handlers::get_query_events,
         super::handlers::stream_query_events,
@@ -120,6 +133,10 @@ use utoipa::openapi::RefOr;
         schemas(
             HealthResponse,
             ComponentListItem,
+            ComponentCreatedResponse,
+            ComponentReferenceDto,
+            super::handlers::ComponentIdentity,
+            super::handlers::RenameComponentRequest,
             ApiResponseSchema,
             StatusResponse,
             InstanceListItem,
@@ -146,6 +163,7 @@ use utoipa::openapi::RefOr;
             crate::managed_configuration::ConfigurationStoreConfig,
             super::handlers::DesiredConfigurationRequest,
             super::handlers::ConfigurationReceipt,
+            super::handlers::CreateManagedComponentRequest,
             super::handlers::ConfigurationManagementStatus,
             super::handlers::ComputationGraphInfo,
             super::handlers::ComputationGraphInspection,

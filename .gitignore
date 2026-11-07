@@ -16,6 +16,9 @@ target
 # Log files
 logs/
 *.log
+*.drasi-state.yaml
+*.drasi-state.yaml.lock
+*.drasi-state.yaml.*.tmp
 
 # AI plan files
 .plans/

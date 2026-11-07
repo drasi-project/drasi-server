@@ -145,6 +145,10 @@
         "command": "drasi.resource.viewConfig",
         "title": "View Config (YAML)"
       },
+      {
+        "command": "drasi.resource.rename",
+        "title": "Rename"
+      },
         {
           "command": "drasi.schema.refresh",
           "category": "Drasi Server",
@@ -275,6 +279,11 @@
           "command": "drasi.resource.delete",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
           "group": "3_danger"
+        },
+        {
+          "command": "drasi.resource.rename",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "1_lifecycle"
         },
         {
           "command": "drasi.connection.use",

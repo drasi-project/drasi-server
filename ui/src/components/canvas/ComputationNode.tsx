@@ -34,7 +34,7 @@ export default memo(function ComputationNode({ data, id }: NodeProps<Computation
           <Boxes size={18} style={{ color }} className="shrink-0" />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-drasi-text-primary truncate" title={component.id}>
-              {component.id}
+              {component.name}
             </div>
             <div className="text-[10px] uppercase" style={{ color }}>
               {component.role}{data.internal ? " (internal)" : ""}

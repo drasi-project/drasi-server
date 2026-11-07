@@ -18,7 +18,8 @@ use anyhow::Result;
 use drasi_lib::config::QueryLanguage;
 
 use drasi_server::api::models::{
-    ConfigValue, QueryConfigDto, QueryInputConfigDto, ReactionConfig, SourceConfig,
+    ComponentReferenceDto, ConfigValue, QueryConfigDto, QueryInputConfigDto, ReactionConfig,
+    SourceConfig,
 };
 use drasi_server::{DrasiLibInstanceConfig, DrasiServerConfig};
 
@@ -29,23 +30,22 @@ pub fn build_config(
     server_settings: ServerSettings,
     sources: Vec<SourceConfig>,
     reactions: Vec<ReactionConfig>,
-) -> DrasiServerConfig {
+) -> Result<DrasiServerConfig> {
     let instance_id = uuid::Uuid::new_v4().to_string();
 
     // Create a sample query if we have sources
-    let queries = if !sources.is_empty() {
-        let source_id = sources
-            .first()
-            .map(|s| s.id().to_string())
-            .unwrap_or_default();
+    let queries = if let Some(source) = sources.first() {
         vec![QueryConfigDto {
-            id: "my-query".to_string(),
+            name: "my-query".to_string(),
+            id: None,
             query: "MATCH (n) RETURN n".to_string(),
             query_language: QueryLanguage::GQL,
             auto_start: true,
             enable_bootstrap: true,
             middleware: vec![],
-            inputs: vec![QueryInputConfigDto::Component(source_id)],
+            inputs: vec![QueryInputConfigDto::Component(ComponentReferenceDto::Name(
+                drasi_lib::config::ComponentName::try_new(source.name.as_str())?,
+            ))],
             result: Default::default(),
             joins: None,
             priority_queue_capacity: None,
@@ -59,7 +59,7 @@ pub fn build_config(
         vec![]
     };
 
-    DrasiServerConfig {
+    Ok(DrasiServerConfig {
         api_version: None,
         host: ConfigValue::Static(server_settings.host),
         port: ConfigValue::Static(server_settings.port),
@@ -85,7 +85,7 @@ pub fn build_config(
             reactions,
             ..Default::default()
         }],
-    }
+    })
 }
 
 /// Generate YAML string from configuration.
@@ -229,7 +229,10 @@ mod tests {
 
         // Check query subscribes to the source
         assert_eq!(query.inputs.len(), 1);
-        assert_eq!(query.inputs[0], QueryInputConfigDto::Component("my-mock".to_string()));
+        assert_eq!(
+            query.inputs[0],
+            QueryInputConfigDto::Component("my-mock".to_string())
+        );
     }
 
     #[test]

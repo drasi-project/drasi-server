@@ -1649,7 +1649,7 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
     assert_eq!(resolved.len(), 2);
     assert_eq!(resolved[0].filename, native_filename);
     assert_eq!(resolved[0].abi_family.as_deref(), Some("computation"));
-    assert_eq!(resolved[0].abi_version.as_deref(), Some("1.0.0"));
+    assert_eq!(resolved[0].abi_version.as_deref(), Some("2.0.0"));
     assert_eq!(resolved[0].sdk_version, "1.0.0");
     assert_eq!(resolved[1].filename, legacy_filename);
     assert_eq!(resolved[1].abi_family, None);

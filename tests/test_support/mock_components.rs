@@ -147,7 +147,7 @@ impl SourceTrait for MockSource {
         self
     }
 
-    async fn initialize(&self, context: SourceRuntimeContext) {
+    async fn bind_runtime_context(&self, context: SourceRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
         *self.inner.update_tx.write().await = Some(context.update_tx);
     }
@@ -239,7 +239,7 @@ impl ReactionTrait for MockReaction {
         self.inner.queries.clone()
     }
 
-    async fn initialize(&self, context: ReactionRuntimeContext) {
+    async fn bind_runtime_context(&self, context: ReactionRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
         *self.inner.update_tx.write().await = Some(context.update_tx);
     }

@@ -29,8 +29,8 @@ ComputationGraph runtime, with no fallback engine or runtime selector.
 │  Uses DrasiLib for query processing                              │
 │                                                                  │
 │  Plugin families:                                                │
-│  • Legacy Source/Reaction/Bootstrap ABI 0.16 / 0.17                │
-│  • Independent native ComputationGraph ABI 1.0                    │
+│  • Ordinary Source/Reaction/Bootstrap ABI 0.18                    │
+│  • Independent native ComputationGraph ABI 2.0                    │
 ├──────────────────────────────────────────────────────────────────┤
 │                      drasi-host-sdk (library crate)              │
 │                                                                  │
@@ -68,7 +68,7 @@ ComputationGraph runtime, with no fallback engine or runtime selector.
 | Crate | Location | Role |
 |-------|----------|------|
 | `drasi-plugin-sdk` | `drasi-core/components/plugin-sdk` | Plugin-side SDK: FFI types, vtables, `export_plugin!` macro, vtable generation, FfiLogger, FfiStateStoreProxy |
-| `drasi-computation-plugin-abi` | `drasi-core/components/computation-plugin-abi` | Independent native ABI 1.0 C layouts and version headers |
+| `drasi-computation-plugin-abi` | `drasi-core/components/computation-plugin-abi` | Independent native ABI 2.0 C layouts, lifecycle/update operations and version headers |
 | `drasi-computation-plugin-sdk` | `drasi-core/components/computation-plugin-sdk` | Native factory metadata, wire serialization, producer-owned handles and export macro |
 | `drasi-host-sdk` | `drasi-core/components/host-sdk` | Host-side SDK: `PluginLoader`, proxy types (impl Source/Reaction/SourcePlugin), callback wiring, schema merging |
 | `drasi-server` | `drasi-server/` | Application: REST API, config persistence, OpenAPI spec, server lifecycle — uses `drasi-host-sdk` for dynamic loading |
@@ -252,10 +252,16 @@ seeds factories loaded before the instances existed.
 
 ### Durable desired configuration
 
-Configuration persistence is optional and separate from message/state recovery.
-Omitting `configurationStore` preserves the ordinary fast configuration and
-existing YAML-backed APIs. Selecting it does not add a journal, acknowledgements
-or exactly-once processing to an otherwise volatile pipeline.
+Configuration durability is optional and separate from message/state recovery.
+DrasiLib always has a configuration store; a private memory implementation is
+used when persistence is not enabled. The store's actual guarantees, not its
+presence, determine whether accepted configuration survives a process restart.
+Configuration storage does not add a processing journal, delivery
+acknowledgements or exactly-once effects to an otherwise volatile pipeline.
+
+Server's `persistConfig: true` supplies a companion YAML configuration store
+unless the instance selects another backend. For memory-only configuration,
+set `persistConfig: false` and omit a persistent `configurationStore`.
 
 ```yaml
 id: analytics
@@ -273,13 +279,36 @@ up separately from the database. Missing, wrong or malformed keys fail startup;
 there is no empty-state or memory fallback. Definitions and receipts are
 encrypted; instance, request and snapshot names are not.
 
-YAML's `computation` definition initializes an instance **only once**. Thereafter
+Initial ordinary and native definitions initialize an instance **only once**. Thereafter
 the stored desired definition is authoritative, even if the YAML seed is changed,
 omitted or semantically obsolete. YAML must still parse and supply valid Server
 settings, a stable instance ID and the storage/key locations. An explicitly
 accepted empty definition is initialized state too. Ordinary `sources`,
-`queries` and `reactions` cannot be automatically adopted into this mode: use
-reconstructible `computation` declarations.
+`queries` and `reactions` use stored reconstruction recipes and registered
+factories/resolvers. Supplying preconstructed objects through a persisted
+DrasiLib builder is not a substitute for these recipes and remains rejected.
+New definitions may omit IDs; supplied IDs require the immutable external-ID
+opt-in. Assigned UUIDs are saved before construction and reused on restoration.
+
+Live updates require an author-provided planner on the registered factory;
+construction support or no-op lifecycle hooks are not update support. The
+accepted operation records the old and proposed recipes, the plan, and a stable
+operation identity. Pending operations survive restart and receipt expiry.
+Completion acknowledgment is revision-checked and does not rewrite receipts or
+snapshots; a failed or uncertain acknowledgment is not permission to resume
+processing. Opaque external objects require explicit disconnect/remove/add
+instead of a replacement-constructor callback.
+
+Core currently rejects every managed `Rebootstrap` plan, even with a configured
+bootstrap provider. This includes semantic query edits that need new state;
+initial bootstrap and separately configured recovery remain available. The
+required snapshot/live, queued-work and downstream-reset protocol is recorded
+as [CW-92](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-remaining-work.md#cw-92).
+
+These configuration records use YAML format 3 or encrypted redb format 7
+(indefinite receipts) / 8 (opt-in receipt expiry). Older record formats are
+rejected unchanged. This is separate from the version-2 desired topology and
+native envelope formats.
 
 The revisioned API is rooted at
 `/api/v1/instances/{instanceId}/computation`:
@@ -287,7 +316,15 @@ The revisioned API is rooted at
 | Method and suffix | Meaning |
 |---|---|
 | `GET /desired` | Privileged committed revision and desired definition; may contain literal secrets. |
-| `PUT /desired` | JSON or YAML body with `expectedRevision`, a stable `requestId`, and `desired` (`version: 1`, `topology`, and optional `retirement`). Returns HTTP 202 and a receipt after durable acceptance, before construction or readiness. |
+| `PUT /desired` | JSON or YAML body with `expectedRevision`, a stable `requestId`, and assigned `desired` (`version: 2`, `topology`, optional `ordinary` and `retirement`). Returns HTTP 202 and a receipt after acceptance, before construction or readiness. |
+| `POST /ordinary-definitions` | Accept a Source, Query or Reaction definition with `expectedRevision` and `requestId`; return its assigned UUID and receipt. |
+| `PUT /ordinary-definitions/{id}` | Revision-checked update of an existing ordinary component, preserving its UUID. |
+| `DELETE /ordinary-definitions/{id}` | Revision-checked removal of an ordinary component. |
+| `GET /snapshots` | List named configuration snapshots with bounded pagination. |
+| `POST /snapshots/{name}` | Save the current accepted configuration under a new immutable snapshot name. |
+| `GET /snapshots/{name}` | Read the saved configuration; this is privileged configuration, not processing data. |
+| `POST /snapshots/{name}/restore` | Restore the actual stored snapshot using `expectedRevision` and `requestId`, preserving its UUIDs without rewinding processing data. |
+| `DELETE /snapshots/{name}` | Delete only that snapshot at `expectedRevision`; leave current configuration unchanged. |
 | `GET /receipts/{requestId}` | Resolve a lost response using the original request ID. A 404 is not proof of rejection while a request is still in flight. |
 | `GET /management` | Secret-safe status: accepted, initializing, ready, failed or cleanupPending; no raw constructor/store errors or configuration. |
 | `POST /reconcile` | Retry realization of the accepted definition; inspect the returned status rather than assuming success means ready. |
@@ -370,9 +407,9 @@ transitions.
    ↓
 3. For each plugin file:
    a. Only an allowed candidate may reach dlopen()
-   b. Explicit family dispatch: native symbols use ABI 1.0; invalid/partial native
+   b. Explicit family dispatch: native symbols use ABI 2.0; invalid/partial native
       declarations fail without invoking a legacy initializer
-   c. For legacy plugins, use the ABI 0.16 / 0.17 flow:
+   c. For ordinary plugins, use the ABI 0.18 flow:
       Resolve drasi_plugin_metadata() → PluginMetadata
       Reject missing or null metadata before initialization
       Validate SDK version (major.minor must match host) and target triple
@@ -417,14 +454,14 @@ The Server API (`GET /api/v1/plugins`) reports three different versions:
 | `kinds[].configVersion` | The configuration format for a plugin kind, from `config_version()` |
 | `sdkVersion` | The plugin/host interface compatibility version, not the Cargo package version of `drasi-plugin-sdk` |
 
-For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
+For native plugins, `sdkVersion` records the independent native ABI (`2.0.0`).
 The native manifest also exposes its wire version. Current native plugins use
-wire version 1 (binary computation envelopes and bulk MessagePack buffers).
+wire version 2 (binary computation envelopes and bulk MessagePack buffers).
 Build native plugins and the host from matching sources; unknown wire versions
-are rejected. Legacy ABI 0.17 adds versioned storage durability evidence
-and releases transferred state-store ownership. Existing ABI 0.16 plugins remain
-supported for fast-mode behavior, retaining their original state-store pointer
-lifetime and without new recovery services. ABI 0.15, unknown future contracts,
+are rejected. Ordinary ABI 0.18 separates required context binding from optional
+initialization and adds disposal, pause/resume and explicit owned-resource
+deletion hooks. Its state-store layout and transferred-ownership contract are
+unchanged. Earlier ordinary layouts, native ABI 1.x, unknown future contracts,
 malformed/missing metadata and wrong targets are rejected before initialization.
 Provider key-list errors remain explicit, and bootstrap subscription settings and
 context properties are forwarded.
@@ -454,7 +491,7 @@ For matching local Server and plugin builds on the ComputationGraph branch, see
 ## FFI Boundary Design
 
 The opaque Rust object examples below describe the **legacy ABI only**. Native
-ComputationGraph ABI 1.0 uses serialized wire data and opaque producer-owned
+ComputationGraph ABI 2.0 uses serialized wire data and opaque producer-owned
 handles. It does not exchange Rust trait objects, futures, allocators, or native
 `SourceChange` memory layouts between independently built libraries.
 

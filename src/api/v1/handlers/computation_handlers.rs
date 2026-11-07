@@ -26,7 +26,11 @@ use drasi_lib::computation::v1::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use super::InstancePath;
+use super::{
+    managed_ordinary_handlers::validate_request_id,
+    management_handlers::{management_error, ConfigurationReceipt},
+    InstancePath,
+};
 use crate::{
     api::shared::{
         error::{error_codes, ErrorDetail, ErrorResponse},
@@ -64,6 +68,7 @@ impl From<ComputationInfo> for ComputationGraphInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ComputationComponentInfo {
     pub id: String,
+    pub name: String,
     pub role: String,
     pub implementation: Option<serde_json::Value>,
     pub auto_start: bool,
@@ -85,6 +90,14 @@ pub struct ComputationGraphInspection {
     pub components: Vec<ComputationComponentInfo>,
     pub relationships: Vec<serde_json::Value>,
     pub resources: Vec<serde_json::Value>,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateComputationComponentsRequest {
+    pub expected_revision: u64,
+    pub request_id: String,
+    pub configuration: ComputationConfigInput,
 }
 
 /// Privileged export; unlike inspection this can contain sensitive component configuration.
@@ -156,8 +169,8 @@ pub async fn get_computation_configuration(
 #[utoipa::path(
     post, path = "/api/v1/instances/{instanceId}/computation/components",
     params(("instanceId" = String, Path, description = "DrasiLib instance ID")),
-    request_body(content = ComputationConfigInput, description = "Readable graph or expanded definition; accepts application/json and application/yaml"),
-    responses((status = 200, description = "Components added; inspect individual creation and startup status", body = ApiResponse<ComputationGraphInfo>),
+    request_body(content = CreateComputationComponentsRequest, description = "Revisioned graph declaration with request ID; accepts application/json and application/yaml"),
+    responses((status = 200, description = "Accepted group and its complete UUID assignments; inspect readiness separately", body = ApiResponse<ConfigurationReceipt>),
               (status = 400, description = "Invalid definition or missing factory/resource", body = ErrorResponse),
               (status = 409, description = "Read-only or duplicate component", body = ErrorResponse)),
     tag = "Computation"
@@ -166,63 +179,37 @@ pub async fn create_computation_components(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(plugins): Extension<Arc<RwLock<PluginRegistry>>>,
-    Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    ConfigBody(config): ConfigBody<ComputationConfigInput>,
-) -> Result<Json<ApiResponse<ComputationGraphInfo>>, ErrorResponse> {
+    ConfigBody(request): ConfigBody<CreateComputationComponentsRequest>,
+) -> Result<Json<ApiResponse<ConfigurationReceipt>>, ErrorResponse> {
     require_writable(*read_only)?;
+    validate_request_id(&request.request_id)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
-    crate::api::shared::handlers::require_imperative_configuration(&core)?;
-    let plugins = plugins.read().await;
-    let config = crate::computation::native_factory_registry(&plugins)
-        .and_then(|factories| config.resolve(&factories))
-        .map_err(|error| {
-            ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "Invalid computation component configuration",
-            )
-            .with_details(ErrorDetail {
-                component_type: Some("computation".to_string()),
-                component_id: Some(instance_id.clone()),
-                technical_details: Some(format!("{error:#}")),
-            })
-        })?;
-    let snapshot = core.computation_control()?.desired_snapshot();
-    for component in &config.definition.components {
-        if snapshot
-            .nodes
-            .iter()
-            .any(|node| node.descriptor.id() == component.descriptor.id())
-        {
-            return Err(ErrorResponse::new(
-                error_codes::DUPLICATE_RESOURCE,
-                format!("Component '{}' already exists", component.descriptor.id()),
-            ));
-        }
-    }
-    let preparation = crate::computation::build_components_with_registry(&config, &core, &plugins);
-    drop(plugins);
-    let components = preparation.await.map_err(|error| {
-        ErrorResponse::new(
-            error_codes::INVALID_REQUEST,
-            "Invalid computation component configuration",
-        )
-        .with_details(ErrorDetail {
-            component_type: Some("computation".to_string()),
-            component_id: Some(instance_id.clone()),
-            technical_details: Some(format!("{error:#}")),
+    let factories = crate::computation::native_factory_registry(&*plugins.read().await)
+        .map_err(|error| operation_error(&instance_id, "prepare factories", error))?;
+    let receipt = core
+        .create_managed_components(request.expected_revision, request.request_id, move |ids| {
+            let config = match &request.configuration {
+                ComputationConfigInput::Definition(config) => {
+                    for component in &config.definition.components {
+                        ids.allocate_requested(Some(component.descriptor.id().clone()))?;
+                    }
+                    std::borrow::Cow::Borrowed(config.as_ref())
+                }
+                input => input
+                    .resolve_with_ids(&factories, |component| {
+                        ids.allocate_requested(component.id.clone())
+                            .map_err(Into::into)
+                    })
+                    .map_err(|source| {
+                        drasi_lib::computation::v1::GraphError::ReferenceResolution { source }
+                    })?,
+            };
+            Ok(config.definition.clone())
         })
-    })?;
-    let report = core.add_components(components).await?;
-    if !report.committed {
-        return Err(ErrorResponse::from(drasi_lib::DrasiError::Internal(
-            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(report).into(),
-        )));
-    }
-    persist_after_operation(&persistence, "creating computation components").await?;
-    Ok(Json(ApiResponse::success(
-        core.computation_info().await?.into(),
-    )))
+        .await
+        .map_err(management_error)?;
+    Ok(Json(ApiResponse::success(receipt.into())))
 }
 
 #[utoipa::path(
@@ -247,6 +234,7 @@ pub async fn inspect_computation_graph(
             let observed = snapshot.observed.components.get(node.descriptor.id());
             Ok(ComputationComponentInfo {
                 id: node.descriptor.id().to_string(),
+                name: node.name.to_string(),
                 implementation: snapshot
                     .desired
                     .specifications

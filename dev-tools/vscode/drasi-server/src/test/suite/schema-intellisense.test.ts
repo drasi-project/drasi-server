@@ -23,7 +23,7 @@ suite('Drasi schema mapping', () => {
     if (!fs.existsSync(schemaFile)) {
       fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
     }
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        name: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -45,7 +45,7 @@ suite('Drasi schema mapping', () => {
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: \n        id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: \n        name: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -105,7 +105,7 @@ suite('Drasi schema mapping', () => {
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\ninstances:\n  - id: main\n    sources:\n      - kind: mock\n        name: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -137,7 +137,7 @@ suite('Drasi schema mapping', () => {
         '  - id: main',
         '    sources:',
         '      - kind: postgres',
-        '        id: demo',
+        '        name: demo',
         '        host: localhost',
         '        port: 5432',
         '        database: demo_db',

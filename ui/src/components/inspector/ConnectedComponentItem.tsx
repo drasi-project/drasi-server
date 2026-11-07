@@ -4,6 +4,7 @@ import type { ComponentStatus, ComponentType } from "@/utils/colors";
 
 interface ConnectedComponentItemProps {
   id: string;
+  name?: string;
   type: ComponentType;
   status: ComponentStatus;
   kind?: string;
@@ -15,6 +16,7 @@ interface ConnectedComponentItemProps {
 
 export default function ConnectedComponentItem({
   id,
+  name,
   type,
   status,
   kind: _kind,
@@ -38,9 +40,9 @@ export default function ConnectedComponentItem({
         <button
           onClick={() => onNavigate?.(id, type)}
           className="text-xs font-medium text-drasi-text-primary hover:underline truncate text-left"
-          title={`Open ${id} in inspector`}
+          title={`Open ${name ?? id} in inspector (${id})`}
         >
-          {id}
+          {name ?? `UUID ${id}`}
         </button>
       </div>
       <div className="flex items-center gap-1 shrink-0">

@@ -95,7 +95,7 @@ pub async fn run_init(
 
         // Bootstrap for this source
         println!();
-        println!("Bootstrap provider for source '{}':", source.id());
+        println!("Bootstrap provider for source '{}':", source.name());
         let bootstrap_kinds = prompts::select_or_install_plugins(
             "bootstrap",
             effective_plugins_dir.as_deref(),
@@ -120,16 +120,16 @@ pub async fn run_init(
     .await?;
 
     // Step 5: Configure each reaction
-    let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
+    let source_names: Vec<String> = sources.iter().map(|s| s.name().to_string()).collect();
     let mut reactions = Vec::new();
     for kind in &reaction_kinds {
         println!();
-        let reaction = prompts::prompt_reaction_by_kind(kind, &source_ids)?;
+        let reaction = prompts::prompt_reaction_by_kind(kind, &source_names)?;
         reactions.push(reaction);
     }
 
     // Build the configuration
-    let config = builder::build_config(server_settings, sources, reactions);
+    let config = builder::build_config(server_settings, sources, reactions)?;
 
     // Create parent directories
     if let Some(parent) = output_path.parent() {

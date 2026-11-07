@@ -34,7 +34,12 @@ pub struct DesiredConfigurationRequest {
     /// and components, `from_revision`, and `allow_data_loss: true`. Requires
     /// durable configuration storage and completed stop; never deletes stored data.
     #[schema(value_type = serde_json::Value)]
-    pub desired: DesiredInstance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired: Option<DesiredInstance>,
+    /// New factory-backed definitions. Omitted component IDs are assigned by DrasiLib.
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub additions: Vec<drasi_lib::management::NewComponentDefinition>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -43,6 +48,14 @@ pub struct ConfigurationReceipt {
     pub request_id: String,
     pub revision: u64,
     pub durable: bool,
+    pub components: Vec<super::component_handlers::ComponentIdentity>,
+}
+
+#[derive(Serialize)]
+pub struct DesiredConfigurationResponse {
+    #[serde(flatten)]
+    pub configuration: CommittedConfiguration,
+    pub persistent: bool,
 }
 
 impl From<AcceptanceReceipt> for ConfigurationReceipt {
@@ -51,8 +64,56 @@ impl From<AcceptanceReceipt> for ConfigurationReceipt {
             request_id: receipt.request_id,
             revision: receipt.revision,
             durable: receipt.durable,
+            components: receipt
+                .creation
+                .into_iter()
+                .flat_map(|creation| creation.components)
+                .map(|component| super::component_handlers::ComponentIdentity {
+                    id: component.id.to_string(),
+                    name: component.name.to_string(),
+                })
+                .collect(),
         }
     }
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateManagedComponentRequest {
+    pub expected_revision: u64,
+    pub request_id: String,
+    #[schema(value_type = serde_json::Value)]
+    pub component: drasi_lib::management::ComponentDefinition,
+}
+
+#[utoipa::path(
+    post, path = "/api/v1/instances/{instanceId}/computation/definitions",
+    params(("instanceId" = String, Path, description = "DrasiLib instance ID")),
+    request_body = CreateManagedComponentRequest,
+    responses(
+        (status = 200, description = "Durably assigned component UUID and request receipt", body = ApiResponse<ConfigurationReceipt>),
+        (status = 409, description = "Identity, name or revision conflict", body = ErrorResponse)
+    ),
+    tag = "Computation"
+)]
+pub async fn create_managed_component(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    ConfigBody(request): ConfigBody<CreateManagedComponentRequest>,
+) -> Result<Json<ApiResponse<ConfigurationReceipt>>, ErrorResponse> {
+    require_writable(*read_only)?;
+    let core = get_instance_or_error(&registry, &instance_id).await?;
+    require_managed(&core)?;
+    let receipt = core
+        .create_managed_component(
+            request.expected_revision,
+            request.request_id,
+            request.component,
+        )
+        .await
+        .map_err(management_error)?;
+    Ok(Json(ApiResponse::success(receipt.into())))
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -76,11 +137,11 @@ pub struct ReceiptPath {
     request_id: String,
 }
 
-fn no_store() -> HeaderMap {
+pub(super) fn no_store() -> HeaderMap {
     HeaderMap::from_iter([(CACHE_CONTROL, HeaderValue::from_static("no-store"))])
 }
 
-fn require_managed(core: &drasi_lib::DrasiLib) -> Result<(), ErrorResponse> {
+pub(super) fn require_managed(core: &drasi_lib::DrasiLib) -> Result<(), ErrorResponse> {
     if !core.has_managed_configuration() {
         return Err(ErrorResponse::new(
             error_codes::MANAGED_CONFIGURATION_REQUIRED,
@@ -90,7 +151,13 @@ fn require_managed(core: &drasi_lib::DrasiLib) -> Result<(), ErrorResponse> {
     Ok(())
 }
 
-fn management_error(error: drasi_lib::DrasiError) -> ErrorResponse {
+pub(super) fn management_error(error: drasi_lib::DrasiError) -> ErrorResponse {
+    if let Some(response) = error
+        .downcast_ref::<drasi_lib::computation::v1::GraphError>()
+        .and_then(crate::api::shared::error::graph_identity_error)
+    {
+        return response;
+    }
     if error
         .downcast_ref::<drasi_lib::management::RecoveryTransitionRequired>()
         .is_some()
@@ -101,9 +168,11 @@ fn management_error(error: drasi_lib::DrasiError) -> ErrorResponse {
         );
     }
     let code = match error.downcast_ref::<ManagementError>() {
-        Some(ManagementError::RevisionConflict { .. } | ManagementError::RequestConflict) => {
-            error_codes::CONFIGURATION_CONFLICT
-        }
+        Some(
+            ManagementError::RevisionConflict { .. }
+            | ManagementError::RequestConflict
+            | ManagementError::SnapshotExists(_),
+        ) => error_codes::CONFIGURATION_CONFLICT,
         _ => error_codes::CONFIGURATION_UNCONFIRMED,
     };
     let message = if code == error_codes::CONFIGURATION_CONFLICT {
@@ -189,31 +258,37 @@ pub async fn apply_computation_desired(
     require_writable(*read_only)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
     require_managed(&core)?;
-    if request.desired.version != 1
+    if request
+        .desired
+        .as_ref()
+        .is_some_and(|desired| desired.version != 2)
         || request.request_id.is_empty()
         || request.request_id.len() > 1024
         || request.request_id.starts_with("drasi-server/")
     {
         return Err(ErrorResponse::new(error_codes::INVALID_REQUEST,
-            "Use desired version 1 and a nonempty request ID of at most 1024 bytes outside the reserved drasi-server/ prefix"));
+            "Use desired version 2 and a nonempty request ID of at most 1024 bytes outside the reserved drasi-server/ prefix"));
     }
-    validate_definition(&ComputationConfig {
-        definition: request.desired.topology.clone(),
-    })
-    .map_err(|_| {
-        ErrorResponse::new(
-            error_codes::INVALID_REQUEST,
-            "Invalid reconstructible computation definition",
-        )
-    })?;
-    let desired = request.desired.normalized().map_err(|_| {
-        ErrorResponse::new(
-            error_codes::INVALID_REQUEST,
-            "Invalid reconstructible instance definition",
-        )
-    })?;
+    if let Some(desired) = &request.desired {
+        validate_definition(&ComputationConfig {
+            definition: desired.topology.clone(),
+        })
+        .map_err(|_| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Invalid reconstructible computation definition",
+            )
+        })?;
+    }
     let receipt = core
-        .apply_desired_state(request.expected_revision, request.request_id, desired)
+        .apply_configuration(
+            request.expected_revision,
+            request.request_id,
+            drasi_lib::management::ConfigurationRequest {
+                desired: request.desired,
+                additions: request.additions,
+            },
+        )
         .await
         .map_err(management_error)?;
     Ok((
@@ -233,14 +308,15 @@ pub async fn apply_computation_desired(
 pub async fn get_computation_desired(
     Extension(registry): Extension<InstanceRegistry>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-) -> Result<(HeaderMap, Json<ApiResponse<CommittedConfiguration>>), ErrorResponse> {
+) -> Result<(HeaderMap, Json<ApiResponse<DesiredConfigurationResponse>>), ErrorResponse> {
     let core = get_instance_or_error(&registry, &instance_id).await?;
     require_managed(&core)?;
     Ok((
         no_store(),
-        Json(ApiResponse::success(
-            core.desired_configuration().map_err(management_error)?,
-        )),
+        Json(ApiResponse::success(DesiredConfigurationResponse {
+            configuration: core.desired_configuration().map_err(management_error)?,
+            persistent: core.configuration_is_persistent(),
+        })),
     ))
 }
 

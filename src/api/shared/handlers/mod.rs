@@ -39,7 +39,8 @@ use std::time::Duration;
 
 use super::error::{error_codes, ErrorDetail, ErrorResponse};
 use super::responses::{
-    ApiResponse, ApiVersionsResponse, ComponentLinks, HealthResponse, InstanceListItem,
+    ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
+    InstanceListItem,
 };
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
@@ -109,6 +110,113 @@ pub(crate) fn component_links(
         self_link: self_link.clone(),
         full: format!("{self_link}?view=full"),
     }
+}
+
+pub(crate) async fn component_list(
+    core: &DrasiLib,
+    kind: drasi_lib::ComponentKind,
+    resource: &str,
+    instance_id: &str,
+    api_prefix: &str,
+) -> Result<Vec<ComponentListItem>, ErrorResponse> {
+    let snapshot = core.get_graph().await.map_err(ErrorResponse::from)?;
+    snapshot
+        .nodes
+        .into_iter()
+        .filter(|node| node.kind == kind)
+        .map(|node| {
+            let name = node.metadata.get("name").cloned().ok_or_else(|| {
+                ErrorResponse::new(
+                    error_codes::INTERNAL_ERROR,
+                    format!("Component '{}' has no published name", node.id),
+                )
+            })?;
+            Ok(ComponentListItem {
+                links: component_links(api_prefix, instance_id, resource, &node.id),
+                id: node.id,
+                name,
+                status: node.status,
+                error_message: node.metadata.get("error").cloned(),
+                config: None,
+            })
+        })
+        .collect()
+}
+
+pub(crate) async fn managed_component(
+    core: &DrasiLib,
+    id: &str,
+    resource: &str,
+    instance_id: &str,
+    api_prefix: &str,
+    include_config: bool,
+) -> Result<Option<ComponentListItem>, ErrorResponse> {
+    use drasi_lib::management::OrdinaryComponent;
+    if !core.has_managed_configuration() {
+        return Ok(None);
+    }
+    let id = drasi_lib::config::ComponentId::try_new(id)
+        .map_err(|error| ErrorResponse::new(error_codes::INVALID_REQUEST, error.to_string()))?;
+    let current = core.desired_configuration().map_err(ErrorResponse::from)?;
+    let Some(record) = current
+        .desired
+        .ordinary
+        .iter()
+        .find(|record| record.id == id)
+    else {
+        return Ok(None);
+    };
+    let graph = core.get_graph().await?;
+    let Some(node) = graph.nodes.into_iter().find(|node| node.id == id.as_str()) else {
+        return Ok(None);
+    };
+    let kind = match node.kind {
+        drasi_lib::ComponentKind::Source => "sources",
+        drasi_lib::ComponentKind::Query => "queries",
+        drasi_lib::ComponentKind::Reaction => "reactions",
+        _ => return Ok(None),
+    };
+    if kind != resource {
+        return Ok(None);
+    }
+    if include_config && matches!(record.component, OrdinaryComponent::ProcessLocal { .. }) {
+        return Ok(None);
+    }
+    let config = if include_config {
+        let value = (|| -> anyhow::Result<serde_json::Value> {
+            Ok(match &record.component {
+                OrdinaryComponent::Source { .. } => serde_json::to_value(
+                    crate::managed_configuration::ordinary::source_configuration(record)?,
+                )?,
+                OrdinaryComponent::Query { .. } => serde_json::to_value(
+                    crate::api::models::QueryConfigDto::try_from(record.query_configuration()?)?,
+                )?,
+                OrdinaryComponent::Reaction { .. } => serde_json::to_value(
+                    crate::managed_configuration::ordinary::reaction_configuration(record)?,
+                )?,
+                OrdinaryComponent::ProcessLocal { .. } => anyhow::bail!(
+                    "Process-local component {id} has no reconstructible configuration record"
+                ),
+            })
+        })()
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Stored component configuration cannot be read: {error}"),
+            )
+        })?;
+        Some(value)
+    } else {
+        None
+    };
+    Ok(Some(ComponentListItem {
+        id: id.to_string(),
+        name: record.name.to_string(),
+        status: node.status,
+        error_message: node.metadata.get("error").cloned(),
+        links: component_links(api_prefix, instance_id, resource, id.as_str()),
+        config,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,15 +299,8 @@ pub(crate) async fn wait_for_computation_creation(
     Ok(handle)
 }
 
-/// Helper to persist configuration after a successful in-memory mutation.
-///
-/// **Important contract:** the in-memory state has already been mutated
-/// before this is called. If persistence fails, the runtime is now ahead of
-/// the on-disk YAML and the operator must retry or restart after fixing the
-/// underlying issue. To make this visible to API callers, persistence
-/// failures are surfaced as a [`ErrorResponse`] with code
-/// [`error_codes::PERSISTENCE_FAILED`] (HTTP 500). Handlers should
-/// `?`-propagate the result.
+/// Save host settings after an accepted operation. Component definitions may
+/// already have durable receipts; a host-settings failure does not roll them back.
 ///
 /// The high-level message states the in-memory/on-disk divergence
 /// explicitly; the underlying technical error is placed in
@@ -226,10 +327,9 @@ pub(super) fn persistence_error(operation: &str, error: anyhow::Error) -> ErrorR
     ErrorResponse::new(
         error_codes::PERSISTENCE_FAILED,
         format!(
-            "Configuration change applied in memory but could not be persisted to disk \
-             after {operation}. The runtime state has changed; the on-disk \
-             configuration has not. Retry the operation or restart the server \
-             after fixing the underlying persistence issue."
+            "The operation was accepted, but Server settings could not be saved after \
+             {operation}. Component configuration may already be durable. Inspect the \
+             current settings and operation receipt before retrying."
         ),
     )
     .with_details(ErrorDetail {
@@ -292,7 +392,7 @@ pub async fn list_instances(
 
 #[cfg(test)]
 mod tests {
-    use super::wait_for_computation_creation;
+    use super::{managed_component, wait_for_computation_creation};
     use async_trait::async_trait;
     use drasi_lib::{
         computation::v1::{
@@ -302,7 +402,7 @@ mod tests {
         },
         DrasiError,
     };
-    use std::{task::Poll, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     struct UnconnectedTransformer {
         descriptor: ComponentDescriptor,
@@ -336,7 +436,8 @@ mod tests {
     #[tokio::test]
     async fn computation_creation_health_inspection_keeps_its_graph_cause() {
         let core = crate::query_test_support::builder().build().await.unwrap();
-        let error = wait_for_computation_creation(&core, "source", "removed")
+        let missing_id = ComponentId::generate().to_string();
+        let error = wait_for_computation_creation(&core, "source", &missing_id)
             .await
             .unwrap_err();
         assert!(error
@@ -345,21 +446,80 @@ mod tests {
         assert!(matches!(
             error.classification(),
             DrasiError::OperationFailed { operation, component_id, reason, .. }
-                if operation == "wait_created" && component_id == "removed"
+                if operation == "wait_created" && component_id == &missing_id
                     && reason.contains("could not be inspected")
         ));
         core.shutdown().await.unwrap();
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
+    #[tokio::test]
+    async fn process_local_status_is_visible_before_construction_and_after_failure() {
+        let core = crate::query_test_support::builder().build().await.unwrap();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let entered = started.clone();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let handle = core
+            .create_source_async::<Box<dyn drasi_lib::Source>, _, _>(
+                "pending-source",
+                None,
+                false,
+                move |_| async move {
+                    entered.notify_one();
+                    released.await?;
+                    Err(anyhow::anyhow!("fixture construction failed"))
+                },
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .unwrap();
+        let status = managed_component(
+            &core,
+            handle.id().as_str(),
+            "sources",
+            "instance",
+            "/api/v1",
+            false,
+        )
+        .await
+        .unwrap()
+        .expect("pending declaration is inspectable");
+        assert_eq!(status.id, handle.id().as_str());
+        assert_eq!(status.name, "pending-source");
+        assert!(status.config.is_none());
+        release.send(()).unwrap();
+        assert!(handle.wait_created().await.is_err());
+        let failed = managed_component(
+            &core,
+            handle.id().as_str(),
+            "sources",
+            "instance",
+            "/api/v1",
+            false,
+        )
+        .await
+        .unwrap()
+        .expect("failed declaration is inspectable");
+        assert_eq!(failed.status, drasi_lib::ComponentStatus::Error);
+        assert!(failed
+            .error_message
+            .unwrap()
+            .contains("fixture construction failed"));
+        core.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn computation_creation_health_does_not_wait_for_transformer_connections() {
         let core = crate::query_test_support::builder()
-            .with_id("blocked-transformer-timeout")
+            .with_id("preconstructed-transformer-health")
+            .with_allow_external_component_ids(true)
             .build()
             .await
             .unwrap();
         core.start().await.unwrap();
-        let id = "unconnected-transformer";
+        let component_id = ComponentId::generate();
+        let id = component_id.as_str();
         let ports = [("in", PortDirection::Input), ("out", PortDirection::Output)]
             .into_iter()
             .map(|(name, direction)| {
@@ -372,36 +532,64 @@ mod tests {
             })
             .collect();
         let handle = core
-            .add_transformer_with_handle(UnconnectedTransformer {
-                descriptor: ComponentDescriptor::try_new(ComponentId::try_new(id).unwrap(), ports)
-                    .unwrap(),
-            })
+            .add_transformer_with_handle(
+                drasi_lib::config::ComponentName::try_new("unconnected-transformer").unwrap(),
+                UnconnectedTransformer {
+                    descriptor: ComponentDescriptor::try_new(component_id.clone(), ports).unwrap(),
+                },
+            )
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let observed = handle.observed().unwrap();
-                assert!(observed.failure.is_none(), "{observed:?}");
-                if observed.realization == RealizationState::Blocked {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
+        let created = tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_for_computation_creation(&core, "transformer", id),
+        )
         .await
-        .expect("a valid transformer with unconnected ports must become Blocked");
+        .expect("an existing object must not wait for activation dependencies")
+        .unwrap();
+        assert_eq!(created.generation(), handle.generation());
+        let observed = handle.observed().unwrap();
+        assert_eq!(observed.realization, RealizationState::Created);
+        assert!(!observed.started);
+        assert!(observed.failure.is_none(), "{observed:?}");
+        core.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn computation_creation_wait_times_out_after_30_seconds_for_pending_constructor() {
+        let core = crate::query_test_support::builder()
+            .with_construction_timeout_secs(120)
+            .build()
+            .await
+            .unwrap();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let started_construction = entered.clone();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let handle = core
+            .create_source_async::<Box<dyn drasi_lib::Source>, _, _>(
+                "pending-timeout",
+                None,
+                false,
+                move |_| async move {
+                    started_construction.notify_one();
+                    released.await?;
+                    Err(anyhow::anyhow!("fixture construction failed"))
+                },
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .expect("the accepted constructor must start");
+        let id = handle.id().as_str();
 
         let started = tokio::time::Instant::now();
-        let mut creation = Box::pin(wait_for_computation_creation(&core, "transformer", id));
+        let mut creation = Box::pin(wait_for_computation_creation(&core, "source", id));
         assert!(futures_util::poll!(&mut creation).is_pending());
         tokio::time::advance(Duration::from_millis(29_999)).await;
         assert!(futures_util::poll!(&mut creation).is_pending());
         tokio::time::advance(Duration::from_millis(1)).await;
-        tokio::task::yield_now().await;
-        let error = match futures_util::poll!(&mut creation) {
-            Poll::Ready(result) => result.unwrap_err(),
-            Poll::Pending => panic!("the creation health wait must expire at 30 seconds"),
-        };
+        let error = creation.await.unwrap_err();
         assert_eq!(started.elapsed(), Duration::from_secs(30));
         assert!(
             matches!(
@@ -411,7 +599,7 @@ mod tests {
                     component_id,
                     operation,
                     reason,
-                } if component_type == "transformer"
+                } if component_type == "source"
                     && component_id == id
                     && operation == "wait_created"
                     && reason.contains("Node was added")
@@ -423,13 +611,15 @@ mod tests {
             .downcast_ref::<tokio::time::error::Elapsed>()
             .is_some());
         let observed = handle.observed().unwrap();
-        assert_eq!(observed.realization, RealizationState::Blocked);
+        assert_eq!(observed.realization, RealizationState::Creating);
         assert!(observed.failure.is_none(), "{observed:?}");
         assert_eq!(
             core.computation_component(id).unwrap().generation(),
             handle.generation()
         );
         tokio::time::resume();
+        release.send(()).unwrap();
+        assert!(handle.wait_created().await.is_err());
         core.shutdown().await.unwrap();
     }
 }

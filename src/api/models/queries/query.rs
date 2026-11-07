@@ -14,7 +14,10 @@
 
 //! Query configuration DTOs with camelCase serialization.
 
-use drasi_lib::config::{QueryInputConfig, QueryLanguage};
+use drasi_lib::config::{
+    AssignedQueryConfig, ComponentId, ComponentName, ComponentReference, QueryInputConfig,
+    QueryLanguage,
+};
 use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -24,7 +27,10 @@ use serde_json::Map;
 #[schema(as = QueryConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryConfigDto {
-    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub id: Option<ComponentId>,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
     pub query: String,
@@ -65,9 +71,38 @@ pub struct QueryConfigDto {
 #[schema(as = QueryInputConfig)]
 #[serde(untagged, from = "QueryInputConfig")]
 pub enum QueryInputConfigDto {
-    /// Consume the named component's primary output.
-    Component(String),
+    /// Consume the referenced component's primary output.
+    Component(ComponentReferenceDto),
     Expanded(QueryInputObjectDto),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = ComponentReference)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum ComponentReferenceDto {
+    Name(#[schema(value_type = String)] ComponentName),
+    Id {
+        #[schema(value_type = String)]
+        id: ComponentId,
+    },
+}
+
+impl From<ComponentReference> for ComponentReferenceDto {
+    fn from(reference: ComponentReference) -> Self {
+        match reference {
+            ComponentReference::Name(name) => Self::Name(name),
+            ComponentReference::Id { id } => Self::Id { id },
+        }
+    }
+}
+
+impl From<ComponentReferenceDto> for ComponentReference {
+    fn from(reference: ComponentReferenceDto) -> Self {
+        match reference {
+            ComponentReferenceDto::Name(name) => Self::Name(name),
+            ComponentReferenceDto::Id { id } => Self::Id { id },
+        }
+    }
 }
 
 /// Expanded query input binding.
@@ -75,8 +110,8 @@ pub enum QueryInputConfigDto {
 #[schema(as = QueryInputObject)]
 #[serde(deny_unknown_fields)]
 pub struct QueryInputObjectDto {
-    /// Upstream component ID (a source, query or transformer).
-    pub component: String,
+    /// Explicit upstream name or UUID reference.
+    pub component: ComponentReferenceDto,
     /// Output port on the component. Omit to use its primary (or only) output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<String>,
@@ -95,10 +130,10 @@ impl From<QueryInputConfig> for QueryInputConfigDto {
             && input.relations.is_empty()
             && input.pipeline.is_empty()
         {
-            return Self::Component(input.component);
+            return Self::Component(input.component.into());
         }
         Self::Expanded(QueryInputObjectDto {
-            component: input.component,
+            component: input.component.into(),
             port: input.port,
             nodes: input.nodes,
             relations: input.relations,
@@ -110,9 +145,11 @@ impl From<QueryInputConfig> for QueryInputConfigDto {
 impl From<&QueryInputConfigDto> for QueryInputConfig {
     fn from(dto: &QueryInputConfigDto) -> Self {
         match dto {
-            QueryInputConfigDto::Component(component) => QueryInputConfig::new(component.clone()),
+            QueryInputConfigDto::Component(component) => {
+                QueryInputConfig::new(component.clone().into())
+            }
             QueryInputConfigDto::Expanded(object) => QueryInputConfig {
-                component: object.component.clone(),
+                component: object.component.clone().into(),
                 port: object.port.clone(),
                 nodes: object.nodes.clone(),
                 relations: object.relations.clone(),
@@ -180,6 +217,7 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
             .transpose()?;
 
         Ok(Self {
+            name: config.name,
             id: config.id,
             auto_start: config.auto_start,
             query: config.query,
@@ -206,5 +244,13 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
             outbox_capacity: config.outbox_capacity,
             bootstrap_timeout_secs: config.bootstrap_timeout_secs,
         })
+    }
+}
+
+impl TryFrom<AssignedQueryConfig> for QueryConfigDto {
+    type Error = anyhow::Error;
+
+    fn try_from(config: AssignedQueryConfig) -> Result<Self, Self::Error> {
+        Ok(Self::try_from(config.into_authoring()?)?)
     }
 }

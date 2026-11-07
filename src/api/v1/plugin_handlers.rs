@@ -764,11 +764,15 @@ mod tests {
 
     #[tokio::test]
     async fn dependents_use_graph_metadata_and_preserve_instance_scope() {
+        const SOURCE_ID: &str = "08f93596-5c0d-4c5d-890a-cf015bb3d809";
+        const REACTION_ID: &str = "32408b47-4678-45b1-b77d-917519d6fdb4";
         let registry = InstanceRegistry::new();
         for instance_id in ["first", "second"] {
             let core = Arc::new(
                 crate::query_test_support::builder()
                     .with_id(instance_id)
+                    // Deliberately reuse external UUIDs to exercise instance scoping.
+                    .with_allow_external_component_ids(true)
                     .build()
                     .await
                     .unwrap(),
@@ -782,7 +786,7 @@ mod tests {
                 metadata.remove("pluginVersion");
             }
             let (source, _) = ApplicationSource::new(
-                "shared-source",
+                SOURCE_ID,
                 ApplicationSourceConfig {
                     properties: HashMap::from([(
                         "password".into(),
@@ -792,18 +796,19 @@ mod tests {
                 },
             )
             .unwrap();
-            core.add_source_with_metadata(source, metadata.clone())
+            core.add_source_with_metadata("shared-source", source, metadata.clone())
                 .await
                 .unwrap();
-            let (reaction, _) = ApplicationReaction::builder("shared-reaction")
+            let (reaction, _) = ApplicationReaction::builder(REACTION_ID)
                 .with_queries(Vec::new())
                 .with_auto_start(false)
                 .build();
-            core.add_reaction_with_metadata(reaction, metadata)
+            core.add_reaction_with_metadata("shared-reaction", reaction, metadata)
                 .await
                 .unwrap();
+            let unrelated_id = drasi_lib::config::ComponentId::generate();
             let (unrelated, _) = ApplicationSource::new(
-                "unrelated",
+                unrelated_id.as_str(),
                 ApplicationSourceConfig {
                     properties: HashMap::new(),
                     durability: None,
@@ -811,6 +816,7 @@ mod tests {
             )
             .unwrap();
             core.add_source_with_metadata(
+                "unrelated",
                 unrelated,
                 HashMap::from([
                     ("pluginId".into(), "other-plugin".into()),
@@ -822,7 +828,7 @@ mod tests {
             core.start().await.unwrap();
             tokio::time::timeout(
                 Duration::from_secs(10),
-                core.computation_component("shared-source")
+                core.computation_component(SOURCE_ID)
                     .unwrap()
                     .wait_started(),
             )
@@ -831,7 +837,7 @@ mod tests {
             .unwrap();
             tokio::time::timeout(
                 Duration::from_secs(10),
-                core.computation_component("shared-reaction")
+                core.computation_component(REACTION_ID)
                     .unwrap()
                     .wait_created(),
             )
@@ -846,8 +852,8 @@ mod tests {
         assert_eq!(dependents.len(), 4);
         for instance_id in ["first", "second"] {
             for (kind, id, running) in [
-                ("source", "shared-source", true),
-                ("reaction", "shared-reaction", false),
+                ("source", SOURCE_ID, true),
+                ("reaction", REACTION_ID, false),
             ] {
                 assert!(
                     dependents.contains(&json!({

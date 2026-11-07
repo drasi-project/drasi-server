@@ -2,12 +2,15 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+  message?: string;
+  code?: string;
 }
 
 export interface ComponentListItem {
   id: string;
+  name: string;
   status: ComponentStatus;
-  error_message?: string;
+  errorMessage?: string;
   links?: {
     self: string;
     full: string;
@@ -30,6 +33,7 @@ export interface InstanceListItem {
 
 export interface CreateInstanceRequest {
   id: string;
+  allowExternalComponentIds?: boolean;
   persistIndex?: boolean;
   defaultPriorityQueueCapacity?: number;
   defaultDispatchBufferCapacity?: number;
@@ -70,7 +74,13 @@ export interface LogMessage {
 
 export interface Resource<TSpec = any> {
   kind: string;
-  id: string;
+  name: string;
+  id?: string;
   spec: TSpec;
   status?: Record<string, unknown>;
+}
+
+export interface ComponentIdentity {
+  id: string;
+  name: string;
 }

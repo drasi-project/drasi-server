@@ -12,23 +12,24 @@ Validation checks lifecycle status, SSE reaction kind and query membership.
 It does not compare desired query text or overwrite deployment settings.
 
 Full-view responses contain
-`{ success: true, data: { id, status, links, config, error_message? }, error: null }`.
+`{ success: true, data: { id, name, status, links, config, errorMessage? }, error: null }`.
 The request is `GET .../queries/{id}?view=full` or
 `GET .../reactions/{id}?view=full`. The exported read types are:
 
 | Type | Validated fields |
 | --- | --- |
-| `Component<T>` | `{ id: string, status: ComponentStatus, links: ComponentLinks, config: T, error_message?: string }`; ID and links must match the requested instance/resource. |
+| `Component<T>` | `{ id: string, name: string, status: ComponentStatus, links: ComponentLinks, config: T, errorMessage?: string }`; the canonical UUID and links must match the requested instance/resource. The configuration's ID and name must agree with the component. |
 | `ComponentLinks` | `{ self: string, full: string }`; resource and `?view=full` links, normalized to encoded instance-scoped paths. |
-| `ComponentStatus` | `'Starting' \| 'Running' \| 'Stopping' \| 'Stopped' \| 'Error' \| 'Reconfiguring' \| 'Added' \| 'Removed'`. |
+| `ComponentStatus` | `'Starting' \| 'Running' \| 'Stopping' \| 'Stopped' \| 'Error' \| 'Reconfiguring' \| 'Added' \| 'Removed' \| 'Failed' \| 'TerminalError' \| 'Unknown'`. |
 | `QueryLanguage` | `'Cypher' \| 'GQL'`; the server must return an explicit value. |
-| `QueryConfig` | Required `id: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `inputs: readonly QueryInput[]`, optional `result?: QueryResultOptions`, `enableBootstrap: boolean`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
+| `QueryConfig` | Required `id: string` (UUID), `name: string`, `autoStart: boolean`, `query: string`, `queryLanguage: QueryLanguage`, `middleware: readonly QueryMiddleware[]`, `inputs: readonly QueryInput[]`, optional `result?: QueryResultOptions`, `enableBootstrap: boolean`, `outboxCapacity: number`, `bootstrapTimeoutSecs: number`. |
 | Optional `QueryConfig` fields | `joins?: readonly QueryJoin[]`, `priorityQueueCapacity?: number`, `dispatchBufferCapacity?: number`, `dispatchMode?: 'Channel'`, `storageBackend?: JsonValue`. Capacities/timeouts are nonnegative safe integers; absent fields do not acquire client defaults. |
-| `QueryInput` / `QueryInputObject` | A bare upstream component name (its primary output), or `{ component: string, port?: string, nodes?: readonly string[], relations?: readonly string[], pipeline?: readonly string[] }`; the server omits unset/empty optional fields. The component may be a source, another query or a transformer. |
+| `ComponentReference` | A name string or `{ id: string }` containing a canonical UUID. A UUID-shaped string remains a name, never an implicit ID. |
+| `QueryInput` / `QueryInputObject` | A `ComponentReference` (primary output), or `{ component: ComponentReference, port?: string, nodes?: readonly string[], relations?: readonly string[], pipeline?: readonly string[] }`. The component may be a source, another query or a transformer. Resolved references remain UUID-bound after rename. |
 | `QueryResultOptions` | `{ label?: string }`: the node label of published results. It never changes the output schema. |
 | `QueryJoin` / `QueryJoinKey` | `{ id: string, keys: readonly QueryJoinKey[] }` / `{ label: string, property: string }`. Input and join ordering is retained. |
 | `QueryMiddleware` | `{ kind: string, name: string, config: Readonly<Record<string, JsonValue>> }`; configuration belongs to its server plugin. |
-| `ReactionConfig` | Required `id: string`, `kind: string`, `queries: readonly string[]`; flattened plugin fields have type `JsonValue \| undefined`, not a nested creation body. |
+| `ReactionConfig` | Required `id: string` (UUID), `name: string`, `kind: string`, `queries: readonly ComponentReference[]`; flattened plugin fields have type `JsonValue \| undefined`. A running reaction's membership must contain the explicit query UUIDs configured by the client. |
 | `SseReactionConfig` | Extends `ReactionConfig` with `kind: 'sse'`, `host: string`, `port: number` (integer 1–65535), `ssePath: string` (starts with `/`) and `heartbeatIntervalMs: number` (nonnegative safe integer). `getReaction()` still returns the general reaction read type. |
 | `JsonValue` / `ResultRow` | JSON null/boolean/number/string/readonly arrays/readonly string-keyed objects, versus `Record<string, unknown>` object rows. Wire numbers must be finite; applications must narrow row fields themselves. |
 
@@ -43,8 +44,8 @@ nested shapes and snapshot object rows are checked at runtime from `unknown`.
 Malformed/incompatible bodies fail visibly with `INVALID_PAYLOAD`; missing
 reads throw rather than returning a success-shaped `null`.
 
-Server 0.2.3's `enableArchive` and `memoryBudgetMiB` settings belong to the
-server/instance configuration, not new fields in the unchanged v1 query read
+`enableArchive` and `memoryBudgetMiB` settings belong to the
+server/instance configuration, not fields in the v1 query read
 DTO. The client does not expose an instance-creation API. Per-query storage
 overrides remain opaque `storageBackend` JSON; no archive or memory-budget
 defaults are selected here.
@@ -54,17 +55,20 @@ identity and returns safely encoded, instance-scoped links. It never follows
 arbitrary response links, and refuses REST redirects into another path/origin.
 The UI helper returns `${serverUrl}/ui?instance={encodedInstanceId}`.
 
-The historical `test/fixtures/server-v1/contract.json` contains **actual response
-bodies** for a full query, full SSE reaction and snapshot, with backend
-revision/binary/lock/plugin provenance. They were captured by the real Trading
-harness, not inferred from synthetic fakes. Tests consume those records and
-separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. The recorded query config's subscription list was rewritten once, in the fixture
-itself, from the removed `sources` field to the v1 `inputs` shape (the provenance `note` says
-so); tests consume the fixtures directly. The historical `test/fixtures/server-v1-0.2.3/contract.json` separately
-records the own rebuilt server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
-read tests consume both versions. New records are never substituted into the
-old provenance. See [verified compatibility](testing.md#verified-compatibility).
+Use UUIDs returned by the running server for query and reaction references.
+The client does not adopt a component's identity, create resources or select
+the instance's `allowExternalComponentIds` policy. Application provisioning
+can resolve a name through the Server's explicit lookup-by-name endpoint,
+then retain the returned UUID. Renaming a component does not change that
+binding. Output aliases and business-record keys are separate strings and
+are not converted into UUIDs.
+
+This is a breaking contract. Pre-UUID component responses are rejected, not
+converted. Historical captures in `test/fixtures/server-v1` and
+`test/fixtures/server-v1-0.2.3` remain unchanged as refusal fixtures; they are
+not evidence of current backend compatibility. Current synthetic contract
+tests exercise names, UUIDs, explicit references and malformed responses.
+See [qualification scope](testing.md#verified-compatibility).
 
 ## Authentication and injected transports
 
@@ -97,6 +101,8 @@ import {
 export function authenticatedClient(
   getAccessToken: (signal: AbortSignal) => Promise<string>,
   openStream: EventSourceFactory,
+  queryId: string,
+  reactionId: string,
 ) {
   const headers: DrasiHeadersProvider = async ({ signal }) => {
     const token = await getAccessToken(signal);
@@ -105,8 +111,8 @@ export function authenticatedClient(
   };
   return new DrasiClient({
     serverUrl: 'https://drasi.example', instanceId: 'analytics',
-    outputIds: ['readings'],
-    reaction: { id: 'events', endpoint: 'https://events.example/changes' },
+    outputIds: [queryId],
+    reaction: { id: reactionId, endpoint: 'https://events.example/changes' },
     credentials: 'include', headers, eventSourceFactory: openStream,
   });
 }

@@ -81,7 +81,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Are you sure you want to apply ${resource.id ?? resource.name}?`,
+      `Are you sure you want to apply ${resource.name}?`,
       'Yes',
       'No'
     );
@@ -91,14 +91,14 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     }
 
     await vscode.window.withProgress({
-      title: `Applying ${resource.id ?? resource.name}`,
+      title: `Applying ${resource.name}`,
       location: vscode.ProgressLocation.Notification,
     }, async (progress) => {
       progress.report({ message: 'Applying...' });
 
       try {
         await applyResourceByKind(this.drasiClient, resource);
-        vscode.window.showInformationMessage(`Resource ${resource.id ?? resource.name} applied successfully`);
+        vscode.window.showInformationMessage(`Resource ${resource.name} applied successfully`);
       } catch (err) {
         vscode.window.showErrorMessage(`Error applying resource: ${err}`);
       }
@@ -136,8 +136,8 @@ function extractItems(doc: yaml.Document): ExtractedItem[] {
   const kindNode = map.get('kind', true);
   if (kindNode) {
     const kind = doc.get('kind');
-    const id = doc.get('id');
-    if (kind && id) {
+    const name = doc.get('name');
+    if (typeof kind === 'string' && typeof name === 'string' && name) {
       items.push({
         kind,
         payload: doc.toJS(),
@@ -150,15 +150,13 @@ function extractItems(doc: yaml.Document): ExtractedItem[] {
   addListItems(doc, map, 'sources', 'Source', items);
   addListItems(doc, map, 'queries', 'Query', items);
   addListItems(doc, map, 'reactions', 'Reaction', items);
-  if (items.length === 0) {
-    const kind = doc.get('kind');
-    const id = doc.get('id');
-    if (kind && id) {
-      items.push({
-        kind,
-        payload: doc.toJS(),
-        range: rangeFromNode(docContents),
-      });
+  const instances = map.get('instances', true);
+  if (yaml.isSeq(instances)) {
+    for (const instance of instances.items) {
+      if (!yaml.isMap(instance)) continue;
+      addListItems(doc, instance, 'sources', 'Source', items);
+      addListItems(doc, instance, 'queries', 'Query', items);
+      addListItems(doc, instance, 'reactions', 'Reaction', items);
     }
   }
   return items;
@@ -181,13 +179,14 @@ function addListItems(
       return;
     }
     const entryMap = entry as yaml.YAMLMap;
-    const idNode = entryMap.get('id', true);
-    if (!idNode) {
+    const name = entryMap.get('name');
+    if (typeof name !== 'string' || !name) {
       return;
     }
     const spec = entry.toJS(doc);
     const payload = {
       kind,
+      name,
       id: spec?.id,
       spec,
     };

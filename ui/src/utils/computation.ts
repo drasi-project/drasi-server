@@ -8,8 +8,7 @@ const INTERNAL_IMPLEMENTATIONS = new Set([
 ]);
 
 export function isInternalComponent(component: ComputationComponent): boolean {
-  return component.id.startsWith("__")
-    || INTERNAL_IMPLEMENTATIONS.has(component.implementation?.name ?? "");
+  return INTERNAL_IMPLEMENTATIONS.has(component.implementation?.name ?? "");
 }
 
 export function computationStatus(component: ComputationComponent): ComponentStatus {

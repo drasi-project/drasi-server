@@ -30,35 +30,43 @@ async fn collect(State(state): State<Arc<CollectorState>>, Json(body): Json<Valu
 }
 
 async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
-    let (source, input) = ApplicationSource::new(
-        "input",
-        ApplicationSourceConfig {
-            properties: Default::default(),
-            durability: None,
-        },
-    )?;
+    let input = Arc::new(std::sync::OnceLock::new());
+    let assigned_input = input.clone();
     let core = Arc::new(
         crate::query_test_support::builder()
             .with_id(id)
-            .with_source(source)
+            .with_source_factory("input", true, move |id| {
+                let (source, handle) = ApplicationSource::new(
+                    id.as_str(),
+                    ApplicationSourceConfig {
+                        properties: Default::default(),
+                        durability: None,
+                    },
+                )?;
+                assigned_input
+                    .set(handle)
+                    .map_err(|_| anyhow::anyhow!("source constructor ran twice"))?;
+                Ok(source)
+            })
             .with_query(
                 Query::cypher("items")
                     .query("MATCH (n:Item) RETURN n.value AS value")
                     .from_input("input")
                     .enable_bootstrap(false)
                     .auto_start(true)
-                    .build(),
+                    .build()?,
             )
             .build()
             .await?,
     );
     core.start().await?;
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        core.computation_component("items")?.wait_started(),
-    )
-    .await??;
-    core.get_query_results("items").await?;
+    let query = core.component_by_name("items")?;
+    tokio::time::timeout(Duration::from_secs(5), query.wait_started()).await??;
+    core.get_query_results(query.id().as_str()).await?;
+    let input = input
+        .get()
+        .context("source constructor did not publish its input handle")?
+        .clone();
     Ok((core, input))
 }
 
@@ -231,9 +239,10 @@ async fn exported_progress_and_owned_shutdown() -> Result<()> {
             PropertyMapBuilder::new().with_integer("value", 99).build(),
         )
         .await?;
+    let query_id = second.component_by_name("items")?.id().to_string();
     tokio::time::timeout(Duration::from_millis(500), async {
         loop {
-            if second.get_query_results("items").await? == vec![json!({"value": 99})] {
+            if second.get_query_results(&query_id).await? == vec![json!({"value": 99})] {
                 break Result::<()>::Ok(());
             }
             tokio::task::yield_now().await;

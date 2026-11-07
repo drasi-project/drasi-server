@@ -58,7 +58,7 @@ function fixture({ strict = false, deliverInLayout = false } = {}) {
     useLayoutEffect(() => {
       if (future && deliverInLayout) {
         factory.instances[0].message({
-          queryId: 'stocks', timestamp: 1,
+          queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1,
           results: [{ type: 'DELETE', data: { alternateId: 'future-B' } }],
         });
       }
@@ -66,7 +66,7 @@ function fixture({ strict = false, deliverInLayout = false } = {}) {
     return null;
   }
   function Probe({ future }: { future: boolean }) {
-    const result = useDrasiQuery('stocks', future ? futureOptions : currentOptions);
+    const result = useDrasiQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9', future ? futureOptions : currentOptions);
     useLayoutEffect(() => { committed = result; });
     return <>
       <output data-testid="mode">{future ? 'future' : 'current'}</output>
@@ -111,7 +111,7 @@ function fixture({ strict = false, deliverInLayout = false } = {}) {
     setCurrent() { act(() => update(false)); },
     emitDelete(data: ResultRow) {
       act(() => factory.instances[0].message({
-        queryId: 'stocks', timestamp: 2, results: [{ type: 'DELETE', data }],
+        queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 2, results: [{ type: 'DELETE', data }],
       }));
     },
   };

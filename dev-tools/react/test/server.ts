@@ -5,13 +5,19 @@
 
 import { vi } from 'vitest';
 import type { DrasiClientOptions } from '../src/client/DrasiClient';
-import type { Component, ComponentStatus, QueryConfig } from '../src/client/types';
+import type { Component, ComponentStatus, QueryConfig, ReactionConfig } from '../src/client/types';
+
+export const ids = {
+  stocks: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
+  other: 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481',
+  stream: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d',
+};
 
 export const refs: DrasiClientOptions = {
   serverUrl: 'https://drasi.invalid',
   instanceId: 'selected / instance',
-  outputIds: ['stocks'],
-  reaction: { id: 'stream', endpoint: 'https://events.invalid/proxy/events' },
+  outputIds: [ids.stocks],
+  reaction: { id: ids.stream, endpoint: 'https://events.invalid/proxy/events' },
   reconnect: { maxReconnectAttempts: 0, initialReconnectDelayMs: 10, maxReconnectDelayMs: 20 },
 };
 
@@ -21,19 +27,19 @@ export const failure = (status: number, code = 'INTERNAL_ERROR') =>
 
 export function queryConfig(id: string, overrides: Partial<QueryConfig> = {}): QueryConfig {
   return {
-    id, query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', inputs: [],
+    id, name: `component-${id}`, query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', inputs: [],
     autoStart: true, middleware: [], enableBootstrap: true,
     outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
     ...overrides,
   };
 }
 
-export function component<T>(
+export function component<T extends { name: string }>(
   kind: 'queries' | 'reactions', id: string, config: T,
   status: ComponentStatus = 'Running', instanceId = refs.instanceId,
 ): Component<T> {
   const self = `/api/v1/instances/${encodeURIComponent(instanceId)}/${kind}/${encodeURIComponent(id)}`;
-  return { id, status, config, links: { self, full: `${self}?view=full` } };
+  return { id, name: config.name, status, config, links: { self, full: `${self}?view=full` } };
 }
 
 export function deferred<T>() {
@@ -46,8 +52,8 @@ export class ReadServer {
   queryStatus: ComponentStatus = 'Running';
   reactionStatus: ComponentStatus = 'Running';
   missing: 'query' | 'reaction' | 'instance' | null = null;
-  reaction = {
-    id: 'stream', kind: 'sse', queries: ['stocks'], host: '0.0.0.0',
+  reaction: { -readonly [K in keyof ReactionConfig]: ReactionConfig[K] } = {
+    id: ids.stream, name: 'events', kind: 'sse', queries: [{ id: ids.stocks }], host: '0.0.0.0',
     port: 9999, ssePath: '/internal', heartbeatIntervalMs: 15000,
   };
   snapshot = () => Promise.resolve(json([{ id: 'A', value: '10', price: 10 }]));
@@ -63,9 +69,9 @@ export class ReadServer {
       const id = decodeURIComponent(url.pathname.split('/').pop()!);
       return json(component('queries', id, queryConfig(id), this.queryStatus));
     }
-    if (url.pathname.endsWith('/reactions/stream')) {
+    if (url.pathname.endsWith(`/reactions/${ids.stream}`)) {
       return this.missing === 'reaction' ? failure(404, 'REACTION_NOT_FOUND')
-        : json(component('reactions', 'stream', this.reaction, this.reactionStatus));
+        : json(component('reactions', ids.stream, this.reaction, this.reactionStatus));
     }
     throw new Error(`Unexpected request: ${url}`);
   });

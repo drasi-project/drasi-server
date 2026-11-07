@@ -58,6 +58,18 @@ You can also set the binary path ahead of time via the **Drasi Server: Configure
 
 Individual sources, queries, and reactions in a Drasi YAML file show an **Apply** code lens. Click it to upsert the resource to the connected server.
 
+Components have a required, unique `name` and an immutable UUID `id`. New YAML
+normally omits `id`; Apply looks up the exact name before updating an existing
+component or creating a new one. An explicit UUID never falls back to a name.
+Creating with an explicit UUID requires the instance's construction-time
+`allowExternalComponentIds` option, which defaults to false.
+
+The live explorer displays names and shows UUIDs in tooltips. Use **Rename** to
+change a name without replacing the component or its connections. **View Config
+(YAML)** includes the assigned UUID and current name for subsequent updates.
+Query and reaction references use a string for a name or `{ id: <UUID> }` for an
+identity. A string that looks like a UUID is still a name.
+
 ### Create Resources
 
 Right-click in a YAML editor and choose **Create Source YAML**, **Create Query YAML**, or **Create Reaction YAML** to scaffold a new resource from the server's schema.

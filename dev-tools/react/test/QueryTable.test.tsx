@@ -82,7 +82,7 @@ function renderTable<T extends object>(
 describe('QueryTable', () => {
   it('uses explicit raw identity independently of transformed render keys and sorting', async () => {
     const table = renderTable<Stock>({
-      queryId: 'stocks',
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
       columns,
       rowKey: row => row.symbol,
       queryOptions: stockOptions,
@@ -94,7 +94,7 @@ describe('QueryTable', () => {
     await table.connect();
 
     act(() => table.factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { symbol: 'AAPL', price: 11 } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { symbol: 'AAPL', price: 11 } }],
     }));
     expect(screen.getAllByRole('row')).toHaveLength(3);
     expect(screen.queryByText('10')).toBeNull();
@@ -120,7 +120,7 @@ describe('QueryTable', () => {
     const server = new ReadServer();
     server.missing = 'query';
     const table = renderTable<Stock>({
-      queryId: 'stocks', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
     }, [], server);
 
     expect(await screen.findByText('Error: The referenced query does not exist.')).not.toBeNull();
@@ -130,7 +130,7 @@ describe('QueryTable', () => {
 
   it('retains rows on a shared failure and routes recovery to the connection owner', async () => {
     const table = renderTable<Stock>({
-      queryId: 'stocks', title: 'Stocks', columns,
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', title: 'Stocks', columns,
       rowKey: row => row.symbol, queryOptions: stockOptions,
     }, [{ symbol: 'AAPL', price: 10 }]);
     await table.connect();
@@ -152,11 +152,11 @@ describe('QueryTable', () => {
 
   it('retains useful rows on a query-only fault and retries without opening another stream', async () => {
     const table = renderTable<Stock>({
-      queryId: 'stocks', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
     }, [{ symbol: 'AAPL', price: 10 }]);
     await table.connect();
     act(() => table.factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: false }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: false }],
     }));
     expect(screen.getByRole('alert').textContent).toContain('Showing last known data');
     expect(screen.getByText('10')).not.toBeNull();
@@ -200,7 +200,7 @@ describe('QueryTable', () => {
       disabled: row => row.locked, loading: row => row.pending,
     }];
     const table = renderTable<Device>({
-      queryId: 'stocks',
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
       columns: deviceColumns,
       actions,
       rowKey: row => row.identity.code,
@@ -251,7 +251,7 @@ describe('QueryTable', () => {
   it('orders numbers before text and preserves null ordering without coercing raw cells', async () => {
     interface Row { code: string; value: unknown }
     const table = renderTable<Row>({
-      queryId: 'stocks',
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
       columns: [{ key: 'code', label: 'Code' }, { key: 'value', label: 'Value' }],
       rowKey: row => row.code,
       queryOptions: { getKey: row => String(row.code), transform: row => ({ code: String(row.code), value: row.value }) },

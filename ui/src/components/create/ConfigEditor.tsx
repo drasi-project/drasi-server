@@ -83,11 +83,11 @@ export default function ConfigEditor({
     return extractUiSchema(effectiveSchema);
   }, [effectiveSchema]);
 
-  // Extract config-only fields (exclude id, autoStart, kind, queries)
+  // Keep component identity and input bindings outside plugin configuration.
   const configOnly = useMemo(() => {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(formData)) {
-      if (k !== "id" && k !== "autoStart" && k !== "kind" && k !== "queries") {
+      if (k !== "id" && k !== "name" && k !== "autoStart" && k !== "kind" && k !== "queries") {
         result[k] = v;
       }
     }

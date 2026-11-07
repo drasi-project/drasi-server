@@ -72,16 +72,59 @@ impl DrasiServerBuilder {
     }
 
     /// Add a pre-built source instance (ownership transferred)
-    pub fn with_source(mut self, source: impl SourceTrait + 'static) -> Self {
+    pub fn with_source(
+        mut self,
+        name: impl Into<String>,
+        source: impl SourceTrait + 'static,
+    ) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_source(source);
+        *builder = std::mem::take(builder).with_source(name, source);
         self
     }
 
     /// Add a pre-built reaction instance (ownership transferred)
-    pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
+    pub fn with_reaction(
+        mut self,
+        name: impl Into<String>,
+        reaction: impl ReactionTrait + 'static,
+    ) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_reaction(reaction);
+        *builder = std::mem::take(builder).with_reaction(name, reaction);
+        self
+    }
+
+    pub fn with_allow_external_component_ids(mut self, allow: bool) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_allow_external_component_ids(allow);
+        self
+    }
+
+    pub fn with_source_factory<S: SourceTrait + 'static>(
+        mut self,
+        name: impl Into<String>,
+        auto_start: bool,
+        factory: impl FnOnce(drasi_lib::config::ComponentId) -> anyhow::Result<S> + Send + 'static,
+    ) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_source_factory(name, auto_start, factory);
+        self
+    }
+
+    pub fn with_reaction_inputs_factory<R: ReactionTrait + 'static>(
+        mut self,
+        name: impl Into<String>,
+        inputs: Vec<drasi_lib::config::ComponentReference>,
+        auto_start: bool,
+        factory: impl FnOnce(
+                drasi_lib::config::ComponentId,
+                Vec<drasi_lib::config::ComponentId>,
+            ) -> anyhow::Result<R>
+            + Send
+            + 'static,
+    ) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder =
+            std::mem::take(builder).with_reaction_inputs_factory(name, inputs, auto_start, factory);
         self
     }
 
@@ -146,29 +189,29 @@ impl DrasiServerBuilder {
     /// For GQL queries, use with_query() with Query::gql() builder instead
     pub fn with_query_config(
         mut self,
-        id: impl Into<String>,
+        name: impl Into<String>,
         query_str: impl Into<String>,
         sources: Vec<String>,
-    ) -> Self {
-        let mut query_builder = Query::cypher(id).query(query_str);
+    ) -> Result<Self, DrasiError> {
+        let mut query_builder = Query::cypher(name).query(query_str);
 
         for source in sources {
             query_builder = query_builder.from_input(source);
         }
 
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_query(query_builder.build());
-        self
+        *builder = std::mem::take(builder).with_query(query_builder.build()?);
+        Ok(self)
     }
 
     /// Add a query with simple parameters
     pub fn with_simple_query(
         self,
-        id: impl Into<String>,
+        name: impl Into<String>,
         query_str: impl Into<String>,
         sources: Vec<String>,
-    ) -> Self {
-        self.with_query_config(id, query_str, sources)
+    ) -> Result<Self, DrasiError> {
+        self.with_query_config(name, query_str, sources)
     }
 
     /// Add an additional DrasiLibBuilder to run as a separate DrasiLib instance
@@ -307,6 +350,7 @@ mod tests {
                 "MATCH (n) RETURN n",
                 vec!["test_source".to_string()],
             )
+            .unwrap()
             .with_port(9090);
 
         assert!(builder.enable_api);

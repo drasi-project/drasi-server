@@ -31,11 +31,12 @@ use crate::api::models::ReactionConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
-use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
-use crate::factories::create_reaction_locked;
+use crate::api::shared::responses::{
+    ApiResponse, ComponentCreatedResponse, ComponentListItem, StatusResponse,
+};
+use crate::factories::create_reaction_instance;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::channels::ComponentStatus;
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
 
@@ -45,31 +46,16 @@ pub async fn list_reactions(
     Extension(instance_id): Extension<String>,
     Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
-    let reactions = core.list_reactions().await.map_err(ErrorResponse::from)?;
-    let mut items = Vec::with_capacity(reactions.len());
-    for (id, status) in reactions {
-        let links = component_links(&api_prefix.0, &instance_id, "reactions", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_reaction_info(&id).await {
-                Ok(info) => info.error_message,
-                Err(e) => {
-                    log::warn!("Failed to fetch reaction info for '{id}': {e}");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        items.push(ComponentListItem {
-            id,
-            status,
-            error_message,
-            links,
-            config: None,
-        });
-    }
-
-    Ok(Json(ApiResponse::success(items)))
+    Ok(Json(ApiResponse::success(
+        super::component_list(
+            &core,
+            drasi_lib::ComponentKind::Reaction,
+            "reactions",
+            &instance_id,
+            &api_prefix.0,
+        )
+        .await?,
+    )))
 }
 
 /// Create a new reaction
@@ -77,10 +63,10 @@ pub async fn create_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+) -> Result<Json<ApiResponse<ComponentCreatedResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
             error_codes::CONFIG_READ_ONLY,
@@ -97,54 +83,17 @@ pub async fn create_reaction_handler(
         )
     })?;
 
-    let reaction_id = config.id().to_string();
-
-    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create reaction instance: {e}");
-            ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to create reaction: {e}"),
-            )
-        })?;
-
-    // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
-        Ok(_) => {
-            log::info!("Reaction '{reaction_id}' created successfully");
-
-            if let Some(p) = &config_persistence {
-                p.register_reaction_identity_provider(
-                    &instance_id,
-                    &reaction_id,
-                    config.identity_provider(),
-                )
-                .await;
-            }
-
-            persist_after_operation(&config_persistence, "creating reaction").await?;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Reaction '{reaction_id}' created successfully"),
-            })))
-        }
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") {
-                log::info!("Reaction '{reaction_id}' already exists - use PUT for upsert");
-                return Err(ErrorResponse::new(
-                    error_codes::DUPLICATE_RESOURCE,
-                    "Resource already exists",
-                ));
-            }
-            log::error!("Failed to add reaction: {e}");
-            Err(ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                error_msg,
-            ))
-        }
+    let handle = create_reaction_instance(&core, plugin_registry, config.clone()).await?;
+    let reaction_id = handle.id().to_string();
+    if config_persistence.is_some() {
+        super::wait_for_computation_creation(&core, "reaction", &reaction_id).await?;
     }
+    persist_after_operation(&config_persistence, "creating reaction").await?;
+    Ok(Json(ApiResponse::success(ComponentCreatedResponse {
+        id: reaction_id,
+        name: config.name,
+        message: "Reaction declaration accepted".into(),
+    })))
 }
 
 /// Upsert a reaction (create or update)
@@ -152,7 +101,7 @@ pub async fn upsert_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
@@ -165,7 +114,7 @@ pub async fn upsert_reaction_handler(
     }
 
     super::require_imperative_configuration(&core)?;
-    let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
+    let mut config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse reaction config: {e}");
         ErrorResponse::new(
             error_codes::INVALID_REQUEST,
@@ -173,96 +122,40 @@ pub async fn upsert_reaction_handler(
         )
     })?;
 
-    if config.id() != path_id {
+    let id = drasi_lib::config::ComponentId::try_new(path_id)
+        .map_err(|error| ErrorResponse::new(error_codes::INVALID_REQUEST, error.to_string()))?;
+    if config.id.as_ref().is_some_and(|requested| requested != &id) {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
-            format!(
-                "Path id '{path_id}' does not match body id '{}'",
-                config.id()
-            ),
+            "The component UUID cannot be changed",
         ));
     }
 
-    let reaction_id = config.id().to_string();
-
-    // Check if reaction already exists
-    let exists = core.get_reaction_info(&reaction_id).await.is_ok();
-
-    if exists {
-        // Create a new reaction instance and use update_reaction to replace in place
-        let (new_reaction, _meta) = create_reaction_locked(&plugin_registry, config.clone())
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create reaction instance for update: {e}");
-                ErrorResponse::new(
-                    error_codes::REACTION_CREATE_FAILED,
-                    format!("Failed to create reaction for update: {e}"),
-                )
-            })?;
-        if let Err(e) = core.update_reaction(&reaction_id, new_reaction).await {
-            log::error!("Failed to update reaction '{reaction_id}': {e}");
+    config.id = Some(id.clone());
+    let reaction_id = id.to_string();
+    let snapshot = core.computation_control()?.desired_snapshot();
+    if let Some(existing) = snapshot.component(&id) {
+        core.get_reaction_status(&reaction_id).await?;
+        if existing.name.as_str() != config.name {
             return Err(ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to update reaction: {e}"),
+                error_codes::INVALID_REQUEST,
+                "Use the component rename endpoint to change its name",
             ));
         }
-
-        log::info!("Reaction '{reaction_id}' updated successfully");
-
-        if let Some(p) = &config_persistence {
-            p.register_reaction_identity_provider(
-                &instance_id,
-                &reaction_id,
-                config.identity_provider(),
-            )
-            .await;
-        }
-
-        persist_after_operation(&config_persistence, "upserting reaction").await?;
-
-        return Ok(Json(ApiResponse::success(StatusResponse {
-            message: format!("Reaction '{reaction_id}' updated successfully"),
-        })));
+        let definition =
+            crate::managed_configuration::ordinary::reaction_definition(config.clone())?
+                .with_assigned_id(id);
+        core.update_reaction(&reaction_id, definition).await?;
+    } else {
+        create_reaction_instance(&core, plugin_registry, config.clone()).await?;
     }
-
-    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create reaction instance: {e}");
-            ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to create reaction: {e}"),
-            )
-        })?;
-
-    // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
-        Ok(_) => {
-            log::info!("Reaction '{reaction_id}' created successfully");
-
-            if let Some(p) = &config_persistence {
-                p.register_reaction_identity_provider(
-                    &instance_id,
-                    &reaction_id,
-                    config.identity_provider(),
-                )
-                .await;
-            }
-
-            persist_after_operation(&config_persistence, "upserting reaction").await?;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Reaction '{reaction_id}' created successfully"),
-            })))
-        }
-        Err(e) => {
-            log::error!("Failed to add reaction: {e}");
-            Err(ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                e.to_string(),
-            ))
-        }
+    if config_persistence.is_some() {
+        super::wait_for_computation_creation(&core, "reaction", &reaction_id).await?;
     }
+    persist_after_operation(&config_persistence, "upserting reaction").await?;
+    Ok(Json(ApiResponse::success(StatusResponse {
+        message: format!("Reaction '{reaction_id}' definition accepted"),
+    })))
 }
 
 /// Get reaction status by ID
@@ -274,6 +167,18 @@ pub async fn get_reaction(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
+    if let Some(component) = super::managed_component(
+        &core,
+        &id,
+        "reactions",
+        &instance_id,
+        &api_prefix.0,
+        view.include_config(),
+    )
+    .await?
+    {
+        return Ok(Json(ApiResponse::success(component)));
+    }
     // Read authoritative graph-backed reaction information.
     let info = core
         .get_reaction_info(&id)
@@ -282,25 +187,22 @@ pub async fn get_reaction(
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
-        let mut config_map = serde_json::Map::new();
+        let mut config_map: serde_json::Map<_, _> = info.properties.clone().into_iter().collect();
         config_map.insert(
             "kind".to_string(),
             serde_json::Value::String(info.reaction_type.clone()),
         );
         config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
         config_map.insert(
-            "queries".to_string(),
-            serde_json::Value::Array(
-                info.queries
-                    .iter()
-                    .map(|q| serde_json::Value::String(q.clone()))
-                    .collect(),
-            ),
+            "name".to_string(),
+            serde_json::Value::String(info.name.clone()),
         );
-        // Include properties from runtime
-        for (key, value) in &info.properties {
-            config_map.insert(key.clone(), value.clone());
-        }
+        config_map.insert(
+            "queries".to_string(),
+            serde_json::to_value(&info.queries).map_err(|error| {
+                ErrorResponse::new(error_codes::INTERNAL_ERROR, error.to_string())
+            })?,
+        );
         Some(serde_json::Value::Object(config_map))
     } else {
         None
@@ -308,6 +210,7 @@ pub async fn get_reaction(
 
     Ok(Json(ApiResponse::success(ComponentListItem {
         id: info.id,
+        name: info.name,
         status: info.status,
         error_message: info.error_message,
         links: component_links(&api_prefix.0, &instance_id, "reactions", &id),
@@ -417,7 +320,7 @@ pub async fn delete_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -430,10 +333,6 @@ pub async fn delete_reaction(
     super::require_imperative_configuration(&core)?;
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
-            if let Some(p) = &config_persistence {
-                p.unregister_reaction_identity_provider(&instance_id, &id)
-                    .await;
-            }
             persist_after_operation(&config_persistence, "deleting reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {

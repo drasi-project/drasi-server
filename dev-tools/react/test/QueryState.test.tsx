@@ -35,9 +35,9 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 function fixture(overrides: Partial<DrasiClientOptions> = {}) {
   const server = new ReadServer(), factory = fakeEventSourceFactory();
-  server.reaction.queries = ['stocks', 'other'];
+  server.reaction.queries = [{ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }, { id: 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481' }];
   const snapshots = new Map<string, () => Promise<Response>>([
-    ['stocks', async () => json([first])], ['other', async () => json([second])],
+    ['b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([first])], ['e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481', async () => json([second])],
   ]);
   const read = server.fetch.getMockImplementation()!;
   server.fetch.mockImplementation((input, init) => {
@@ -51,7 +51,7 @@ function fixture(overrides: Partial<DrasiClientOptions> = {}) {
   });
   const observed = new Map<string, UseDrasiQueryResult<ViewRow>>();
   let context: DrasiContextValue | undefined;
-  function Probe({ name = 'first', queryId = 'stocks', queryOptions = options }: {
+  function Probe({ name = 'first', queryId = 'b20c42ee-59a1-441f-a549-87a72be1f1e9', queryOptions = options }: {
     name?: string; queryId?: string; queryOptions?: UseDrasiQueryOptions<ViewRow>;
   }) {
     const result = useDrasiQuery(queryId, queryOptions);
@@ -60,7 +60,7 @@ function fixture(overrides: Partial<DrasiClientOptions> = {}) {
     return <output aria-label={name}>{JSON.stringify({ ...result, error: result.error?.code })}</output>;
   }
   const tree = (children: React.ReactNode) => <DrasiProvider
-    {...refs} outputIds={['stocks', 'other']} fetch={server.fetch} eventSourceFactory={factory.create}
+    {...refs} outputIds={['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481']} fetch={server.fetch} eventSourceFactory={factory.create}
     reconnect={{ maxReconnectAttempts: 2, initialReconnectDelayMs: 10, maxReconnectDelayMs: 20 }}
     {...overrides}
   >{children}</DrasiProvider>;
@@ -72,7 +72,7 @@ function fixture(overrides: Partial<DrasiClientOptions> = {}) {
     act(() => source().open());
     await flush();
   };
-  const emit = (results: unknown[], queryId = 'stocks', timestamp = 1) =>
+  const emit = (results: unknown[], queryId = 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp = 1) =>
     act(() => source().message({ queryId, timestamp, results }));
   return { server, factory, snapshots, Probe, tree, get, open, emit, source, context: () => context! };
 }
@@ -80,7 +80,7 @@ function fixture(overrides: Partial<DrasiClientOptions> = {}) {
 describe('observable result state on the real provider/client transport', () => {
   it('does not equate an open socket with data readiness and names an empty snapshot', async () => {
     const f = fixture(), pending = deferred<Response>();
-    f.snapshots.set('stocks', () => pending.promise);
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => pending.promise);
     render(f.tree(<f.Probe />));
     expect(f.get()).toMatchObject({ status: 'initial-loading', data: null, loading: true, stale: false });
     await f.open();
@@ -93,7 +93,7 @@ describe('observable result state on the real provider/client transport', () => 
 
   it('uses raw identities even when transforms drop them, keeping equal-valued groups and sparse deletes distinct', async () => {
     const f = fixture();
-    f.snapshots.set('stocks', async () => json([first, second]));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([first, second]));
     const transform = vi.fn(options.transform);
     render(f.tree(<f.Probe queryOptions={{ ...options, transform }} />));
     await f.open();
@@ -139,7 +139,7 @@ describe('observable result state on the real provider/client transport', () => 
 
   it('rekeys retained raw rows on option changes without reopening the stream', async () => {
     const f = fixture();
-    f.snapshots.set('stocks', async () => json([{ ...first, renamedId: 'alias' }]));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([{ ...first, renamedId: 'alias' }]));
     const view = render(f.tree(<f.Probe />));
     await f.open();
     const reads = f.server.fetch.mock.calls.length;
@@ -156,7 +156,7 @@ describe('observable result state on the real provider/client transport', () => 
     const f = fixture(), snapshot = deferred<Response>();
     render(f.tree(<f.Probe />));
     await f.open();
-    f.snapshots.set('stocks', () => snapshot.promise);
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => snapshot.promise);
     act(() => f.source().fail());
     expect(f.get()).toMatchObject({ status: 'reconnecting', stale: true, errorScope: 'connection' });
     expect(f.get().data).toHaveLength(1);
@@ -173,7 +173,7 @@ describe('observable result state on the real provider/client transport', () => 
     const f = fixture(), pending = deferred<Response>();
     render(f.tree(<f.Probe />));
     await f.open();
-    f.snapshots.set('stocks', () => pending.promise);
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => pending.promise);
     act(() => f.context().retry());
     expect(f.get()).toMatchObject({
       status: 'resynchronizing', stale: true, loading: false, data: [{ label: first.label, value: 1 }],
@@ -191,9 +191,9 @@ describe('observable result state on the real provider/client transport', () => 
 
   it('keeps transient query failure and explicit retry local while another query remains live', async () => {
     const f = fixture();
-    render(f.tree(<><f.Probe /><f.Probe name="second" queryId="other" /></>));
+    render(f.tree(<><f.Probe /><f.Probe name="second" queryId="e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481" /></>));
     await f.open();
-    f.snapshots.set('stocks', async () => failure(503));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => failure(503));
     act(() => f.get().retry());
     await flush();
     expect(f.get()).toMatchObject({
@@ -201,10 +201,10 @@ describe('observable result state on the real provider/client transport', () => 
       error: { code: 'SERVER_UNAVAILABLE' }, errorScope: 'query',
     });
     const pending = deferred<Response>();
-    f.snapshots.set('stocks', () => pending.promise);
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => pending.promise);
     act(() => f.get().retry());
     expect(f.get()).toMatchObject({ status: 'resynchronizing', stale: true });
-    f.emit([{ type: 'ADD', data: { ...second, value: 5 } }], 'other');
+    f.emit([{ type: 'ADD', data: { ...second, value: 5 } }], 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481');
     expect(f.get('second')).toMatchObject({ status: 'live', data: [{ label: second.label, value: 5 }], stale: false });
     pending.resolve(json([{ ...first, value: 9 }]));
     await flush();
@@ -215,18 +215,18 @@ describe('observable result state on the real provider/client transport', () => 
 
   it('isolates terminal query protocol errors and retries the selected query without recreating resources or sockets', async () => {
     const f = fixture();
-    render(f.tree(<><f.Probe /><f.Probe name="second" queryId="other" /></>));
+    render(f.tree(<><f.Probe /><f.Probe name="second" queryId="e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481" /></>));
     await f.open();
     f.emit([{ type: 'UPDATE', after: {} }]);
     expect(f.get()).toMatchObject({
-      status: 'terminal-error', stale: true, error: { code: 'INVALID_PAYLOAD', resourceId: 'stocks' }, errorScope: 'query',
+      status: 'terminal-error', stale: true, error: { code: 'INVALID_PAYLOAD', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }, errorScope: 'query',
     });
     expect(f.get('second').status).toBe('live');
     expect(f.context().error).toBeNull();
     expect(f.source().closed).toBe(false);
     f.emit([{ type: 'ADD', data: { ...first, value: 8 } }]);
     expect(f.get().data?.[0].value).toBe(1);
-    f.snapshots.set('stocks', async () => json([{ ...first, value: 8 }]));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([{ ...first, value: 8 }]));
     act(() => f.get().retry());
     await flush();
     expect(f.get()).toMatchObject({ status: 'live', data: [{ label: first.label, value: 8 }], error: null });
@@ -247,7 +247,7 @@ describe('observable result state on the real provider/client transport', () => 
   });
 
   it('keeps projection errors safe and reactive, retaining last-good values and the original typed error', async () => {
-    const f = fixture(), error = new DrasiError('RESULT_PROCESSING_FAILED', { resourceKind: 'query', resourceId: 'stocks' });
+    const f = fixture(), error = new DrasiError('RESULT_PROCESSING_FAILED', { resourceKind: 'query', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' });
     const view = render(f.tree(<f.Probe />));
     await f.open();
     const lastUpdate = f.get().lastUpdate, reads = f.server.fetch.mock.calls.length;
@@ -269,14 +269,14 @@ describe('observable result state on the real provider/client transport', () => 
   it('shows overflow/resynchronization, aborts stale reads, and does not cap the actual result set', async () => {
     const f = fixture({ reconciliation: { maxPendingChanges: 2 } }), pending = deferred<Response>();
     const many: ResultRow[] = Array.from({ length: 25 }, (_, i) => ({ asset: `rack-${i}`, label: 'row', value: i }));
-    f.snapshots.set('stocks', async () => json(many));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json(many));
     render(f.tree(<f.Probe />));
     await f.open();
     expect(f.get().data).toHaveLength(25);
-    f.snapshots.set('stocks', () => pending.promise);
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', () => pending.promise);
     act(() => f.get().retry());
     await flush();
-    const calls = f.server.fetch.mock.calls.filter(([url]) => String(url).endsWith('/stocks/results'));
+    const calls = f.server.fetch.mock.calls.filter(([url]) => String(url).endsWith('/b20c42ee-59a1-441f-a549-87a72be1f1e9/results'));
     const pendingSignal = calls[calls.length - 1][1]?.signal;
     f.emit([1, 2, 3].map(value => ({ type: 'ADD', data: { ...first, value } })));
     expect(pendingSignal?.aborted).toBe(true);
@@ -285,7 +285,7 @@ describe('observable result state on the real provider/client transport', () => 
     });
     expect(f.get().data).toHaveLength(25);
     pending.resolve(json([{ ...first, value: -100 }]));
-    f.snapshots.set('stocks', async () => json([...many, { ...first, value: 50 }]));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([...many, { ...first, value: 50 }]));
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(f.get()).toMatchObject({ status: 'live', error: null, stale: false });
     expect(f.get().data).toHaveLength(26);
@@ -309,7 +309,7 @@ describe('observable result state on the real provider/client transport', () => 
     expect(f.server.fetch).toHaveBeenCalledTimes(reads);
     f.emit([{ type: 'DELETE', data: { asset: first.asset } }]);
     expect(f.get().data).toEqual([]);
-    f.snapshots.set('stocks', async () => json([]));
+    f.snapshots.set('b20c42ee-59a1-441f-a549-87a72be1f1e9', async () => json([]));
     view.rerender(f.tree(children(true)));
     await flush();
     expect(f.get('second').data).toEqual([]);

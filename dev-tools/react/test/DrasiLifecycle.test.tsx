@@ -26,14 +26,16 @@ function fixture() {
     if (url.pathname.endsWith('/results')) return json([{ device: instance, query: id, value: 1 }]);
     if (kind === 'queries') return json(component('queries', id, queryConfig(id), 'Running', instance));
     return json(component('reactions', id, {
-      id, kind: 'sse', queries: ['stocks', 'other'], host: '0.0.0.0', port: 9999,
+      id, name: 'events', kind: 'sse',
+      queries: [{ id: 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }, { id: 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481' }],
+      host: '0.0.0.0', port: 9999,
       ssePath: '/events', heartbeatIntervalMs: 15000,
     }, 'Running', instance));
   });
   return { factory, fetcher };
 }
 
-function Probe({ observe, queryId = 'stocks' }: {
+function Probe({ observe, queryId = 'b20c42ee-59a1-441f-a549-87a72be1f1e9' }: {
   queryId?: string; observe?: (value: DrasiContextValue) => void;
 }) {
   const context = useDrasiClient(), query = useDrasiQuery(queryId, {
@@ -72,7 +74,7 @@ describe('real provider configuration and ownership', () => {
   it('preserves a single client/stream for equivalent inline objects, headers and query sets', async () => {
     const { factory, fetcher } = fixture(), observed = vi.fn<(context: DrasiContextValue) => void>();
     const tree = (reverse: boolean) => <DrasiProvider
-      {...refs} outputIds={reverse ? ['other', 'stocks'] : ['stocks', 'other']}
+      {...refs} outputIds={reverse ? ['e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481', 'b20c42ee-59a1-441f-a549-87a72be1f1e9'] : ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481']}
       reaction={{ ...refs.reaction }} reconnect={{ ...refs.reconnect }}
       headers={reverse ? [['x-scope', 'test'], ['accept', 'application/json']] : { Accept: 'application/json', 'X-Scope': 'test' }}
       fetch={fetcher} eventSourceFactory={factory.create}
@@ -81,7 +83,7 @@ describe('real provider configuration and ownership', () => {
     await waitFor(() => expect(factory.instances).toHaveLength(1));
     act(() => factory.instances[0].open());
     await waitFor(() => expect(screen.getByTestId('data').textContent).toContain(refs.instanceId));
-    await waitFor(() => expect(screen.getByTestId('definition').textContent).toBe('stocks'));
+    await waitFor(() => expect(screen.getByTestId('definition').textContent).toBe('b20c42ee-59a1-441f-a549-87a72be1f1e9'));
     const client = observed.mock.calls[observed.mock.calls.length - 1][0].client, reads = fetcher.mock.calls.length;
     for (let index = 0; index < 6; index++) view.rerender(tree(index % 2 === 0));
     expect(observed.mock.calls[observed.mock.calls.length - 1][0].client).toBe(client);
@@ -95,9 +97,9 @@ describe('real provider configuration and ownership', () => {
   it.each<[string, Partial<DrasiClientOptions>]>([
     ['server', { serverUrl: 'https://other.invalid' }],
     ['instance', { instanceId: 'other / tenant' }],
-    ['reaction', { reaction: { ...refs.reaction, id: 'other-stream' } }],
+    ['reaction', { reaction: { ...refs.reaction, id: 'cf923b8a-5ef7-4f94-9fb1-970b43954f32' } }],
     ['endpoint', { reaction: { ...refs.reaction, endpoint: 'https://events.invalid/other' } }],
-    ['query set', { outputIds: ['stocks', 'other'] }],
+    ['query set', { outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'] }],
     ['credentials', { credentials: 'include' }],
     ['headers', { headers: { Authorization: 'fixture-only' } }],
     ['timeout', { requestTimeoutMs: 20000 }],
@@ -126,7 +128,7 @@ describe('real provider configuration and ownership', () => {
       const reads = fetcher.mock.calls.length;
       act(() => {
         first.retry();
-        factory.instances[0].message({ queryId: 'stocks', data: [{ device: 'stale', value: 99 }] });
+        factory.instances[0].message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', data: [{ device: 'stale', value: 99 }] });
         factory.instances[0].fail();
         factory.instances[0].open();
       });
@@ -203,17 +205,17 @@ describe('real provider configuration and ownership', () => {
 
   it('scopes query/definition changes inside a shared provider without bouncing its stream', async () => {
     const { factory, fetcher } = fixture();
-    const tree = (queryId: string) => <DrasiProvider {...refs} outputIds={['stocks', 'other']}
+    const tree = (queryId: string) => <DrasiProvider {...refs} outputIds={['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481']}
       fetch={fetcher} eventSourceFactory={factory.create}><Probe queryId={queryId} /></DrasiProvider>;
-    const view = render(tree('stocks'));
+    const view = render(tree('b20c42ee-59a1-441f-a549-87a72be1f1e9'));
     await waitFor(() => expect(factory.instances).toHaveLength(1));
     act(() => factory.instances[0].open());
-    await waitFor(() => expect(screen.getByTestId('data').textContent).toContain('"query":"stocks"'));
-    view.rerender(tree('other'));
+    await waitFor(() => expect(screen.getByTestId('data').textContent).toContain('"query":"b20c42ee-59a1-441f-a549-87a72be1f1e9"'));
+    view.rerender(tree('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'));
     expect(screen.getByTestId('data').textContent).toBe('null');
-    await waitFor(() => expect(screen.getByTestId('definition').textContent).toBe('other'));
-    await waitFor(() => expect(screen.getByTestId('data').textContent).toContain('"query":"other"'));
-    act(() => factory.instances[0].message({ queryId: 'stocks', data: [{ device: 'old-query' }] }));
+    await waitFor(() => expect(screen.getByTestId('definition').textContent).toBe('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'));
+    await waitFor(() => expect(screen.getByTestId('data').textContent).toContain('"query":"e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481"'));
+    act(() => factory.instances[0].message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', data: [{ device: 'old-query' }] }));
     expect(screen.getByTestId('data').textContent).not.toContain('old-query');
     expect(factory.instances).toHaveLength(1);
     view.unmount();
@@ -240,7 +242,7 @@ describe('real provider configuration and ownership', () => {
   it('reports validating-transform failures safely and applies option changes to later batches without a resubscribe', async () => {
     const { factory, fetcher } = fixture();
     function Transform({ reject = false, scale = 1 }: { reject?: boolean; scale?: number }) {
-      const query = useDrasiQuery<{ device: string; value: number }>('stocks', {
+      const query = useDrasiQuery<{ device: string; value: number }>('b20c42ee-59a1-441f-a549-87a72be1f1e9', {
         getKey: row => String(row.device),
         transform: row => {
           if (reject || typeof row.device !== 'string' || typeof row.value !== 'number') {
@@ -262,7 +264,7 @@ describe('real provider configuration and ownership', () => {
     view.rerender(tree(false, 10));
     expect(screen.getByRole('status').textContent).toBe(`[{"device":"${refs.instanceId}","value":10}]`);
     act(() => factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { device: 'valid', value: 2 } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'ADD', data: { device: 'valid', value: 2 } }],
     }));
     expect(screen.getByRole('status').textContent)
       .toBe(`[{"device":"${refs.instanceId}","value":10},{"device":"valid","value":20}]`);
@@ -292,11 +294,11 @@ describe('real provider configuration and ownership', () => {
     const { factory, fetcher } = fixture(), read = fetcher.getMockImplementation()!;
     let failed = false;
     fetcher.mockImplementation((input, init) => {
-      if (String(input).endsWith('/stocks/results') && !failed) { failed = true; return Promise.resolve(failure(503)); }
+      if (String(input).endsWith('/b20c42ee-59a1-441f-a549-87a72be1f1e9/results') && !failed) { failed = true; return Promise.resolve(failure(503)); }
       return read(input, init);
     });
     const client = new DrasiClient({
-      ...refs, outputIds: ['stocks', 'other'], fetch: fetcher, eventSourceFactory: factory.create,
+      ...refs, outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481'], fetch: fetcher, eventSourceFactory: factory.create,
       reconnect: { maxReconnectAttempts: 1, initialReconnectDelayMs: 10 },
     });
     const connected = client.initialize();
@@ -304,8 +306,8 @@ describe('real provider configuration and ownership', () => {
     factory.instances[0].open();
     await connected;
     const first = vi.fn(), second = vi.fn(), errors = vi.fn();
-    client.subscribe('stocks', first, errors);
-    client.subscribe('other', second);
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', first, errors);
+    client.subscribe('e4ba7cee-4b9b-4b24-ad4e-a58f0e04d481', second);
     await vi.waitFor(() => expect(second).toHaveBeenCalledOnce());
     await vi.runAllTimersAsync();
     expect(errors).toHaveBeenCalledOnce();

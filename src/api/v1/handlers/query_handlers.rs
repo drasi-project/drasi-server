@@ -26,7 +26,9 @@ use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
-use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
+use crate::api::shared::{
+    ApiResponse, ComponentCreatedResponse, ComponentListItem, StatusResponse,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 
@@ -83,7 +85,7 @@ pub async fn create_query(
     Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     ConfigBody(config): ConfigBody<QueryConfigDto>,
-) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+) -> Result<Json<ApiResponse<ComponentCreatedResponse>>, ErrorResponse> {
     let core = registry
         .get(&instance_id)
         .await
@@ -94,6 +96,39 @@ pub async fn create_query(
         Extension(config_persistence),
         Extension(instance_id),
         Extension(plugins),
+        ConfigBody(config),
+    )
+    .await
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/instances/{instanceId}/queries/{id}",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Immutable query UUID")
+    ),
+    request_body = QueryConfigDto,
+    responses(
+        (status = 200, description = "Query updated", body = ApiResponse),
+        (status = 400, description = "Invalid query or identity change", body = ErrorResponse),
+        (status = 404, description = "Query not found", body = ErrorResponse)
+    ),
+    tag = "Queries"
+)]
+pub async fn update_query_handler(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+    ConfigBody(config): ConfigBody<QueryConfigDto>,
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+    let core = shared::get_instance_or_error(&registry, &instance_id).await?;
+    shared::update_query_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Path(id),
         ConfigBody(config),
     )
     .await

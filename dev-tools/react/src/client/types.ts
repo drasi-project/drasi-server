@@ -114,13 +114,13 @@ export interface ConnectionStatus {
   lastConnected?: Date;
 }
 
-/**
- * Expanded query input as serialized by the v1 full-view query endpoint. The server
- * omits `port`, `nodes`, `relations` and `pipeline` when they are unset or empty.
- */
+/** Strings are names, including UUID-shaped strings. Only an object selects a UUID. */
+export type ComponentReference = string | { readonly id: string };
+
+/** Expanded input; the server omits unset/empty port and filter fields. */
 export interface QueryInputObject {
-  /** Upstream component: a source, another query or a transformer. */
-  readonly component: string;
+  /** A name or an explicit UUID reference. Bound inputs retain UUIDs across rename. */
+  readonly component: ComponentReference;
   /** Output port; absent means the component's primary (or only) output. */
   readonly port?: string;
   readonly nodes?: readonly string[];
@@ -129,7 +129,7 @@ export interface QueryInputObject {
 }
 
 /** A bare upstream component name (its primary output) or an expanded input object. */
-export type QueryInput = string | QueryInputObject;
+export type QueryInput = ComponentReference | QueryInputObject;
 
 /** Result publication options. The label never changes the output schema. */
 export interface QueryResultOptions {
@@ -158,6 +158,7 @@ export type QueryLanguage = 'Cypher' | 'GQL';
 /** Complete v1 query definition READ, not a query creation request. No defaults are selected. */
 export interface QueryConfig {
   readonly id: string;
+  readonly name: string;
   readonly autoStart: boolean;
   readonly query: string;
   readonly queryLanguage: QueryLanguage;
@@ -178,8 +179,9 @@ export interface QueryConfig {
 /** Read-only full-view reaction. Plugin properties are flattened by the server. */
 export interface ReactionConfig {
   readonly id: string;
+  readonly name: string;
   readonly kind: string;
-  readonly queries: readonly string[];
+  readonly queries: readonly ComponentReference[];
   readonly [property: string]: JsonValue | undefined;
 }
 
@@ -194,7 +196,7 @@ export interface SseReactionConfig extends ReactionConfig {
 
 export type ComponentStatus =
   | 'Starting' | 'Running' | 'Stopping' | 'Stopped'
-  | 'Error' | 'Reconfiguring' | 'Added' | 'Removed';
+  | 'Error' | 'Reconfiguring' | 'Added' | 'Removed' | 'Failed' | 'TerminalError' | 'Unknown';
 
 export interface ComponentLinks {
   readonly self: string;
@@ -204,13 +206,14 @@ export interface ComponentLinks {
 /** Full-view v1 component DTO. Links are validated against the requested instance/resource. */
 export interface Component<T> {
   readonly id: string;
+  readonly name: string;
   readonly status: ComponentStatus;
-  readonly error_message?: string;
+  readonly errorMessage?: string;
   readonly links: ComponentLinks;
   readonly config: T;
 }
 
-/** Existing SSE reaction reference, not a deployment definition. */
+/** Existing SSE reaction UUID, not a name or a deployment definition. */
 export interface ReactionReference {
   readonly id: string;
   /** Absolute browser-reachable HTTP(S) URL. Path/query trailing slashes are significant and preserved. */

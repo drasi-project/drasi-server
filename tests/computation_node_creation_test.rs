@@ -94,12 +94,12 @@ impl Source for ProbedSource {
         self.auto_start
     }
 
-    async fn initialize(&self, context: SourceRuntimeContext) {
+    async fn bind_runtime_context(&self, context: SourceRuntimeContext) {
         self.probe.initializations.fetch_add(1, Ordering::SeqCst);
         if self.properties.get("blockInitialization") == Some(&Value::Bool(true)) {
             self.probe.initialization_gate.notified().await;
         }
-        self.inner.initialize(context).await;
+        self.inner.bind_runtime_context(context).await;
     }
 
     async fn start(&self) -> anyhow::Result<()> {
@@ -197,11 +197,11 @@ impl Reaction for ProbedReaction {
         self.auto_start
     }
 
-    async fn initialize(&self, context: ReactionRuntimeContext) {
+    async fn bind_runtime_context(&self, context: ReactionRuntimeContext) {
         if self.properties.get("blockInitialization") == Some(&Value::Bool(true)) {
             self.probe.initialization_gate.notified().await;
         }
-        self.inner.initialize(context).await;
+        self.inner.bind_runtime_context(context).await;
     }
 
     async fn start(&self) -> anyhow::Result<()> {

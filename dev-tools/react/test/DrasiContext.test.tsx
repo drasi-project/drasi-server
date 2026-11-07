@@ -17,9 +17,9 @@ import { ReadServer, failure, refs } from './server';
 function Probe({ observe = () => {} }: { observe?: (errors: (DrasiError | null | undefined)[]) => void }) {
   const context = useDrasiClient();
   const connection = useDrasiConnectionStatus();
-  const definition = useDrasiQueryDefinition('stocks');
+  const definition = useDrasiQueryDefinition('b20c42ee-59a1-441f-a549-87a72be1f1e9');
   const ui = useDrasiServerUiUrl();
-  const query = useDrasiQuery<{ id: string; value: number }>('stocks', {
+  const query = useDrasiQuery<{ id: string; value: number }>('b20c42ee-59a1-441f-a549-87a72be1f1e9', {
     getKey: row => {
       if (typeof row.id !== 'string') throw new Error('Expected raw row ID');
       return row.id;
@@ -107,7 +107,7 @@ describe('typed failures through all React bindings', () => {
     await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[{"id":"A","value":10}]'));
     expect(screen.getByTestId('ui').textContent).toContain(encodeURIComponent(refs.instanceId));
     act(() => factory.instances[0].message({
-      queryId: 'stocks', timestamp: 1, results: [{ type: 'DELETE', data: { id: 'A' } }],
+      queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', timestamp: 1, results: [{ type: 'DELETE', data: { id: 'A' } }],
     }));
     await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[]'));
     act(() => factory.instances[0].onmessage?.(new MessageEvent('message', { data: 'broken json' })));
@@ -115,7 +115,7 @@ describe('typed failures through all React bindings', () => {
     const errors = observe.mock.calls[observe.mock.calls.length - 1][0];
     expect(errors.every((error: unknown) => error === errors[0])).toBe(true);
     expect(errors[0]).toMatchObject({
-      code: 'INVALID_PAYLOAD', instanceId: refs.instanceId, resourceKind: 'reaction', resourceId: 'stream',
+      code: 'INVALID_PAYLOAD', instanceId: refs.instanceId, resourceKind: 'reaction', resourceId: 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d',
     });
     expect(factory.instances[0].closed).toBe(true);
   });

@@ -17,13 +17,13 @@ import type { OutputDelta, ResultRow } from '../src/client/types';
 import { DrasiProvider, useDrasiClient, useDrasiQuery } from '../src/react/DrasiContext';
 import type { UseDrasiQueryResult } from '../src/react/types';
 import { fakeEventSourceFactory } from './FakeEventSource';
-import { ReadServer, deferred, refs } from './server';
+import { ReadServer, deferred, refs, ids } from './server';
 
 const id = (key: string, namespace = 'db') => ({ namespace, id: key });
 const add = (key: string, after: ResultRow, namespace = 'db') =>
   ({ operation: 'ADD', identity: id(key, namespace), after });
 const context = { receivedAt: 1 };
-const out = (alias: string) => ({ alias, component: alias, port: 'out' });
+const out = (alias: string) => ({ alias, component: ids.stocks, port: 'out' });
 const delta = (changes: unknown[], alias = 'db'): OutputDelta => {
   const [result] = nativeGraphResultAdapter(
     { output: out(alias), sequence: 1, publishedAt: 1, changes }, context,
@@ -136,7 +136,7 @@ describe('standard graph changes from any producer', () => {
 
   it('maps a native frame to a delta keyed by its output alias and rejects query-shaped frames', () => {
     const [result] = nativeGraphResultAdapter({
-      output: { alias: 'db', component: 'facilities-db', port: 'errors' },
+      output: { alias: 'db', component: ids.stocks, port: 'errors' },
       sequence: 4, publishedAt: 12, changes: [add('a', { v: 1 })],
     }, context);
     expect(result).toMatchObject({ kind: 'delta', outputId: 'db', sourceTimestamp: 12 });
@@ -153,6 +153,7 @@ describe('standard graph changes from any producer', () => {
       { ...frame, publishedAt: -1 },
       { ...frame, changes: [{ type: 'ADD', data: {} }] },
       { ...frame, output: { alias: 'db', component: 'db' } },
+      { ...frame, output: { alias: 'db', component: 'facilities-db', port: 'out' } },
       { ...frame, output: { ...out('db'), extra: 1 } },
       { ...frame, output: out('') },
       { type: 'heartbeat', ts: 5, output: undefined, extra: 1 },
@@ -216,7 +217,7 @@ describe('graph row state through the real provider, client and stream', () => {
     let observed: UseDrasiQueryResult<ResultRow> | undefined;
     let client: ReturnType<typeof useDrasiClient>['client'] = null;
     function Probe() {
-      observed = useDrasiQuery<ResultRow>('stocks', { getKey: graphRowKey, transform: row => ({ ...row }) });
+      observed = useDrasiQuery<ResultRow>('b20c42ee-59a1-441f-a549-87a72be1f1e9', { getKey: graphRowKey, transform: row => ({ ...row }) });
       client = useDrasiClient().client;
       return null;
     }
@@ -228,7 +229,7 @@ describe('graph row state through the real provider, client and stream', () => {
     ><Probe /></DrasiProvider>;
     const source = () => factory.instances[factory.instances.length - 1];
     const emit = (changes: unknown[]) =>
-      act(() => source().message({ output: out('stocks'), sequence: 1, publishedAt: 1, changes }));
+      act(() => source().message({ output: out('b20c42ee-59a1-441f-a549-87a72be1f1e9'), sequence: 1, publishedAt: 1, changes }));
     return {
       tree, emit, source, get: () => observed!, client: () => client, calls: () => snapshotCalls,
       setSnapshot: (next: () => Promise<Response>) => { snapshot = next; },

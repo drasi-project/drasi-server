@@ -88,26 +88,28 @@ mod api_query_joins_tests {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
-        async fn initialize(&self, _context: SourceRuntimeContext) {}
+        async fn bind_runtime_context(&self, _context: SourceRuntimeContext) {}
     }
 
     async fn create_test_environment() -> (Arc<DrasiLib>, Arc<bool>, Option<Arc<ConfigPersistence>>)
     {
         // Register stub sources for all sources referenced by queries in these tests.
         // Supply each referenced source before starting dependent queries.
-        let core = crate::query_test_support::builder()
-            .with_id("test-server")
-            .with_source(StubSource::new("source1"))
-            .with_source(StubSource::new("source2"))
-            .with_source(StubSource::new("vehicles"))
-            .with_source(StubSource::new("drivers"))
-            .with_source(StubSource::new("orders"))
-            .with_source(StubSource::new("restaurants"))
-            .with_source(StubSource::new("products"))
-            .with_source(StubSource::new("categories"))
-            .build()
-            .await
-            .expect("Failed to build test core");
+        let mut builder = crate::query_test_support::builder().with_id("test-server");
+        for name in [
+            "source1",
+            "source2",
+            "vehicles",
+            "drivers",
+            "orders",
+            "restaurants",
+            "products",
+            "categories",
+        ] {
+            builder =
+                builder.with_source_factory(name, false, |id| Ok(StubSource::new(id.as_str())));
+        }
+        let core = builder.build().await.expect("Failed to build test core");
 
         let core = Arc::new(core);
 
@@ -125,6 +127,7 @@ mod api_query_joins_tests {
         use crate::api::models::query::QueryResultConfigDto;
 
         QueryConfigDto {
+            name: config.name,
             id: config.id,
             auto_start: config.auto_start,
             query: config.query,
@@ -172,7 +175,8 @@ mod api_query_joins_tests {
             .from_input("drivers")
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -190,6 +194,7 @@ mod api_query_joins_tests {
         // Response should be successful
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], true);
+        core.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -232,7 +237,7 @@ mod api_query_joins_tests {
             .from_input("drivers")
             .auto_start(false)
             .with_joins(vec![restaurant_join.clone(), driver_join.clone()])
-            .build();
+            .build().unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -250,6 +255,7 @@ mod api_query_joins_tests {
         // Response should be successful
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], true);
+        core.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -261,7 +267,8 @@ mod api_query_joins_tests {
             .query("MATCH (n:Node) RETURN n")
             .from_input("source1")
             .auto_start(false)
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -279,6 +286,7 @@ mod api_query_joins_tests {
         // Response should be successful
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], true);
+        core.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -291,7 +299,8 @@ mod api_query_joins_tests {
             .from_input("source1")
             .auto_start(false)
             .with_joins(vec![]) // Empty joins array
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -309,6 +318,7 @@ mod api_query_joins_tests {
         // Response should be successful
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], true);
+        core.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -336,10 +346,11 @@ mod api_query_joins_tests {
             .from_input("categories")
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
-            .build();
+            .build()
+            .unwrap();
 
         // Create the query
-        let _ = create_query(
+        let created = create_query(
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence.clone()),
@@ -349,6 +360,7 @@ mod api_query_joins_tests {
         )
         .await
         .unwrap();
+        let query_id = created.0.data.as_ref().unwrap().id.clone();
 
         // Call the get_query API handler
         let get_result = get_query(
@@ -359,7 +371,7 @@ mod api_query_joins_tests {
                 "/api/v1".to_string(),
             )),
             axum::extract::Query(ComponentViewQuery::new(Some("full".to_string()))),
-            axum::extract::Path("product-category-query".to_string()),
+            axum::extract::Path(query_id.clone()),
         )
         .await;
 
@@ -373,7 +385,8 @@ mod api_query_joins_tests {
 
         let data = &json_response["data"];
         // The structure is data.id, data.config.query, data.config.sources, data.config.joins
-        assert_eq!(data["id"], "product-category-query");
+        assert_eq!(data["id"], query_id);
+        assert_eq!(data["name"], "product-category-query");
         let joins_value = data["config"]["joins"].clone();
         let joins = if joins_value.is_array() {
             joins_value.as_array().unwrap().clone()
@@ -386,6 +399,7 @@ mod api_query_joins_tests {
         assert!(!joins.is_empty());
         assert_eq!(joins.len(), 1);
         assert_eq!(joins[0]["id"], "PRODUCT_CATEGORY");
+        core.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -411,13 +425,15 @@ mod api_query_joins_tests {
             .from_input("source2")
             .auto_start(true)
             .with_joins(vec![join_config])
-            .build();
+            .build()
+            .unwrap();
 
         // Serialize to JSON
         let json = serde_json::to_value(&query_config).unwrap();
 
         // Verify JSON structure
-        assert_eq!(json["id"], "test-query");
+        assert_eq!(json["name"], "test-query");
+        assert!(query_config.id.is_none());
         assert_eq!(
             json["query"],
             "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b"
@@ -469,7 +485,8 @@ mod api_query_joins_tests {
             .from_input("source1")
             .auto_start(false)
             .with_joins(vec![join_config])
-            .build();
+            .build()
+            .unwrap();
 
         // Try to create query in read-only mode
         let result = create_query(
@@ -489,5 +506,6 @@ mod api_query_joins_tests {
         // Should fail due to read-only mode
         assert_eq!(err.code, error_codes::CONFIG_READ_ONLY);
         assert!(err.message.contains("read-only mode"));
+        core.shutdown().await.unwrap();
     }
 }

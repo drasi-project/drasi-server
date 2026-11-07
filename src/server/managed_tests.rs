@@ -154,7 +154,7 @@ async fn generated_id_never_selects_the_first_of_multiple_stored_instances() -> 
         .await?;
     for id in ["first", "second"] {
         provider
-            .initialize_if_absent(id, "initial", &DesiredInstance::default())
+            .initialize_if_absent_with(id, "initial", || Ok(DesiredInstance::default()))
             .await?;
     }
     let error = stores.resolve_instance_ids(&mut config).await.unwrap_err();

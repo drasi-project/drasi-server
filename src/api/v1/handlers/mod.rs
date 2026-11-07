@@ -18,15 +18,21 @@
 //! path annotations for OpenAPI documentation. The actual business logic
 //! is implemented in the shared handlers module.
 
+mod component_handlers;
 mod computation_handlers;
 mod management_handlers;
+mod managed_ordinary_handlers;
+mod configuration_snapshot_handlers;
 mod query_handlers;
 mod reaction_handlers;
 mod solution_handlers;
 mod source_handlers;
 
+pub use component_handlers::*;
 pub use computation_handlers::*;
 pub use management_handlers::*;
+pub use managed_ordinary_handlers::*;
+pub use configuration_snapshot_handlers::*;
 pub use query_handlers::*;
 pub use reaction_handlers::*;
 pub use solution_handlers::*;
@@ -170,6 +176,7 @@ pub async fn get_instance_runtime(
     Ok(Json(ApiResponse::success(
         crate::api::shared::InstanceRuntimeInfo {
             instance_id,
+            allow_external_component_ids: core.allow_external_component_ids(),
             runtime: "computationGraph",
             running: core.is_running().await,
         },

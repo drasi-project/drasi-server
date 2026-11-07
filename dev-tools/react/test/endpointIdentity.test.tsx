@@ -27,7 +27,7 @@ const endpoints = [
 
 function Probe({ observe }: { observe: (context: DrasiContextValue) => void }) {
   const context = useDrasiClient();
-  const query = useDrasiQuery('stocks', {
+  const query = useDrasiQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9', {
     getKey: row => typeof row.id === 'string' ? row.id : '',
     transform: row => row,
   });
@@ -79,7 +79,7 @@ describe('explicit endpoint identity', () => {
     for (const serverUrl of [first, second]) {
       const client = new DrasiClient({ ...options, serverUrl, fetch: fetcher, eventSourceFactory: factory.create });
       clients.push(client);
-      expect((await client.getQueryConfig('stocks')).id).toBe('stocks');
+      expect((await client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')).id).toBe('b20c42ee-59a1-441f-a549-87a72be1f1e9');
       expect(client.getServerUiUrl()).toBe(`${first}/ui?instance=${encodeURIComponent(refs.instanceId)}`);
     }
   });
@@ -131,7 +131,7 @@ describe('explicit endpoint identity', () => {
     await waitFor(() => expect(screen.getByTestId('ready').textContent).toBe('true'));
     await waitFor(() => expect(screen.getByTestId('rows').textContent).toContain('"id":"A"'));
     expect(observe.mock.calls[observe.mock.calls.length - 1][0].client).not.toBe(first);
-    act(() => factory.instances[0].message({ queryId: 'stocks', data: [{ id: 'stale-endpoint' }] }));
+    act(() => factory.instances[0].message({ queryId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', data: [{ id: 'stale-endpoint' }] }));
     expect(screen.getByTestId('rows').textContent).not.toContain('stale-endpoint');
     const reads = server.fetch.mock.calls.length;
     view.rerender(tree(endpoint));

@@ -73,40 +73,40 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
       const text = content.toString();
       const docs: any[] = yaml.loadAll(text);
 
-      for (const qry of docs.filter((x) => !!x && x.kind === 'Query' && x.id)) {
-        const line = findResourceLine(text, 'Query', qry.id);
+      for (const qry of docs.filter((x) => !!x && x.kind === 'Query' && x.name)) {
+        const line = findResourceLine(text, 'Query', qry.name);
         result.push(new QueryNode(qry, element.resourceUri, line));
       }
 
-      for (const resource of docs.filter((x) => !!x && x.kind === 'Source' && x.id)) {
-        const line = findResourceLine(text, 'Source', resource.id);
+      for (const resource of docs.filter((x) => !!x && x.kind === 'Source' && x.name)) {
+        const line = findResourceLine(text, 'Source', resource.name);
         result.push(new SourceNode(resource, element.resourceUri, line));
       }
 
-      for (const resource of docs.filter((x) => !!x && x.kind === 'Reaction' && x.id)) {
-        const line = findResourceLine(text, 'Reaction', resource.id);
+      for (const resource of docs.filter((x) => !!x && x.kind === 'Reaction' && x.name)) {
+        const line = findResourceLine(text, 'Reaction', resource.name);
         result.push(new ReactionNode(resource, element.resourceUri, line));
       }
 
       const instanceConfigs = docs.flatMap((doc) => Array.isArray(doc?.instances) ? doc.instances : []);
       for (const configDoc of instanceConfigs) {
         for (const qry of (configDoc.queries ?? [])) {
-          if (qry?.id) {
-            const line = findNestedResourceLine(text, 'queries', qry.id);
+          if (qry?.name) {
+            const line = findNestedResourceLine(text, 'queries', qry.name);
             result.push(new QueryNode(qry, element.resourceUri, line));
           }
         }
 
         for (const resource of (configDoc.sources ?? [])) {
-          if (resource?.id) {
-            const line = findNestedResourceLine(text, 'sources', resource.id);
+          if (resource?.name) {
+            const line = findNestedResourceLine(text, 'sources', resource.name);
             result.push(new SourceNode(resource, element.resourceUri, line));
           }
         }
 
         for (const resource of (configDoc.reactions ?? [])) {
-          if (resource?.id) {
-            const line = findNestedResourceLine(text, 'reactions', resource.id);
+          if (resource?.name) {
+            const line = findNestedResourceLine(text, 'reactions', resource.name);
             result.push(new ReactionNode(resource, element.resourceUri, line));
           }
         }
@@ -136,7 +136,7 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Are you sure you want to apply ${resourceNode.resource.id}?`,
+      `Are you sure you want to apply ${resourceNode.resource.name}?`,
       'Yes',
       'No'
     );
@@ -146,14 +146,14 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
     }
 
     await vscode.window.withProgress({
-      title: `Applying ${resourceNode.resource.id}`,
+      title: `Applying ${resourceNode.resource.name}`,
       location: vscode.ProgressLocation.Notification,
     }, async (progress) => {
       progress.report({ message: 'Applying...' });
 
       try {
         await applyResourceByType(this.drasiClient, resourceNode);
-        vscode.window.showInformationMessage(`Resource ${resourceNode.resource.id} applied successfully`);
+        vscode.window.showInformationMessage(`Resource ${resourceNode.resource.name} applied successfully`);
       } catch (err) {
         vscode.window.showErrorMessage(`Error applying resource: ${err}`);
       }
@@ -173,7 +173,7 @@ abstract class ResourceNode extends ExplorerNode {
   line?: number;
 
   constructor(resourceType: 'Source' | 'Query' | 'Reaction', resource: any, fileUri: vscode.Uri, line?: number) {
-    super(resource.id, vscode.TreeItemCollapsibleState.None);
+    super(resource.name, vscode.TreeItemCollapsibleState.None);
     this.resourceType = resourceType;
     this.resource = resource;
     this.fileUri = fileUri;
@@ -196,7 +196,7 @@ class QueryNode extends ResourceNode {
   constructor(query: any, fileUri: vscode.Uri, line?: number) {
     super('Query', query, fileUri, line);
     this.iconPath = new vscode.ThemeIcon('code');
-    this.label = query.id;
+    this.label = query.name;
     this.command = {
       command: 'workspace.resource.goto',
       title: 'Go to resource',
@@ -211,7 +211,7 @@ class SourceNode extends ResourceNode {
   constructor(resource: any, fileUri: vscode.Uri, line?: number) {
     super('Source', resource, fileUri, line);
     this.iconPath = new vscode.ThemeIcon('database');
-    this.label = resource.id;
+    this.label = resource.name;
     this.command = {
       command: 'workspace.resource.goto',
       title: 'Go to resource',
@@ -226,7 +226,7 @@ class ReactionNode extends ResourceNode {
   constructor(resource: any, fileUri: vscode.Uri, line?: number) {
     super('Reaction', resource, fileUri, line);
     this.iconPath = new vscode.ThemeIcon('zap');
-    this.label = resource.id;
+    this.label = resource.name;
     this.command = {
       command: 'workspace.resource.goto',
       title: 'Go to resource',
@@ -236,14 +236,13 @@ class ReactionNode extends ResourceNode {
 }
 
 /**
- * Find the line number of a top-level resource (kind: Type with id: resourceId)
+ * Find the line number of a named top-level resource.
  */
 function findResourceLine(text: string, kind: string, resourceId: string): number {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Look for "id: resourceId" and verify it's the right kind by checking nearby lines
-    if (line.match(new RegExp(`^\\s*id:\\s*['"]?${escapeRegex(resourceId)}['"]?\\s*$`))) {
+    if (line.match(new RegExp(`^\\s*name:\\s*['"]?${escapeRegex(resourceId)}['"]?\\s*$`))) {
       // Check if this is preceded by "kind: Type" within a few lines
       for (let j = Math.max(0, i - 5); j < i; j++) {
         if (lines[j].match(new RegExp(`^\\s*kind:\\s*['"]?${kind}['"]?\\s*$`))) {
@@ -277,8 +276,7 @@ function findNestedResourceLine(text: string, section: string, resourceId: strin
     }
     
     if (inSection) {
-      // Look for "- id: resourceId" or "id: resourceId" in the section
-      if (line.match(new RegExp(`^\\s*-?\\s*id:\\s*['"]?${escapeRegex(resourceId)}['"]?\\s*$`))) {
+      if (line.match(new RegExp(`^\\s*-?\\s*name:\\s*['"]?${escapeRegex(resourceId)}['"]?\\s*$`))) {
         // Find the start of this list item (the line with "- ")
         for (let j = i; j >= 0; j--) {
           if (lines[j].match(/^\s*-\s/)) {

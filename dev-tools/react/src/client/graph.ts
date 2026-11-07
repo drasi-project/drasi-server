@@ -4,7 +4,7 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { DrasiError, type DrasiErrorDetails } from './errors';
-import { isIdentifier, isRecord } from './resources';
+import { isComponentId, isIdentifier, isRecord } from './resources';
 import type {
   ElementIdentity, GraphResultChange, OutputDelta, ResultAdapter, ResultAdapterContext, ResultChange,
   ResultRow, RowKey,
@@ -177,7 +177,7 @@ export const nativeGraphResultAdapter: ResultAdapter = (payload, context: Result
     return [];
   }
   const output = payload.output;
-  if (!isRecord(output) || !isIdentifier(output.alias) || !isIdentifier(output.component) ||
+  if (!isRecord(output) || !isIdentifier(output.alias) || !isComponentId(output.component) ||
       !isIdentifier(output.port) || Object.keys(output).length !== 3) {
     return invalid(context);
   }

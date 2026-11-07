@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useReactFlow, useStore, type Viewport } from "@xyflow/react";
 
-const STORAGE_PREFIX = "drasi-canvas-";
+const STORAGE_PREFIX = "drasi-uuid-canvas-";
 const DEBOUNCE_MS = 500;
 
 interface PersistedState {

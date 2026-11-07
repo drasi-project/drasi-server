@@ -36,6 +36,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     vscode.commands.registerCommand('drasi.connection.add', this.addConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.use', this.useConnection.bind(this));
     vscode.commands.registerCommand('drasi.resource.viewConfig', this.viewConfig.bind(this));
+    vscode.commands.registerCommand('drasi.resource.rename', this.renameResource.bind(this));
   }
 
   refresh(): void {
@@ -126,7 +127,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Are you sure you want to delete ${resourceNode.component.id}?`,
+      `Are you sure you want to delete ${resourceNode.component.name} (${resourceNode.component.id})?`,
       'Yes',
       'No'
     );
@@ -136,19 +137,36 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
 
     await vscode.window.withProgress({
-      title: `Deleting ${resourceNode.component.id}`,
+      title: `Deleting ${resourceNode.component.name}`,
       location: vscode.ProgressLocation.Notification,
     }, async (progress) => {
       progress.report({ message: 'Deleting...' });
 
       try {
         await deleteByKind(this.drasiClient, resourceNode.kind, resourceNode.component.id);
-        vscode.window.showInformationMessage(`Resource ${resourceNode.component.id} deleted`);
+        vscode.window.showInformationMessage(`Resource ${resourceNode.component.name} deleted`);
       } catch (err) {
         vscode.window.showErrorMessage(`Error deleting resource: ${err}`);
       }
     });
     this.refresh();
+  }
+
+  async renameResource(resourceNode: ResourceNode) {
+    if (!resourceNode) return;
+    const name = await vscode.window.showInputBox({
+      prompt: 'New component name (the UUID will not change)',
+      value: resourceNode.component.name,
+      validateInput: (value) => !value || /[\s\p{Cc}]/u.test(value)
+        ? 'Enter a nonempty name without whitespace or control characters' : undefined,
+    });
+    if (name === undefined || name === resourceNode.component.name) return;
+    try {
+      await this.drasiClient.renameComponent(resourceNode.component.id, name);
+      this.refresh();
+    } catch (error) {
+      vscode.window.showErrorMessage(`Could not rename component: ${error}`);
+    }
   }
 
   async startSource(resourceNode: SourceNode) {
@@ -271,7 +289,13 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }, async () => {
       try {
         const config = await this.fetchConfig(resourceNode);
-        const yaml = this.toYaml(config);
+        const yaml = this.toYaml({
+          apiVersion: 'drasi.io/v1',
+          kind: { source: 'Source', query: 'Query', reaction: 'Reaction' }[resourceNode.kind],
+          id: config.id,
+          name: config.name,
+          spec: config,
+        });
         const doc = await vscode.workspace.openTextDocument({
           content: yaml,
           language: 'yaml',
@@ -369,6 +393,12 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
     const persistIndex = persistIndexChoice.startsWith('Yes');
 
+    const identityPolicy = await vscode.window.showQuickPick(
+      ['Reject external component IDs (default)', 'Allow caller-assigned UUIDs'],
+      { placeHolder: 'Component ID policy (immutable until the instance is recreated)' }
+    );
+    if (identityPolicy === undefined) return;
+
     // Ask about priority queue capacity (optional)
     const priorityQueueCapacityStr = await vscode.window.showInputBox({
       prompt: 'Default priority queue capacity (leave empty for default)',
@@ -403,6 +433,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
 
     const request = {
       id,
+      allowExternalComponentIds: identityPolicy === 'Allow caller-assigned UUIDs',
       persistIndex: persistIndex || undefined,
       defaultPriorityQueueCapacity: priorityQueueCapacityStr ? parseInt(priorityQueueCapacityStr, 10) : undefined,
       defaultDispatchBufferCapacity: dispatchBufferCapacityStr ? parseInt(dispatchBufferCapacityStr, 10) : undefined,
@@ -649,14 +680,15 @@ class ResourceNode extends ExplorerNode {
   instance: InstanceListItem;
 
   constructor(kind: 'source' | 'query' | 'reaction', component: ComponentListItem, instance: InstanceListItem) {
-    super(component.id, vscode.TreeItemCollapsibleState.None);
+    super(component.name, vscode.TreeItemCollapsibleState.None);
     this.kind = kind;
     this.component = component;
     this.instance = instance;
     this.description = component.status;
-    if (component.error_message) {
-      this.tooltip = component.error_message;
-    }
+    this.id = `${instance.id}/${component.id}`;
+    this.tooltip = component.errorMessage
+      ? `${component.name}\n${component.id}\n${component.errorMessage}`
+      : `${component.name}\n${component.id}`;
   }
 }
 

@@ -52,7 +52,7 @@ pub fn validate_component_configs(
             if !errors.is_empty() {
                 reports.push(ComponentValidationReport {
                     component_type: "source".to_string(),
-                    component_id: src.id.clone(),
+                    component_name: src.name.clone(),
                     plugin_kind: src.kind.clone(),
                     errors,
                 });
@@ -69,7 +69,7 @@ pub fn validate_component_configs(
                 if !errors.is_empty() {
                     reports.push(ComponentValidationReport {
                         component_type: "bootstrap".to_string(),
-                        component_id: format!("{} bootstrapProvider", src.id),
+                        component_name: format!("{} bootstrapProvider", src.name),
                         plugin_kind: bp.kind.clone(),
                         errors,
                     });
@@ -86,7 +86,7 @@ pub fn validate_component_configs(
             if !errors.is_empty() {
                 reports.push(ComponentValidationReport {
                     component_type: "reaction".to_string(),
-                    component_id: rxn.id.clone(),
+                    component_name: rxn.name.clone(),
                     plugin_kind: rxn.kind.clone(),
                     errors,
                 });
@@ -103,7 +103,7 @@ pub fn validate_component_configs(
             if !errors.is_empty() {
                 reports.push(ComponentValidationReport {
                     component_type: "bootstrap".to_string(),
-                    component_id: format!("bootstrapProvider '{}'", bp.id()),
+                    component_name: format!("bootstrapProvider '{}'", bp.id()),
                     plugin_kind: bp.kind().to_string(),
                     errors,
                 });
@@ -417,7 +417,8 @@ mod tests {
     fn source(kind: &str, id: &str) -> SourceConfig {
         SourceConfig {
             kind: kind.to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: None,
             identity_provider: None,
@@ -495,7 +496,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -517,7 +519,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -531,7 +534,7 @@ mod tests {
 
         let reports = validate_component_configs(&config, &registry);
         assert_eq!(reports.len(), 1);
-        assert_eq!(reports[0].component_id, "pg1");
+        assert_eq!(reports[0].component_name, "pg1");
         assert!(!reports[0].errors.is_empty());
         assert!(reports[0]
             .errors
@@ -545,7 +548,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -569,7 +573,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -592,7 +597,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 bootstrap_provider: None,
                 identity_provider: None,
@@ -630,7 +636,8 @@ mod tests {
             vec![],
             vec![ReactionConfig {
                 kind: "log".to_string(),
-                id: "log1".to_string(),
+                name: "log1".to_string(),
+                id: None,
                 queries: vec![],
                 auto_start: true,
                 identity_provider: None,
@@ -651,7 +658,8 @@ mod tests {
             vec![],
             vec![ReactionConfig {
                 kind: "log".to_string(),
-                id: "log1".to_string(),
+                name: "log1".to_string(),
+                id: None,
                 queries: vec![],
                 auto_start: true,
                 identity_provider: None,
@@ -672,7 +680,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -699,7 +708,8 @@ mod tests {
         let config = config_with(
             vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "pg1".to_string(),
+                name: "pg1".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -741,7 +751,7 @@ mod tests {
         }));
         let source: SourceConfig = serde_json::from_value(serde_json::json!({
             "kind": "postgres",
-            "id": "owner",
+            "name": "owner",
             "host": "localhost",
             "database": "example",
             "bootstrapProvider": {"kind": "postgres"}
@@ -771,7 +781,7 @@ mod tests {
             serde_json::json!({"kind": "postgres", "host": "different-server"}),
         ] {
             let source: SourceConfig = serde_json::from_value(serde_json::json!({
-                "kind": "postgres", "id": "owner",
+                "kind": "postgres", "name": "owner",
                 "host": "localhost", "database": "example",
                 "bootstrapProvider": bootstrap
             }))
@@ -798,7 +808,7 @@ mod tests {
             }"#,
         }));
         let source: SourceConfig = serde_json::from_value(serde_json::json!({
-            "kind": "postgres", "id": "owner",
+            "kind": "postgres", "name": "owner",
             "host": "localhost", "database": "example",
             "bootstrapProvider": {"kind": "postgres"}
         }))
@@ -812,7 +822,7 @@ mod tests {
     #[test]
     fn empty_schema_filter_does_not_apply_to_other_kinds_or_pattern_properties() {
         let source: SourceConfig = serde_json::from_value(serde_json::json!({
-            "kind": "postgres", "id": "owner", "host": "localhost",
+            "kind": "postgres", "name": "owner", "host": "localhost",
             "bootstrapProvider": {"kind": "postgres"}
         }))
         .unwrap();

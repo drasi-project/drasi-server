@@ -4,7 +4,7 @@ interface QueryFormProps {
   fields: Record<string, unknown>;
   errors: Record<string, string>;
   onChange: (field: string, value: unknown) => void;
-  availableInputs: { id: string; kind: string }[];
+  availableInputs: { id: string; name: string; kind: string }[];
 }
 
 const TEMPLATES = [
@@ -44,14 +44,17 @@ export default function QueryForm({
   return (
     <>
       <FormField
-        label="Query ID"
-        field="id"
-        value={fields.id}
+        label="Query name"
+        field="name"
+        value={fields.name}
         onChange={onChange}
-        error={errors.id}
+        error={errors.name}
         required
         placeholder="my-query"
       />
+      <FormField label="UUID (optional)" field="id" value={fields.id}
+        onChange={onChange} error={errors.id}
+        helpText="Leave blank for an assigned UUID. Supplying one requires instance opt-in." />
 
       {/* Templates */}
       <div className="space-y-1">
@@ -119,7 +122,7 @@ export default function QueryForm({
                   className="rounded border-drasi-border text-drasi-source focus:ring-drasi-source"
                 />
                 <span className="text-sm text-drasi-text-primary">
-                  {src.id}
+                  {src.name}
                 </span>
                 <span className="text-[10px] text-drasi-text-secondary ml-auto">
                   {src.kind}

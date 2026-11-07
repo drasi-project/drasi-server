@@ -19,7 +19,7 @@ import type {
   ResultReconciliationOptions, ResultRow,
 } from './types';
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
-import { instancePath, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
+import { instancePath, isComponentId, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
 import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
 import { readGraphSnapshot, readGraphSnapshotResponse } from './graph';
 import { subscribeToOutput } from './subscription';
@@ -91,7 +91,7 @@ export class DrasiClient {
     const details = { instanceId: this.instanceId };
     if (!isIdentifier(options.instanceId) || !Array.isArray(options.outputIds) ||
         options.outputIds.some(id => !isIdentifier(id)) ||
-        new Set(options.outputIds).size !== options.outputIds.length || !isIdentifier(options.reaction?.id)) {
+        new Set(options.outputIds).size !== options.outputIds.length || !isComponentId(options.reaction?.id)) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
     this.baseUrl = normalizeServerUrl(options.serverUrl, details);
@@ -224,7 +224,8 @@ export class DrasiClient {
     const reaction = await this.getReaction(signal);
     const details = this.details('reaction', this.reaction.id);
     if (reaction.config.kind !== 'sse' ||
-        [...this.outputIds].some(id => !reaction.config.queries.includes(id))) {
+        [...this.outputIds].some(id => !reaction.config.queries.some(reference =>
+          typeof reference === 'object' && reference.id === id))) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
     }
     requireRunning(reaction, details);

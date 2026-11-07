@@ -18,16 +18,19 @@ use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use drasi_lib::config::{ComponentId, ComponentName, ComponentReference};
+
 /// Reaction configuration with kind discriminator.
 ///
-/// A generic struct that holds the plugin kind, common fields (id, queries,
+/// A generic struct that holds the plugin kind, common fields (name, optional id, queries,
 /// auto_start), and plugin-specific configuration as a JSON value.
 /// The PluginRegistry is used at runtime to create the actual reaction instance.
 #[derive(Debug, Clone)]
 pub struct ReactionConfig {
     pub kind: String,
-    pub id: String,
-    pub queries: Vec<String>,
+    pub name: String,
+    pub id: Option<ComponentId>,
+    pub queries: Vec<ComponentReference>,
     pub auto_start: bool,
     /// Reference (by `id`) to an entry in the top-level
     /// `identityProviders` block. When set, the resolved provider is
@@ -45,7 +48,10 @@ impl Serialize for ReactionConfig {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("kind", &self.kind)?;
-        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("name", &self.name)?;
+        if let Some(id) = &self.id {
+            map.serialize_entry("id", id)?;
+        }
         map.serialize_entry("queries", &self.queries)?;
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(ip) = &self.identity_provider {
@@ -72,7 +78,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter
-                    .write_str("a reaction configuration with 'kind', 'id', and 'queries' fields")
+                    .write_str("a reaction configuration with 'kind', 'name', and 'queries' fields")
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -80,8 +86,9 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                 M: MapAccess<'de>,
             {
                 let mut kind: Option<String> = None;
-                let mut id: Option<String> = None;
-                let mut queries: Option<Vec<String>> = None;
+                let mut name: Option<String> = None;
+                let mut id: Option<Option<ComponentId>> = None;
+                let mut queries: Option<Vec<ComponentReference>> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut identity_provider: Option<String> = None;
 
@@ -101,6 +108,12 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                                 return Err(de::Error::duplicate_field("id"));
                             }
                             id = Some(map.next_value()?);
+                        }
+                        "name" => {
+                            if name.is_some() {
+                                return Err(de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
                         }
                         "queries" => {
                             if queries.is_some() {
@@ -141,7 +154,9 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 
                 // Validate required fields
                 let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
-                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
+                ComponentName::try_new(name.as_str()).map_err(de::Error::custom)?;
+                let id = id.flatten();
                 let queries = queries.ok_or_else(|| de::Error::missing_field("queries"))?;
                 let auto_start = auto_start.unwrap_or(true);
 
@@ -149,6 +164,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 
                 Ok(ReactionConfig {
                     kind,
+                    name,
                     id,
                     queries,
                     auto_start,
@@ -163,13 +179,33 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 }
 
 impl ReactionConfig {
-    /// Get the reaction ID
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn id(&self) -> Option<&ComponentId> {
+        self.id.as_ref()
     }
 
-    /// Get the query IDs this reaction subscribes to
-    pub fn queries(&self) -> &[String] {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn assigned_id(&self) -> anyhow::Result<&ComponentId> {
+        self.id.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("reaction '{}' has no assigned component UUID", self.name)
+        })
+    }
+
+    pub fn resolved_query_ids(&self) -> anyhow::Result<Vec<String>> {
+        self.queries
+            .iter()
+            .map(|reference| {
+                reference.as_id().map(ToString::to_string).ok_or_else(|| {
+                    anyhow::anyhow!("reaction '{}' has an unresolved {reference}", self.name)
+                })
+            })
+            .collect()
+    }
+
+    /// Get the explicit name/UUID references for this reaction's inputs.
+    pub fn queries(&self) -> &[ComponentReference] {
         &self.queries
     }
 
@@ -203,18 +239,52 @@ impl ReactionConfig {
 mod tests {
     use super::*;
 
+    fn name_references(names: &[&str]) -> Vec<ComponentReference> {
+        names
+            .iter()
+            .map(|name| ComponentReference::by_name(*name).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn component_uuid_and_input_names_have_separate_roles() {
+        let id = "32408b47-4678-45b1-b77d-917519d6fdb4";
+        let query_id = "08f93596-5c0d-4c5d-890a-cf015bb3d809";
+        let reaction: ReactionConfig = serde_json::from_value(serde_json::json!({
+            "kind": "log", "name": "logs", "id": id,
+            "queries": [query_id, {"id": query_id}],
+        }))
+        .unwrap();
+        assert_eq!(reaction.assigned_id().unwrap().as_str(), id);
+        assert_eq!(reaction.name(), "logs");
+        assert_eq!(reaction.queries()[0].as_name().unwrap().as_str(), query_id);
+        assert_eq!(reaction.queries()[1].as_id().unwrap().as_str(), query_id);
+        let serialized = serde_json::to_value(&reaction).unwrap();
+        assert_eq!(
+            serialized["queries"],
+            serde_json::json!([query_id, {"id": query_id}])
+        );
+        assert!(serde_json::from_value::<ReactionConfig>(serde_json::json!({
+            "kind": "log", "name": "logs", "id": "not-a-uuid", "queries": [],
+        }))
+        .is_err());
+    }
+
     #[test]
     fn test_reaction_deserialize_log_valid() {
         let json = r#"{
             "kind": "log",
-            "id": "test-log",
+            "name": "test-log",
             "queries": ["query1", "query2"],
             "autoStart": true
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "test-log");
-        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert_eq!(reaction.name(), "test-log");
+        assert_eq!(
+            reaction.queries(),
+            name_references(&["query1", "query2"]).as_slice()
+        );
         assert!(reaction.auto_start());
         assert_eq!(reaction.kind(), "log");
     }
@@ -223,12 +293,12 @@ mod tests {
     fn test_reaction_deserialize_log_minimal() {
         let json = r#"{
             "kind": "log",
-            "id": "test-log",
+            "name": "test-log",
             "queries": ["query1"]
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "test-log");
+        assert_eq!(reaction.name(), "test-log");
         assert!(reaction.auto_start()); // default is true
     }
 
@@ -236,7 +306,7 @@ mod tests {
     fn test_reaction_deserialize_auto_start_defaults_true() {
         let json = r#"{
             "kind": "log",
-            "id": "test-log",
+            "name": "test-log",
             "queries": ["query1"]
         }"#;
 
@@ -248,7 +318,7 @@ mod tests {
     fn test_reaction_deserialize_auto_start_explicit_false() {
         let json = r#"{
             "kind": "log",
-            "id": "test-log",
+            "name": "test-log",
             "queries": ["query1"],
             "autoStart": false
         }"#;
@@ -261,7 +331,7 @@ mod tests {
     fn test_reaction_deserialize_http_valid() {
         let json = r#"{
             "kind": "http",
-            "id": "http-reaction",
+            "name": "http-reaction",
             "queries": ["query1"],
             "baseUrl": "http://localhost:8080",
             "timeoutMs": 5000,
@@ -269,7 +339,7 @@ mod tests {
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "http-reaction");
+        assert_eq!(reaction.name(), "http-reaction");
         assert_eq!(reaction.kind(), "http");
     }
 
@@ -277,7 +347,7 @@ mod tests {
     fn test_reaction_deserialize_http_adaptive_valid() {
         let json = r#"{
             "kind": "http-adaptive",
-            "id": "http-adaptive-reaction",
+            "name": "http-adaptive-reaction",
             "queries": ["query1"],
             "baseUrl": "http://localhost:8080",
             "timeoutMs": 5000,
@@ -285,7 +355,7 @@ mod tests {
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "http-adaptive-reaction");
+        assert_eq!(reaction.name(), "http-adaptive-reaction");
         assert_eq!(reaction.kind(), "http-adaptive");
     }
 
@@ -293,13 +363,13 @@ mod tests {
     fn test_reaction_deserialize_grpc_valid() {
         let json = r#"{
             "kind": "grpc",
-            "id": "grpc-reaction",
+            "name": "grpc-reaction",
             "queries": ["query1"],
             "endpoint": "http://localhost:50051"
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "grpc-reaction");
+        assert_eq!(reaction.name(), "grpc-reaction");
         assert_eq!(reaction.kind(), "grpc");
     }
 
@@ -307,13 +377,13 @@ mod tests {
     fn test_reaction_deserialize_grpc_adaptive_valid() {
         let json = r#"{
             "kind": "grpc-adaptive",
-            "id": "grpc-adaptive-reaction",
+            "name": "grpc-adaptive-reaction",
             "queries": ["query1"],
             "endpoint": "http://localhost:50051"
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "grpc-adaptive-reaction");
+        assert_eq!(reaction.name(), "grpc-adaptive-reaction");
         assert_eq!(reaction.kind(), "grpc-adaptive");
     }
 
@@ -321,12 +391,12 @@ mod tests {
     fn test_reaction_deserialize_sse_valid() {
         let json = r#"{
             "kind": "sse",
-            "id": "sse-reaction",
+            "name": "sse-reaction",
             "queries": ["query1"]
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "sse-reaction");
+        assert_eq!(reaction.name(), "sse-reaction");
         assert_eq!(reaction.kind(), "sse");
     }
 
@@ -334,13 +404,13 @@ mod tests {
     fn test_reaction_deserialize_platform_valid() {
         let json = r#"{
             "kind": "platform",
-            "id": "platform-reaction",
+            "name": "platform-reaction",
             "queries": ["query1"],
             "redisUrl": "redis://localhost:6379"
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "platform-reaction");
+        assert_eq!(reaction.name(), "platform-reaction");
         assert_eq!(reaction.kind(), "platform");
     }
 
@@ -348,19 +418,19 @@ mod tests {
     fn test_reaction_deserialize_profiler_valid() {
         let json = r#"{
             "kind": "profiler",
-            "id": "profiler-reaction",
+            "name": "profiler-reaction",
             "queries": ["query1"]
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "profiler-reaction");
+        assert_eq!(reaction.name(), "profiler-reaction");
         assert_eq!(reaction.kind(), "profiler");
     }
 
     #[test]
     fn test_reaction_deserialize_missing_kind() {
         let json = r#"{
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"]
         }"#;
 
@@ -371,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reaction_deserialize_missing_id() {
+    fn test_reaction_deserialize_missing_name() {
         let json = r#"{
             "kind": "log",
             "queries": ["query1"]
@@ -380,14 +450,14 @@ mod tests {
         let result: Result<ReactionConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("id"), "Error should mention 'id': {err}");
+        assert!(err.contains("name"), "Error should mention 'name': {err}");
     }
 
     #[test]
     fn test_reaction_deserialize_missing_queries() {
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction"
+            "name": "test-reaction"
         }"#;
 
         let result: Result<ReactionConfig, _> = serde_json::from_str(json);
@@ -403,7 +473,7 @@ mod tests {
         // With registry-driven approach, unknown kinds are accepted at deserialization
         let json = r#"{
             "kind": "unknown-reaction-type",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"]
         }"#;
 
@@ -416,7 +486,7 @@ mod tests {
         // Extra fields are stored in the config JSON value
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"],
             "extraField": "value"
         }"#;
@@ -430,13 +500,13 @@ mod tests {
         // With generic struct approach, unknown kinds are accepted at deserialization.
         let json = r#"{
             "kind": "unknown-reaction-type",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"]
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.kind(), "unknown-reaction-type");
-        assert_eq!(reaction.id(), "test-reaction");
+        assert_eq!(reaction.name(), "test-reaction");
     }
 
     #[test]
@@ -444,13 +514,13 @@ mod tests {
         // Extra fields stored in config JSON for plugin validation.
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"],
             "unknownField": "value"
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "test-reaction");
+        assert_eq!(reaction.name(), "test-reaction");
         assert_eq!(reaction.config["unknownField"], "value");
     }
 
@@ -459,7 +529,7 @@ mod tests {
         // snake_case auto_start is explicitly rejected with a helpful hint.
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"],
             "auto_start": true
         }"#;
@@ -478,17 +548,17 @@ mod tests {
     }
 
     #[test]
-    fn test_reaction_deserialize_extra_field_stored_with_id_context() {
-        // Extra fields are stored; id is available for context.
+    fn test_reaction_deserialize_extra_field_stored_with_name_context() {
+        // Extra fields are stored; name is available for context.
         let json = r#"{
             "kind": "log",
-            "id": "my-unique-reaction",
+            "name": "my-unique-reaction",
             "queries": ["query1"],
             "badField": "value"
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "my-unique-reaction");
+        assert_eq!(reaction.name(), "my-unique-reaction");
         assert_eq!(reaction.config["badField"], "value");
     }
 
@@ -496,7 +566,7 @@ mod tests {
     fn test_reaction_deserialize_kind_preserved() {
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": ["query1"],
             "badField": "value"
         }"#;
@@ -509,7 +579,7 @@ mod tests {
     fn test_reaction_deserialize_yaml_format() {
         let yaml = r#"
 kind: log
-id: yaml-reaction
+name: yaml-reaction
 queries:
   - query1
   - query2
@@ -517,8 +587,11 @@ autoStart: true
 "#;
 
         let reaction: ReactionConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(reaction.id(), "yaml-reaction");
-        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert_eq!(reaction.name(), "yaml-reaction");
+        assert_eq!(
+            reaction.queries(),
+            name_references(&["query1", "query2"]).as_slice()
+        );
         assert!(reaction.auto_start());
     }
 
@@ -526,7 +599,7 @@ autoStart: true
     fn test_reaction_deserialize_empty_queries() {
         let json = r#"{
             "kind": "log",
-            "id": "test-reaction",
+            "name": "test-reaction",
             "queries": []
         }"#;
 
@@ -538,8 +611,9 @@ autoStart: true
     fn test_reaction_serialize_deserialize_roundtrip() {
         let original = ReactionConfig {
             kind: "log".to_string(),
-            id: "roundtrip-reaction".to_string(),
-            queries: vec!["q1".to_string(), "q2".to_string()],
+            name: "roundtrip-reaction".to_string(),
+            id: None,
+            queries: name_references(&["q1", "q2"]),
             auto_start: false,
             identity_provider: None,
             config: serde_json::json!({"routes": {}}),
@@ -548,8 +622,16 @@ autoStart: true
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: ReactionConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.id(), "roundtrip-reaction");
-        assert_eq!(deserialized.queries(), &["q1", "q2"]);
+        assert_eq!(deserialized.name(), "roundtrip-reaction");
+        assert_eq!(
+            deserialized.queries(),
+            name_references(&["q1", "q2"]).as_slice()
+        );
+        assert!(deserialized.id().is_none());
+        assert!(serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .get("id")
+            .is_none());
         assert!(!deserialized.auto_start());
     }
 
@@ -557,7 +639,7 @@ autoStart: true
     fn test_reaction_deserialize_with_env_var_syntax() {
         let json = r#"{
             "kind": "http",
-            "id": "test-http",
+            "name": "test-http",
             "queries": ["query1"],
             "baseUrl": "${BASE_URL:-http://localhost:8080}",
             "timeoutMs": 5000,
@@ -565,7 +647,7 @@ autoStart: true
         }"#;
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(reaction.id(), "test-http");
+        assert_eq!(reaction.name(), "test-http");
         assert_eq!(reaction.kind(), "http");
         // Verify the env var config is preserved in the raw config
         let base_url = &reaction.config["baseUrl"];

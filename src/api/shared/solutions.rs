@@ -37,7 +37,6 @@ use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::handlers::{persist_after_operation, wait_for_computation_creation};
 use crate::api::shared::ApiResponse;
-use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -101,24 +100,36 @@ impl SolutionTemplateFile {
         self.reactions.len()
     }
 
-    fn source_ids(&self) -> Vec<String> {
+    fn source_names(&self) -> Vec<String> {
         self.sources
             .iter()
-            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|name| name.as_str())
+                    .map(String::from)
+            })
             .collect()
     }
 
-    fn query_ids(&self) -> Vec<String> {
+    fn query_names(&self) -> Vec<String> {
         self.queries
             .iter()
-            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|name| name.as_str())
+                    .map(String::from)
+            })
             .collect()
     }
 
-    fn reaction_ids(&self) -> Vec<String> {
+    fn reaction_names(&self) -> Vec<String> {
         self.reactions
             .iter()
-            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|name| name.as_str())
+                    .map(String::from)
+            })
             .collect()
     }
 }
@@ -277,9 +288,9 @@ pub async fn get_solution(
         id: template_id.to_string(),
         metadata: template.to_metadata(),
         variables,
-        source_ids: template.source_ids(),
-        query_ids: template.query_ids(),
-        reaction_ids: template.reaction_ids(),
+        source_names: template.source_names(),
+        query_names: template.query_names(),
+        reaction_names: template.reaction_names(),
     };
 
     Ok(Json(ApiResponse::success(detail)))
@@ -315,6 +326,23 @@ pub async fn create_solution_template(
     };
 
     // Build the template YAML structure
+    let names: std::collections::HashMap<String, String> = snapshot
+        .sources
+        .iter()
+        .map(|component| (component.id.clone(), component.name.clone()))
+        .chain(
+            snapshot
+                .queries
+                .iter()
+                .map(|component| (component.id.clone(), component.config.name.clone())),
+        )
+        .chain(
+            snapshot
+                .reactions
+                .iter()
+                .map(|component| (component.id.clone(), component.name.clone())),
+        )
+        .collect();
     let mut sources: Vec<serde_yaml::Value> = Vec::new();
     let mut queries: Vec<serde_yaml::Value> = Vec::new();
     let mut reactions: Vec<serde_yaml::Value> = Vec::new();
@@ -322,12 +350,12 @@ pub async fn create_solution_template(
     // Collect sources from snapshot, converting to DTO for camelCase serialization
     for source_id in &request.source_ids {
         if let Some(source_snap) = snapshot.sources.iter().find(|s| &s.id == source_id) {
-            let properties_json = serde_json::to_value(&source_snap.properties)
-                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+            let properties_json =
+                serde_json::Value::Object(source_snap.properties.clone().into_iter().collect());
 
             let bootstrap_provider = source_snap.bootstrap_provider.as_ref().map(|bp| {
-                let bp_config_json = serde_json::to_value(&bp.properties)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                let bp_config_json =
+                    serde_json::Value::Object(bp.properties.clone().into_iter().collect());
                 crate::api::models::BootstrapProviderRef::Inline(
                     crate::api::models::BootstrapProviderConfig {
                         kind: bp.kind.clone(),
@@ -338,16 +366,20 @@ pub async fn create_solution_template(
 
             let source_dto = SourceConfig {
                 kind: source_snap.source_type.clone(),
-                id: source_snap.id.clone(),
+                name: source_snap.name.clone(),
+                id: None,
                 auto_start: source_snap.auto_start,
                 bootstrap_provider,
                 identity_provider: None,
                 config: properties_json,
             };
 
-            if let Ok(yaml_value) = serde_yaml::to_value(&source_dto) {
-                sources.push(yaml_value);
-            }
+            sources.push(serde_yaml::to_value(&source_dto).map_err(|error| {
+                ErrorResponse::new(
+                    error_codes::INTERNAL_ERROR,
+                    format!("Cannot export source: {error}"),
+                )
+            })?);
         } else {
             return Err(ErrorResponse::new(
                 error_codes::SOURCE_NOT_FOUND,
@@ -359,7 +391,12 @@ pub async fn create_solution_template(
     // Collect queries from snapshot, converting to DTO for camelCase serialization
     for query_id in &request.query_ids {
         if let Some(query_snap) = snapshot.queries.iter().find(|q| &q.id == query_id) {
-            let query_dto = match QueryConfigDto::try_from(query_snap.config.clone()) {
+            let mut config = query_snap.config.clone().into_authoring()?;
+            config.id = None;
+            for input in &mut config.inputs {
+                input.component = crate::factories::named_reference(&input.component, &names)?;
+            }
+            let query_dto = match QueryConfigDto::try_from(config) {
                 Ok(dto) => dto,
                 Err(e) => {
                     return Err(ErrorResponse::new(
@@ -368,9 +405,12 @@ pub async fn create_solution_template(
                     ));
                 }
             };
-            if let Ok(yaml_value) = serde_yaml::to_value(&query_dto) {
-                queries.push(yaml_value);
-            }
+            queries.push(serde_yaml::to_value(&query_dto).map_err(|error| {
+                ErrorResponse::new(
+                    error_codes::INTERNAL_ERROR,
+                    format!("Cannot export query: {error}"),
+                )
+            })?);
         } else {
             return Err(ErrorResponse::new(
                 error_codes::QUERY_NOT_FOUND,
@@ -382,21 +422,34 @@ pub async fn create_solution_template(
     // Collect reactions from snapshot, converting to DTO for camelCase serialization
     for reaction_id in &request.reaction_ids {
         if let Some(reaction_snap) = snapshot.reactions.iter().find(|r| &r.id == reaction_id) {
-            let properties_json = serde_json::to_value(&reaction_snap.properties)
-                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+            let mut properties_json =
+                serde_json::Value::Object(reaction_snap.properties.clone().into_iter().collect());
+            crate::factories::remap_reaction_references(
+                &reaction_snap.reaction_type,
+                &mut properties_json,
+                &names,
+            )?;
 
             let reaction_dto = ReactionConfig {
                 kind: reaction_snap.reaction_type.clone(),
-                id: reaction_snap.id.clone(),
-                queries: reaction_snap.queries.clone(),
+                name: reaction_snap.name.clone(),
+                id: None,
+                queries: reaction_snap
+                    .queries
+                    .iter()
+                    .map(|reference| crate::factories::named_reference(reference, &names))
+                    .collect::<anyhow::Result<_>>()?,
                 auto_start: reaction_snap.auto_start,
                 identity_provider: None,
                 config: properties_json,
             };
 
-            if let Ok(yaml_value) = serde_yaml::to_value(&reaction_dto) {
-                reactions.push(yaml_value);
-            }
+            reactions.push(serde_yaml::to_value(&reaction_dto).map_err(|error| {
+                ErrorResponse::new(
+                    error_codes::INTERNAL_ERROR,
+                    format!("Cannot export reaction: {error}"),
+                )
+            })?);
         } else {
             return Err(ErrorResponse::new(
                 error_codes::REACTION_NOT_FOUND,
@@ -572,7 +625,7 @@ pub async fn deploy_solution(
     registry: InstanceRegistry,
     persistence: Option<Arc<ConfigPersistence>>,
     solutions_dir: Option<String>,
-    plugin_registry: &tokio::sync::RwLock<PluginRegistry>,
+    plugin_registry: &Arc<tokio::sync::RwLock<PluginRegistry>>,
     instance_id: &str,
     request: SolutionDeployRequest,
 ) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
@@ -722,7 +775,7 @@ pub async fn deploy_solution(
     // Validate sources
     for source_value in &template.sources {
         let source_id = source_value
-            .get("id")
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
@@ -758,7 +811,7 @@ pub async fn deploy_solution(
     // Validate queries
     for query_value in &template.queries {
         let query_id = query_value
-            .get("id")
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
@@ -799,7 +852,7 @@ pub async fn deploy_solution(
     // Validate reactions
     for reaction_value in &template.reactions {
         let reaction_id = reaction_value
-            .get("id")
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
@@ -857,56 +910,43 @@ pub async fn deploy_solution(
     let mut created_reactions: Vec<String> = Vec::new();
     let mut creation_errors: Vec<SolutionDeployError> = Vec::new();
 
-    // Track which components to start
+    // Declare every component before waiting for forward-referenced dependencies.
+    let mut pending_creation = Vec::new();
     let mut components_to_start = Vec::new();
 
     // Create sources (stopped)
     for (mut source_config, should_start) in validated_sources {
-        let source_id = source_config.id().to_string();
+        let source_name = source_config.name.clone();
 
         // Force autoStart to false for initial creation
         source_config.set_auto_start(false);
 
-        let (source, plugin_meta) =
-            match create_source_locked(plugin_registry, source_config.clone()).await {
-                Ok(s) => s,
-                Err(e) => {
-                    creation_errors.push(SolutionDeployError::creation(
-                        "source",
-                        &source_id,
-                        e.to_string(),
-                    ));
-                    continue;
-                }
-            };
-
-        if let Err(e) = core.add_source_with_metadata(source, plugin_meta).await {
-            creation_errors.push(SolutionDeployError::creation(
-                "source",
-                &source_id,
-                e.to_string(),
-            ));
-            continue;
-        }
-
-        created_sources.push(source_id.clone());
-        match wait_for_computation_creation(&core, "source", &source_id).await {
-            Ok(handle) => {
-                if should_start {
-                    components_to_start.push(("source", source_id, handle));
-                }
+        let handle = match crate::factories::create_source_instance(
+            &core,
+            plugin_registry.clone(),
+            source_config,
+        )
+        .await
+        {
+            Ok(handle) => handle,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "source",
+                    &source_name,
+                    e.to_string(),
+                ));
+                continue;
             }
-            Err(e) => creation_errors.push(SolutionDeployError::creation(
-                "source",
-                &source_id,
-                e.to_string(),
-            )),
-        }
+        };
+
+        let source_id = handle.id().to_string();
+        created_sources.push(source_id.clone());
+        pending_creation.push(("source", source_id, source_name, should_start));
     }
 
     // Create queries (stopped)
     for (mut query_dto, should_start) in validated_queries {
-        let query_id = query_dto.id.clone();
+        let query_name = query_dto.name.clone();
 
         // Force autoStart to false for initial creation
         query_dto.auto_start = false;
@@ -919,78 +959,68 @@ pub async fn deploy_solution(
                 // This shouldn't happen since we validated above, but handle it
                 creation_errors.push(SolutionDeployError::creation(
                     "query",
-                    &query_id,
+                    &query_name,
                     e.to_string(),
                 ));
                 continue;
             }
         };
 
-        if let Err(e) = core.add_query(query_config).await {
-            creation_errors.push(SolutionDeployError::creation(
-                "query",
-                &query_id,
-                e.to_string(),
-            ));
-            continue;
-        }
-
-        created_queries.push(query_id.clone());
-        match wait_for_computation_creation(&core, "query", &query_id).await {
-            Ok(handle) => {
-                if should_start {
-                    components_to_start.push(("query", query_id, handle));
-                }
+        let handle = match core.add_query_with_handle(query_config).await {
+            Ok(handle) => handle,
+            Err(error) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "query",
+                    &query_name,
+                    error.to_string(),
+                ));
+                continue;
             }
-            Err(e) => creation_errors.push(SolutionDeployError::creation(
-                "query",
-                &query_id,
-                e.to_string(),
-            )),
-        }
+        };
+        let query_id = handle.id().to_string();
+        created_queries.push(query_id.clone());
+        pending_creation.push(("query", query_id, query_name, should_start));
     }
 
     // Create reactions (stopped)
     for (mut reaction_config, should_start) in validated_reactions {
-        let reaction_id = reaction_config.id().to_string();
+        let reaction_name = reaction_config.name.clone();
 
         // Force autoStart to false for initial creation
         reaction_config.set_auto_start(false);
 
-        let (reaction, plugin_meta) =
-            match create_reaction_locked(plugin_registry, reaction_config.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    creation_errors.push(SolutionDeployError::creation(
-                        "reaction",
-                        &reaction_id,
-                        e.to_string(),
-                    ));
-                    continue;
-                }
-            };
+        let handle = match crate::factories::create_reaction_instance(
+            &core,
+            plugin_registry.clone(),
+            reaction_config,
+        )
+        .await
+        {
+            Ok(handle) => handle,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "reaction",
+                    &reaction_name,
+                    e.to_string(),
+                ));
+                continue;
+            }
+        };
 
-        if let Err(e) = core.add_reaction_with_metadata(reaction, plugin_meta).await {
-            creation_errors.push(SolutionDeployError::creation(
-                "reaction",
-                &reaction_id,
-                e.to_string(),
-            ));
-            continue;
-        }
-
+        let reaction_id = handle.id().to_string();
         created_reactions.push(reaction_id.clone());
-        match wait_for_computation_creation(&core, "reaction", &reaction_id).await {
+        pending_creation.push(("reaction", reaction_id, reaction_name, should_start));
+    }
+
+    for (kind, id, name, should_start) in pending_creation {
+        match wait_for_computation_creation(&core, kind, &id).await {
             Ok(handle) => {
                 if should_start {
-                    components_to_start.push(("reaction", reaction_id, handle));
+                    components_to_start.push((kind, id, handle));
                 }
             }
-            Err(e) => creation_errors.push(SolutionDeployError::creation(
-                "reaction",
-                &reaction_id,
-                e.to_string(),
-            )),
+            Err(e) => creation_errors
+                .push(SolutionDeployError::creation(kind, name, e.to_string()).with_id(id)),
         }
     }
 
@@ -1182,9 +1212,9 @@ reactions: []
             detail.metadata.default_instance_id,
             Some("my-instance".to_string())
         );
-        assert_eq!(detail.source_ids, vec!["http-source"]);
-        assert_eq!(detail.query_ids, vec!["my-query"]);
-        assert!(detail.reaction_ids.is_empty());
+        assert_eq!(detail.source_names, vec!["http-source"]);
+        assert_eq!(detail.query_names, vec!["my-query"]);
+        assert!(detail.reaction_names.is_empty());
 
         // Check extracted variables
         assert_eq!(detail.variables.len(), 3);
@@ -1243,8 +1273,9 @@ reactions: []
             variables: std::collections::HashMap::new(),
         };
 
-        let plugin_registry =
-            tokio::sync::RwLock::new(crate::plugin_registry::PluginRegistry::new());
+        let plugin_registry = Arc::new(tokio::sync::RwLock::new(
+            crate::plugin_registry::PluginRegistry::new(),
+        ));
         let result = deploy_solution(
             crate::instance_registry::InstanceRegistry::new(),
             None,

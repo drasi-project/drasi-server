@@ -4,6 +4,7 @@ import FormField from "@/components/create/FormField";
 interface CreateInstanceDialogProps {
   onSave: (data: {
     id: string;
+    allowExternalComponentIds?: boolean;
     persistIndex?: boolean;
     memoryBudgetMiB?: number;
     defaultPriorityQueueCapacity?: number;
@@ -21,6 +22,7 @@ export default function CreateInstanceDialog({
 }: CreateInstanceDialogProps) {
   const [id, setId] = useState(initialId ?? "");
   const [persistIndex, setPersistIndex] = useState(false);
+  const [allowExternalComponentIds, setAllowExternalComponentIds] = useState(false);
   const [memoryBudgetMiB, setMemoryBudgetMiB] = useState("");
   const [error, setError] = useState("");
   const [memoryBudgetError, setMemoryBudgetError] = useState("");
@@ -44,6 +46,7 @@ export default function CreateInstanceDialog({
     try {
       await onSave({
         id: id.trim(),
+        allowExternalComponentIds,
         persistIndex,
         memoryBudgetMiB: persistIndex ? parsedMemoryBudget : undefined,
       });
@@ -72,6 +75,14 @@ export default function CreateInstanceDialog({
             error={error}
             required
             placeholder="my-instance"
+          />
+          <FormField
+            label="Allow external component UUIDs"
+            field="allowExternalComponentIds"
+            value={allowExternalComponentIds}
+            onChange={(_, value) => setAllowExternalComponentIds(Boolean(value))}
+            type="toggle"
+            helpText="Off by default. This choice cannot change after the instance is created."
           />
           <FormField
             label="Persist Index (RocksDB)"

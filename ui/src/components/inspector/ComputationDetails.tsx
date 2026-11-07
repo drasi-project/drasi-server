@@ -1,15 +1,17 @@
 import type { ComputationComponent, ComputationInspection } from "@/api/types";
 import { computationColor, computationStatus, isInternalComponent, relationshipEndpoints, relationshipLabel } from "@/utils/computation";
 import StatusBadge from "@/components/shared/StatusBadge";
+import ComponentIdentityEditor from "@/components/shared/ComponentIdentityEditor";
 
 interface Props {
   component: ComputationComponent;
   inspection: ComputationInspection;
   standalone: boolean;
   onNavigate: (id: string) => void;
+  onRename: (name: string) => Promise<void>;
 }
 
-export default function ComputationDetails({ component, inspection, standalone, onNavigate }: Props) {
+export default function ComputationDetails({ component, inspection, standalone, onNavigate, onRename }: Props) {
   const connections = inspection.relationships.filter((relationship) => {
     const { from, to } = relationshipEndpoints(relationship);
     return from === component.id || to === component.id;
@@ -19,12 +21,13 @@ export default function ComputationDetails({ component, inspection, standalone, 
     <section className="p-3 space-y-4 border-t border-drasi-border text-xs" aria-label="Computation details">
       {standalone && (
         <header className="space-y-2">
-          <h2 className="font-semibold text-sm break-all text-drasi-text-primary">{component.id}</h2>
+          <ComponentIdentityEditor key={component.id} id={component.id} name={component.name}
+            onRename={isInternalComponent(component) ? undefined : onRename} />
           <div style={{ color: computationColor(component.role) }}>
             {component.role}{isInternalComponent(component) ? " (internal)" : ""}
           </div>
           <StatusBadge status={computationStatus(component)} />
-          <p className="text-drasi-text-secondary">Graph inspection only. Editing and lifecycle actions for this component are not available here.</p>
+          <p className="text-drasi-text-secondary">Renaming changes only the name. Configuration and lifecycle actions are separate.</p>
         </header>
       )}
       <h3 className="font-semibold text-drasi-text-primary">Computation state</h3>
@@ -66,7 +69,8 @@ export default function ComputationDetails({ component, inspection, standalone, 
             <div key={JSON.stringify(relationship)} className="p-2 rounded border border-drasi-border space-y-1">
               <span className="text-drasi-text-secondary">{from === component.id ? "To " : "From "}</span>
               {ids.has(other) ? (
-                <button className="text-drasi-text-primary underline break-all text-left" onClick={() => onNavigate(other)}>{other}</button>
+                <button className="text-drasi-text-primary underline break-all text-left" title={other}
+                  onClick={() => onNavigate(other)}>{inspection.components.find((component) => component.id === other)?.name}</button>
               ) : <span className="text-drasi-warning break-all">{other} (unresolved)</span>}
               <div className="text-drasi-text-secondary break-all">{relationshipLabel(relationship)}</div>
             </div>

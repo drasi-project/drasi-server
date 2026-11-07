@@ -42,10 +42,10 @@ describe('shared read-only transport/auth policy', () => {
       streamOptions.headers.set('X-Tenant', 'factory-mutation');
       factory.instances[0].open();
       await connected;
-      await client.getQuery('stocks');
-      await client.getQueryConfig('stocks');
+      await client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9');
+      await client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9');
       await client.getReaction();
-      await client.getQueryResults('stocks');
+      await client.getQueryResults('b20c42ee-59a1-441f-a549-87a72be1f1e9');
       for (const [url, init] of server.fetch.mock.calls) {
         expect(String(url)).toContain(`/instances/${encodeURIComponent(refs.instanceId)}/`);
         expect(init).toMatchObject({ method: 'GET', credentials, redirect: 'manual' });
@@ -78,7 +78,7 @@ describe('shared read-only transport/auth policy', () => {
     await connected;
     token = 'second';
     const received = vi.fn();
-    client.subscribe('stocks', received);
+    client.subscribe('b20c42ee-59a1-441f-a549-87a72be1f1e9', received);
     await vi.waitFor(() => expect(received).toHaveBeenCalledOnce());
     expect(new Headers(server.fetch.mock.calls[server.fetch.mock.calls.length - 1][1]?.headers)
       .get('Authorization')).toBe('Bearer fixture-second');
@@ -97,8 +97,8 @@ describe('shared read-only transport/auth policy', () => {
     const { client, server, factory } = setup({ credentials: 'include', headers: { Authorization: 'fixture' } });
     server.fetch.mockImplementation(async () => failure(status));
     for (const read of [
-      () => client.getQuery('stocks'), () => client.getQueryConfig('stocks'),
-      () => client.getQueryResults('stocks'), () => client.getReaction(), () => client.initialize(),
+      () => client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9'), () => client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9'),
+      () => client.getQueryResults('b20c42ee-59a1-441f-a549-87a72be1f1e9'), () => client.getReaction(), () => client.initialize(),
     ]) {
       await expect(read()).rejects.toMatchObject({
         code: status === 401 ? 'UNAUTHENTICATED' : 'FORBIDDEN', status, retryable: false,
@@ -130,7 +130,7 @@ describe('shared read-only transport/auth policy', () => {
     vi.useFakeTimers();
     for (const mode of ['auth', 'fetch', 'body'] as const) {
       const { client, server } = setup({
-        outputIds: ['stocks', 'other'], requestTimeoutMs: 25,
+        outputIds: ['b20c42ee-59a1-441f-a549-87a72be1f1e9', 'other'], requestTimeoutMs: 25,
         ...(mode === 'auth' ? { headers: () => new Promise<HeadersInit>(() => {}) } : {}),
       });
       if (mode === 'fetch') server.fetch.mockImplementation(() => new Promise<Response>(() => {}));
@@ -138,7 +138,7 @@ describe('shared read-only transport/auth policy', () => {
       const request = client.initialize().catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(25);
       expect(await request).toMatchObject({
-        code: 'SERVER_UNAVAILABLE', resourceId: 'stocks', retryable: true,
+        code: 'SERVER_UNAVAILABLE', resourceId: 'b20c42ee-59a1-441f-a549-87a72be1f1e9', retryable: true,
         status: mode === 'body' ? 200 : undefined,
       });
       expect(client.getConnectionStatus().reconnecting).toBe(false);
@@ -160,9 +160,9 @@ describe('shared read-only transport/auth policy', () => {
       return new Response(new ReadableStream<Uint8Array>(), { status });
     });
     const pending = (endpoint === 'reaction' ? client.getReaction()
-      : endpoint === 'query' ? client.getQuery('stocks')
-        : endpoint === 'config' ? client.getQueryConfig('stocks')
-          : client.getQueryResults('stocks')).catch((error: unknown) => error);
+      : endpoint === 'query' ? client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9')
+        : endpoint === 'config' ? client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')
+          : client.getQueryResults('b20c42ee-59a1-441f-a549-87a72be1f1e9')).catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(0);
     expect(received).toBe(true);
     await vi.advanceTimersByTimeAsync(25);
@@ -171,7 +171,7 @@ describe('shared read-only transport/auth policy', () => {
     expect(error).toMatchObject({
       code: 'SERVER_UNAVAILABLE', retryable: true, status, instanceId: refs.instanceId,
       resourceKind: endpoint === 'reaction' ? 'reaction' : 'query',
-      resourceId: endpoint === 'reaction' ? 'stream' : 'stocks',
+      resourceId: endpoint === 'reaction' ? 'ee84d7f5-adf8-4f1f-95e7-b67a67f39a0d' : 'b20c42ee-59a1-441f-a549-87a72be1f1e9',
     });
     expect(headers).toHaveBeenCalledTimes(server.fetch.mock.calls.length);
     for (const [, init] of server.fetch.mock.calls) {
@@ -188,7 +188,7 @@ describe('shared read-only transport/auth policy', () => {
     server.fetch.mockImplementation(async () => new Response(new ReadableStream(), { status: 202 }));
     const controller = new AbortController();
     const reason = new DOMException('Caller cancelled after headers', 'AbortError');
-    const request = client.getQueryConfig('stocks', controller.signal).catch((error: unknown) => error);
+    const request = client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9', controller.signal).catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(0);
     controller.abort(reason);
     expect(await request).toBe(reason);
@@ -201,9 +201,9 @@ describe('shared read-only transport/auth policy', () => {
       const { client, server } = setup({ headers: () => auth.promise });
       const controller = new AbortController(), reason = new DOMException('Fixture cancellation', 'AbortError');
       const pending = endpoint === 'reaction' ? client.getReaction(controller.signal)
-        : endpoint === 'query' ? client.getQuery('stocks', controller.signal)
-          : endpoint === 'config' ? client.getQueryConfig('stocks', controller.signal)
-            : client.getQueryResults('stocks', controller.signal);
+        : endpoint === 'query' ? client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9', controller.signal)
+          : endpoint === 'config' ? client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9', controller.signal)
+            : client.getQueryResults('b20c42ee-59a1-441f-a549-87a72be1f1e9', controller.signal);
       controller.abort(reason);
       await expect(pending).rejects.toBe(reason);
       auth.resolve({ Authorization: 'must-not-be-sent' });
@@ -217,10 +217,10 @@ describe('shared read-only transport/auth policy', () => {
     server.fetch.mockResolvedValueOnce(new Response(null, {
       status: 302, headers: { Location: 'https://drasi.invalid/api/v1/instances/other/queries/stocks' },
     }));
-    await expect(client.getQuery('stocks')).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', retryable: false });
+    await expect(client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9')).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', retryable: false });
     expect(server.fetch).toHaveBeenCalledOnce();
-    server.fetch.mockResolvedValueOnce(json(component('queries', 'stocks', queryConfig('stocks'), 'Running', 'other')));
-    await expect(client.getQuery('stocks')).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', instanceId: refs.instanceId });
+    server.fetch.mockResolvedValueOnce(json(component('queries', 'b20c42ee-59a1-441f-a549-87a72be1f1e9', queryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9'), 'Running', 'other')));
+    await expect(client.getQuery('b20c42ee-59a1-441f-a549-87a72be1f1e9')).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', instanceId: refs.instanceId });
   });
 
   it('keeps separate clients isolated even when query and reaction IDs are identical', async () => {
@@ -231,8 +231,8 @@ describe('shared read-only transport/auth policy', () => {
     });
     const first = setup({ fetch: fetcher, instanceId: 'tenant/one' }).client;
     const second = setup({ fetch: fetcher, instanceId: 'tenant two' }).client;
-    expect((await first.getQueryConfig('stocks')).query).toBe("RETURN 'tenant/one'");
-    expect((await second.getQueryConfig('stocks')).query).toBe("RETURN 'tenant two'");
+    expect((await first.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')).query).toBe("RETURN 'tenant/one'");
+    expect((await second.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')).query).toBe("RETURN 'tenant two'");
     expect(first.getServerUiUrl()).toContain('tenant%2Fone');
     expect(second.getServerUiUrl()).toContain('tenant%20two');
   });
@@ -251,7 +251,7 @@ describe('native EventSource authentication and execution boundary', () => {
     const client = new DrasiSSEClient({ credentials });
     clients.push(client);
     expect(native).not.toHaveBeenCalled();
-    const connected = client.connect(['stocks'], refs.reaction.endpoint);
+    const connected = client.connect(['b20c42ee-59a1-441f-a549-87a72be1f1e9'], refs.reaction.endpoint);
     sources[0].open();
     await connected;
   });
@@ -264,7 +264,7 @@ describe('native EventSource authentication and execution boundary', () => {
     ]) {
       const client = new DrasiSSEClient(options);
       clients.push(client);
-      await expect(client.connect(['stocks'], refs.reaction.endpoint)).rejects.toMatchObject({
+      await expect(client.connect(['b20c42ee-59a1-441f-a549-87a72be1f1e9'], refs.reaction.endpoint)).rejects.toMatchObject({
         code: 'INVALID_CONFIGURATION', retryable: false,
       });
     }
@@ -280,7 +280,7 @@ describe('native EventSource authentication and execution boundary', () => {
     const { client, server } = setup({
       eventSourceFactory: undefined, credentials: 'omit', headers: { Authorization: 'fixture-only' },
     });
-    expect((await client.getQueryConfig('stocks')).id).toBe('stocks');
+    expect((await client.getQueryConfig('b20c42ee-59a1-441f-a549-87a72be1f1e9')).id).toBe('b20c42ee-59a1-441f-a549-87a72be1f1e9');
     expect(new Headers(server.fetch.mock.calls[0][1]?.headers).get('Authorization')).toBe('fixture-only');
     await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_CONFIGURATION' });
   });
@@ -289,7 +289,7 @@ describe('native EventSource authentication and execution boundary', () => {
     vi.stubGlobal('EventSource', undefined);
     const client = new DrasiSSEClient();
     clients.push(client);
-    await expect(client.connect(['stocks'], refs.reaction.endpoint)).rejects.toMatchObject({
+    await expect(client.connect(['b20c42ee-59a1-441f-a549-87a72be1f1e9'], refs.reaction.endpoint)).rejects.toMatchObject({
       code: 'INVALID_CONFIGURATION', retryable: false,
     });
   });
@@ -301,11 +301,11 @@ describe('native EventSource authentication and execution boundary', () => {
       eventSourceFactory: create, headers: () => pending.promise, connectionTimeoutMs: 20, maxReconnectAttempts: 0,
     });
     clients.push(client);
-    const first = client.connect(['stocks'], refs.reaction.endpoint).catch((error: unknown) => error);
+    const first = client.connect(['b20c42ee-59a1-441f-a549-87a72be1f1e9'], refs.reaction.endpoint).catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(20);
     expect(await first).toMatchObject({ code: 'STREAM_UNAVAILABLE' });
     const controller = new AbortController(), reason = new DOMException('cancel fixture', 'AbortError');
-    const second = client.connect(['stocks'], refs.reaction.endpoint, controller.signal);
+    const second = client.connect(['b20c42ee-59a1-441f-a549-87a72be1f1e9'], refs.reaction.endpoint, controller.signal);
     controller.abort(reason);
     await expect(second).rejects.toBe(reason);
     pending.resolve({});

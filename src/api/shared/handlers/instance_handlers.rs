@@ -26,7 +26,6 @@ use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::DrasiLibInstanceConfig;
-use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
@@ -40,6 +39,9 @@ use drasi_lib::DrasiLib;
 pub struct CreateInstanceRequest {
     /// Unique identifier for the new instance
     pub id: String,
+    /// Accept caller-selected component UUIDs. Fixed for this instance's lifetime.
+    #[serde(default)]
+    pub allow_external_component_ids: bool,
 
     /// Whether to use persistent indexing (RocksDB). Default: false (in-memory)
     #[serde(default)]
@@ -108,7 +110,7 @@ pub async fn create_instance(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(plugins): Extension<Arc<RwLock<PluginRegistry>>>,
-    ConfigBody(request): ConfigBody<CreateInstanceRequest>,
+    ConfigBody(mut request): ConfigBody<CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -118,6 +120,11 @@ pub async fn create_instance(
     }
 
     let instance_id = request.id.clone();
+    if request.configuration_store.is_none() {
+        request.configuration_store = config_persistence
+            .as_ref()
+            .map(|persistence| persistence.default_store());
+    }
     let persist_index = request.persist_index.unwrap_or(false);
     let enable_archive = request.enable_archive.unwrap_or(false);
     let memory_budget_mib = request.memory_budget_mib;
@@ -136,7 +143,23 @@ pub async fn create_instance(
     }
 
     // Create a new DrasiLib instance with optional configuration
-    let mut builder = DrasiLib::builder().with_id(&instance_id);
+    let mut builder = DrasiLib::builder()
+        .with_id(&instance_id)
+        .with_allow_external_component_ids(request.allow_external_component_ids)
+        .with_ordinary_component_resolver(Arc::new(
+            crate::managed_configuration::ordinary::ServerOrdinaryComponents {
+                plugins: plugins.clone(),
+                identity_providers: Default::default(),
+                bootstrap_providers: Default::default(),
+            },
+        ));
+    builder = crate::managed_configuration::ConfigurationStores::configure_host(
+        builder,
+        plugins.clone(),
+        None,
+    )
+    .await
+    .map_err(|error| ErrorResponse::new(error_codes::INSTANCE_CREATE_FAILED, error.to_string()))?;
 
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
@@ -218,7 +241,16 @@ pub async fn create_instance(
     if let Some(store) = &request.configuration_store {
         builder = registry
             .configuration_stores()
-            .configure(builder, &instance_id, store, None, plugins, None)
+            .configure(
+                builder,
+                &instance_id,
+                request.allow_external_component_ids,
+                store,
+                None,
+                Vec::new(),
+                plugins,
+                None,
+            )
             .await
             .map_err(|error| {
                 log::error!(
@@ -271,6 +303,7 @@ pub async fn create_instance(
     if let Some(persistence) = &config_persistence {
         let instance_config = DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id.clone()).into(),
+            allow_external_component_ids: request.allow_external_component_ids,
             persist_index,
             enable_archive,
             memory_budget_mib: memory_budget_mib.map(ConfigValue::Static),
@@ -413,26 +446,48 @@ pub async fn clone_instance(
         )
     })?;
     super::require_imperative_configuration(&target_core)?;
+    if computation.is_some() && !target_core.allow_external_component_ids() {
+        return Err(ErrorResponse::new(
+            error_codes::EXTERNAL_COMPONENT_ID_REJECTED,
+            "Cloning an expanded native definition imports its UUIDs. Use name-based computation.graph creation for new identities, or explicitly enable external component IDs on the target.",
+        ));
+    }
+    if !snapshot.queries.is_empty() {
+        crate::query_plugin::ensure_registered(&target_core, &plugin_registry).await?;
+    }
+    let names: std::collections::HashMap<String, String> = snapshot
+        .sources
+        .iter()
+        .map(|component| (component.id.clone(), component.name.clone()))
+        .chain(
+            snapshot
+                .queries
+                .iter()
+                .map(|component| (component.id.clone(), component.config.name.clone())),
+        )
+        .chain(
+            snapshot
+                .reactions
+                .iter()
+                .map(|component| (component.id.clone(), component.name.clone())),
+        )
+        .collect();
 
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
     let mut reactions_created: Vec<String> = Vec::new();
     let mut components_created = Vec::new();
     let mut errors = Vec::new();
+    let mut created = Vec::new();
 
     // Phase 1: Create sources
     for src_snap in &snapshot.sources {
-        // Skip internal sources
-        if src_snap.id.starts_with("__") {
-            continue;
-        }
-
-        let properties_json = serde_json::to_value(&src_snap.properties)
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let properties_json =
+            serde_json::Value::Object(src_snap.properties.clone().into_iter().collect());
 
         let bootstrap_provider = src_snap.bootstrap_provider.as_ref().map(|bp| {
-            let bp_config_json = serde_json::to_value(&bp.properties)
-                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+            let bp_config_json =
+                serde_json::Value::Object(bp.properties.clone().into_iter().collect());
             BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: bp.kind.clone(),
                 config: bp_config_json,
@@ -441,134 +496,105 @@ pub async fn clone_instance(
 
         let source_config = SourceConfig {
             kind: src_snap.source_type.clone(),
-            id: src_snap.id.clone(),
+            name: src_snap.name.clone(),
+            id: None,
             auto_start: false,
             bootstrap_provider,
             identity_provider: None,
             config: properties_json,
         };
 
-        let (source, plugin_meta) =
-            match create_source_locked(&plugin_registry, source_config.clone()).await {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
-                    errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
-                    continue;
-                }
-            };
-
-        if let Err(e) = target_core
-            .add_source_with_metadata(source, plugin_meta)
-            .await
+        let handle = match crate::factories::create_source_instance(
+            &target_core,
+            plugin_registry.clone(),
+            source_config.clone(),
+        )
+        .await
         {
-            log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
-            errors.push(format!("Failed to add source '{}': {e}", src_snap.id));
-            continue;
-        }
+            Ok(handle) => handle,
+            Err(e) => {
+                log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
+                errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
+                continue;
+            }
+        };
 
-        // Track the cloned source's bootstrap provider so it survives the next
-        // save(). Without this the source_bootstrap_provider map has no entry
-        // and save() would fall back to the unreliable snapshot reconstruction
-        // path, silently dropping the provider (issue #105).
-        if let Some(p) = &config_persistence {
-            p.register_source_bootstrap_provider(
-                target_instance_id,
-                &src_snap.id,
-                source_config.bootstrap_provider(),
-            )
-            .await;
-        }
+        let id = handle.id().to_string();
 
-        sources_created.push(src_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "source", &src_snap.id).await {
-            log::warn!(
-                "Clone: source '{}' was added but creation failed: {e}",
-                src_snap.id
-            );
-            errors.push(format!(
-                "Source '{}' was added but creation failed: {e}",
-                src_snap.id
-            ));
-        }
+        sources_created.push(id.clone());
+        created.push(("source", id));
     }
 
     // Phase 2: Create queries
     for q_snap in &snapshot.queries {
-        if q_snap.id.starts_with("__") {
-            continue;
-        }
-
-        let mut query_config = q_snap.config.clone();
+        let mut query_config = q_snap.config.clone().into_authoring()?;
+        query_config.id = None;
         query_config.auto_start = false;
-
-        if let Err(e) = target_core.add_query(query_config).await {
-            log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
-            errors.push(format!("Failed to add query '{}': {e}", q_snap.id));
-            continue;
+        for input in &mut query_config.inputs {
+            input.component = crate::factories::named_reference(&input.component, &names)?;
         }
 
-        queries_created.push(q_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "query", &q_snap.id).await {
-            log::warn!(
-                "Clone: query '{}' was added but creation failed: {e}",
-                q_snap.id
-            );
-            errors.push(format!(
-                "Query '{}' was added but creation failed: {e}",
-                q_snap.id
-            ));
+        match target_core.add_query_with_handle(query_config).await {
+            Ok(handle) => {
+                let id = handle.id().to_string();
+                queries_created.push(id.clone());
+                created.push(("query", id));
+            }
+            Err(error) => {
+                log::error!(
+                    "Clone: failed to add query '{}': {error}",
+                    q_snap.config.name
+                );
+                errors.push(format!(
+                    "Failed to add query '{}': {error}",
+                    q_snap.config.name
+                ));
+            }
         }
     }
 
     // Phase 3: Create reactions
     for rx_snap in &snapshot.reactions {
-        if rx_snap.id.starts_with("__") {
-            continue;
-        }
-
-        let properties_json = serde_json::to_value(&rx_snap.properties)
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let mut properties_json =
+            serde_json::Value::Object(rx_snap.properties.clone().into_iter().collect());
+        crate::factories::remap_reaction_references(
+            &rx_snap.reaction_type,
+            &mut properties_json,
+            &names,
+        )?;
 
         let reaction_config = ReactionConfig {
             kind: rx_snap.reaction_type.clone(),
-            id: rx_snap.id.clone(),
-            queries: rx_snap.queries.clone(),
+            name: rx_snap.name.clone(),
+            id: None,
+            queries: rx_snap
+                .queries
+                .iter()
+                .map(|reference| crate::factories::named_reference(reference, &names))
+                .collect::<anyhow::Result<_>>()?,
             auto_start: false,
             identity_provider: None,
             config: properties_json,
         };
 
-        let (reaction, plugin_meta) =
-            match create_reaction_locked(&plugin_registry, reaction_config.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
-                    errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
-                    continue;
-                }
-            };
-
-        if let Err(e) = target_core
-            .add_reaction_with_metadata(reaction, plugin_meta)
-            .await
+        let handle = match crate::factories::create_reaction_instance(
+            &target_core,
+            plugin_registry.clone(),
+            reaction_config,
+        )
+        .await
         {
-            log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
-            errors.push(format!("Failed to add reaction '{}': {e}", rx_snap.id));
-            continue;
-        }
+            Ok(handle) => handle,
+            Err(e) => {
+                log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
+                errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
+                continue;
+            }
+        };
 
-        reactions_created.push(rx_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "reaction", &rx_snap.id).await {
-            log::warn!(
-                "Clone: reaction '{}' was added but creation failed: {e}",
-                rx_snap.id
-            );
-            errors.push(format!(
-                "Reaction '{}' was added but creation failed: {e}",
-                rx_snap.id
-            ));
-        }
+        let id = handle.id().to_string();
+        reactions_created.push(id.clone());
+        created.push(("reaction", id));
     }
 
     if let Some(config) = computation {
@@ -577,24 +603,32 @@ pub async fn clone_instance(
             crate::computation::register_components(&config, &target_core, &registry);
         drop(registry);
         match registration.await {
-            Ok(report) => {
-                if report.committed {
-                    components_created.extend(
-                        config
-                            .definition
-                            .components
-                            .iter()
-                            .map(|component| component.descriptor.id().to_string()),
-                    );
+            Ok(receipt) => {
+                let assignments = receipt
+                    .creation
+                    .map(|creation| creation.components)
+                    .unwrap_or_default();
+                if assignments.len() != config.definition.components.len() {
+                    errors.push("Native configuration was accepted without a complete identity receipt; inspect component observations".into());
                 }
-                if report.summary != drasi_lib::computation::v1::OperationSummary::Completed {
-                    errors.push("Native component construction is incomplete; inspect component observations".into());
+                for component in assignments {
+                    let id = component.id.to_string();
+                    components_created.push(id.clone());
+                    created.push(("native component", id));
                 }
             }
             Err(error) => {
                 log::error!("Clone: failed to add native components: {error:#}");
                 errors.push(format!("Failed to add native components: {error:#}"));
             }
+        }
+    }
+    for (kind, id) in created {
+        if let Err(error) = wait_for_computation_creation(&target_core, kind, &id).await {
+            log::warn!("Clone: {kind} '{id}' was added but creation failed: {error}");
+            errors.push(format!(
+                "{kind} '{id}' was added but creation failed: {error}"
+            ));
         }
     }
     persist_after_operation(&config_persistence, "cloning instance").await?;

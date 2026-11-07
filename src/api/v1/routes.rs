@@ -77,6 +77,8 @@ fn build_dynamic_instance_router() -> Router {
         // Instance snapshot
         .route("/snapshot", get(handlers::get_instance_snapshot))
         .route("/runtime", get(handlers::get_instance_runtime))
+        .route("/components/by-name/:name", get(handlers::lookup_component))
+        .route("/components/:id/rename", post(handlers::rename_component))
         .route(
             "/computation/configuration",
             get(handlers::get_computation_configuration),
@@ -102,6 +104,29 @@ fn build_dynamic_instance_router() -> Router {
             "/computation/components",
             post(handlers::create_computation_components)
                 .delete(handlers::delete_computation_components),
+        )
+        .route(
+            "/computation/definitions",
+            post(handlers::create_managed_component),
+        )
+        .route(
+            "/computation/ordinary-definitions",
+            post(handlers::create_managed_ordinary),
+        )
+        .route(
+            "/computation/ordinary-definitions/:id",
+            put(handlers::update_managed_ordinary).delete(handlers::delete_managed_ordinary),
+        )
+        .route("/computation/snapshots", get(handlers::list_configuration_snapshots))
+        .route(
+            "/computation/snapshots/:name",
+            get(handlers::get_configuration_snapshot)
+                .post(handlers::create_configuration_snapshot)
+                .delete(handlers::delete_configuration_snapshot),
+        )
+        .route(
+            "/computation/snapshots/:name/restore",
+            post(handlers::restore_configuration_snapshot),
         )
         .route(
             "/computation/start",
@@ -132,7 +157,10 @@ fn build_dynamic_instance_router() -> Router {
         // Query routes
         .route("/queries", get(handlers::list_queries))
         .route("/queries", post(handlers::create_query))
-        .route("/queries/:id", get(handlers::get_query))
+        .route(
+            "/queries/:id",
+            get(handlers::get_query).put(handlers::update_query_handler),
+        )
         .route("/queries/:id/events", get(handlers::get_query_events))
         .route(
             "/queries/:id/events/stream",

@@ -8,14 +8,7 @@ import type {
   QueryConfigResponse,
   ReactionStatusResponse,
   ComponentEvent,
-  ComponentStatus,
 } from "@/api/types";
-
-// Internal components (introspection source, attach reactions) should be hidden from the UI
-const INTERNAL_PREFIX = "__";
-function isInternal(id: string): boolean {
-  return id.startsWith(INTERNAL_PREFIX);
-}
 
 // ---------------------------------------------------------------------------
 // Shared EventSource singleton per instance
@@ -196,7 +189,7 @@ export function useSources(instanceId?: string) {
     try {
       const data = await api.listSources(instanceId);
       if (!isCurrent()) return;
-      setSources(data.filter((s) => !isInternal(s.id)));
+      setSources(data);
     } catch (e) {
       if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
@@ -221,33 +214,24 @@ export function useSources(instanceId?: string) {
     const unsub = subscribeComponentEvents((event) => {
       if (!isCurrent()) return;
       if (event.componentType !== "Source") return;
-      if (isInternal(event.componentId)) return;
 
       if (event.status === "Removed") {
         setSources((prev) => prev.filter((s) => s.id !== event.componentId));
         return;
       }
 
-      if (event.status === "Added") {
+      if (event.status === "Added" || event.message?.startsWith("Renamed ")) {
         // New source added — fetch full details then append
         api.getSource(event.componentId, instanceId).then((full) => {
           if (!isCurrent()) return;
           setSources((prev) => {
-            if (prev.some((s) => s.id === full.id)) return prev;
+            if (prev.some((s) => s.id === full.id)) return prev.map((s) => s.id === full.id ? full : s);
             return [...prev, full];
           });
-        }).catch(() => {
+        }).catch((error) => {
           if (!isCurrent()) return;
-          // Append with minimal info; will be refined on next detail fetch
-          setSources((prev) => {
-            if (prev.some((s) => s.id === event.componentId)) return prev;
-            return [...prev, {
-              id: event.componentId,
-              kind: "mock",
-              status: "Stopped" as ComponentStatus,
-              autoStart: false,
-            }];
-          });
+          console.warn("Source details unavailable; refreshing authoritative summaries", error);
+          void refresh();
         });
         return;
       }
@@ -263,14 +247,14 @@ export function useSources(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId, isCurrent]);
+  }, [instanceId, isCurrent, refresh]);
 
   return {
     sources,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createSource>[0]) => {
-      await api.createSource(req, requireInstanceId(instanceId));
+      return api.createSource(req, requireInstanceId(instanceId));
       // SSE will deliver the Added event — no need to refresh
     },
     remove: async (id: string) => {
@@ -306,7 +290,7 @@ export function useQueries(instanceId?: string) {
     try {
       const data = await api.listQueries(instanceId);
       if (!isCurrent()) return;
-      setQueries(data.filter((q) => !isInternal(q.id)));
+      setQueries(data);
     } catch (e) {
       if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
@@ -329,31 +313,23 @@ export function useQueries(instanceId?: string) {
     const unsub = subscribeComponentEvents((event) => {
       if (!isCurrent()) return;
       if (event.componentType !== "Query") return;
-      if (isInternal(event.componentId)) return;
 
       if (event.status === "Removed") {
         setQueries((prev) => prev.filter((q) => q.id !== event.componentId));
         return;
       }
 
-      if (event.status === "Added") {
+      if (event.status === "Added" || event.message?.startsWith("Renamed ")) {
         api.getQuery(event.componentId, instanceId).then((full) => {
           if (!isCurrent()) return;
           setQueries((prev) => {
-            if (prev.some((q) => q.id === full.id)) return prev;
+            if (prev.some((q) => q.id === full.id)) return prev.map((q) => q.id === full.id ? full : q);
             return [...prev, full];
           });
-        }).catch(() => {
+        }).catch((error) => {
           if (!isCurrent()) return;
-          setQueries((prev) => {
-            if (prev.some((q) => q.id === event.componentId)) return prev;
-            return [...prev, {
-              id: event.componentId,
-              query: "",
-              inputs: [],
-              status: "Stopped" as ComponentStatus,
-            }];
-          });
+          console.warn("Query details unavailable; refreshing authoritative summaries", error);
+          void refresh();
         });
         return;
       }
@@ -368,14 +344,14 @@ export function useQueries(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId, isCurrent]);
+  }, [instanceId, isCurrent, refresh]);
 
   return {
     queries,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createQuery>[0]) => {
-      await api.createQuery(req, requireInstanceId(instanceId));
+      return api.createQuery(req, requireInstanceId(instanceId));
     },
     remove: async (id: string) => {
       await api.deleteQuery(id, requireInstanceId(instanceId));
@@ -407,7 +383,7 @@ export function useReactions(instanceId?: string) {
     try {
       const data = await api.listReactions(instanceId);
       if (!isCurrent()) return;
-      setReactions(data.filter((r) => !isInternal(r.id)));
+      setReactions(data);
     } catch (e) {
       if (!isCurrent()) return;
       // Only clear on 404 (instance not found) - preserve data on transient errors
@@ -430,32 +406,23 @@ export function useReactions(instanceId?: string) {
     const unsub = subscribeComponentEvents((event) => {
       if (!isCurrent()) return;
       if (event.componentType !== "Reaction") return;
-      if (isInternal(event.componentId)) return;
 
       if (event.status === "Removed") {
         setReactions((prev) => prev.filter((r) => r.id !== event.componentId));
         return;
       }
 
-      if (event.status === "Added") {
+      if (event.status === "Added" || event.message?.startsWith("Renamed ")) {
         api.getReaction(event.componentId, instanceId).then((full) => {
           if (!isCurrent()) return;
           setReactions((prev) => {
-            if (prev.some((r) => r.id === full.id)) return prev;
+            if (prev.some((r) => r.id === full.id)) return prev.map((r) => r.id === full.id ? full : r);
             return [...prev, full];
           });
-        }).catch(() => {
+        }).catch((error) => {
           if (!isCurrent()) return;
-          setReactions((prev) => {
-            if (prev.some((r) => r.id === event.componentId)) return prev;
-            return [...prev, {
-              id: event.componentId,
-              kind: "log",
-              status: "Stopped" as ComponentStatus,
-              queries: [],
-              autoStart: false,
-            }];
-          });
+          console.warn("Reaction details unavailable; refreshing authoritative summaries", error);
+          void refresh();
         });
         return;
       }
@@ -470,14 +437,14 @@ export function useReactions(instanceId?: string) {
     }, instanceId);
 
     return unsub;
-  }, [instanceId, isCurrent]);
+  }, [instanceId, isCurrent, refresh]);
 
   return {
     reactions,
     loading,
     refresh,
     create: async (req: Parameters<typeof api.createReaction>[0]) => {
-      await api.createReaction(req, requireInstanceId(instanceId));
+      return api.createReaction(req, requireInstanceId(instanceId));
     },
     remove: async (id: string) => {
       await api.deleteReaction(id, requireInstanceId(instanceId));

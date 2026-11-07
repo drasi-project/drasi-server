@@ -7,7 +7,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { DrasiProvider, useDrasiQuery } from '../src/react/DrasiContext';
 import { fakeEventSourceFactory } from './FakeEventSource';
-import { pressureDelete, readings, temperatureUpdate } from './fixtures/synthetic/telemetry';
+import { pressureDelete, readingIds, readings, temperatureUpdate } from './fixtures/synthetic/telemetry';
 import { component, queryConfig } from './server';
 
 interface Reading {
@@ -16,7 +16,7 @@ interface Reading {
   value: number;
 }
 
-function Readings({ queryId }: { queryId: string }) {
+function Readings({ queryId, name }: { queryId: string; name: string }) {
   const { data, error } = useDrasiQuery<Reading>(queryId, {
     getKey: row => `${row.device}/${row.metric}`,
     transform: row => {
@@ -26,7 +26,7 @@ function Readings({ queryId }: { queryId: string }) {
       return { device: row.device, metric: row.metric, value: Number(row.value) };
     },
   });
-  return <output aria-label={queryId}>{error?.message ?? JSON.stringify(data)}</output>;
+  return <output aria-label={name}>{error?.message ?? JSON.stringify(data)}</output>;
 }
 
 describe('non-Trading synthetic contracts', () => {
@@ -37,30 +37,31 @@ describe('non-Trading synthetic contracts', () => {
       const json = (body: unknown) => new Response(JSON.stringify({ success: true, data: body }));
       if (url.includes('?view=full')) {
         const id = new URL(url).pathname.split('/').pop()!;
-        return json(id === 'building-events'
+        return json(id === readingIds.events
           ? component('reactions', id, {
-            id, kind: 'sse', queries: ['building-readings', 'archive-readings'],
+            id, name: 'building-events', kind: 'sse',
+            queries: [{ id: readingIds.current }, { id: readingIds.archive }],
             host: '0.0.0.0', port: 9999, ssePath: '/events', heartbeatIntervalMs: 15000,
           }, 'Running', 'building-a')
           : component('queries', id, queryConfig(id, {
             query: 'MATCH (r:Reading) RETURN r',
           }), 'Running', 'building-a'));
       }
-      if (url.endsWith('/building-readings/results')) return json(readings);
-      if (url.endsWith('/archive-readings/results')) return json(readings);
+      if (url.endsWith(`/${readingIds.current}/results`)) return json(readings);
+      if (url.endsWith(`/${readingIds.archive}/results`)) return json(readings);
       throw new Error(`Unexpected non-Trading fixture request ${url}`);
     };
     render(
       <DrasiProvider
         serverUrl="http://building.invalid:8080"
         instanceId="building-a"
-        outputIds={['building-readings', 'archive-readings']}
-        reaction={{ id: 'building-events', endpoint: 'https://building.invalid/events' }}
+        outputIds={[readingIds.current, readingIds.archive]}
+        reaction={{ id: readingIds.events, endpoint: 'https://building.invalid/events' }}
         fetch={fetcher}
         eventSourceFactory={factory.create}
       >
-        <Readings queryId="building-readings" />
-        <Readings queryId="archive-readings" />
+        <Readings queryId={readingIds.current} name="building-readings" />
+        <Readings queryId={readingIds.archive} name="archive-readings" />
       </DrasiProvider>,
     );
     await waitFor(() => expect(factory.instances).toHaveLength(1));

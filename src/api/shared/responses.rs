@@ -29,9 +29,12 @@ pub struct HealthResponse {
 
 /// Response listing a component with its status
 #[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentListItem {
     /// ID of the component
     pub id: String,
+    /// Current unique name, independent of the immutable UUID.
+    pub name: String,
     /// Current status of the component
     pub status: ComponentStatus,
     /// Error message if the component is in error state
@@ -74,6 +77,7 @@ pub struct InstanceListItem {
 #[serde(rename_all = "camelCase")]
 pub struct InstanceRuntimeInfo {
     pub instance_id: String,
+    pub allow_external_component_ids: bool,
     /// Fixed informational runtime name, not a configurable execution mode.
     #[schema(example = "computationGraph")]
     pub runtime: &'static str,
@@ -121,6 +125,13 @@ pub struct ApiResponseSchema {
 #[derive(Serialize, ToSchema)]
 pub struct StatusResponse {
     /// Status message
+    pub message: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ComponentCreatedResponse {
+    pub id: String,
+    pub name: String,
     pub message: String,
 }
 

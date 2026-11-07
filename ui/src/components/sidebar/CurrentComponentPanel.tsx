@@ -18,6 +18,7 @@ import {
 import Editor from "@monaco-editor/react";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
+import ComponentIdentityEditor from "@/components/shared/ComponentIdentityEditor";
 import ConnectedComponentItem from "@/components/inspector/ConnectedComponentItem";
 import QueryCodeViewer from "@/components/inspector/QueryCodeViewer";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
@@ -45,6 +46,7 @@ const REACTION_ICON_MAP: Record<string, React.ElementType> = {
 // Shared connected component type
 interface ConnectedComponent {
   id: string;
+  name?: string;
   type: ComponentType;
   status: ComponentStatus;
   kind?: string;
@@ -53,6 +55,8 @@ interface ConnectedComponent {
 export interface SourceInspectorData {
   isSource: true;
   id: string;
+  name: string;
+  onRename: (name: string) => Promise<void>;
   kind: string;
   status: ComponentStatus;
   error?: string;
@@ -67,6 +71,8 @@ export interface SourceInspectorData {
 export interface QueryInspectorData {
   isQuery: true;
   id: string;
+  name: string;
+  onRename: (name: string) => Promise<void>;
   status: ComponentStatus;
   error?: string;
   query: string;
@@ -81,6 +87,8 @@ export interface QueryInspectorData {
 export interface ReactionInspectorData {
   isReaction: true;
   id: string;
+  name: string;
+  onRename: (name: string) => Promise<void>;
   kind: string;
   status: ComponentStatus;
   error?: string;
@@ -203,9 +211,7 @@ function SourceView({
             <Icon size={16} style={{ color: accentColor }} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[var(--drasi-text-primary)] truncate">
-              {data.id}
-            </h2>
+            <ComponentIdentityEditor key={data.id} id={data.id} name={data.name} onRename={data.onRename} />
             <div className="flex items-center gap-1.5">
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
@@ -227,7 +233,7 @@ function SourceView({
           <StatusBadge status={data.status} size="sm" />
           <ActionButtons
             status={data.status}
-            componentName={data.id}
+            componentName={data.name}
             onStart={data.onStart}
             onStop={data.onStop}
             onDelete={data.onDelete}
@@ -303,9 +309,7 @@ function QueryView({
             <Search size={16} style={{ color: accentColor }} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[var(--drasi-text-primary)] truncate">
-              {data.id}
-            </h2>
+            <ComponentIdentityEditor key={data.id} id={data.id} name={data.name} onRename={data.onRename} />
             <div className="flex items-center gap-1.5">
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
@@ -327,7 +331,7 @@ function QueryView({
           <StatusBadge status={data.status} size="sm" />
           <ActionButtons
             status={data.status}
-            componentName={data.id}
+            componentName={data.name}
             onStart={data.onStart}
             onStop={data.onStop}
             onDelete={data.onDelete}
@@ -420,9 +424,7 @@ function ReactionView({
             <Icon size={16} style={{ color: accentColor }} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[var(--drasi-text-primary)] truncate">
-              {data.id}
-            </h2>
+            <ComponentIdentityEditor key={data.id} id={data.id} name={data.name} onRename={data.onRename} />
             <div className="flex items-center gap-1.5">
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
@@ -444,7 +446,7 @@ function ReactionView({
           <StatusBadge status={data.status} size="sm" />
           <ActionButtons
             status={data.status}
-            componentName={data.id}
+            componentName={data.name}
             onStart={data.onStart}
             onStop={data.onStop}
             onDelete={data.onDelete}
@@ -545,6 +547,7 @@ function ConnectedList({
             <ConnectedComponentItem
               key={item.id}
               id={item.id}
+              name={item.name}
               type={item.type}
               status={item.status}
               kind={item.kind}
