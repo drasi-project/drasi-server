@@ -14,13 +14,13 @@ on `otel-drasi-server-work`. It includes the native query observation bridge
 and callback-safety fixes for
 [drasi-project/drasi-core#1011](https://github.com/drasi-project/drasi-core/issues/1011).
 
-The [Observability Baseline workflow](../.github/workflows/observability-baseline.yml)
-checks out Server and that exact Core commit into sibling directories, selects
-Rust 1.95.0, and rebuilds the matched plugins using both repositories' lockfiles.
-It does not replace the source in an existing developer checkout. Local path
-dependencies still compile local edits; `Cargo.lock` does not pin their contents.
-The general/release workflows must not be assumed to reproduce this source pair
-merely because their Cargo commands use `--locked`.
+Local qualification uses Rust 1.95.0 and the sibling Core checkout at that
+revision, rebuilding matched plugins using both repositories' lockfiles.
+Local path dependencies still compile local edits; `Cargo.lock` does not pin
+their contents. CI setup is deferred. The general/release workflows must not be
+assumed to reproduce this source pair merely because their Cargo commands use
+`--locked`. Do not fetch, switch or reset an existing developer checkout during
+build preparation.
 
 Ordinary plugins use ABI **0.18**; native computation plugins use base ABI **2.0**
 and envelope wire format **2**. Telemetry extensions are separately negotiated.
@@ -185,8 +185,9 @@ plugin), checks the locked Server library, reruns legacy loopback HTTP JSON
 metrics and explicit query-factory selection tests, and runs all adapter proofs
 including the cdylib test. It fails
 explicitly if the Cargo-selected plugin source is not local.
-The CI job also runs the Server library unit suite and Core's observation,
-graph-observability and query-metric regression suites.
+The Server library unit suite and Core's observation, graph-observability,
+query-metric and callback regression suites were run separately for local
+qualification.
 
 For a quick, no-service check without rebuilding plugins:
 
@@ -198,7 +199,7 @@ CARGO_TARGET_DIR="$PWD/target/observability-server" cargo test --locked --lib te
 ### Current local validation
 
 All **six Server adapter/plugin proofs** pass against freshly rebuilt libraries
-from the pinned Core revision, including the actual native-query handoff through
+from the recorded Core revision, including the actual native-query handoff through
 the OTel and Prometheus adapters. Local qualification against that revision:
 
 | Gate | Result |
@@ -210,15 +211,15 @@ the OTel and Prometheus adapters. Local qualification against that revision:
 | Core library observation unit tests | 72 passed, 1 intentionally ignored timing characterization |
 | Core graph-observability and query-metric integration tests | 11 passed |
 | Core query bridge/callback tests | 8 passed |
-| New CI workflow syntax | `actionlint` passed |
 | Adapter proof Clippy | Passed with only the two existing library lint categories allowed |
 
 These are not full workspace or release qualification.
 
 ## Remaining completion gates
 
-The integrated source now has an immutable revision and a focused CI setup.
-Do not treat these as full release qualification:
+The integrated source now has an immutable revision, with local qualification
+results above. CI setup remains deferred; these results are not full release
+qualification:
 
 - Complete broader Core workspace/recovery qualification as needed. The
   affected suites above pass, but the previously interrupted full Core unit run
@@ -235,9 +236,9 @@ Do not treat these as full release qualification:
   and the removed receipt helper in
   [`native_sqlite_test.rs`](../tests/native_sqlite_test.rs).
   They are not treated as passing or silently excluded from the broader gate.
-- Run the pinned Observability Baseline workflow on a clean CI runner. Its
-  source setup is explicit; existing release/cross-platform jobs still need
-  their own matched-source qualification.
+- Before PR/release qualification, configure CI to check out the matching Core
+  revision and rerun the checks on a clean runner. Existing release/cross-platform
+  jobs still need their own matched-source qualification.
 - `make clippy` still reports seven findings in untouched handlers/services:
   six `result_large_err` and one `too_many_arguments`. The focused adapter proof
   passes with only those categories allowed; this is not a clean result for the
