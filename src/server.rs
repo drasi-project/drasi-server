@@ -1332,15 +1332,16 @@ mod single_runtime_tests {
         use drasi_lib::computation::v1::*;
         let resource = ResourceId::try_new("middleware").unwrap();
         let definition = MiddlewareTransformerDefinition {
-            id: ComponentId::try_new("native-transformer").unwrap(),
+            id: ComponentId::generate(),
             output_stream: StreamId::try_new("native/out").unwrap(),
             middleware: Vec::new(),
             pipeline: Vec::new(),
         };
         let specification = definition.specification(resource.clone()).unwrap();
         let topology: DesiredTopology = serde_json::from_value(serde_json::json!({
-            "version":1, "revision":0,
+            "version":DESIRED_TOPOLOGY_VERSION, "revision":0,
             "components":[{
+                "name":"native-transformer",
                 "descriptor":specification.descriptor, "role":specification.role, "completion":null,
                 "streams":{}, "lifecycle":LifecyclePolicy { auto_start: false }, "input_merge":InputMergePolicy::default(),
                 "construction":ComponentConstruction::Factory(specification),
@@ -1356,8 +1357,10 @@ mod single_runtime_tests {
             definition: topology,
         };
         let config = crate::config::DrasiServerConfig {
+            persist_config: false,
             instances: vec![crate::config::DrasiLibInstanceConfig {
                 id: crate::api::models::ConfigValue::Static("native-startup".into()).into(),
+                allow_external_component_ids: true,
                 computation: Some(graph_config.clone().into()),
                 ..Default::default()
             }],
@@ -1376,6 +1379,12 @@ mod single_runtime_tests {
         .await
         .unwrap();
         let core = &server.instances[0].core;
+        core.reconcile_desired_state().await.unwrap();
+        core.computation_component(definition.id.as_str())
+            .unwrap()
+            .wait_created()
+            .await
+            .unwrap();
         assert!(!core.is_running().await);
         let handle = core.computation_control().unwrap();
         assert_eq!(
@@ -1395,6 +1404,8 @@ mod single_runtime_tests {
         assert!(core.is_running().await);
         assert!(!handle.desired_snapshot().lifecycle_policies[&definition.id].auto_start);
         core.shutdown().await.unwrap();
+        drop(handle);
+        drop(server);
 
         let mut config = config;
         let crate::computation::ComputationConfigInput::Definition(graph) =

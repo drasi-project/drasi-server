@@ -43,8 +43,8 @@ use std::sync::Arc;
 /// because its type name was not added to this list.
 ///
 /// Filename matching only selects candidates. `PluginLoader::load_all_families`
-/// dispatches native ComputationGraph ABI 1.0 and legacy plugin ABI 0.15 explicitly.
-/// Invalid native declarations never fall back to the legacy entry point.
+/// dispatches native ComputationGraph ABI 2.0 and ordinary plugin ABI 0.18 explicitly.
+/// Invalid native declarations never fall back to the ordinary entry point.
 ///
 /// The two entries cover:
 /// - Unix shared libraries (`libdrasi_<type>_<name>.so` / `.dylib`)

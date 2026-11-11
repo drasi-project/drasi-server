@@ -604,7 +604,7 @@ mod tests {
     #[test]
     fn test_query_unknown_field_rejected() {
         let yaml = r#"
-            id: test-query
+            name: test-query
             query: "MATCH (n) RETURN n"
             unknownField: value
         "#;
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn test_query_snake_case_auto_start_rejected() {
         let yaml = r#"
-            id: test-query
+            name: test-query
             query: "MATCH (n) RETURN n"
             auto_start: true
         "#;
@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn test_query_snake_case_query_language_rejected() {
         let yaml = r#"
-            id: test-query
+            name: test-query
             query: "MATCH (n) RETURN n"
             query_language: Cypher
         "#;
@@ -683,7 +683,7 @@ mod tests {
     #[test]
     fn test_valid_query_with_all_fields() {
         let yaml = r#"
-            id: test-query
+            name: test-query
             query: "MATCH (n) RETURN n"
             queryLanguage: Cypher
             autoStart: true

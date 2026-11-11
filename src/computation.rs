@@ -1194,7 +1194,10 @@ mod tests {
         validate_definition(&config)?;
         let core = crate::query_test_support::builder().build().await?;
         let batch = build_components_with_registry(&config, &core, &registry).await?;
-        batch.bindings.resources[&resource.id]
+        assert!(!batch.bindings.resources.contains_key(&resource.id));
+        batch.bindings.resource_constructors[&resource.id]
+            .construct()
+            .await?
             .get::<drasi_host_sdk::computation::NativeIdentityResource>()?;
         assert_eq!(
             batch.definition.resource_configurations[&resource.id],

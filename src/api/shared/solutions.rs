@@ -1184,12 +1184,12 @@ version: "2.0.0"
 defaultInstanceId: my-instance
 sources:
   - kind: http
-    id: http-source
+    name: http-source
     properties:
       host: "${HOST:-localhost}"
       port: "${PORT}"
 queries:
-  - id: my-query
+  - name: my-query
     query: "MATCH (n) WHERE n.value > ${THRESHOLD:-100} RETURN n"
 reactions: []
 "#,

@@ -62,7 +62,7 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
     core.start().await?;
     let query = core.component_by_name("items")?;
     tokio::time::timeout(Duration::from_secs(5), query.wait_started()).await??;
-    core.get_query_results(query.id().as_str()).await?;
+    core.get_query_results_by_id(query.id()).await?;
     let input = input
         .get()
         .context("source constructor did not publish its input handle")?
@@ -239,10 +239,10 @@ async fn exported_progress_and_owned_shutdown() -> Result<()> {
             PropertyMapBuilder::new().with_integer("value", 99).build(),
         )
         .await?;
-    let query_id = second.component_by_name("items")?.id().to_string();
+    let query_id = second.component_by_name("items")?.id().clone();
     tokio::time::timeout(Duration::from_millis(500), async {
         loop {
-            if second.get_query_results(&query_id).await? == vec![json!({"value": 99})] {
+            if second.get_query_results_by_id(&query_id).await? == vec![json!({"value": 99})] {
                 break Result::<()>::Ok(());
             }
             tokio::task::yield_now().await;

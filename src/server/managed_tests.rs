@@ -10,6 +10,7 @@ fn settings(directory: &std::path::Path) -> anyhow::Result<DrasiServerConfig> {
 
         instances: vec![crate::config::DrasiLibInstanceConfig {
             id: crate::api::models::ConfigValue::Static("managed-startup".into()).into(),
+            allow_external_component_ids: true,
             configuration_store: Some(
                 crate::managed_configuration::ConfigurationStoreConfig::Redb {
                     path: directory.join("configuration.redb"),
@@ -25,7 +26,7 @@ fn settings(directory: &std::path::Path) -> anyhow::Result<DrasiServerConfig> {
 fn unavailable_definition() -> anyhow::Result<crate::computation::ComputationConfig> {
     let resource = ResourceId::try_new("middleware")?;
     let mut specification = MiddlewareTransformerDefinition {
-        id: ComponentId::try_new("unavailable-transformer")?,
+        id: ComponentId::generate(),
         output_stream: StreamId::try_new("transformer/out")?,
         middleware: Vec::new(),
         pipeline: Vec::new(),
@@ -34,8 +35,9 @@ fn unavailable_definition() -> anyhow::Result<crate::computation::ComputationCon
     specification.implementation = ImplementationIdentity::try_new("unavailable/plugin", "1")?;
     Ok(crate::computation::ComputationConfig {
         definition: serde_json::from_value(serde_json::json!({
-            "version":1, "revision":0,
+            "version":DESIRED_TOPOLOGY_VERSION, "revision":0,
             "components":[{
+                "name":"unavailable-transformer",
                 "descriptor":specification.descriptor, "role":specification.role,
                 "completion":null, "streams":{},
                 "lifecycle":LifecyclePolicy { auto_start: true },
@@ -111,7 +113,7 @@ async fn generated_managed_id_and_accepted_configuration_survive_file_changes() 
     };
     document["instances"][0]["computation"] = serde_json::json!({
         "graph": {
-            "components": [{"id": "ignored-file-seed", "kind": "obsolete/missing-factory"}]
+            "components": [{"name": "ignored-file-seed", "kind": "obsolete/missing-factory"}]
         }
     });
     std::fs::write(&path, serde_yaml::to_string(&document)?)?;
@@ -177,11 +179,11 @@ async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> 
     let mut config = settings(directory.path())?;
     config.instances[0].computation = Some(serde_json::from_value(serde_json::json!({
         "graph": {
-            "resources": {"indexes": {"kind": "memoryIndexes"}},
+            "resources": {"results": {"kind": "queryCatalog"}},
             "components": [{
-                "id": "query", "kind": "drasi/continuous-query", "autoStart": false,
-                "resources": {"indexes": "indexes"},
-                "config": {"query": "MATCH (n) RETURN n.value AS value"}
+                "name": "outlet", "kind": "drasi/query-results-outlet", "autoStart": false,
+                "resources": {"catalog": "results"},
+                "config": {}
             }]
         }
     }))?);
@@ -202,9 +204,9 @@ async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> 
         panic!("readable test seed");
     };
     graph.components[0].kind = "obsolete/missing-factory".into();
-    graph.components[0].config = serde_json::json!({"query": 123});
+    graph.components[0].config = serde_json::json!({"pipeline": 123});
     graph.resources.insert(
-        ResourceId::try_new("indexes")?,
+        ResourceId::try_new("results")?,
         serde_json::json!({"kind": "obsolete"}),
     );
     graph.default_pipe_capacity = 0;

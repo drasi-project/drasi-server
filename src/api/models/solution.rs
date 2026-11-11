@@ -691,7 +691,8 @@ port: 8080
         let creation = SolutionDeployError::creation("source", "my-source", "already exists");
         assert_eq!(creation.phase, DeployPhase::Creation);
         assert_eq!(creation.component_type, Some("source".to_string()));
-        assert_eq!(creation.component_id, Some("my-source".to_string()));
+        assert!(creation.component_id.is_none());
+        assert_eq!(creation.component_name, Some("my-source".to_string()));
 
         let start = SolutionDeployError::start("query", "my-query", "failed to start");
         assert_eq!(start.phase, DeployPhase::Start);
