@@ -1,6 +1,15 @@
 # Main runtime integration for the engine prerequisite
 
-## Current released runtime
+## Current local integration branch
+
+This branch uses sibling `../drasi-core` path dependencies, not the historical
+registry selection described below. The observability integration uses the
+`otel-conflict-resolution` checkout, including its local changes. See the
+[OBS-01 baseline](observability-baseline.md) for merge inputs, telemetry adapter
+versions, plugin rebuilding and remaining qualification gates. Build preparation
+checks the selected source; it does not fetch or switch the sibling checkout.
+
+## Historical released runtime
 
 Default builds now use the published September 25 release from
 [`22125bf1d66062533b832a166fe4a51079a23d6e`](https://github.com/drasi-project/drasi-core/commit/22125bf1d66062533b832a166fe4a51079a23d6e).

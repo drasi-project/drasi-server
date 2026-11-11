@@ -1309,6 +1309,10 @@ The single [execution engine](#execution-engine) needs no configuration selector
 
 ### OpenTelemetry progress metrics
 
+For the local Core/Server adapter versions, migration decisions and compatibility
+checks, see the [OBS-01 baseline](docs/observability-baseline.md). This baseline
+does not enable new exporters or replace the progress-export contract below.
+
 Configure `metrics` at Server level to export OTLP/HTTP JSON to an existing
 collector. Omitting it creates no metrics exporter or metrics worker.
 
