@@ -43,6 +43,8 @@ else
     SERVER_BIN := drasi-server
 endif
 
+OBSERVABILITY_SERVER_TARGET_DIR = $(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))/observability-server
+
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -193,9 +195,9 @@ test-observability-baseline: prepare-build
 	@core_root="$$(python3 scripts/plugin_origin.py local-workspace)" && \
 		$(MAKE) -C "$$core_root" test-native-telemetry
 	$(MAKE) build-local-test-plugins
-	cargo check --locked --lib
-	cargo test --locked --lib -- telemetry::tests query_plugin::tests
-	cargo test --locked --test observability_compatibility -- --include-ignored
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo check --locked --lib
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo test --locked --lib -- telemetry::tests query_plugin::tests
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo test --locked --test observability_compatibility -- --include-ignored
 
 # Run ALL tests: build/download test plugins, run cargo tests (including #[ignore]),
 # plugin smoke tests, and VSCode extension tests.

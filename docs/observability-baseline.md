@@ -8,17 +8,19 @@ telemetry configuration/routes.
 ## Local source and plugin ownership
 
 This branch consumes the existing sibling `../drasi-core` through Cargo path
-dependencies, including uncommitted changes. The integration checkout is
-`otel-conflict-resolution`: observability HEAD
-`aed40c90aeaeccad962e9396b4c4f74030c422c5`, merged with graph/native-query revision
-`4b8597440294f095f6a5b31f1ef8c9358e3629b3`.
+dependencies, including uncommitted changes. The integrated Core baseline is
+[`5fc20eec0dc2669f38b928e3794daf8ea712fb71`](https://github.com/drasi-project/drasi-core/commit/5fc20eec0dc2669f38b928e3794daf8ea712fb71)
+on `otel-drasi-server-work`. It includes the native query observation bridge
+and callback-safety fixes for
+[drasi-project/drasi-core#1011](https://github.com/drasi-project/drasi-core/issues/1011).
 
-Those two hashes identify the merge inputs, **not an immutable integrated
-revision**. Before CI/release qualification, finish the Core validation, commit
-the integration, and record its full resulting SHA. `Cargo.lock` does not pin
-the contents of a path dependency. Do not fetch, switch or reset an existing
-developer checkout during build preparation, or claim that a runner checking
-out only Server can reproduce this source pair.
+The [Observability Baseline workflow](../.github/workflows/observability-baseline.yml)
+checks out Server and that exact Core commit into sibling directories, selects
+Rust 1.95.0, and rebuilds the matched plugins using both repositories' lockfiles.
+It does not replace the source in an existing developer checkout. Local path
+dependencies still compile local edits; `Cargo.lock` does not pin their contents.
+The general/release workflows must not be assumed to reproduce this source pair
+merely because their Cargo commands use `--locked`.
 
 Ordinary plugins use ABI **0.18**; native computation plugins use base ABI **2.0**
 and envelope wire format **2**. Telemetry extensions are separately negotiated.
@@ -26,6 +28,10 @@ Older base layouts cannot be made compatible by their telemetry extension
 version. Rebuild plugins from the same Cargo-selected SDK/Host/FFI workspace:
 path dependencies alone do not rebuild already installed shared libraries.
 Registry plugin downloads are not a fallback for this local baseline.
+The optional query-observation extension is negotiated through telemetry V4;
+the base ABI and frozen telemetry V1/V2/V3 layouts are unchanged. SDK support
+alone is insufficient: the selected query factory must explicitly advertise
+instrumentation support. The real-plugin proofs require this capability.
 
 ## Qualified dependency selection
 
@@ -67,6 +73,21 @@ It checks:
 - Metrics remain active without traces and exclusions prevent registration.
 - Rebuilt ordinary and native libraries load through Server's shared discovery
   path, and the explicitly selected native query factory processes real data.
+- The real query's input/result counters and second-valued evaluator/commit
+  histograms reach the selected OTel recorder with tracing disabled. One input
+  produces one result and one evaluation, not host/plugin duplicate counts.
+- Under the Debug profile, real evaluator/preparation/finalization spans and
+  host commit spans reach the shared trace processor with component identity
+  and causal parentage intact. The same run exports query counters and evaluator
+  durations through Prometheus, without enabling Persistence-only commit
+  histograms.
+
+The managed query workload commits twice: once for evaluation/publication and
+once for delivery acknowledgement. Each real commit is observed once, under its
+own processing/acknowledgement parent. An empty bootstrap confirmation is not
+fresh input or an extra evaluation. These checks complement Core's durable,
+bootstrap, scheduled, replay and callback-safety tests; they do not duplicate
+the evaluator or manufacture durations around the whole plugin operation.
 
 The Prometheus recorder normalizes dots to underscores but does not add a
 `_total` suffix to an existing catalogue name. Unit suffixing is disabled by
@@ -137,13 +158,26 @@ must reject unsupported handoffs rather than retrofit live cached handles.
 The public Server builder API and complete shutdown wiring belong to OBS-03,
 not this compatibility proof.
 
+The managed-instance tracing proof explicitly installs a process-wide subscriber
+composing component logging with the chosen OTel layer. Core's management
+reconciliation task uses that process subscriber; a scoped subscriber around
+only the calling future does not cover it. OBS-03 must qualify the embedding
+subscriber strategy as well as provider ownership, rather than silently relying
+on an unrelated global subscriber.
+
 ## Running the checks
 
 ```bash
 # Requires the matched sibling Core checkout and its locked graph.
-# Reuse one target directory instead of maintaining two large build caches.
 CARGO_TARGET_DIR="$PWD/target" make test-observability-baseline
 ```
+
+The supplied target directory holds Core's build artifacts; Server qualification
+uses its `observability-server/` subdirectory. The two lockfiles can resolve
+different dependency versions, and native `lib`/`cdylib` artifacts must not share
+one output directory across those graphs. This separation avoids stale crate
+identity errors without deleting a developer's existing cache. The copied
+runtime test bundle remains in Server's `target/debug/plugins/`.
 
 The target rebuilds Core's context/telemetry fixtures before running its native
 telemetry tests, rebuilds Server's local test bundle (including the native query
@@ -151,48 +185,67 @@ plugin), checks the locked Server library, reruns legacy loopback HTTP JSON
 metrics and explicit query-factory selection tests, and runs all adapter proofs
 including the cdylib test. It fails
 explicitly if the Cargo-selected plugin source is not local.
+The CI job also runs the Server library unit suite and Core's observation,
+graph-observability and query-metric regression suites.
 
 For a quick, no-service check without rebuilding plugins:
 
 ```bash
-cargo test --locked --test observability_compatibility
-cargo test --locked --lib telemetry::tests
+CARGO_TARGET_DIR="$PWD/target/observability-server" cargo test --locked --test observability_compatibility
+CARGO_TARGET_DIR="$PWD/target/observability-server" cargo test --locked --lib telemetry::tests
 ```
 
 ### Current local validation
 
-The focused baseline target passed with rebuilt ordinary/native query libraries,
-Core's native telemetry/context/logging and handled-latency suites (including
-the no-default-feature metric path), legacy loopback HTTP JSON export, and all
-five Server adapter/plugin proofs. The complete Server library unit suite now
-passes **398 tests** after updating older fixtures to the explicit name/UUID,
-deferred resource construction and accepted-configuration contracts. Core's
-targeted observation/backpressure suite passes **78 tests**, with one local
-timing characterization intentionally ignored. These results do not qualify
-the unimplemented native query observation handoff or the broader integration
-test matrix below.
+All **six Server adapter/plugin proofs** pass against freshly rebuilt libraries
+from the pinned Core revision, including the actual native-query handoff through
+the OTel and Prometheus adapters. Local qualification against that revision:
+
+| Gate | Result |
+|---|---|
+| `make test-observability-baseline` | Passed, including locked Server library check and legacy HTTP JSON tests |
+| Core real native query plugin, with OTel / no default features | 15 / 11 passed |
+| Server adapter/plugin proofs | 6 passed |
+| Server library unit tests | 398 passed |
+| Core library observation unit tests | 72 passed, 1 intentionally ignored timing characterization |
+| Core graph-observability and query-metric integration tests | 11 passed |
+| Core query bridge/callback tests | 8 passed |
+| New CI workflow syntax | `actionlint` passed |
+| Adapter proof Clippy | Passed with only the two existing library lint categories allowed |
+
+These are not full workspace or release qualification.
 
 ## Remaining completion gates
 
-The local merge is not a release-qualified integrated revision. Do not close
-#234 merely because adapters or a query result work:
+The integrated source now has an immutable revision and a focused CI setup.
+Do not treat these as full release qualification:
 
-- Complete the native-query observer/phase/metric migration, including durable,
-  bootstrap, scheduled and replay paths, and prove no host/plugin double counts.
-  Query result parity alone does not establish evaluator-time metric parity.
-- Run the integrated Core graph/native-query and affected OTel suites; the
-  interrupted full Core unit run is not a passing result.
+- Complete broader Core workspace/recovery qualification as needed. The
+  affected suites above pass, but the previously interrupted full Core unit run
+  is not a passing result.
 - Repair or establish baseline evidence for Server's older integration fixtures:
-  the broad `cargo check --lib --tests --locked` currently reports outdated
-  name/UUID, component-name, receipt and configuration-store APIs in existing
-  native/reconstruction/init tests. These are not treated as passing or excluded
-  silently by the focused target.
-- Commit the tested Core integration and wire that exact source revision into
-  reproducible CI setup before the existing locked release jobs can qualify it.
-- The strict Clippy check currently reports large-error and argument-count
-  findings in untouched Server handlers/services. A focused check of the new
-  proof with those two existing lint categories allowed is not a clean result
-  for the repository-wide strict lint gate.
+  `cargo check --locked --lib --tests` still fails in untouched fixtures.
+  Examples include component references in
+  [`query_input_dto_test.rs`](../tests/query_input_dto_test.rs), name/ID fields in
+  [`dto_camelcase_test.rs`](../tests/dto_camelcase_test.rs), deferred factories in
+  [`solution_helpers.rs`](../tests/test_support/solution_helpers.rs), async
+  configuration persistence in
+  [`single_runtime_test.rs`](../tests/single_runtime_test.rs) and
+  [`computation_node_creation_test.rs`](../tests/computation_node_creation_test.rs),
+  and the removed receipt helper in
+  [`native_sqlite_test.rs`](../tests/native_sqlite_test.rs).
+  They are not treated as passing or silently excluded from the broader gate.
+- Run the pinned Observability Baseline workflow on a clean CI runner. Its
+  source setup is explicit; existing release/cross-platform jobs still need
+  their own matched-source qualification.
+- `make clippy` still reports seven findings in untouched handlers/services:
+  six `result_large_err` and one `too_many_arguments`. The focused adapter proof
+  passes with only those categories allowed; this is not a clean result for the
+  repository-wide strict lint gate.
+- `cargo fmt -- --check` still reports formatting differences in untouched
+  handlers, routing/authoring code and older integration fixtures. The changed
+  adapter proof is formatted, and `git diff --check` passes. These existing
+  differences are not reformatted as part of OBS-01.
 
 Later issues own production configuration/runtime/backend wiring, inspection,
 performance budgets and operational examples. No new per-instance telemetry

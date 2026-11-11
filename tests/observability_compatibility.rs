@@ -22,6 +22,7 @@ use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
+use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 
 const COMPONENT: &str = "00000000-0000-4000-8000-000000000234";
@@ -389,9 +390,18 @@ fn otel_recorder_preserves_facade_semantics_units_and_retirement() -> Result<()>
 }
 
 fn prometheus_value(text: &str, name: &str) -> Result<f64> {
+    prometheus_value_with_labels(text, name, &[])
+}
+
+fn prometheus_value_with_labels(text: &str, name: &str, labels: &[(&str, &str)]) -> Result<f64> {
     let values = text
         .lines()
         .filter(|line| line.starts_with(&format!("{name}{{")))
+        .filter(|line| {
+            labels
+                .iter()
+                .all(|(key, value)| line.contains(&format!("{key}=\"{value}\"")))
+        })
         .map(|line| {
             line.rsplit_once(' ')
                 .context("Prometheus sample has no value")?
@@ -446,9 +456,10 @@ fn prometheus_recorder_preserves_the_same_facade_contract() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires make build-local-test-plugins"]
-async fn rebuilt_plugin_families_load_and_the_native_query_executes() -> Result<()> {
+async fn rebuilt_native_query_workload(
+    telemetry: TelemetryOptions,
+    logging: ComponentLogRuntime,
+) -> Result<String> {
     use drasi_server::{dynamic_loading::load_plugins, PluginRegistry, Query};
     use drasi_source_application::{
         ApplicationSource, ApplicationSourceConfig, PropertyMapBuilder,
@@ -488,6 +499,8 @@ async fn rebuilt_plugin_families_load_and_the_native_query_executes() -> Result<
     let assigned = handle.clone();
     let core = drasi_lib::DrasiLib::builder()
         .with_id("plugin-baseline")
+        .with_telemetry(telemetry.with_instance_id("plugin-baseline"))
+        .with_component_logging(logging.clone())
         .with_query_factory(factory)
         .with_source_factory("input", true, move |id| {
             let (source, input) = ApplicationSource::new(
@@ -511,8 +524,11 @@ async fn rebuilt_plugin_families_load_and_the_native_query_executes() -> Result<
                 .build()?,
         )
         .build()
-        .await?;
-    core.start().await?;
+        .await
+        .context("build the native query workload")?;
+    core.start()
+        .await
+        .context("start the native query workload")?;
     let query = core.component_by_name("items")?;
     tokio::time::timeout(Duration::from_secs(10), query.wait_started()).await??;
     handle
@@ -535,6 +551,257 @@ async fn rebuilt_plugin_families_load_and_the_native_query_executes() -> Result<
         }
     })
     .await??;
-    core.shutdown().await?;
+    let query_id = query.id().to_string();
+    core.shutdown()
+        .await
+        .context("shut down the native query workload")?;
+    Ok(query_id)
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires make build-local-test-plugins"]
+async fn rebuilt_native_query_metrics_reach_otel_without_traces() -> Result<()> {
+    let exporter = InMemoryMetricExporterBuilder::new()
+        .with_temporality(Temporality::Cumulative)
+        .build();
+    let provider = SdkMeterProvider::builder()
+        .with_resource(resource())
+        .with_reader(
+            PeriodicReader::builder(exporter.clone())
+                .with_interval(Duration::from_secs(3_600))
+                .build(),
+        )
+        .build();
+    let recorder =
+        OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(provider.meter("native-query")));
+    let logging = ComponentLogRuntime::new(LogPolicy::new("off")?)?;
+    let subscriber = tracing_subscriber::registry().with(logging.layer());
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        rebuilt_native_query_workload(
+            TelemetryOptions::new(
+                TelemetrySettings::new(TelemetryProfile::Persistence)
+                    .with_tracing(false)
+                    .with_sampling(RootSampling::Never)
+                    .require_native_query_observations(),
+            )
+            .with_metric_context(MetricRegistrationContext::new(
+                Arc::new(recorder),
+                Default::default(),
+            )?),
+            logging.clone(),
+        )
+        .with_subscriber(subscriber),
+    )
+    .await;
+    logging.shutdown(Duration::from_secs(3)).await?;
+    provider.force_flush()?;
+    let exports = exporter.get_finished_metrics()?;
+    provider.shutdown()?;
+    let query_id = result??;
+    for name in [
+        "drasi.query.events_processed",
+        "drasi.query.results_emitted",
+    ] {
+        let value = metric(&exports, name)?;
+        let AggregatedMetrics::U64(MetricData::Sum(sum)) = value.data() else {
+            anyhow::bail!("{name} did not export as a u64 sum");
+        };
+        assert_eq!(
+            sum.data_points().map(|point| point.value()).sum::<u64>(),
+            1,
+            "{name} must count one input/result, not host and plugin copies"
+        );
+        let active = sum
+            .data_points()
+            .filter(|point| point.value() != 0)
+            .collect::<Vec<_>>();
+        assert_eq!(active.len(), 1, "{name}");
+        for attribute in [
+            KeyValue::new("instance_id", "plugin-baseline"),
+            KeyValue::new("component_id", query_id.clone()),
+            KeyValue::new("query_id", query_id.clone()),
+        ] {
+            assert!(active[0].attributes().any(|value| value == &attribute));
+        }
+        let dimension = if name == "drasi.query.events_processed" {
+            KeyValue::new("phase", "steady")
+        } else {
+            KeyValue::new("change_kind", "add")
+        };
+        assert!(active[0].attributes().any(|value| value == &dimension));
+    }
+    // Evaluation/publication and delivery acknowledgement each commit once.
+    for (name, expected) in [
+        ("drasi.query.engine.duration", 1),
+        ("drasi.query.commit.duration", 2),
+    ] {
+        let value = metric(&exports, name)?;
+        assert_eq!(value.unit(), "s", "{name}");
+        let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = value.data() else {
+            anyhow::bail!("{name} did not export as an f64 histogram");
+        };
+        assert_eq!(
+            histogram
+                .data_points()
+                .map(|point| point.count())
+                .sum::<u64>(),
+            expected,
+            "{name} must measure the actual work exactly once"
+        );
+        let active = histogram
+            .data_points()
+            .filter(|point| point.count() != 0)
+            .collect::<Vec<_>>();
+        assert_eq!(active.len(), 1, "{name}");
+        assert!(active[0].sum().is_finite() && active[0].sum() >= 0.0);
+        for attribute in [
+            KeyValue::new("query_id", query_id.clone()),
+            KeyValue::new("phase", "steady"),
+        ] {
+            assert!(active[0].attributes().any(|value| value == &attribute));
+        }
+        if name == "drasi.query.commit.duration" {
+            assert!(active[0]
+                .attributes()
+                .any(|value| value == &KeyValue::new("outcome", "success")));
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires make build-local-test-plugins"]
+async fn rebuilt_native_query_phases_reach_the_shared_trace_processor() -> Result<()> {
+    let exporter = InMemorySpanExporter::default();
+    let processor = OpenTelemetrySpanProcessor::new(
+        BatchSpanProcessor::builder(exporter.clone()).build(),
+        Sampler::AlwaysOn,
+    );
+    let provider = SdkTracerProvider::builder()
+        .with_resource(resource())
+        .with_sampler(processor.sampler())
+        .with_span_processor(processor.clone())
+        .build();
+    let collector = NativeSpanCollector::new(Arc::new(processor), Default::default())?;
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let metrics = recorder.handle();
+    let logging = ComponentLogRuntime::new(LogPolicy::new("off")?)?;
+    let subscriber = tracing_subscriber::registry()
+        .with(logging.layer())
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("native-query")));
+    // Managed reconciliation uses the process subscriber, as in standalone Server.
+    tracing::subscriber::set_global_default(subscriber)?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        rebuilt_native_query_workload(
+            TelemetryOptions::new(
+                TelemetrySettings::new(TelemetryProfile::Debug).require_native_query_observations(),
+            )
+            .with_metric_context(MetricRegistrationContext::new(
+                Arc::new(recorder),
+                Default::default(),
+            )?)
+            .with_context_adapter(Arc::new(OpenTelemetryContextAdapter))
+            .with_native_span_collector(collector.clone()),
+            logging.clone(),
+        ),
+    )
+    .await;
+    logging.shutdown(Duration::from_secs(3)).await?;
+    collector.shutdown(Duration::from_secs(3)).await?;
+    provider.force_flush()?;
+    let spans = exporter.get_finished_spans()?;
+    provider.shutdown()?;
+    let query_id = result??;
+    let evaluation = spans
+        .iter()
+        .find(|span| span.name == "query.evaluate")
+        .context("real native evaluator span was not exported")?;
+    let confirmation = spans
+        .iter()
+        .find(|span| {
+            span.name == "query.confirm_outputs"
+                && span.parent_span_id == evaluation.parent_span_id
+                && span.span_context.trace_id() == evaluation.span_context.trace_id()
+        })
+        .context("query delivery acknowledgement span was not exported")?;
+    assert!(spans.iter().any(|span| {
+        span.name == "query.process"
+            && span.span_context.span_id() == evaluation.parent_span_id
+            && span.span_context.trace_id() == evaluation.span_context.trace_id()
+    }));
+    for name in [
+        "query.evaluate",
+        "query.commit",
+        "query.prepare_input",
+        "query.prepare_output",
+        "query.finalize",
+    ] {
+        let phases = spans
+            .iter()
+            .filter(|span| span.name == name)
+            .collect::<Vec<_>>();
+        let expected = if name == "query.commit" { 2 } else { 1 };
+        assert_eq!(phases.len(), expected, "{name}");
+        for phase in phases {
+            if name == "query.commit" {
+                assert!(
+                    phase.parent_span_id == evaluation.parent_span_id
+                        || phase.parent_span_id == confirmation.span_context.span_id(),
+                    "{name} must belong to evaluation or delivery acknowledgement"
+                );
+            } else {
+                assert_eq!(phase.parent_span_id, evaluation.parent_span_id, "{name}");
+            }
+            assert_eq!(
+                phase.span_context.trace_id(),
+                evaluation.span_context.trace_id(),
+                "{name}"
+            );
+            assert!(phase.end_time >= phase.start_time, "{name}");
+            assert!(phase
+                .attributes
+                .contains(&KeyValue::new("component_id", query_id.clone())));
+        }
+    }
+    for parent in [
+        evaluation.parent_span_id,
+        confirmation.span_context.span_id(),
+    ] {
+        assert_eq!(
+            spans
+                .iter()
+                .filter(|span| span.name == "query.commit" && span.parent_span_id == parent)
+                .count(),
+            1,
+            "evaluation and acknowledgement must each attribute one real commit"
+        );
+    }
+    assert!(!format!("{spans:?}").contains("MATCH (n:Item)"));
+    let text = metrics.render();
+    for (name, labels) in [
+        ("drasi_query_events_processed", ("phase", "steady")),
+        ("drasi_query_results_emitted", ("change_kind", "add")),
+        ("drasi_query_engine_duration_count", ("phase", "steady")),
+    ] {
+        assert_eq!(
+            prometheus_value_with_labels(&text, name, &[("query_id", query_id.as_str()), labels],)?,
+            1.0,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        prometheus_value_with_labels(
+            &text,
+            "drasi_query_engine_duration_count",
+            &[("query_id", query_id.as_str()), ("phase", "bootstrap")],
+        )?,
+        0.0
+    );
+    assert!(
+        !text.contains("drasi_query_commit_duration"),
+        "Debug spans must not enable Persistence-only commit histograms"
+    );
     Ok(())
 }
