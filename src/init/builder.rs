@@ -76,6 +76,7 @@ pub fn build_config(
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         instances: vec![DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id).into(),
             persist_index: server_settings.persist_index,
@@ -90,6 +91,7 @@ pub fn build_config(
 
 /// Generate YAML string from configuration.
 pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
+    config.validate()?;
     // Add a header comment
     let mut yaml = String::new();
     yaml.push_str("# Drasi Server Configuration\n");
@@ -108,6 +110,13 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
     yaml.push_str("# - Use environment variables: ${VAR_NAME:-default}\n");
     yaml.push_str("# - Update 'my-query' with your actual GQL query\n");
     yaml.push_str("# - Connect reactions to your queries by updating the 'queries' field\n");
+    if config.telemetry.is_some() {
+        yaml.push_str("# - Telemetry changes require restart; valid configuration does not imply runtime support.\n");
+        yaml.push_str(
+            "# - Protect inspection/scrape listeners with a trusted proxy or restricted network.\n",
+        );
+        yaml.push_str("# - OTLP headers accept environment references without plaintext defaults; credentials require HTTPS.\n");
+    }
 
     Ok(yaml)
 }
@@ -136,7 +145,8 @@ mod tests {
     fn mock_source_config(id: &str) -> SourceConfig {
         SourceConfig {
             kind: "mock".to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: None,
             identity_provider: None,
@@ -148,7 +158,8 @@ mod tests {
     fn http_source_config(id: &str) -> SourceConfig {
         SourceConfig {
             kind: "http".to_string(),
-            id: id.to_string(),
+            name: id.to_string(),
+            id: None,
             auto_start: true,
             bootstrap_provider: None,
             identity_provider: None,
@@ -160,8 +171,9 @@ mod tests {
     fn log_reaction_config(id: &str) -> ReactionConfig {
         ReactionConfig {
             kind: "log".to_string(),
-            id: id.to_string(),
-            queries: vec!["my-query".to_string()],
+            name: id.to_string(),
+            id: None,
+            queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
             auto_start: true,
             identity_provider: None,
             config: json!({"routes": {}}),
@@ -172,8 +184,9 @@ mod tests {
     fn sse_reaction_config(id: &str) -> ReactionConfig {
         ReactionConfig {
             kind: "sse".to_string(),
-            id: id.to_string(),
-            queries: vec!["my-query".to_string()],
+            name: id.to_string(),
+            id: None,
+            queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
             auto_start: true,
             identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
@@ -185,7 +198,7 @@ mod tests {
     #[test]
     fn test_build_config_empty_sources_and_reactions() {
         let settings = test_server_settings();
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         // Check server settings are applied
         assert_eq!(config.host, ConfigValue::Static("0.0.0.0".to_string()));
@@ -213,16 +226,16 @@ mod tests {
     fn test_build_config_with_single_source() {
         let settings = test_server_settings();
         let sources = vec![mock_source_config("my-mock")];
-        let config = build_config(settings, sources, vec![]);
+        let config = build_config(settings, sources, vec![]).unwrap();
 
         // Check source is included
         assert_eq!(config.instances[0].sources.len(), 1);
-        assert_eq!(config.instances[0].sources[0].id(), "my-mock");
+        assert_eq!(config.instances[0].sources[0].name(), "my-mock");
 
         // Check a sample query is generated
         assert_eq!(config.instances[0].queries.len(), 1);
         let query = &config.instances[0].queries[0];
-        assert_eq!(query.id, "my-query");
+        assert_eq!(query.name, "my-query");
         assert_eq!(query.query, "MATCH (n) RETURN n".to_string());
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
@@ -231,7 +244,9 @@ mod tests {
         assert_eq!(query.inputs.len(), 1);
         assert_eq!(
             query.inputs[0],
-            QueryInputConfigDto::Component("my-mock".to_string())
+            QueryInputConfigDto::Component(ComponentReferenceDto::Name(
+                drasi_lib::config::ComponentName::try_new("my-mock").unwrap()
+            ))
         );
     }
 
@@ -242,18 +257,20 @@ mod tests {
             mock_source_config("source-1"),
             http_source_config("source-2"),
         ];
-        let config = build_config(settings, sources, vec![]);
+        let config = build_config(settings, sources, vec![]).unwrap();
 
         // Check all sources are included
         assert_eq!(config.instances[0].sources.len(), 2);
-        assert_eq!(config.instances[0].sources[0].id(), "source-1");
-        assert_eq!(config.instances[0].sources[1].id(), "source-2");
+        assert_eq!(config.instances[0].sources[0].name(), "source-1");
+        assert_eq!(config.instances[0].sources[1].name(), "source-2");
 
         // Query should subscribe to the first source
         assert_eq!(config.instances[0].queries.len(), 1);
         assert_eq!(
             config.instances[0].queries[0].inputs[0],
-            QueryInputConfigDto::Component("source-1".to_string())
+            QueryInputConfigDto::Component(ComponentReferenceDto::Name(
+                drasi_lib::config::ComponentName::try_new("source-1").unwrap()
+            ))
         );
     }
 
@@ -261,12 +278,12 @@ mod tests {
     fn test_build_config_with_reactions() {
         let settings = test_server_settings();
         let reactions = vec![log_reaction_config("log-1"), sse_reaction_config("sse-1")];
-        let config = build_config(settings, vec![], reactions);
+        let config = build_config(settings, vec![], reactions).unwrap();
 
         // Check reactions are included
         assert_eq!(config.instances[0].reactions.len(), 2);
-        assert_eq!(config.instances[0].reactions[0].id(), "log-1");
-        assert_eq!(config.instances[0].reactions[1].id(), "sse-1");
+        assert_eq!(config.instances[0].reactions[0].name(), "log-1");
+        assert_eq!(config.instances[0].reactions[1].name(), "sse-1");
     }
 
     #[test]
@@ -285,7 +302,7 @@ mod tests {
         let sources = vec![mock_source_config("data-source")];
         let reactions = vec![log_reaction_config("my-log")];
 
-        let config = build_config(settings, sources, reactions);
+        let config = build_config(settings, sources, reactions).unwrap();
 
         // Check custom server settings
         assert_eq!(config.host, ConfigValue::Static("127.0.0.1".to_string()));
@@ -303,8 +320,8 @@ mod tests {
         let settings1 = test_server_settings();
         let settings2 = test_server_settings();
 
-        let config1 = build_config(settings1, vec![], vec![]);
-        let config2 = build_config(settings2, vec![], vec![]);
+        let config1 = build_config(settings1, vec![], vec![]).unwrap();
+        let config2 = build_config(settings2, vec![], vec![]).unwrap();
 
         // Each call should generate a unique ID
         assert_ne!(config1.instances[0].id, config2.instances[0].id);
@@ -315,7 +332,7 @@ mod tests {
     #[test]
     fn test_generate_yaml_includes_header() {
         let settings = test_server_settings();
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -327,7 +344,7 @@ mod tests {
     #[test]
     fn test_generate_yaml_includes_tips() {
         let settings = test_server_settings();
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -349,7 +366,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -362,12 +379,12 @@ mod tests {
     fn test_generate_yaml_contains_sources() {
         let settings = test_server_settings();
         let sources = vec![mock_source_config("test-source")];
-        let config = build_config(settings, sources, vec![]);
+        let config = build_config(settings, sources, vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(yaml.contains("sources:"));
-        assert!(yaml.contains("id: test-source"));
+        assert!(yaml.contains("name: test-source"));
         assert!(yaml.contains("kind: mock") || yaml.contains("Mock"));
     }
 
@@ -375,12 +392,12 @@ mod tests {
     fn test_generate_yaml_contains_queries() {
         let settings = test_server_settings();
         let sources = vec![mock_source_config("src")];
-        let config = build_config(settings, sources, vec![]);
+        let config = build_config(settings, sources, vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(yaml.contains("queries:"));
-        assert!(yaml.contains("id: my-query"));
+        assert!(yaml.contains("name: my-query"));
         assert!(yaml.contains("MATCH (n) RETURN n"));
     }
 
@@ -388,12 +405,12 @@ mod tests {
     fn test_generate_yaml_contains_reactions() {
         let settings = test_server_settings();
         let reactions = vec![log_reaction_config("my-log-reaction")];
-        let config = build_config(settings, vec![], reactions);
+        let config = build_config(settings, vec![], reactions).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(yaml.contains("reactions:"));
-        assert!(yaml.contains("id: my-log-reaction"));
+        assert!(yaml.contains("name: my-log-reaction"));
     }
 
     #[test]
@@ -401,7 +418,7 @@ mod tests {
         let settings = test_server_settings();
         let sources = vec![mock_source_config("src")];
         let reactions = vec![log_reaction_config("react")];
-        let config = build_config(settings, sources, reactions);
+        let config = build_config(settings, sources, reactions).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -422,7 +439,7 @@ mod tests {
         let settings = test_server_settings();
         let sources = vec![mock_source_config("roundtrip-source")];
         let reactions = vec![log_reaction_config("roundtrip-reaction")];
-        let original_config = build_config(settings, sources, reactions);
+        let original_config = build_config(settings, sources, reactions).unwrap();
 
         let yaml = generate_yaml(&original_config).unwrap();
 
@@ -457,7 +474,7 @@ mod tests {
     #[test]
     fn test_generate_yaml_empty_config() {
         let settings = test_server_settings();
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -483,7 +500,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         assert!(
             !config.instances[0].persist_index,
@@ -504,7 +521,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         assert!(
             config.instances[0].persist_index,
@@ -525,7 +542,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -548,7 +565,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&config).unwrap();
 
@@ -571,7 +588,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let original_config = build_config(settings, vec![], vec![]);
+        let original_config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&original_config).unwrap();
 
@@ -604,7 +621,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let original_config = build_config(settings, vec![], vec![]);
+        let original_config = build_config(settings, vec![], vec![]).unwrap();
 
         let yaml = generate_yaml(&original_config).unwrap();
 
@@ -639,7 +656,7 @@ mod tests {
         };
         let sources = vec![mock_source_config("test-source")];
         let reactions = vec![log_reaction_config("test-reaction")];
-        let config = build_config(settings, sources, reactions);
+        let config = build_config(settings, sources, reactions).unwrap();
 
         // Verify persist_index is set correctly even with sources and reactions
         assert!(config.instances[0].persist_index);
@@ -653,7 +670,7 @@ mod tests {
     #[test]
     fn test_build_config_hot_reload_defaults() {
         let settings = test_server_settings();
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
         assert!(!config.hot_reload_plugins);
         assert_eq!(config.hot_reload_debounce_ms, 2000);
     }
@@ -671,7 +688,7 @@ mod tests {
             auto_install_plugins: false,
             verify_plugins: false,
         };
-        let config = build_config(settings, vec![], vec![]);
+        let config = build_config(settings, vec![], vec![]).unwrap();
         assert!(config.hot_reload_plugins);
     }
 }

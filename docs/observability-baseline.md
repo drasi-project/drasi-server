@@ -5,6 +5,10 @@ the compatibility prerequisite for OBS-02 through OBS-08. It does not enable new
 exporters, change startup logging, install process-global providers, or add
 telemetry configuration/routes.
 
+OBS-02 now supplies [typed configuration and init support](telemetry-configuration.md).
+Production capabilities remain explicitly gated until their later runtime
+implementations land; this does not change the OBS-01 qualification claims.
+
 ## Local source and plugin ownership
 
 This branch consumes the existing sibling `../drasi-core` through Cargo path
@@ -110,8 +114,8 @@ The initial migration policy was explicitly approved for this implementation:
 The rejection also covers tracing-only, inspection-only and `profile: off`
 telemetry configurations. There is no silent precedence or second export of
 the same observations. OBS-01 records the decision; OBS-02 implements the
-typed policy and its validation because Server does not yet accept the new
-section.
+typed policy and its validation. Accepted configuration is distinct from
+production runtime capability availability.
 
 Preserve `DrasiServer::with_metrics` and the existing
 `drasi.query.progress.sequence` gauge, including its scope, labels, generation

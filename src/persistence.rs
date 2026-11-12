@@ -154,7 +154,7 @@ impl ConfigPersistence {
 
         let mut configuration = self.server_configuration.clone();
         configuration.instances = instances;
-        configuration.validate()?;
+        configuration.validate_for_persistence()?;
         let path = self.config_file_path.clone();
         tokio::task::spawn_blocking(move || {
             let _save = save;

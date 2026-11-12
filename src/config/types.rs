@@ -157,6 +157,9 @@ pub struct DrasiServerConfig {
     /// Optional application-owned OpenTelemetry progress metrics export.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics: Option<crate::telemetry::MetricsConfig>,
+    /// Startup-only process-wide telemetry policy; changes require a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<super::telemetry::TelemetryConfig>,
     /// Explicit instances. Omitted or empty lists do not create an implicit instance.
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -181,6 +184,7 @@ impl Default for DrasiServerConfig {
             hot_reload_debounce_ms: 2000,
             cors_allowed_origins: Vec::new(),
             metrics: None,
+            telemetry: None,
             instances: Vec::new(),
         }
     }
@@ -569,6 +573,44 @@ impl DrasiServerConfig {
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
+        self.validate_with_overrides(None, None)
+    }
+
+    pub fn resolved_telemetry(
+        &self,
+        mapper: &DtoMapper,
+        port: u16,
+        enable_ui: bool,
+    ) -> Result<Option<super::telemetry::EffectiveTelemetry>> {
+        anyhow::ensure!(
+            self.metrics.is_none() || self.telemetry.is_none(),
+            "Root metrics and telemetry cannot be configured together, including off or inspection-only telemetry. Keep legacy metrics alone, or remove it and migrate to telemetry; legacy HTTP/JSON millisecond settings are not new HTTP/protobuf second-valued settings."
+        );
+        self.telemetry
+            .as_ref()
+            .map(|config| config.resolve(mapper, port, enable_ui))
+            .transpose()
+    }
+
+    pub fn validate_with_overrides(
+        &self,
+        port: Option<u16>,
+        enable_ui: Option<bool>,
+    ) -> Result<()> {
+        self.validate_host_and_instances()?;
+        let mapper = DtoMapper::new();
+        let port = port.unwrap_or(mapper.resolve_typed(&self.port)?);
+        self.resolved_telemetry(&mapper, port, enable_ui.unwrap_or(self.enable_ui))?;
+        Ok(())
+    }
+
+    pub(crate) fn validate_for_persistence(&self) -> Result<()> {
+        // Telemetry was validated at startup. Saving unrelated mutations must
+        // preserve its references without re-resolving a changed environment.
+        self.validate_host_and_instances()
+    }
+
+    fn validate_host_and_instances(&self) -> Result<()> {
         use crate::api::mappings::map_server_settings;
 
         if let Some(metrics) = &self.metrics {

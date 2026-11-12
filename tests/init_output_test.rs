@@ -22,7 +22,7 @@
 //! - All bootstrap provider types produce valid configurations
 //! - Generated configs use camelCase field names
 
-use drasi_lib::config::QueryLanguage;
+use drasi_lib::config::{ComponentName, QueryLanguage};
 use drasi_server::api::models::*;
 use drasi_server::DrasiServerConfig;
 use serde_json::json;
@@ -126,6 +126,85 @@ fn assert_camel_case_fields(yaml: &str) {
 // =============================================================================
 
 #[test]
+fn telemetry_output_keeps_references_and_distinguishes_validity_from_readiness() {
+    let config: DrasiServerConfig = serde_yaml::from_str(
+        r#"
+telemetry:
+  profile: "${OBS02_INIT_PROFILE:-basic}"
+  metrics:
+    backend: prometheus
+    prometheus:
+      path: /metrics
+"#,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("init.yaml");
+    drasi_server::save_config_file(&config, &path).unwrap();
+    let restored = drasi_server::load_config_file(&path).unwrap();
+    let policy = restored
+        .resolved_telemetry(&drasi_server::api::mappings::DtoMapper::new(), 8080, true)
+        .unwrap()
+        .unwrap();
+    assert!(policy.policy().metrics_enabled());
+    assert!(policy
+        .ensure_runtime_available()
+        .unwrap_err()
+        .to_string()
+        .contains("Prometheus"));
+    let saved = std::fs::read_to_string(path).unwrap();
+    assert!(saved.contains("EnvironmentVariable") && saved.contains("OBS02_INIT_PROFILE"));
+}
+
+#[test]
+fn telemetry_cli_validation_preserves_env_precedence_and_startup_reports_readiness() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("server.yaml");
+    std::fs::write(directory.path().join(".env"), "OBS02_CLI_PROFILE=off\n").unwrap();
+    std::fs::write(
+        &path,
+        r#"
+telemetry:
+  profile: "${OBS02_CLI_PROFILE}"
+  metrics:
+    backend: prometheus
+"#,
+    )
+    .unwrap();
+    let validate = |profile: Option<&str>| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"));
+        command
+            .args(["validate", "--config"])
+            .arg(&path)
+            .arg("--plugins-dir")
+            .arg(directory.path())
+            .env_remove("OBS02_CLI_PROFILE");
+        if let Some(profile) = profile {
+            command.env("OBS02_CLI_PROFILE", profile);
+        }
+        command.output().unwrap()
+    };
+    let from_dotenv = validate(None);
+    assert!(from_dotenv.status.success());
+    assert!(String::from_utf8_lossy(&from_dotenv.stdout)
+        .contains("No unavailable telemetry capabilities"));
+    let from_environment = validate(Some("basic"));
+    assert!(from_environment.status.success());
+    assert!(String::from_utf8_lossy(&from_environment.stdout)
+        .contains("Prometheus metrics (OBS-03/OBS-04)"));
+    let startup = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"))
+        .arg("--config")
+        .arg(&path)
+        .arg("--plugins-dir")
+        .arg(directory.path())
+        .env("OBS02_CLI_PROFILE", "basic")
+        .output()
+        .unwrap();
+    assert!(!startup.status.success());
+    assert!(String::from_utf8_lossy(&startup.stderr).contains("this build cannot activate"));
+}
+
+#[test]
 fn test_empty_config_generates_valid_yaml() {
     let config = DrasiServerConfig {
         api_version: None,
@@ -146,6 +225,7 @@ fn test_empty_config_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -198,6 +278,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -259,6 +340,7 @@ fn test_mock_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -273,7 +355,8 @@ fn test_mock_source_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "mock-source".to_string(),
+                name: "mock-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: None,
@@ -321,6 +404,7 @@ fn test_http_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -335,7 +419,8 @@ fn test_http_source_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "http".to_string(),
-                id: "http-source".to_string(),
+                name: "http-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: None,
@@ -382,6 +467,7 @@ fn test_grpc_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -396,7 +482,8 @@ fn test_grpc_source_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "grpc".to_string(),
-                id: "grpc-source".to_string(),
+                name: "grpc-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: None,
@@ -442,6 +529,7 @@ fn test_postgres_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -456,7 +544,8 @@ fn test_postgres_source_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "postgres".to_string(),
-                id: "postgres-source".to_string(),
+                name: "postgres-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -548,6 +637,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -562,7 +652,8 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "mock-source".to_string(),
+                name: "mock-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -636,6 +727,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -650,7 +742,8 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "mock-source".to_string(),
+                name: "mock-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -710,6 +803,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -724,7 +818,8 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "mock-source".to_string(),
+                name: "mock-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -780,6 +875,7 @@ fn test_log_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -796,8 +892,9 @@ fn test_log_reaction_generates_valid_yaml() {
             queries: vec![],
             reactions: vec![ReactionConfig {
                 kind: "log".to_string(),
-                id: "log-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                name: "log-reaction".to_string(),
+                id: None,
+                queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"routes": {}}),
@@ -841,6 +938,7 @@ fn test_http_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -857,8 +955,9 @@ fn test_http_reaction_generates_valid_yaml() {
             queries: vec![],
             reactions: vec![ReactionConfig {
                 kind: "http".to_string(),
-                id: "http-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                name: "http-reaction".to_string(),
+                id: None,
+                queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"baseUrl": "https://api.example.com", "token": "secret-token", "timeoutMs": 5000, "routes": {}}),
@@ -903,6 +1002,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -919,8 +1019,9 @@ fn test_sse_reaction_generates_valid_yaml() {
             queries: vec![],
             reactions: vec![ReactionConfig {
                 kind: "sse".to_string(),
-                id: "sse-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                name: "sse-reaction".to_string(),
+                id: None,
+                queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
@@ -968,6 +1069,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -984,8 +1086,9 @@ fn test_grpc_reaction_generates_valid_yaml() {
             queries: vec![],
             reactions: vec![ReactionConfig {
                 kind: "grpc".to_string(),
-                id: "grpc-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                name: "grpc-reaction".to_string(),
+                id: None,
+                queries: vec![drasi_lib::config::ComponentReference::by_name("my-query").unwrap()],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"endpoint": "grpc://localhost:50052", "timeoutMs": 5000, "batchSize": 100, "batchFlushTimeoutMs": 1000, "maxRetries": 3, "connectionRetryAttempts": 5, "initialConnectionTimeoutMs": 10000, "metadata": {}}),
@@ -1038,6 +1141,7 @@ fn test_query_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -1052,14 +1156,17 @@ fn test_query_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![],
             queries: vec![QueryConfigDto {
-                id: "my-query".to_string(),
+                name: "my-query".to_string(),
+                id: None,
                 query: "MATCH (n) RETURN n".to_string(),
                 query_language: QueryLanguage::Cypher,
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
                 inputs: vec![QueryInputConfigDto::Expanded(QueryInputObjectDto {
-                    component: "test-source".to_string(),
+                    component: ComponentReferenceDto::Name(
+                        ComponentName::try_new("test-source").unwrap(),
+                    ),
                     port: None,
                     nodes: vec!["Node".to_string()],
                     relations: vec!["REL".to_string()],
@@ -1134,6 +1241,7 @@ fn test_full_config_roundtrip() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -1150,7 +1258,8 @@ fn test_full_config_roundtrip() {
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
                 kind: "mock".to_string(),
-                id: "mock-source".to_string(),
+                name: "mock-source".to_string(),
+                id: None,
                 auto_start: true,
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
@@ -1162,13 +1271,16 @@ fn test_full_config_roundtrip() {
                 config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
             }],
             queries: vec![QueryConfigDto {
-                id: "sensor-query".to_string(),
+                name: "sensor-query".to_string(),
+                id: None,
                 query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
                 query_language: QueryLanguage::Cypher,
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
-                inputs: vec![QueryInputConfigDto::Component("mock-source".to_string())],
+                inputs: vec![QueryInputConfigDto::Component(ComponentReferenceDto::Name(
+                    ComponentName::try_new("mock-source").unwrap(),
+                ))],
                 joins: None,
                 priority_queue_capacity: None,
                 dispatch_buffer_capacity: None,
@@ -1180,8 +1292,11 @@ fn test_full_config_roundtrip() {
             }],
             reactions: vec![ReactionConfig {
                 kind: "log".to_string(),
-                id: "log-reaction".to_string(),
-                queries: vec!["sensor-query".to_string()],
+                name: "log-reaction".to_string(),
+                id: None,
+                queries: vec![
+                    drasi_lib::config::ComponentReference::by_name("sensor-query").unwrap(),
+                ],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"routes": {}}),

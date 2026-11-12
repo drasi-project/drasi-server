@@ -23,6 +23,7 @@
 
 mod builder;
 mod prompts;
+mod telemetry;
 
 use anyhow::Result;
 use std::fs;
@@ -75,6 +76,8 @@ pub async fn run_init(
 
     // Step 1: Server settings
     let server_settings = prompts::prompt_server_settings()?;
+    let server_port = server_settings.port;
+    let telemetry = telemetry::prompt_telemetry(server_port)?;
 
     // Step 2: Source selection
     println!();
@@ -129,7 +132,18 @@ pub async fn run_init(
     }
 
     // Build the configuration
-    let config = builder::build_config(server_settings, sources, reactions)?;
+    let mut config = builder::build_config(server_settings, sources, reactions)?;
+    config.telemetry = telemetry;
+    config.validate()?;
+    if let Some(policy) = config.resolved_telemetry(
+        &drasi_server::api::mappings::DtoMapper::new(),
+        server_port,
+        config.enable_ui,
+    )? {
+        if let Err(error) = policy.ensure_runtime_available() {
+            println!("Notice: {error}");
+        }
+    }
 
     // Create parent directories
     if let Some(parent) = output_path.parent() {

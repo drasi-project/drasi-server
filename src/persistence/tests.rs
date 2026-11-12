@@ -239,6 +239,50 @@ async fn host_settings_and_live_identity_policy_are_preserved() -> Result<()> {
 }
 
 #[tokio::test]
+async fn telemetry_references_survive_saves_without_reresolving_credentials() -> Result<()> {
+    let directory = TempDir::new()?;
+    let mut config: DrasiServerConfig = serde_json::from_value(json!({
+        "telemetry": {
+            "profile": "${OBS02_SAVED_PROFILE:-basic}",
+            "tracing": {
+                "endpoint": "${OBS02_SAVED_ENDPOINT:-https://collector.example/v1/traces}",
+                "protocol": "http/protobuf",
+                "headers": {"authorization": "${OBS02_SAVED_AUTH}"}
+            },
+            "metrics": {"backend": "none"}
+        }
+    }))?;
+    let overrides = std::collections::HashMap::from([(
+        "OBS02_SAVED_AUTH".into(),
+        "Bearer transient-fixture-value".into(),
+    )]);
+    config.resolved_telemetry(&DtoMapper::with_overrides(overrides), 8080, true)?;
+    let expected = serde_json::to_value(&config.telemetry)?;
+    let path = write_initial(directory.path(), &config)?;
+    persistence(&path, InstanceRegistry::new(), &config, true)
+        .await?
+        .save()
+        .await?;
+    let saved = std::fs::read_to_string(&path)?;
+    assert!(!saved.contains("transient-fixture-value"));
+    let restored = read(&path)?;
+    assert_eq!(serde_json::to_value(restored.telemetry)?, expected);
+    // Saving must not need a resolver even for a retained, unsupported Secret reference.
+    config.telemetry.as_mut().unwrap().tracing.endpoint = Some(ConfigValue::Secret {
+        name: "endpoint-reference".into(),
+    });
+    persistence(&path, InstanceRegistry::new(), &config, true)
+        .await?
+        .save()
+        .await?;
+    assert!(matches!(
+        read(&path)?.telemetry.unwrap().tracing.endpoint,
+        Some(ConfigValue::Secret { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 async fn budgets_stay_with_their_instances_and_registration_replaces_settings() -> Result<()> {
     let directory = TempDir::new()?;
     let (first, mut first_config) = managed(directory.path(), "first", false).await?;

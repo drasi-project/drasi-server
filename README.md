@@ -1306,12 +1306,16 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 | `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
 | `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
+| `telemetry` | object | none | Startup-only telemetry policy and init support; unavailable runtime capabilities fail startup explicitly. See [telemetry configuration](docs/telemetry-configuration.md). |
 
 ### OpenTelemetry progress metrics
 
 For the local Core/Server adapter versions, migration decisions and compatibility
 checks, see the [OBS-01 baseline](docs/observability-baseline.md). This baseline
 does not enable new exporters or replace the progress-export contract below.
+Do not combine root `metrics` with any `telemetry` section, including Off or
+inspection-only settings. New telemetry uses explicit HTTP/protobuf signal URLs
+and second-valued intervals, not the legacy settings below.
 
 Configure `metrics` at Server level to export OTLP/HTTP JSON to an existing
 collector. Omitting it creates no metrics exporter or metrics worker.

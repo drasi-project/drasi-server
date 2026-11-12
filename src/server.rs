@@ -87,8 +87,14 @@ impl DrasiServer {
         skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
-        let mut config = load_config_file(&config_path)?;
-        config.validate()?;
+        let mut config = crate::config::loader::load_config_file_with_overrides(
+            &config_path,
+            Some(port),
+            Some(enable_ui),
+        )?;
+        if let Some(telemetry) = config.resolved_telemetry(&DtoMapper::new(), port, enable_ui)? {
+            telemetry.ensure_runtime_available()?;
+        }
 
         // CLI --skip-verification flag overrides config (disables when set)
         if skip_verification {

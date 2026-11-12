@@ -270,7 +270,14 @@ async fn run_server(
         (default_config, true)
     } else {
         // Load config first to get log level
-        (load_config_file(&config_path)?, false)
+        (
+            drasi_server::config::loader::load_config_file_with_overrides(
+                &config_path,
+                port_override,
+                ui_override,
+            )?,
+            false,
+        )
     };
 
     // Resolve server settings for use in main
@@ -303,6 +310,9 @@ async fn run_server(
 
     let final_port = port_override.unwrap_or(resolved_settings.port);
     let final_enable_ui = ui_override.unwrap_or(resolved_settings.enable_ui);
+    if let Some(telemetry) = config.resolved_telemetry(&mapper, final_port, final_enable_ui)? {
+        telemetry.ensure_runtime_available()?;
+    }
     info!("Port: {final_port}");
     info!(
         "Web UI: {}",
@@ -395,6 +405,21 @@ fn validate_config(
         }
     }
     println!();
+
+    if let Some(telemetry) = config.resolved_telemetry(
+        &mapper,
+        mapper.resolve_typed(&config.port)?,
+        config.enable_ui,
+    )? {
+        println!("Telemetry:");
+        println!("  [OK] Configuration policy valid (restart required for changes)");
+        if let Err(error) = telemetry.ensure_runtime_available() {
+            println!("  [WARN] {error}");
+        } else {
+            println!("  [OK] No unavailable telemetry capabilities requested");
+        }
+        println!();
+    }
 
     // Resolve plugins_dir: provided > default (binary dir + /plugins)
     let effective_plugins_dir = plugins_dir.or_else(|| {
