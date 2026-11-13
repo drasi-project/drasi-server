@@ -68,20 +68,21 @@ pub struct PluginInfo {
 /// Coordinates between the host-sdk `PluginLifecycleManager` and the server's
 /// component/instance infrastructure. Tracks `PluginInfo` operational state
 /// for REST API and UI consumption.
+#[derive(Clone)]
 pub struct PluginOrchestrator {
     lifecycle: Arc<PluginLifecycleManager>,
-    plugin_infos: RwLock<HashMap<String, PluginInfo>>,
+    plugin_infos: Arc<RwLock<HashMap<String, PluginInfo>>>,
     event_tx: broadcast::Sender<PluginEvent>,
     plugins_dir: Option<PathBuf>,
     /// Composed file/registry operations (OCI install, scan, lockfile, etc.).
-    plugin_ops: Option<PluginOperations>,
+    plugin_ops: Option<Arc<PluginOperations>>,
     /// Serializes plugin directory mutations (install, load, remove) to prevent
     /// races between API calls, hot-reload watcher, and startup loading.
-    dir_mutex: Mutex<()>,
+    dir_mutex: Arc<Mutex<()>>,
     /// Verification policy applied to all runtime loading paths.
     /// When `enabled == true`, plugins are verified before loading.
     verification_config: VerificationConfig,
-    instances: OnceLock<crate::instance_registry::InstanceRegistry>,
+    instances: Arc<OnceLock<crate::instance_registry::InstanceRegistry>>,
 }
 
 impl PluginOrchestrator {
@@ -90,13 +91,13 @@ impl PluginOrchestrator {
         let (event_tx, _) = broadcast::channel(64);
         Self {
             lifecycle,
-            plugin_infos: RwLock::new(HashMap::new()),
+            plugin_infos: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
             plugins_dir: None,
             plugin_ops: None,
-            dir_mutex: Mutex::new(()),
+            dir_mutex: Arc::new(Mutex::new(())),
             verification_config: VerificationConfig::default(),
-            instances: OnceLock::new(),
+            instances: Arc::new(OnceLock::new()),
         }
     }
 
@@ -105,13 +106,13 @@ impl PluginOrchestrator {
         let (event_tx, _) = broadcast::channel(64);
         Self {
             lifecycle,
-            plugin_infos: RwLock::new(HashMap::new()),
+            plugin_infos: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
             plugins_dir: Some(plugins_dir),
             plugin_ops: None,
-            dir_mutex: Mutex::new(()),
+            dir_mutex: Arc::new(Mutex::new(())),
             verification_config: VerificationConfig::default(),
-            instances: OnceLock::new(),
+            instances: Arc::new(OnceLock::new()),
         }
     }
 
@@ -125,13 +126,13 @@ impl PluginOrchestrator {
         let (event_tx, _) = broadcast::channel(64);
         Self {
             lifecycle,
-            plugin_infos: RwLock::new(HashMap::new()),
+            plugin_infos: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
             plugins_dir: Some(plugins_dir.clone()),
-            plugin_ops: Some(plugin_ops),
-            dir_mutex: Mutex::new(()),
+            plugin_ops: Some(Arc::new(plugin_ops)),
+            dir_mutex: Arc::new(Mutex::new(())),
             verification_config,
-            instances: OnceLock::new(),
+            instances: Arc::new(OnceLock::new()),
         }
     }
 
@@ -224,7 +225,38 @@ impl PluginOrchestrator {
 
     /// Get a reference to the composed plugin operations, if configured.
     pub fn ops(&self) -> Option<&PluginOperations> {
-        self.plugin_ops.as_ref()
+        self.plugin_ops.as_deref()
+    }
+
+    fn unowned_request(&self) -> Option<crate::server::ServerCleanupHandle> {
+        let cleanup = self.instances.get()?.cleanup_handle()?;
+        if crate::server::lifecycle::ManagementRequest::current()
+            .is_some_and(|request| request.belongs_to(&cleanup))
+        {
+            None
+        } else {
+            Some(cleanup)
+        }
+    }
+
+    fn callback_context(
+        &self,
+        supplied: Option<Arc<CallbackContext>>,
+    ) -> Option<Arc<CallbackContext>> {
+        let Some(log_registry) = self.instances.get().and_then(|registry| registry.plugin_log_registry()) else {
+            return supplied;
+        };
+        Some(Arc::new(CallbackContext {
+            instance_id: String::new(),
+            runtime_handle: tokio::runtime::Handle::current(),
+            log_registry,
+            source_event_history: Arc::new(RwLock::new(
+                drasi_lib::observability::ComponentEventHistory::new(),
+            )),
+            reaction_event_history: Arc::new(RwLock::new(
+                drasi_lib::observability::ComponentEventHistory::new(),
+            )),
+        }))
     }
 
     /// Get the current verification config.
@@ -240,6 +272,23 @@ impl PluginOrchestrator {
     /// [`PluginOperations`], runs verification if enabled, then loads and
     /// registers the plugin.
     pub async fn install_and_load(
+        &self,
+        reference: &str,
+        registry_override: Option<&str>,
+        callback_context: Option<Arc<CallbackContext>>,
+    ) -> anyhow::Result<PluginInfo> {
+        if let Some(cleanup) = self.unowned_request() {
+            let this = self.clone();
+            let reference = reference.to_owned();
+            let registry = registry_override.map(str::to_owned);
+            return cleanup.start_management(move || async move {
+                this.install_and_load_inner(&reference, registry.as_deref(), callback_context).await
+            })?.finish().await?;
+        }
+        self.install_and_load_inner(reference, registry_override, callback_context).await
+    }
+
+    async fn install_and_load_inner(
         &self,
         reference: &str,
         registry_override: Option<&str>,
@@ -278,6 +327,21 @@ impl PluginOrchestrator {
     /// external trigger (API request, hot-reload watcher) that could race with
     /// other directory operations.
     pub async fn load_plugin_locked(
+        &self,
+        path: &Path,
+        callback_context: Option<Arc<CallbackContext>>,
+    ) -> anyhow::Result<PluginInfo> {
+        if let Some(cleanup) = self.unowned_request() {
+            let this = self.clone();
+            let path = path.to_owned();
+            return cleanup.start_management(move || async move {
+                this.load_plugin_verified(&path, callback_context).await
+            })?.finish().await?;
+        }
+        self.load_plugin_verified(path, callback_context).await
+    }
+
+    async fn load_plugin_verified(
         &self,
         path: &Path,
         callback_context: Option<Arc<CallbackContext>>,
@@ -404,7 +468,8 @@ impl PluginOrchestrator {
             }
         }
 
-        let (plugin_id, kinds) = self.lifecycle.load_plugin(path, callback_context).await?;
+        let (plugin_id, kinds) = self.lifecycle
+            .load_plugin(path, self.callback_context(callback_context)).await?;
 
         let info = PluginInfo {
             id: plugin_id.clone(),

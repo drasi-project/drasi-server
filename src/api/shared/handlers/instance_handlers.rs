@@ -110,7 +110,59 @@ pub async fn create_instance(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(plugins): Extension<Arc<RwLock<PluginRegistry>>>,
-    ConfigBody(mut request): ConfigBody<CreateInstanceRequest>,
+    ConfigBody(request): ConfigBody<CreateInstanceRequest>,
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+    if let Some(cleanup) = registry.cleanup_handle() {
+        let already_owned = crate::server::lifecycle::ManagementRequest::current()
+            .is_some_and(|request| request.belongs_to(&cleanup));
+        if !already_owned {
+            return cleanup.start_management(move || create_instance_body(
+                registry, read_only, config_persistence, plugins, request,
+            )).map_err(ErrorResponse::from)?
+                .finish().await.map_err(ErrorResponse::from)?;
+        }
+    }
+    create_instance_body(registry, read_only, config_persistence, plugins, request).await
+}
+
+fn instance_operation_error(instance: &str, message: &str, error: anyhow::Error) -> ErrorResponse {
+    if error.chain().any(|cause| {
+        cause.is::<crate::server::lifecycle::ServerShuttingDown>()
+            || cause.is::<crate::server::lifecycle::RequestAbandoned>()
+    }) {
+        return ErrorResponse::from(error);
+    }
+    ErrorResponse::new(error_codes::INSTANCE_CREATE_FAILED, message)
+        .with_details(ErrorDetail {
+            component_type: Some("instance".into()),
+            component_id: Some(instance.into()),
+            technical_details: Some(format!("{error:#}")),
+        })
+}
+
+async fn retire_failed_instance(
+    registry: &InstanceRegistry,
+    core: &Arc<DrasiLib>,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    if let Some(cleanup) = registry.cleanup_handle() {
+        match cleanup.retire_core(core).await {
+            Ok(()) => error,
+            Err(cleanup) => drasi_lib::error::OperationFailures::new(
+                "Instance operation and cleanup failures", vec![error, cleanup],
+            ).into(),
+        }
+    } else {
+        crate::computation::cleanup_failed_preparation(vec![core.as_ref().clone()], error).await
+    }
+}
+
+async fn create_instance_body(
+    registry: InstanceRegistry,
+    read_only: Arc<bool>,
+    config_persistence: Option<Arc<ConfigPersistence>>,
+    plugins: Arc<RwLock<PluginRegistry>>,
+    mut request: CreateInstanceRequest,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -153,13 +205,18 @@ pub async fn create_instance(
                 bootstrap_providers: Default::default(),
             },
         ));
+    builder = registry.bind_builder(builder).map_err(|error| {
+        instance_operation_error(&instance_id, "Instance runtime binding failed", error)
+    })?;
     builder = crate::managed_configuration::ConfigurationStores::configure_host(
         builder,
         plugins.clone(),
         None,
     )
     .await
-    .map_err(|error| ErrorResponse::new(error_codes::INSTANCE_CREATE_FAILED, error.to_string()))?;
+    .map_err(|error| instance_operation_error(
+        &instance_id, "Instance host preparation failed", error,
+    ))?;
 
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
@@ -256,45 +313,35 @@ pub async fn create_instance(
                 log::error!(
                     "Configuration store preparation failed for '{instance_id}': {error:#}"
                 );
-                ErrorResponse::new(
-                    error_codes::INSTANCE_CREATE_FAILED,
-                    "Configuration store preparation failed",
+                instance_operation_error(
+                    &instance_id, "Configuration store preparation failed", error,
                 )
             })?;
     }
     let core = builder.build().await.map_err(|e| {
         log::error!("Failed to create instance: {e}");
-        ErrorResponse::new(
-            error_codes::INSTANCE_CREATE_FAILED,
-            format!("Failed to create instance: {e}"),
-        )
+        instance_operation_error(&instance_id, "Instance construction failed", e.into())
     })?;
 
     let core = Arc::new(core);
+    if let Some(cleanup) = registry.cleanup_handle() {
+        cleanup.retain_core(core.clone()).map_err(|error| {
+            instance_operation_error(&instance_id, "Instance ownership registration failed", error)
+        })?;
+    }
 
     // Start the instance
     if let Err(e) = crate::managed_configuration::start_instance(&core).await {
-        let e =
-            crate::computation::cleanup_failed_preparation(vec![core.as_ref().clone()], e).await;
+        let e = retire_failed_instance(&registry, &core, e).await;
         log::error!("Failed to start instance '{instance_id}': {e}");
-        return Err(ErrorResponse::new(
-            error_codes::INSTANCE_CREATE_FAILED,
-            format!("Failed to start instance: {e}"),
-        ));
+        return Err(instance_operation_error(&instance_id, "Instance startup failed", e));
     }
 
     // Add to registry
-    if let Err(e) = registry.add(instance_id.clone(), core.clone()).await {
-        let e = crate::computation::cleanup_failed_preparation(
-            vec![core.as_ref().clone()],
-            anyhow::anyhow!(e),
-        )
-        .await;
+    if let Err(e) = registry.publish_instance(instance_id.clone(), core.clone()).await {
+        let e = retire_failed_instance(&registry, &core, e).await;
         log::error!("Failed to register instance: {e}");
-        return Err(ErrorResponse::new(
-            error_codes::INSTANCE_CREATE_FAILED,
-            e.to_string(),
-        ));
+        return Err(instance_operation_error(&instance_id, "Instance publication failed", e));
     }
 
     log::info!("Instance '{instance_id}' created successfully");

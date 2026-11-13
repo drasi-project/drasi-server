@@ -26,3 +26,33 @@ pub struct DrasiServerWithHandles {
     /// The server cores keyed by DrasiLib instance id
     pub servers: HashMap<String, Arc<DrasiLib>>,
 }
+
+/// Started Core handles retaining Server's instance-cleanup owner.
+///
+/// Borrowed telemetry providers remain the caller's responsibility. Dropping
+/// this result requests cleanup; keep its cleanup handle and a live Tokio
+/// runtime until shutdown is confirmed.
+pub struct DrasiServerWithOwnedHandles {
+    pub server: Arc<DrasiLib>,
+    pub servers: HashMap<String, Arc<DrasiLib>>,
+    pub(crate) cleanup: crate::server::ServerCleanupHandle,
+}
+
+impl DrasiServerWithOwnedHandles {
+    pub fn cleanup_handle(&self) -> crate::server::ServerCleanupHandle {
+        self.cleanup.clone()
+    }
+
+    /// Join the same cleanup attempt, without replenishing its original budget.
+    pub async fn shutdown(&self) -> anyhow::Result<()> {
+        self.cleanup.shutdown().await
+    }
+}
+
+impl Drop for DrasiServerWithOwnedHandles {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup.request_shutdown() {
+            log::error!("Server cleanup remains owned but could not be scheduled: {error}");
+        }
+    }
+}

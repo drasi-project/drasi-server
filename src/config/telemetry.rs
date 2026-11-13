@@ -13,6 +13,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::api::{mappings::DtoMapper, models::ConfigValue};
 
+pub(crate) const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
+
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TelemetryConfig {
@@ -301,12 +303,11 @@ impl TelemetryConfig {
         )?;
         let sampling = SamplingRatio::new(ratio)
             .map_err(|error| anyhow::anyhow!("telemetry.tracing.sampleRatio: {error}"))?;
-        let shutdown = bounded_seconds(
+        let shutdown = validate_shutdown_timeout_seconds(resolve(
             mapper,
             &self.shutdown_timeout_seconds,
             "telemetry.shutdownTimeoutSeconds",
-            300,
-        )?;
+        )?)?;
         let tracing = destination(
             mapper,
             self.tracing.endpoint.as_ref(),
@@ -421,7 +422,14 @@ fn bounded_seconds(
     field: &str,
     max: u64,
 ) -> Result<Duration> {
-    let seconds = resolve(mapper, value, field)?;
+    validate_seconds(resolve(mapper, value, field)?, field, max)
+}
+
+pub(crate) fn validate_shutdown_timeout_seconds(seconds: u64) -> Result<Duration> {
+    validate_seconds(seconds, "telemetry.shutdownTimeoutSeconds", 300)
+}
+
+fn validate_seconds(seconds: u64, field: &str, max: u64) -> Result<Duration> {
     ensure!(
         (1..=max).contains(&seconds),
         "{field} must be between 1 and {max} seconds"
@@ -629,7 +637,7 @@ fn default_export_interval() -> ConfigValue<u64> {
     ConfigValue::Static(30)
 }
 fn default_shutdown_timeout() -> ConfigValue<u64> {
-    ConfigValue::Static(5)
+    ConfigValue::Static(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS)
 }
 
 #[cfg(test)]

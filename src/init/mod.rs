@@ -55,6 +55,28 @@ pub async fn run_init(
     force: bool,
     plugins_dir: Option<PathBuf>,
 ) -> Result<()> {
+    let preparation = drasi_server::telemetry::StandaloneTelemetry::prepare("info".into());
+    let cleanup = preparation.cleanup_handle();
+    let runtime = preparation.finish().await?;
+    let outcome = run_init_body(output_path, force, plugins_dir).await;
+    let stopped = cleanup.wait_until(
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+    ).await;
+    drop(runtime);
+    match (outcome, stopped) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(drasi_lib::error::OperationFailures::new(
+            "Initialization and cleanup failures", vec![error, cleanup],
+        ).into()),
+    }
+}
+
+async fn run_init_body(
+    output_path: PathBuf,
+    force: bool,
+    plugins_dir: Option<PathBuf>,
+) -> Result<()> {
     // Check if file already exists
     if output_path.exists() && !force {
         println!(
@@ -62,7 +84,7 @@ pub async fn run_init(
             output_path.display()
         );
         println!("Use --force to overwrite.");
-        std::process::exit(1);
+        anyhow::bail!("Configuration file already exists");
     }
 
     println!();

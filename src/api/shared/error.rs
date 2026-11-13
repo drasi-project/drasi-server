@@ -63,6 +63,7 @@ pub mod error_codes {
     pub const EXTERNAL_COMPONENT_ID_REJECTED: &str = "EXTERNAL_COMPONENT_ID_REJECTED";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    pub const SERVER_SHUTTING_DOWN: &str = "SERVER_SHUTTING_DOWN";
     /// Returned when an in-memory mutation succeeded but the configuration
     /// could not be persisted to disk. The runtime state has changed; the
     /// on-disk YAML has not. Operators should retry the operation or restart
@@ -221,6 +222,15 @@ impl IntoResponse for ErrorResponse {
 /// with 500 status.
 impl From<anyhow::Error> for ErrorResponse {
     fn from(err: anyhow::Error) -> Self {
+        if err.chain().any(|cause| {
+            cause.is::<crate::server::lifecycle::ServerShuttingDown>()
+                || cause.is::<crate::server::lifecycle::RequestAbandoned>()
+        }) {
+            return Self::new(
+                error_codes::SERVER_SHUTTING_DOWN,
+                "Server is shutting down or the request was abandoned before publication",
+            );
+        }
         let err = match err.downcast::<DrasiError>() {
             Ok(error) => return Self::from(error),
             Err(error) => error,
@@ -255,6 +265,7 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::CONFIGURATION_CONFLICT
         | error_codes::CONFIGURATION_TRANSITION_REQUIRED => StatusCode::CONFLICT,
         error_codes::CONFIGURATION_UNCONFIRMED => StatusCode::SERVICE_UNAVAILABLE,
+        error_codes::SERVER_SHUTTING_DOWN => StatusCode::SERVICE_UNAVAILABLE,
 
         error_codes::INVALID_REQUEST
         | error_codes::EXTERNAL_COMPONENT_ID_REJECTED

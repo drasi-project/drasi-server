@@ -421,6 +421,27 @@ pub fn validate_with_plugins(
     config: &DrasiServerConfig,
     plugins_dir: Option<&Path>,
 ) -> FullValidationResult {
+    validate_with_plugin_context(config, plugins_dir, None)
+}
+
+/// Validate with an explicitly borrowed log destination, without activating
+/// the file's collection policy or constructing a Core.
+pub fn validate_with_plugins_with_logging(
+    config: &DrasiServerConfig,
+    plugins_dir: Option<&Path>,
+    bindings: &crate::TelemetryBindings,
+) -> anyhow::Result<FullValidationResult> {
+    bindings.validate()?;
+    Ok(validate_with_plugin_context(
+        config, plugins_dir, Some(bindings.plugin_callback_context()?),
+    ))
+}
+
+fn validate_with_plugin_context(
+    config: &DrasiServerConfig,
+    plugins_dir: Option<&Path>,
+    callback_context: Option<std::sync::Arc<drasi_host_sdk::CallbackContext>>,
+) -> FullValidationResult {
     // 1. Check env var references
     let env_warnings = check_config_references(config);
 
@@ -435,7 +456,7 @@ pub fn validate_with_plugins(
     if let Some(dir) = plugins_dir {
         if dir.exists() {
             plugin_compatibility_errors = crate::plugin_install::plugin_compatibility_errors(dir);
-            match crate::dynamic_loading::load_plugins(dir, &mut registry, None, None) {
+            match crate::dynamic_loading::load_plugins(dir, &mut registry, callback_context, None) {
                 Ok(stats) => {
                     plugins_loaded = stats.plugins_loaded;
                 }

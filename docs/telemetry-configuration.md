@@ -169,3 +169,6 @@ profiles offer optional tracing and one metrics backend, then only meaningful
 path/port, OTLP interval and process questions. Sampling and shutdown keep the
 documented defaults. Generated YAML passes the same policy validator as
 startup; invalid selections or values fail rather than silently defaulting.
+
+For a runnable, collector-free walkthrough, see the
+[observability example](../examples/observability/README.md).

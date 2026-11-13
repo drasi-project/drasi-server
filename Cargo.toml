@@ -89,6 +89,9 @@ serde_yaml = "0.9"
 anyhow = "1.0"
 async-trait = "0.1"
 log = "0.4"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt", "registry"] }
+tracing-log = "=0.2.0"
 chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 rust-embed = "8"
@@ -118,6 +121,7 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 reqwest_otel = { version = "0.13.4", package = "reqwest", default-features = false, features = ["blocking", "rustls"] }
 
 [dev-dependencies]
+tokio = { version = "1.53.3", features = ["test-util"] }
 drasi-computation-transformer-query = { path = "../drasi-core/components/computation-plugins/transformers/query" }
 drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["otel-context"] }
 metrics = "=0.24.6"
@@ -126,9 +130,7 @@ metrics-opentelemetry = "=0.24033.1"
 opentelemetry = { version = "=0.33.1", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["trace", "testing"] }
 tracing-opentelemetry = { version = "=0.34.0", default-features = false }
-tracing-subscriber = { version = "0.3", features = ["registry"] }
 # Testing utilities
-tracing = "0.1"
 tempfile = "3.8"
 mockall = "0.12"
 tokio-test = "0.4"

@@ -348,7 +348,7 @@ pub async fn load_plugin(
     match orchestrator.load_plugin_locked(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
         Err(e) => {
-            plugin_operation_error(error_codes::PLUGIN_LOAD_FAILED, "Plugin loading failed", e)
+            plugin_work_error(error_codes::PLUGIN_LOAD_FAILED, "Plugin loading failed", e)
                 .into_json_response()
         }
     }
@@ -384,7 +384,7 @@ pub async fn install_plugin(
         .await
     {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
-        Err(e) => plugin_operation_error(
+        Err(e) => plugin_work_error(
             error_codes::PLUGIN_INSTALL_FAILED,
             "Plugin installation or loading failed",
             e,
@@ -404,6 +404,17 @@ fn plugin_operation_error(
         component_id: None,
         technical_details: Some(error.to_string()),
     })
+}
+
+fn plugin_work_error(code: &str, message: &str, error: anyhow::Error) -> ErrorResponse {
+    if error.chain().any(|cause| {
+        cause.is::<crate::server::lifecycle::ServerShuttingDown>()
+            || cause.is::<crate::server::lifecycle::RequestAbandoned>()
+    }) {
+        ErrorResponse::from(error)
+    } else {
+        plugin_operation_error(code, message, error)
+    }
 }
 
 #[utoipa::path(
@@ -750,8 +761,12 @@ pub fn build_plugin_router(
 ) -> axum::Router {
     plugin_routes()
         .layer(Extension(orchestrator))
-        .layer(Extension(instances))
+        .layer(Extension(instances.clone()))
         .layer(Extension(read_only))
+        .layer(axum::middleware::from_fn_with_state(
+            instances,
+            super::routes::management_admission,
+        ))
 }
 
 #[cfg(test)]

@@ -14,7 +14,6 @@
 
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
-use indexmap::IndexMap;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -44,11 +43,21 @@ use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
+use crate::{telemetry::StandaloneTelemetry, TelemetryBindings};
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::BootstrapPluginDescriptor;
 use drasi_wal_redb::RedbWalProvider;
+
+pub(crate) mod lifecycle;
+pub use lifecycle::{
+    CleanupPhase, CleanupStatus, ServerCleanupError, ServerCleanupHandle, ServerPreparation,
+};
+
+#[cfg(test)]
+#[path = "server/lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -64,8 +73,19 @@ pub struct DrasiServer {
     cors_allowed_origins: Vec<String>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
     configuration_stores: crate::managed_configuration::ConfigurationStores,
+    instance_registry: InstanceRegistry,
     metrics: crate::telemetry::MetricsRuntime,
     metrics_config: Option<crate::telemetry::MetricsConfig>,
+    cleanup: ServerCleanupHandle,
+    new_telemetry: bool,
+}
+
+impl Drop for DrasiServer {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup.request_shutdown() {
+            log::error!("Server cleanup remains owned but could not be scheduled: {error}");
+        }
+    }
 }
 
 struct PreparedInstance {
@@ -78,6 +98,12 @@ struct PreparedInstance {
     bootstrap_providers: HashMap<String, BootstrapProviderConfig>,
 }
 
+enum FileTelemetry {
+    Standalone,
+    Borrowed(TelemetryBindings),
+    Initialized(TelemetryBindings),
+}
+
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
     pub async fn new(
@@ -87,14 +113,124 @@ impl DrasiServer {
         skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
+        Self::prepare_new(config_path, port, plugins_dir, skip_verification, enable_ui)
+            .finish().await
+    }
+
+    /// Prepare configured startup with owned logging before plugin construction.
+    pub fn prepare_new(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+    ) -> ServerPreparation<Self> {
+        Self::prepare_file(
+            config_path, port, plugins_dir, skip_verification, enable_ui,
+            ServerCleanupHandle::bootstrap(), FileTelemetry::Standalone,
+        )
+    }
+
+    /// Borrow host integrations; a simultaneous YAML telemetry section rejects.
+    pub fn prepare_new_with_telemetry(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        bindings: TelemetryBindings,
+    ) -> ServerPreparation<Self> {
+        Self::prepare_file(
+            config_path, port, plugins_dir, skip_verification, enable_ui,
+            ServerCleanupHandle::bootstrap(), FileTelemetry::Borrowed(bindings),
+        )
+    }
+
+    /// Transfer an already initialized standalone owner without reinstalling globals.
+    pub fn prepare_new_with_runtime(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        runtime: StandaloneTelemetry,
+    ) -> ServerPreparation<Self> {
+        let (bindings, cleanup) = runtime.into_server_parts();
+        Self::prepare_file(
+            config_path, port, plugins_dir, skip_verification, enable_ui,
+            cleanup, FileTelemetry::Initialized(bindings),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_file(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        cleanup: ServerCleanupHandle,
+        telemetry: FileTelemetry,
+    ) -> ServerPreparation<Self> {
+        let submitted = (|| {
+            let admission = cleanup.admit()?;
+            ServerPreparation::start_blocking(admission, move |owner| {
+                tokio::runtime::Handle::try_current()?.block_on(Self::prepare_file_inner(
+                    config_path, port, plugins_dir, skip_verification, enable_ui, owner, telemetry,
+                ))
+            })
+        })();
+        match submitted {
+            Ok(preparation) => preparation,
+            Err(error) => ServerPreparation::failed(cleanup, error),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn prepare_file_inner(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        cleanup: ServerCleanupHandle,
+        telemetry: FileTelemetry,
+    ) -> Result<Self> {
         let mut config = crate::config::loader::load_config_file_with_overrides(
             &config_path,
             Some(port),
             Some(enable_ui),
         )?;
-        if let Some(telemetry) = config.resolved_telemetry(&DtoMapper::new(), port, enable_ui)? {
-            telemetry.ensure_runtime_available()?;
-        }
+        let resolved_settings = map_server_settings(&config, &DtoMapper::new())?;
+        let new_telemetry = config.telemetry.is_some() || matches!(&telemetry, FileTelemetry::Borrowed(_));
+        anyhow::ensure!(
+            !matches!(&telemetry, FileTelemetry::Borrowed(_)) || config.telemetry.is_none(),
+            "Configured telemetry and borrowed telemetry bindings are mutually exclusive"
+        );
+        let effective = config.resolved_telemetry(&DtoMapper::new(), port, enable_ui)?;
+        let bindings = match telemetry {
+            FileTelemetry::Borrowed(bindings) => {
+                cleanup.retain_bindings(bindings.clone())?;
+                bindings
+            }
+            owned => {
+                let bindings = match owned {
+                    FileTelemetry::Initialized(bindings) => bindings,
+                    _ => StandaloneTelemetry::initialize_logging(
+                        &cleanup, resolved_settings.log_level.clone(),
+                    )?,
+                };
+                if let Some(effective) = effective {
+                    let bindings = bindings.with_configured_policy(effective)?;
+                    cleanup.configure_logging_bindings(bindings.clone())?;
+                    bindings
+                } else {
+                    bindings
+                }
+            }
+        };
+        let runtime_registry = InstanceRegistry::new()
+            .with_runtime_context(bindings.clone(), cleanup.clone());
 
         // CLI --skip-verification flag overrides config (disables when set)
         if skip_verification {
@@ -266,17 +402,7 @@ impl DrasiServer {
         let mut startup_plugin_records = Vec::new();
         let mut plugin_load_stats: Option<crate::dynamic_loading::PluginLoadStats> = None;
         if plugins_dir.exists() {
-            let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
-                instance_id: String::new(),
-                runtime_handle: tokio::runtime::Handle::current(),
-                log_registry: drasi_lib::observability::get_or_init_global_registry(),
-                source_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::observability::ComponentEventHistory::new(),
-                )),
-                reaction_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::observability::ComponentEventHistory::new(),
-                )),
-            });
+            let callback_ctx = bindings.plugin_callback_context()?;
             let load_stats = crate::dynamic_loading::load_plugins(
                 &plugins_dir,
                 &mut plugin_registry,
@@ -301,6 +427,7 @@ impl DrasiServer {
             plugin_ops,
             verification_config,
         ));
+        plugin_orchestrator.bind_instances(runtime_registry.clone()).await?;
 
         // Register startup-loaded plugins in the orchestrator
         plugin_orchestrator
@@ -328,6 +455,8 @@ impl DrasiServer {
                 let mut watcher = PluginWatcher::new(watcher_config);
                 let mut rx = watcher.subscribe();
                 let orchestrator_for_watcher = plugin_orchestrator.clone();
+                let watcher_admission = cleanup.admit()?;
+                let cleanup_for_watcher = cleanup.clone();
 
                 // Start the filesystem watcher
                 if let Err(e) = watcher.start() {
@@ -338,11 +467,16 @@ impl DrasiServer {
                 }
 
                 // Spawn a task that receives file events and applies the configured policy
-                let handle = tokio::spawn(async move {
+                let handle = cleanup.start_watcher(watcher_admission, async move {
                     // Keep the watcher alive for the duration of this task
                     let _watcher = watcher;
                     loop {
-                        match rx.recv().await {
+                        let event = tokio::select! {
+                            biased;
+                            _ = cleanup_for_watcher.admission_closed() => break,
+                            event = rx.recv() => event,
+                        };
+                        match event {
                             Ok(event) => {
                                 use drasi_host_sdk::plugin_types::PluginFileEvent;
                                 match event {
@@ -376,20 +510,19 @@ impl DrasiServer {
                             }
                         }
                     }
-                });
+                })?;
                 info!(
                     "Plugin hot-reload enabled (debounce: {}ms)",
                     config.hot_reload_debounce_ms
                 );
-                Some(handle)
+                Ok::<_, anyhow::Error>(Some(handle))
             } else {
-                None
+                Ok(None)
             }
         };
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
-        let resolved_settings = map_server_settings(&config, &mapper)?;
         let resolved_instances = config.resolved_instances(&mapper)?;
 
         // Determine persistence and read-only status
@@ -506,6 +639,7 @@ impl DrasiServer {
                 let mut builder = DrasiLib::builder()
                     .with_id(&instance.id)
                     .with_allow_external_component_ids(instance.allow_external_component_ids);
+                builder = runtime_registry.bind_builder(builder)?;
                 builder = crate::managed_configuration::ConfigurationStores::configure_host(
                     builder,
                     plugin_registry.clone(),
@@ -735,6 +869,7 @@ impl DrasiServer {
                         .await?;
                 }
                 let core = builder.build().await.context("Failed to create DrasiLib")?;
+                cleanup.retain_core(Arc::new(core.clone()))?;
 
                 instances.push(PreparedInstance {
                     id_hint: Some(instance.id),
@@ -759,16 +894,9 @@ impl DrasiServer {
         }
         .await;
         if let Err(error) = preparation {
-            return Err(crate::computation::cleanup_failed_preparation(
-                instances
-                    .into_iter()
-                    .map(|instance| instance.core)
-                    .collect(),
-                error,
-            )
-            .await);
+            return Err(error);
         }
-        let watcher_handle = start_watcher();
+        let watcher_handle = start_watcher()?;
 
         Ok(Self {
             instances,
@@ -783,9 +911,12 @@ impl DrasiServer {
             cors_allowed_origins: config.cors_allowed_origins.clone(),
             watcher_handle,
             configuration_stores,
+            instance_registry: runtime_registry,
             metrics_config: config.metrics.clone(),
             metrics: Default::default(),
             loaded_configuration: Some(config),
+            cleanup,
+            new_telemetry,
         })
     }
 
@@ -798,32 +929,14 @@ impl DrasiServer {
         port: u16,
         config_file_path: Option<String>,
     ) -> Self {
-        let mut plugin_registry = PluginRegistry::new();
-        register_core_plugins(&mut plugin_registry);
-        let plugin_registry = Arc::new(RwLock::new(plugin_registry));
-        let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
-        let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
-        Self {
-            instances: vec![PreparedInstance {
-                id_hint: None,
-                core,
-                bootstrap_providers: HashMap::new(),
-            }],
+        Self::from_cores(
+            vec![(core, None)],
             enable_api,
             enable_ui,
             host,
             port,
             config_file_path,
-            read_only: Arc::new(false), // Programmatic mode assumes write access
-            plugin_registry,
-            plugin_orchestrator,
-            cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            watcher_handle: None,
-            configuration_stores: Default::default(),
-            loaded_configuration: None,
-            metrics_config: None,
-            metrics: Default::default(),
-        }
+        )
     }
 
     /// Create a DrasiServer from multiple pre-built cores (for builder multi-instance usage)
@@ -834,6 +947,65 @@ impl DrasiServer {
         host: String,
         port: u16,
         config_file_path: Option<String>,
+    ) -> Self {
+        let cleanup = ServerCleanupHandle::prepared(
+            cores
+                .iter()
+                .map(|(core, _)| Arc::new(core.clone()))
+                .collect(),
+        );
+        Self::assemble(
+            cores,
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            cleanup,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_prepared_cores(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        cleanup: ServerCleanupHandle,
+        new_telemetry: bool,
+    ) -> Self {
+        let cores = cores
+            .into_iter()
+            .map(|(core, _)| {
+                let id = core.get_config().id.clone();
+                (core, Some(id))
+            })
+            .collect();
+        Self::assemble(
+            cores,
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            cleanup,
+            new_telemetry,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assemble(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        cleanup: ServerCleanupHandle,
+        new_telemetry: bool,
     ) -> Self {
         let instances = cores
             .into_iter()
@@ -849,6 +1021,10 @@ impl DrasiServer {
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
         let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
         let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
+        let instance_registry = match cleanup.bindings() {
+            Some(bindings) => InstanceRegistry::new().with_runtime_context(bindings, cleanup.clone()),
+            None => InstanceRegistry::new().with_cleanup_context(cleanup.clone()),
+        };
         Self {
             instances,
             enable_api,
@@ -862,10 +1038,108 @@ impl DrasiServer {
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
             configuration_stores: Default::default(),
+            instance_registry,
             loaded_configuration: None,
             metrics_config: None,
             metrics: Default::default(),
+            cleanup,
+            new_telemetry,
         }
+    }
+
+    /// Address retained instance cleanup independently of Server serving.
+    pub fn cleanup_handle(&self) -> ServerCleanupHandle {
+        self.cleanup.clone()
+    }
+
+    /// Check an already-configured Core without injecting or replacing handles.
+    ///
+    /// The caller owns borrowed providers. Exposed policy, scope, capability
+    /// and logging identity are checked; opaque collector/recorder identity
+    /// and exporter health remain the caller's preconfiguration obligations.
+    ///
+    /// ```no_run
+    /// use drasi_server::{DrasiLib, DrasiServer, TelemetryBindings};
+    /// use std::time::Duration;
+    /// use tokio::time::Instant;
+    ///
+    /// # async fn example(core: DrasiLib, bindings: TelemetryBindings) -> anyhow::Result<()> {
+    /// let server = DrasiServer::from_core_with_telemetry(
+    ///     core, false, false, "127.0.0.1".into(), 8080, None, bindings,
+    /// ).await?;
+    /// server.cleanup_handle()
+    ///     .wait_until(Instant::now() + Duration::from_secs(30)).await?;
+    /// // Borrowed providers are still open and remain application-owned.
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn from_core_with_telemetry(
+        core: DrasiLib,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        bindings: crate::TelemetryBindings,
+    ) -> Result<Self> {
+        Self::from_cores_with_telemetry(
+            vec![(core, None)],
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            bindings,
+        )
+        .await
+    }
+
+    /// Retain all supplied Cores through checked validation and any rollback.
+    pub async fn from_cores_with_telemetry(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        bindings: crate::TelemetryBindings,
+    ) -> Result<Self> {
+        let cleanup = ServerCleanupHandle::prepared(
+            cores
+                .iter()
+                .map(|(core, _)| Arc::new(core.clone()))
+                .collect(),
+        );
+        let submitted = (|| {
+            let admission = cleanup.admit()?;
+            ServerPreparation::start(admission, move |owner| async move {
+                owner.retain_bindings(bindings.clone())?;
+                let mut ids = std::collections::HashSet::new();
+                for (core, _) in &cores {
+                    bindings.validate_prebuilt(core).await?;
+                    anyhow::ensure!(
+                        ids.insert(core.get_config().id.clone()),
+                        "Duplicate prebuilt Core instance ID"
+                    );
+                }
+                Ok(Self::from_prepared_cores(
+                    cores,
+                    enable_api,
+                    enable_ui,
+                    host,
+                    port,
+                    config_file_path,
+                    owner,
+                    true,
+                ))
+            })
+        })();
+        match submitted {
+            Ok(preparation) => preparation,
+            Err(error) => ServerPreparation::failed(cleanup, error),
+        }
+        .finish()
+        .await
     }
 
     /// Check if we have write access to the config file
@@ -876,6 +1150,10 @@ impl DrasiServer {
 
     /// Configure optional OTLP progress metrics for a programmatically built server.
     pub fn with_metrics(mut self, config: crate::telemetry::MetricsConfig) -> Result<Self> {
+        anyhow::ensure!(
+            !self.new_telemetry,
+            "Legacy progress metrics cannot be combined with configured telemetry or borrowed telemetry bindings"
+        );
         config.validate()?;
         self.metrics_config = Some(config);
         Ok(self)
@@ -938,7 +1216,8 @@ impl DrasiServer {
         );
         info!("Initializing Drasi Server");
 
-        let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
+        let registry = self.instance_registry.clone()
+            .with_configuration_stores(self.configuration_stores.clone());
         let mut bootstrap_providers_by_id: Vec<(String, HashMap<String, BootstrapProviderConfig>)> =
             Vec::new();
 
@@ -961,11 +1240,9 @@ impl DrasiServer {
             println!("  Instance '{id}': ComputationGraph");
             crate::managed_configuration::start_instance(&core).await?;
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
-            instance_map.insert(id, core);
+            registry.add(id, core).await.map_err(anyhow::Error::msg)?;
         }
 
-        let registry = InstanceRegistry::from_map(instance_map)
-            .with_configuration_stores(self.configuration_stores.clone());
         if let Some(config) = &self.metrics_config {
             self.metrics.start(config.clone(), &registry).await?;
         }

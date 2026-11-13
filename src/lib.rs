@@ -36,16 +36,20 @@ pub mod ui_assets;
 // Main exports for library users
 pub use api::models::{ReactionConfig, SourceConfig, StateStoreConfig};
 pub use builder::DrasiServerBuilder;
-pub use builder_result::DrasiServerWithHandles;
+pub use builder_result::{DrasiServerWithHandles, DrasiServerWithOwnedHandles};
+pub use config::telemetry::{MetricsBackend, TelemetryConfig};
 pub use config::{
     default_plugin_registry, load_config_file, save_config_file, ConfigError,
     DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ResolvedInstanceConfig,
 };
+pub use drasi_lib::observability::TelemetryProfile;
 pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
 pub use plugin_registry::PluginRegistry;
 pub use server::register_core_plugins;
 pub use server::DrasiServer;
+pub use server::{ServerCleanupHandle, ServerPreparation};
+pub use telemetry::TelemetryBindings;
 mod query_plugin;
 #[cfg(test)]
 #[path = "../tests/query_plugin/mod.rs"]

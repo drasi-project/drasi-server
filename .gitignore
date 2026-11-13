@@ -48,6 +48,8 @@ examples/*/plugins/
 ui/node_modules/
 ui/dist/
 
+bin/
+
 # Dependency/plugin preparation helpers
 scripts/__pycache__/
 

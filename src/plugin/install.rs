@@ -367,7 +367,7 @@ pub async fn install_from_config(
             "{}",
             cli_styles::error("--locked flag used but no plugins.lock file found")
         );
-        std::process::exit(1);
+        return Err(super::command_failed());
     }
 
     let mut installed = 0;
@@ -820,7 +820,7 @@ async fn install_from_oci_pattern(
     cli_styles::install_summary(success_count, skip_count, fail_count);
 
     if fail_count > 0 {
-        std::process::exit(1);
+        return Err(super::command_failed());
     }
 
     Ok(())

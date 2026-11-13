@@ -20,10 +20,9 @@ mod upgrade;
 
 use anyhow::Result;
 use clap::Subcommand;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use drasi_lib::get_or_init_global_registry;
-use drasi_server::plugin_operations::PluginOperations;
+use drasi_server::{plugin_operations::PluginOperations, telemetry::StandaloneTelemetry};
 
 use crate::cli_styles;
 
@@ -109,14 +108,30 @@ pub async fn run_plugin_command(
     config_path: PathBuf,
     plugins_dir_override: Option<PathBuf>,
 ) -> Result<()> {
-    // Initialize logging for CLI commands — suppress noisy oci_client warnings
-    if std::env::var("RUST_LOG").is_err() {
-        unsafe {
-            std::env::set_var("RUST_LOG", "warn,oci_client=error");
-        }
+    let preparation = StandaloneTelemetry::prepare("warn".into());
+    let cleanup = preparation.cleanup_handle();
+    let telemetry = preparation.finish().await?;
+    let outcome = run_plugin_command_body(action, config_path, plugins_dir_override).await;
+    let stopped = cleanup
+        .wait_until(tokio::time::Instant::now() + Duration::from_secs(30))
+        .await;
+    drop(telemetry);
+    match (outcome, stopped) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(drasi_lib::error::OperationFailures::new(
+            "Plugin command and cleanup failures",
+            vec![error, cleanup],
+        )
+        .into()),
     }
-    get_or_init_global_registry();
+}
 
+async fn run_plugin_command_body(
+    action: PluginAction,
+    config_path: PathBuf,
+    plugins_dir_override: Option<PathBuf>,
+) -> Result<()> {
     let plugins_dir = match plugins_dir_override {
         Some(dir) => dir,
         None => std::env::current_exe()
@@ -149,7 +164,7 @@ pub async fn run_plugin_command(
                     "{}",
                     cli_styles::error("provide a plugin reference or --from-config")
                 );
-                std::process::exit(1);
+                Err(command_failed())
             }
         }
         PluginAction::List => list::list(&plugins_dir, &config_path),
@@ -180,6 +195,10 @@ pub async fn run_plugin_command(
     }
 }
 
+fn command_failed() -> anyhow::Error {
+    anyhow::anyhow!("Plugin command failed (details above)")
+}
+
 // ── Shared helpers (delegates to PluginOperations) ──────────────────────────
 
 /// Get plugin registry URL from config or override.
@@ -187,7 +206,16 @@ pub(crate) fn get_plugin_registry(
     config_path: &std::path::Path,
     override_registry: Option<&str>,
 ) -> String {
-    PluginOperations::resolve_registry(config_path, override_registry)
+    let registry = PluginOperations::resolve_registry(config_path, override_registry);
+    match drasi_host_sdk::registry::PluginSourceKind::parse(&registry) {
+        drasi_host_sdk::registry::PluginSourceKind::LocalDir(directory) => {
+            log::debug!("Using local plugin registry: {}", directory.display());
+        }
+        drasi_host_sdk::registry::PluginSourceKind::Oci(_) => {
+            log::debug!("Using OCI plugin registry");
+        }
+    }
+    registry
 }
 
 /// Get registry auth from environment for CLI commands.

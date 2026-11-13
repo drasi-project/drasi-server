@@ -37,7 +37,7 @@ pub async fn upgrade(
             "{}",
             cli_styles::error("provide a plugin reference or --all")
         );
-        std::process::exit(1);
+        return Err(super::command_failed());
     }
 
     let lockfile = PluginLockfile::read(plugins_dir)?;
@@ -52,7 +52,7 @@ pub async fn upgrade(
                 "{}",
                 cli_styles::detail("Use 'plugin install' to install plugins first.")
             );
-            std::process::exit(1);
+            return Err(super::command_failed());
         }
     };
 
@@ -91,7 +91,7 @@ pub async fn upgrade(
                     for key in lockfile.keys() {
                         println!("  {}", cli_styles::heading(key));
                     }
-                    std::process::exit(1);
+                    return Err(super::command_failed());
                 }
                 matches
             }

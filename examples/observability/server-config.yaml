@@ -1,0 +1,29 @@
+apiVersion: drasi.io/v1
+host: "127.0.0.1"
+port: "${DRASI_DEMO_PORT:-18081}"
+logLevel: info
+persistConfig: false
+enableUi: false
+verifyPlugins: true
+autoInstallPlugins: false
+instances: []
+
+telemetry:
+  profile: "${DRASI_DEMO_PROFILE:-off}"
+  inspection:
+    enabled: "${DRASI_DEMO_INSPECTION:-false}"
+  tracing:
+    endpoint: "${DRASI_DEMO_TRACE_ENDPOINT:-}"
+    protocol: http/protobuf
+    serviceName: drasi-server-observability
+    sampleRatio: "${DRASI_DEMO_SAMPLE_RATIO:-0.1}"
+  metrics:
+    backend: "${DRASI_DEMO_METRICS_BACKEND:-none}"
+    processMetrics: false
+    prometheus:
+      path: /metrics
+    otlp:
+      endpoint: "${DRASI_DEMO_METRICS_ENDPOINT:-http://127.0.0.1:4318/v1/metrics}"
+      protocol: http/protobuf
+      exportInterval: "${DRASI_DEMO_EXPORT_INTERVAL:-30}"
+  shutdownTimeoutSeconds: "${DRASI_DEMO_SHUTDOWN_TIMEOUT:-5}"

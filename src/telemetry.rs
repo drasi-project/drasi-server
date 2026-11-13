@@ -24,6 +24,13 @@ use crate::{
     api::mappings::DtoMapper, api::models::ConfigValue, instance_registry::InstanceRegistry,
 };
 
+mod bindings;
+pub use bindings::TelemetryBindings;
+mod runtime;
+pub use runtime::StandaloneTelemetry;
+
+#[cfg(test)]
+mod runtime_tests;
 #[cfg(test)]
 mod tests;
 
