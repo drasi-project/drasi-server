@@ -30,7 +30,7 @@ async function readJson(request: IncomingMessage): Promise<FixtureRow> {
   let body = '';
   for await (const chunk of request) {
     body += chunk;
-    if (body.length > 64 * 1024) throw new Error('Fixture body exceeds 64 KiB');
+    if (body.length > 1024 * 1024) throw new Error('Fixture body exceeds 1 MiB');
   }
   if (!body) return {};
   const value: unknown = JSON.parse(body);
@@ -106,8 +106,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       case '/__fixture/reconnect':
         online = true;
         break;
-      case '/__fixture/partial':
-        backend.queries.delete('portfolio-query');
+      case '/__fixture/stopped':
         backend.queryStatuses.set('watchlist-query', 'Stopped');
         backend.reactionStatus = 'Stopped';
         break;

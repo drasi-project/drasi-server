@@ -15,7 +15,9 @@
 //! Query `inputs` / `result` authoring: shorthand and expanded forms, strictness,
 //! and the DTO to drasi-lib mapping.
 
-use drasi_lib::config::{QueryInputConfig, QueryResultConfig};
+use drasi_lib::computation::v1::PortId;
+use drasi_lib::config::{ComponentReference, QueryInputConfig, QueryResultConfig};
+use drasi_lib::ComponentName;
 use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use drasi_server::api::models::{QueryConfigDto, QueryInputConfigDto, QueryInputObjectDto};
 
@@ -45,13 +47,15 @@ fn shorthand_and_expanded_inputs_round_trip_through_yaml_and_json() {
     let dto: QueryConfigDto = serde_yaml::from_str(CHAINED_YAML).unwrap();
     assert_eq!(
         dto.inputs[0],
-        QueryInputConfigDto::Component("room-comfort".into())
+        QueryInputConfigDto::Component(ComponentReference::by_name(
+            ComponentName::try_new("room-comfort").unwrap(),
+        ))
     );
     assert_eq!(
         dto.inputs[1],
         QueryInputConfigDto::Expanded(QueryInputObjectDto {
-            component: "facilities".into(),
-            port: Some("out".into()),
+            component: ComponentReference::by_name(ComponentName::try_new("facilities").unwrap(),),
+            port: Some(PortId::try_new("out").unwrap()),
             nodes: vec!["Floor".into()],
             relations: vec!["PART_OF_FLOOR".into()],
             pipeline: vec!["decode".into()],
@@ -75,12 +79,17 @@ fn shorthand_and_expanded_inputs_round_trip_through_yaml_and_json() {
 fn mapping_preserves_ports_label_selectors_pipelines_and_result_label() {
     let dto: QueryConfigDto = serde_yaml::from_str(CHAINED_YAML).unwrap();
     let config = map(&dto).unwrap();
-    assert_eq!(config.inputs[0], QueryInputConfig::new("room-comfort"));
+    assert_eq!(
+        config.inputs[0],
+        QueryInputConfig::new(ComponentReference::by_name(
+            ComponentName::try_new("room-comfort").unwrap(),
+        ))
+    );
     assert_eq!(
         config.inputs[1],
         QueryInputConfig {
-            component: "facilities".into(),
-            port: Some("out".into()),
+            component: ComponentReference::by_name(ComponentName::try_new("facilities").unwrap(),),
+            port: Some(PortId::try_new("out").unwrap()),
             nodes: vec!["Floor".into()],
             relations: vec!["PART_OF_FLOOR".into()],
             pipeline: vec!["decode".into()],
@@ -116,7 +125,10 @@ fn malformed_declarations_fail_before_creation() {
     let base = "id: q\nquery: MATCH (n) RETURN n\n";
     for (tail, reason) in [
         ("inputs: ['']\n", "empty component"),
-        ("inputs:\n  - component: a\n    port: two words\n", "malformed port"),
+        (
+            "inputs:\n  - component: a\n    port: two words\n",
+            "malformed port",
+        ),
         ("inputs: [a, a]\n", "duplicate input"),
         ("inputs: [q]\n", "self input"),
         ("inputs: [a]\nresult:\n  label: ''\n", "empty result label"),

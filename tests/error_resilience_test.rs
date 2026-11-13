@@ -3,6 +3,8 @@
 //! Verifies graceful behavior when plugins receive bad config, unknown kinds
 //! are requested, or dynamic loading encounters problems.
 
+use drasi_lib::config::ComponentReference;
+use drasi_lib::{ComponentId, ComponentName};
 use drasi_server::api::models::BootstrapProviderConfig;
 use drasi_server::api::models::{ReactionConfig, SourceConfig};
 use drasi_server::factories::{create_reaction, create_source};
@@ -31,7 +33,7 @@ async fn test_unknown_source_kind_returns_helpful_error() {
         config: serde_json::json!({}),
     };
 
-    let err = create_source(&registry, config)
+    let err = create_source(&registry, ComponentId::generate(), config)
         .await
         .err()
         .expect("Expected error");
@@ -49,13 +51,15 @@ async fn test_unknown_reaction_kind_returns_helpful_error() {
     let config = ReactionConfig {
         kind: "email-blast".to_string(),
         id: "test".to_string(),
-        queries: vec!["q1".to_string()],
+        queries: vec![ComponentReference::by_name(
+            ComponentName::try_new("q1").unwrap(),
+        )],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({}),
     };
 
-    let err = create_reaction(&registry, config)
+    let err = create_reaction(&registry, ComponentId::generate(), config)
         .await
         .err()
         .expect("Expected error");
@@ -100,7 +104,7 @@ async fn test_empty_registry_rejects_all_sources() {
         config: serde_json::json!({}),
     };
 
-    let err = create_source(&registry, config)
+    let err = create_source(&registry, ComponentId::generate(), config)
         .await
         .err()
         .expect("Expected error");
@@ -119,7 +123,7 @@ async fn test_empty_registry_rejects_all_reactions() {
         config: serde_json::json!({}),
     };
 
-    let err = create_reaction(&registry, config)
+    let err = create_reaction(&registry, ComponentId::generate(), config)
         .await
         .err()
         .expect("Expected error");

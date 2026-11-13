@@ -20,7 +20,7 @@
 #![allow(clippy::unwrap_used)]
 
 use drasi_lib::channels::ComponentStatus;
-use drasi_lib::QueryConfig;
+use drasi_lib::{ComponentName, QueryConfig};
 use drasi_server::api::ApiResponse;
 use serde_json::json;
 
@@ -87,12 +87,13 @@ fn test_status_response_schema() {
 fn test_query_config_serialization() {
     use drasi_lib::Query;
 
-    let config = Query::cypher("test-query")
+    let config = Query::cypher(ComponentName::try_new("test-query").unwrap())
         .query("MATCH (n:Node) RETURN n")
-        .from_input("source1")
-        .from_input("source2")
+        .from_input_by_name(ComponentName::try_new("source1").unwrap())
+        .from_input_by_name(ComponentName::try_new("source2").unwrap())
         .auto_start(true)
-        .build();
+        .build()
+        .unwrap();
 
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["id"], "test-query");
@@ -106,7 +107,7 @@ fn test_query_config_serialization() {
 #[test]
 fn test_query_config_deserialization() {
     let json = json!({
-        "id": "test-query",
+        "name": "test-query",
         "query": "MATCH (p:Person) WHERE p.age > 21 RETURN p",
         "inputs": [
             {
@@ -118,10 +119,14 @@ fn test_query_config_deserialization() {
     });
 
     let config: QueryConfig = serde_json::from_value(json).unwrap();
-    assert_eq!(config.id, "test-query");
+    assert!(config.id.is_none());
+    assert_eq!(config.name.as_str(), "test-query");
     assert_eq!(config.query, "MATCH (p:Person) WHERE p.age > 21 RETURN p");
     assert_eq!(config.inputs.len(), 1);
-    assert_eq!(config.inputs[0].component, "postgres-db");
+    assert_eq!(
+        config.inputs[0].component.as_name().unwrap(),
+        &ComponentName::try_new("postgres-db").unwrap()
+    );
     assert!(!config.auto_start);
 }
 
@@ -254,11 +259,12 @@ fn test_very_long_query_string() {
     use drasi_lib::Query;
 
     let long_query = "MATCH ".to_string() + &"(n:Node) ".repeat(100) + "RETURN n";
-    let config = Query::cypher("long-query")
+    let config = Query::cypher(ComponentName::try_new("long-query").unwrap())
         .query(&long_query)
-        .from_input("source1")
+        .from_input_by_name(ComponentName::try_new("source1").unwrap())
         .auto_start(false)
-        .build();
+        .build()
+        .unwrap();
 
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["query"], long_query);
@@ -269,10 +275,11 @@ fn test_empty_strings() {
     use drasi_lib::Query;
 
     // Some fields might be empty strings
-    let config = Query::cypher("empty-query")
+    let config = Query::cypher(ComponentName::try_new("empty-query").unwrap())
         .query("") // Empty query (should probably be validated elsewhere)
         .auto_start(false)
-        .build();
+        .build()
+        .unwrap();
 
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["query"], "");

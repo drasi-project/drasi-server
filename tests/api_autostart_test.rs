@@ -10,7 +10,9 @@ use axum::{
     http::{Method, Request, StatusCode},
     Router,
 };
-use drasi_lib::{channels::ComponentStatus, Query};
+use drasi_lib::{
+    channels::ComponentStatus, config::ComponentReference, ComponentId, ComponentName, Query,
+};
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_server::{
     api::v1::routes::build_v1_router, instance_registry::InstanceRegistry,
@@ -44,12 +46,12 @@ impl SourcePluginDescriptor for CountingDescriptor {
     }
     async fn create_source(
         &self,
-        id: &str,
+        id: &ComponentId,
         _config: &Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::Source>> {
         Ok(Box::new(
-            create_mock_source(id)
+            create_mock_source(id.as_str())
                 .with_auto_start(auto_start)
                 .with_start_counter(self.0.clone()),
         ))
@@ -72,15 +74,21 @@ impl ReactionPluginDescriptor for CountingDescriptor {
     }
     async fn create_reaction(
         &self,
-        id: &str,
-        queries: Vec<String>,
+        id: &ComponentId,
+        queries: Vec<ComponentReference>,
         _config: &Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::Reaction>> {
         Ok(Box::new(
-            create_mock_reaction(id, queries)
-                .with_auto_start(auto_start)
-                .with_start_counter(self.0.clone()),
+            create_mock_reaction(
+                id.as_str(),
+                queries
+                    .into_iter()
+                    .map(|query| query.as_name().unwrap().as_str().to_owned())
+                    .collect(),
+            )
+            .with_auto_start(auto_start)
+            .with_start_counter(self.0.clone()),
         ))
     }
 }
@@ -110,21 +118,25 @@ async fn check_autostart(method: Method, category: &str) {
         let core = Arc::new(
             crate::query_plugin::builder()
                 .with_id("autostart")
-                .with_source(create_mock_source("input"))
+                .with_source(
+                    ComponentName::try_new("input").unwrap(),
+                    create_mock_source("input"),
+                )
                 .with_query(
-                    Query::cypher("query")
+                    Query::cypher(ComponentName::try_new("query").unwrap())
                         .query("MATCH (n) RETURN n")
-                        .from_input("input")
-                        .build(),
+                        .from_input_by_name(ComponentName::try_new("input").unwrap())
+                        .build()
+                        .unwrap(),
                 )
                 .build()
                 .await
                 .unwrap(),
         );
         core.start().await.unwrap();
-        drasi_lib::wait_for_status(
+        drasi_lib::wait_for_status_by_name(
             &core.component_graph(),
-            "query",
+            &ComponentName::try_new("query").unwrap(),
             &[ComponentStatus::Running],
             Duration::from_secs(5),
         )
@@ -182,9 +194,9 @@ async fn check_autostart(method: Method, category: &str) {
                 .await;
             }
             assert_eq!(starts.load(Ordering::SeqCst), generation + 1);
-            drasi_lib::wait_for_status(
+            drasi_lib::wait_for_status_by_name(
                 &core.component_graph(),
-                "counted",
+                &ComponentName::try_new("counted").unwrap(),
                 &[ComponentStatus::Running],
                 Duration::from_secs(5),
             )

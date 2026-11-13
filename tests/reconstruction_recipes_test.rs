@@ -48,9 +48,12 @@ impl Factory {
 
     fn config(&self, version: u32) -> Result<ComputationConfig> {
         let mut definition = DesiredInstance::default().topology;
-        let descriptor =
-            ComponentDescriptor::try_new(ComponentId::try_new("service")?, Vec::new())?;
+        let descriptor = ComponentDescriptor::try_new(
+            ComponentId::from_uuid(uuid::Uuid::from_u128(1)),
+            Vec::new(),
+        )?;
         definition.components.push(DesiredComponent {
+            name: ComponentName::try_new("service")?,
             descriptor: descriptor.clone(),
             role: ComponentRole::Service,
             completion: None,
@@ -137,16 +140,23 @@ async fn batch(
 async fn server_construction_versions_fail_on_retained_nodes_not_before_declaration() -> Result<()>
 {
     let factory = Factory::new();
-    let core = DrasiLib::builder().build().await?;
+    let core = DrasiLib::builder()
+        .with_allow_external_component_ids(true)
+        .build()
+        .await?;
     let config = factory.config(2)?;
     let prepared = batch(&config, &core, factory).await?;
     assert!(
-        core.computation_component("service").is_err(),
+        core.component_by_name(&ComponentName::try_new("service")?)
+            .is_err(),
         "preparation has no runtime side effects"
     );
     let report = core.add_components(prepared).await?;
-    assert!(report.committed);
-    let handle = core.computation_component("service")?;
+    assert!(
+        !report.durable,
+        "the default in-memory configuration store is process-local"
+    );
+    let handle = core.component_by_name(&ComponentName::try_new("service")?)?;
     assert_eq!(
         handle.observed()?.realization,
         RealizationState::CreationFailed
@@ -172,7 +182,7 @@ async fn missing_bootstrap_factories_restore_as_retryable_resource_declarations(
     definition.resource_configurations.insert(
         resource.clone(),
         json!({
-            "kind":"nativeBootstrap", "component":"future-query",
+            "kind":"nativeBootstrap", "component":"00000000-0000-0000-0000-000000000009",
             "implementation":ImplementationIdentity::try_new("unavailable/bootstrap", "1")?,
             "configurationVersion":1, "configuration":{}
         }),
@@ -181,7 +191,11 @@ async fn missing_bootstrap_factories_restore_as_retryable_resource_declarations(
         definition: DesiredInstance::from(definition).normalized()?.topology,
     };
     for _ in 0..2 {
-        let core = DrasiLib::builder().with_id("same-scope").build().await?;
+        let core = DrasiLib::builder()
+            .with_id("same-scope")
+            .with_allow_external_component_ids(true)
+            .build()
+            .await?;
         let prepared =
             build_components_with_registry(&config, &core, &PluginRegistry::new()).await?;
         assert!(
@@ -193,7 +207,10 @@ async fn missing_bootstrap_factories_restore_as_retryable_resource_declarations(
             .resource_constructors
             .contains_key(&resource));
         let report = core.add_components(prepared).await?;
-        assert!(report.committed);
+        assert!(
+            !report.durable,
+            "the default in-memory configuration store is process-local"
+        );
         let observed = core.computation_control()?.observed();
         let state = observed
             .resources
@@ -218,36 +235,44 @@ async fn cancelled_server_restoration_retains_the_accepted_definition() -> Resul
     let factory = Factory::new();
     factory.gate.store(true, Ordering::Release);
     let config = factory.config(1)?;
-    let core = DrasiLib::builder().build().await?;
+    let core = DrasiLib::builder()
+        .with_allow_external_component_ids(true)
+        .build()
+        .await?;
     let prepared = batch(&config, &core, factory.clone()).await?;
-    let waiter = tokio::spawn({
-        let core = core.clone();
-        async move { core.add_components(prepared).await }
-    });
+    let receipt = core.add_components(prepared).await?;
     tokio::time::timeout(Duration::from_secs(5), factory.entered.notified()).await?;
-    waiter.abort();
-    assert!(waiter.await.expect_err("cancelled caller").is_cancelled());
+    assert!(
+        receipt.creation.is_some(),
+        "definition must be accepted before realization"
+    );
     let exported = configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?
         .context("accepted definition")?;
     assert_eq!(exported.definition.components, config.definition.components);
+    factory.gate.store(false, Ordering::Release);
+    factory.release.notify_waiters();
     tokio::time::timeout(Duration::from_secs(5), core.shutdown()).await??;
     drop(core);
-    factory.gate.store(false, Ordering::Release);
-    let core = DrasiLib::builder().build().await?;
+    let core = DrasiLib::builder()
+        .with_allow_external_component_ids(true)
+        .build()
+        .await?;
     let report = core
         .add_components(batch(&exported, &core, factory).await?)
         .await?;
-    assert_eq!(report.summary, OperationSummary::Completed);
+    assert!(
+        !report.durable,
+        "the default in-memory configuration store is process-local"
+    );
     core.shutdown().await?;
     Ok(())
 }
 
 #[test]
 fn readable_source_time_merger_preserves_its_versioned_storage_dependency() -> Result<()> {
-    let storage = SourceTimeMergeStorageConfig::new(
-        ComponentId::try_new("merge")?,
-        ResourceId::try_new("indexes")?,
-    )?;
+    let merge_id = ComponentId::from_uuid(uuid::Uuid::from_u128(2));
+    let storage =
+        SourceTimeMergeStorageConfig::new(merge_id.clone(), ResourceId::try_new("indexes")?)?;
     let mut recipe = serde_json::to_value(storage)?;
     recipe["kind"] = "sourceTimeMergeStorage".into();
     let input: ComputationConfigInput = serde_json::from_value(json!({"graph":{
@@ -257,13 +282,13 @@ fn readable_source_time_merger_preserves_its_versioned_storage_dependency() -> R
         },
         "resourceDependencies":{"storage":["indexes"]},
         "components":[{
-            "id":"merge","kind":"drasi/source-time-merge","version":"1",
+            "id":merge_id.clone(),"name":"merge","kind":"drasi/source-time-merge","version":"1",
             "resources":{"storage":"storage"},
             "streams":{"out":"merge/out"},
             "config":{
                 "definition":{
                     "graph_id":DesiredInstance::default().topology.graph_id,
-                    "id":"merge","sources":["source/out"],"output_stream":"merge/out",
+                    "id":merge_id,"sources":["source/out"],"output_stream":"merge/out",
                     "late_output_stream":null,"reorder_window_ms":10,"max_wait_ms":100,
                     "idle_timeout_ms":null,"max_buffered_events":8,"max_buffered_bytes":65536,
                     "late_policy":"FailAndRetain"
@@ -320,11 +345,11 @@ impl StreamFactory {
         }))
     }
 
-    fn specification(&self, name: &str) -> Result<ComponentSpecification> {
+    fn specification(&self, id: ComponentId) -> Result<ComponentSpecification> {
         let source = self.descriptor.role == ComponentRole::Source;
         Ok(ComponentSpecification {
             descriptor: ComponentDescriptor::try_new(
-                ComponentId::try_new(name)?,
+                id,
                 vec![PortDescriptor::new(
                     PortId::try_new(if source { "out" } else { "in" })?,
                     if source {
@@ -456,9 +481,13 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
         factories.register(source.clone())?;
         factories.register(sink.clone())?;
         let mut definition = DesiredInstance::default().topology;
+        let source_id = ComponentId::from_uuid(uuid::Uuid::from_u128(10));
+        let merge_id = ComponentId::from_uuid(uuid::Uuid::from_u128(11));
+        let main_id = ComponentId::from_uuid(uuid::Uuid::from_u128(12));
+        let late_id = ComponentId::from_uuid(uuid::Uuid::from_u128(13));
         let merge = SourceTimeMergeDefinition {
             graph_id: definition.graph_id.clone(),
-            id: ComponentId::try_new("merge")?,
+            id: merge_id.clone(),
             sources: vec![StreamId::try_new("source/out")?],
             output_stream: StreamId::try_new("merge/out")?,
             late_output_stream: Some(StreamId::try_new("merge/late")?),
@@ -470,20 +499,32 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
             late_policy: LateEventPolicy::Route,
         };
         definition.components = vec![
-            ComponentAddition::declaration(source.specification("source")?)
-                .bind_stream(PortId::try_new("out")?, StreamId::try_new("source/out")?)
-                .definition,
             ComponentAddition::declaration(
+                ComponentName::try_new("source")?,
+                source.specification(source_id.clone())?,
+            )
+            .bind_stream(PortId::try_new("out")?, StreamId::try_new("source/out")?)
+            .definition,
+            ComponentAddition::declaration(
+                ComponentName::try_new("merge")?,
                 merge.specification(Some(ResourceId::try_new("storage")?))?,
             )
             .bind_stream(PortId::try_new("out")?, StreamId::try_new("merge/out")?)
             .bind_stream(PortId::try_new("late")?, StreamId::try_new("merge/late")?)
             .definition,
-            ComponentAddition::declaration(sink.specification("main")?).definition,
-            ComponentAddition::declaration(sink.specification("late")?).definition,
+            ComponentAddition::declaration(
+                ComponentName::try_new("main")?,
+                sink.specification(main_id.clone())?,
+            )
+            .definition,
+            ComponentAddition::declaration(
+                ComponentName::try_new("late")?,
+                sink.specification(late_id.clone())?,
+            )
+            .definition,
         ];
         let mut storage = serde_json::to_value(SourceTimeMergeStorageConfig::new(
-            ComponentId::try_new("merge")?,
+            merge_id.clone(),
             ResourceId::try_new("indexes")?,
         )?)?;
         storage["kind"] = "sourceTimeMergeStorage".into();
@@ -508,21 +549,21 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
             ResourceId::try_new("storage")?,
             BTreeMap::from([(ResourceId::try_new("indexes")?, ResourceRole::IndexBackend)]),
         );
-        for (from, out, to) in [
-            ("source", "out", "merge"),
-            ("merge", "out", "main"),
-            ("merge", "late", "late"),
+        for (from, out, to, subscriber) in [
+            (&source_id, "out", &merge_id, "merge"),
+            (&merge_id, "out", &main_id, "main"),
+            (&merge_id, "late", &late_id, "late"),
         ] {
-            let pipe = if from == "source" {
+            let pipe = if from == &source_id {
                 DesiredPipe::Bounded { capacity: 8 }
             } else {
-                let resource = ResourceId::try_new(format!("{to}-journal"))?;
+                let resource = ResourceId::try_new(format!("{subscriber}-journal"))?;
                 let channel = QosChannelDefinition {
                     stream: StreamId::try_new(format!("merge/{out}"))?,
                     capacity: NonZeroUsize::new(8).context("capacity")?,
                     durable: true,
                     retention: RetentionPolicy::Backpressure,
-                    subscribers: BTreeMap::from([(to.into(), SubscriptionStart::Earliest)]),
+                    subscribers: BTreeMap::from([(subscriber.into(), SubscriptionStart::Earliest)]),
                 };
                 definition.resources.push(ResourceSpecification {
                     id: resource.clone(),
@@ -531,12 +572,12 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
                     binding: resource.as_str().into(),
                 });
                 definition.resource_configurations.insert(resource.clone(), json!({
-                    "kind":"qos","path":directory.path().join("journals"),"definition":channel,
+                    "kind":"qos","owner":"00000000-0000-0000-0000-0000000000a8","path":directory.path().join("journals"),"definition":channel,
                     "recovery":{"kind":"replay","failureScope":"processRestart","receiptCapacity":8}
                 }));
                 DesiredPipe::Qos(QosPipeConfig {
                     resource,
-                    subscriber: to.into(),
+                    subscriber: subscriber.into(),
                     definition: channel,
                     gap_policy: ReplayGapPolicy::Strict,
                     shared_storage: None,
@@ -544,8 +585,8 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
             };
             definition.relationships.push(DesiredRelationship {
                 definition: EdgeDefinition::new(
-                    Endpoint::new(ComponentId::try_new(from)?, PortId::try_new(out)?),
-                    Endpoint::new(ComponentId::try_new(to)?, PortId::try_new("in")?),
+                    Endpoint::new(from.clone(), PortId::try_new(out)?),
+                    Endpoint::new(to.clone(), PortId::try_new("in")?),
                 ),
                 policy: RelationshipPolicy::default(),
                 pipe,
@@ -553,7 +594,11 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
         }
         let mut config = ComputationConfig { definition };
         for (count, destination) in [(1, "main"), (2, "late")] {
-            let core = DrasiLib::builder().with_id("server-merge").build().await?;
+            let core = DrasiLib::builder()
+                .with_id("server-merge")
+                .with_allow_external_component_ids(true)
+                .build()
+                .await?;
             let components = build_components(
                 &config,
                 &core,
@@ -563,9 +608,9 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
                 )),
             )
             .await?;
-            assert_eq!(
-                core.add_components(components).await?.summary,
-                OperationSummary::Completed
+            assert!(
+                !core.add_components(components).await?.durable,
+                "the default in-memory configuration store is process-local"
             );
             core.start().await?;
             let mut receiver = output.subscribe();
@@ -579,24 +624,28 @@ async fn server_rocksdb_merger_recipe_reopens_the_same_frontier_and_qos_journals
                 }
             })
             .await??;
-            assert_eq!(values[count - 1].0, destination);
-            assert_eq!(
-                GraphProducerProgress::from_envelope(&values[count - 1].1)?
-                    .context("producer")?
-                    .identity()
-                    .construction_scope(),
-                "server-merge"
-            );
+            let expected_destination = if destination == "main" {
+                &main_id
+            } else {
+                &late_id
+            };
+            assert_eq!(values[count - 1].0, expected_destination.to_string());
+            let progress = GraphProducerProgress::from_envelope(&values[count - 1].1)?
+                .context("producer")?;
+            assert_eq!(progress.identity().component_id(), &merge_id);
+            assert_eq!(progress.identity().construction_scope(), "server-merge");
             let exported =
                 configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?
                     .context("saved recipe")?;
+            let expected =
+                DesiredInstance::from(config.definition.clone()).normalized()?.topology;
             assert_eq!(
                 exported.definition.relationships,
-                config.definition.relationships
+                expected.relationships
             );
             assert_eq!(
                 exported.definition.resource_configurations,
-                config.definition.resource_configurations
+                expected.resource_configurations
             );
             core.shutdown().await?;
             drop(core);

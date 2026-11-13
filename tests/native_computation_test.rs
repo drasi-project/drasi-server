@@ -149,7 +149,32 @@ fn factory(name: &str) -> Arc<NativeFactory> {
 }
 
 fn id(name: &str) -> ComponentId {
-    ComponentId::try_new(name).unwrap()
+    let value = match name {
+        "counter" => 1,
+        "middleware" => 2,
+        "arithmetic" => 3,
+        "capture" => 4,
+        "external" => 5,
+        "transaction" => 6,
+        "another" => 7,
+        "confirmation" => 8,
+        "consumer" => 9,
+        "drained" => 10,
+        "input" => 11,
+        "managed-native" => 12,
+        "outlet" => 13,
+        "query" => 14,
+        "retired-query" => 15,
+        "retirement-faults" => 16,
+        "server-crash" => 17,
+        "shared" => 18,
+        "shared-pipeline" => 19,
+        "shared-recovery" => 20,
+        "source" => 21,
+        "standalone-query" => 22,
+        other => panic!("missing explicit component ID for {other}"),
+    };
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
 }
 fn resource(name: &str) -> ResourceId {
     ResourceId::try_new(name).unwrap()
@@ -216,8 +241,9 @@ fn definition(output: &Path) -> Result<ComputationConfig> {
             binding: "instance-configuration".into(),
         })?
         .resource_configuration(resource("configuration"), json!({"kind":"configuration"}))?
-        .component(source_spec, source)
+        .component(ComponentName::try_new("counter")?, source_spec, source)
         .component(
+            ComponentName::try_new("middleware")?,
             middleware.specification(
                 id("middleware"),
                 json!({
@@ -232,6 +258,7 @@ fn definition(output: &Path) -> Result<ComputationConfig> {
             middleware,
         )
         .component(
+            ComponentName::try_new("arithmetic")?,
             transform.specification(
                 id("arithmetic"),
                 json!({"stream":"arithmetic/out","add":10,"multiply":2}),
@@ -239,6 +266,7 @@ fn definition(output: &Path) -> Result<ComputationConfig> {
             transform,
         )
         .component(
+            ComponentName::try_new("capture")?,
             capture.specification(id("capture"), json!({"path":output}))?,
             capture,
         )
@@ -320,6 +348,7 @@ async fn core(name: &str) -> Result<Arc<DrasiLib>> {
     Ok(Arc::new(
         crate::query_plugin::builder()
             .with_id(name)
+            .with_allow_external_component_ids(true)
             .with_secret_store_provider(Arc::new(
                 drasi_lib::secret_store::MemorySecretStoreProvider::new().with_secret("COUNT", "4"),
             ))
@@ -336,10 +365,10 @@ async fn assert_clone_and_save_rejected(
 ) -> Result<()> {
     source
         .add_query(
-            drasi_lib::Query::cypher("must-not-clone")
+            drasi_lib::Query::cypher(ComponentName::try_new("must-not-clone")?)
                 .query("MATCH (n) RETURN n")
                 .auto_start(false)
-                .build(),
+                .build()?,
         )
         .await?;
     let snapshot = source.snapshot_computation_configuration().await?;
@@ -620,7 +649,7 @@ async fn loading_a_native_plugin_activates_existing_waiting_declarations() -> Re
     .await
     .context("declaring nodes before the native factory is loaded")?;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let counter = core.computation_component("counter")?;
+    let counter = core.component_by_name(&ComponentName::try_new("counter")?)?;
     assert!(counter.observed()?.waiting_for.iter().any(|waiting| {
         matches!(waiting, DependencyWait::Factory { implementation }
             if implementation.name.as_ref() == COUNTER)
@@ -653,7 +682,8 @@ async fn loading_a_native_plugin_activates_existing_waiting_declarations() -> Re
         )
     })?;
     assert_eq!(
-        core.computation_component("counter")?.generation(),
+        core.component_by_name(&ComponentName::try_new("counter")?)?
+            .generation(),
         counter.generation()
     );
     assert!(counter.observed()?.waiting_for.is_empty());
@@ -938,9 +968,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         .as_ref()
         .unwrap()
         .resolve(&registry)?;
-    register_components(&restored_config, &restored, &plugins)
-        .await?
-        .ensure_committed()?;
+    register_components(&restored_config, &restored, &plugins).await?;
     std::fs::remove_file(&output)?;
     assert_eq!(
         restored
@@ -975,9 +1003,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         .add("first".into(), first.clone())
         .await
         .map_err(anyhow::Error::msg)?;
-    register_components(&config, &first, &factories())
-        .await?
-        .ensure_committed()?;
+    register_components(&config, &first, &factories()).await?;
     let persistence = ConfigPersistence::new(
         path.clone(),
         single,
@@ -1037,7 +1063,9 @@ async fn component_api_waits_for_factories_but_rejects_missing_recipes_and_read_
     .await?;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_REQUEST");
-    assert!(core.computation_component("counter").is_err());
+    assert!(core
+        .component_by_name(&ComponentName::try_new("counter")?)
+        .is_err());
     let (status, body) = request(
         &writable,
         "POST",
@@ -1047,7 +1075,9 @@ async fn component_api_waits_for_factories_but_rejects_missing_recipes_and_read_
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let counter = core.computation_component("counter")?.observed()?;
+    let counter = core
+        .component_by_name(&ComponentName::try_new("counter")?)?
+        .observed()?;
     assert!(counter.waiting_for.iter().any(|waiting| {
         matches!(waiting, DependencyWait::Factory { implementation }
             if implementation.name.as_ref() == "not-installed")
@@ -1141,7 +1171,9 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     .await?;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_REQUEST");
-    assert!(core.computation_component("counter").is_err());
+    assert!(core
+        .component_by_name(&ComponentName::try_new("counter")?)
+        .is_err());
 
     // Individually valid fields can still fail a constructor's combined checks.
     if let ComponentConstruction::Factory(spec) = &mut config.definition.components[0].construction
@@ -1161,7 +1193,7 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     .await?;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        core.computation_component("counter")?
+        core.component_by_name(&ComponentName::try_new("counter")?)?
             .observed()?
             .realization,
         RealizationState::CreationFailed
@@ -1211,9 +1243,7 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("rebind").await?;
     let plugins = factories();
-    register_components(&config, &core, &plugins)
-        .await?
-        .ensure_committed()?;
+    register_components(&config, &core, &plugins).await?;
     let control = core.computation_control()?;
     let preview = control
         .preview(
@@ -1271,9 +1301,7 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("required-resources").await?;
-    register_components(&config, &core, &factories())
-        .await?
-        .ensure_committed()?;
+    register_components(&config, &core, &factories()).await?;
     let snapshot = core.snapshot_computation_configuration().await?;
     for kind in [
         "configuration",
@@ -1343,10 +1371,12 @@ async fn external_pipe_bindings_reject_clone_and_save_before_any_mutation() -> R
     let capture = factory(CAPTURE);
     let graph = ComponentBatch::builder()
         .component(
+            ComponentName::try_new("counter")?,
             counter.specification(id("counter"), json!({"stream":"counter/out","count":0}))?,
             counter,
         )
         .component(
+            ComponentName::try_new("capture")?,
             capture.specification(
                 id("capture"),
                 json!({"path":directory.path().join("capture.jsonl")}),
@@ -1362,10 +1392,7 @@ async fn external_pipe_bindings_reject_clone_and_save_before_any_mutation() -> R
             StreamId::try_new("counter/out")?,
         )
         .build()?;
-    source
-        .add_components(graph.auto_start(false))
-        .await?
-        .ensure_committed()?;
+    source.add_components(graph.auto_start(false)).await?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),
@@ -1469,11 +1496,13 @@ async fn unsupported_external_bindings_fail_before_partial_clone_or_persistence(
     let capture = factory(CAPTURE);
     let graph = ComponentBatch::builder()
         .component(
+            ComponentName::try_new("counter")?,
             counter.specification(id("counter"), json!({"stream":"counter/out","count":0}))?,
             counter,
         )
-        .transformer(Box::new(transformer))
+        .transformer(ComponentName::try_new("external")?, Box::new(transformer))
         .component(
+            ComponentName::try_new("capture")?,
             capture.specification(
                 id("capture"),
                 json!({"path":directory.path().join("capture.jsonl")}),
@@ -1497,10 +1526,7 @@ async fn unsupported_external_bindings_fail_before_partial_clone_or_persistence(
             StreamId::try_new("external/out")?,
         )
         .build()?;
-    source
-        .add_components(graph.auto_start(false))
-        .await?
-        .ensure_committed()?;
+    source.add_components(graph.auto_start(false)).await?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),
@@ -1537,6 +1563,7 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         let mut config = definition(&directory.path().join("unused.jsonl"))?;
         config.definition.relationships.clear();
         config.definition.components = vec![DesiredComponent {
+            name: ComponentName::try_new("transaction")?,
             descriptor: specification.descriptor.clone(),
             role: specification.role,
             completion: specification.completion,
@@ -1576,8 +1603,18 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         .await;
         if recipe["kind"] == "memoryIndexes" {
             let report = core.add_components(result?.auto_start(false)).await?;
-            assert!(report.committed);
-            let state = core.computation_component("transaction")?.observed()?;
+            assert_eq!(
+                report
+                    .creation
+                    .as_ref()
+                    .context("transaction creation receipt")?
+                    .components
+                    .len(),
+                1
+            );
+            let state = core
+                .component_by_name(&ComponentName::try_new("transaction")?)?
+                .observed()?;
             assert_eq!(state.realization, RealizationState::CreationFailed);
             let error = state
                 .failure
@@ -1592,7 +1629,15 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         }
         let graph = result?;
         let report = core.add_components(graph.auto_start(false)).await?;
-        assert_eq!(report.summary, OperationSummary::Completed);
+        assert_eq!(
+            report
+                .creation
+                .as_ref()
+                .context("transaction creation receipt")?
+                .components
+                .len(),
+            1
+        );
         let exported =
             configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?;
         assert_eq!(

@@ -1166,6 +1166,7 @@ dependencies = [
  "drasi-query-ast",
  "futures-core",
  "imbl",
+ "jsonschema 0.18.3",
  "log",
  "rmp-serde",
  "serde",
@@ -1308,8 +1309,10 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "time",
+ "uuid",
 ]
 
 [[package]]
@@ -1343,6 +1346,7 @@ dependencies = [
  "drasi-computation-plugin-abi",
  "drasi-computation-plugin-sdk",
  "drasi-core",
+ "drasi-core-types",
  "drasi-ffi-primitives",
  "drasi-lib",
  "drasi-plugin-sdk",
@@ -1360,6 +1364,7 @@ dependencies = [
  "p384",
  "pem",
  "reqwest 0.12.28",
+ "rmp-serde",
  "semver",
  "serde",
  "serde_json",
@@ -1384,6 +1389,7 @@ dependencies = [
  "bytes",
  "chrono",
  "drasi-core",
+ "drasi-core-types",
  "drasi-query-ast",
  "fastmurmur3",
  "fnv",
@@ -1488,6 +1494,7 @@ dependencies = [
  "bytes",
  "chrono",
  "drasi-core",
+ "drasi-core-types",
  "drasi-ffi-primitives",
  "drasi-lib",
  "jsonschema 0.18.3",
@@ -1578,6 +1585,7 @@ dependencies = [
 name = "drasi-reaction-common"
 version = "0.11.3"
 dependencies = [
+ "drasi-computation-contracts",
  "serde",
 ]
 
@@ -1684,6 +1692,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chacha20poly1305",
+ "drasi-core-types",
  "drasi-lib",
  "log",
  "redb",
@@ -1701,11 +1710,13 @@ dependencies = [
  "async-trait",
  "bincode",
  "drasi-core",
+ "drasi-core-types",
  "drasi-lib",
  "log",
  "ordered-float",
  "redb",
  "serde",
+ "sha2 0.10.9",
  "tokio",
 ]
 

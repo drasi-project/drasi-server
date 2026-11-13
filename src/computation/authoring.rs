@@ -119,6 +119,8 @@ pub struct ComputationGraphConfig {
 pub struct GraphComponentConfig {
     #[schema(value_type = String)]
     pub id: ComponentId,
+    #[schema(value_type = String)]
+    pub name: ComponentName,
     pub kind: String,
     pub version: Option<String>,
     #[serde(default = "empty_configuration")]
@@ -206,11 +208,17 @@ impl ComputationGraphConfig {
             "defaultPipeCapacity must be positive"
         );
         let mut components = BTreeSet::new();
+        let mut names = BTreeSet::new();
         for component in &self.components {
             anyhow::ensure!(
                 components.insert(component.id.clone()),
                 "duplicate computation component '{}'",
                 component.id
+            );
+            anyhow::ensure!(
+                names.insert(component.name.clone()),
+                "duplicate computation component name '{}'",
+                component.name
             );
             ImplementationIdentity::try_new(
                 component.kind.as_str(),
@@ -372,6 +380,7 @@ impl ComputationGraphConfig {
             );
             descriptors.insert(component.id.clone(), specification.descriptor.clone());
             definition.components.push(DesiredComponent {
+                name: component.name.clone(),
                 descriptor: specification.descriptor.clone(),
                 role: specification.role,
                 completion: specification.completion,

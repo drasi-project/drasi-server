@@ -341,7 +341,9 @@ async fn pending_managed_definitions_remain_visible_without_plaintext_yaml_or_st
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["data"]["state"], "accepted");
-    let counter = core.computation_component("counter")?.observed()?;
+    let counter = core
+        .component_by_name(&ComponentName::try_new("counter")?)?
+        .observed()?;
     assert!(counter.waiting_for.iter().any(|waiting| {
         matches!(waiting, DependencyWait::Factory { implementation }
             if implementation.name.as_ref() == "unavailable/native")

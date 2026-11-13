@@ -27,7 +27,7 @@ use std::fmt;
 pub struct ReactionConfig {
     pub kind: String,
     pub id: String,
-    pub queries: Vec<String>,
+    pub queries: Vec<drasi_lib::config::ComponentReference>,
     pub auto_start: bool,
     /// Reference (by `id`) to an entry in the top-level
     /// `identityProviders` block. When set, the resolved provider is
@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
             {
                 let mut kind: Option<String> = None;
                 let mut id: Option<String> = None;
-                let mut queries: Option<Vec<String>> = None;
+                let mut queries: Option<Vec<drasi_lib::config::ComponentReference>> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut identity_provider: Option<String> = None;
 
@@ -169,7 +169,7 @@ impl ReactionConfig {
     }
 
     /// Get the query IDs this reaction subscribes to
-    pub fn queries(&self) -> &[String] {
+    pub fn queries(&self) -> &[drasi_lib::config::ComponentReference] {
         &self.queries
     }
 
@@ -203,6 +203,20 @@ impl ReactionConfig {
 mod tests {
     use super::*;
 
+    fn query_names(config: &ReactionConfig) -> Vec<&str> {
+        config
+            .queries()
+            .iter()
+            .map(|reference| reference.as_name().unwrap().as_str())
+            .collect()
+    }
+
+    fn query_ref(name: &str) -> drasi_lib::config::ComponentReference {
+        drasi_lib::config::ComponentReference::by_name(
+            drasi_lib::ComponentName::try_new(name).unwrap(),
+        )
+    }
+
     #[test]
     fn test_reaction_deserialize_log_valid() {
         let json = r#"{
@@ -214,7 +228,7 @@ mod tests {
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "test-log");
-        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert_eq!(query_names(&reaction), ["query1", "query2"]);
         assert!(reaction.auto_start());
         assert_eq!(reaction.kind(), "log");
     }
@@ -518,7 +532,7 @@ autoStart: true
 
         let reaction: ReactionConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(reaction.id(), "yaml-reaction");
-        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert_eq!(query_names(&reaction), ["query1", "query2"]);
         assert!(reaction.auto_start());
     }
 
@@ -539,7 +553,7 @@ autoStart: true
         let original = ReactionConfig {
             kind: "log".to_string(),
             id: "roundtrip-reaction".to_string(),
-            queries: vec!["q1".to_string(), "q2".to_string()],
+            queries: vec![query_ref("q1"), query_ref("q2")],
             auto_start: false,
             identity_provider: None,
             config: serde_json::json!({"routes": {}}),
@@ -549,7 +563,7 @@ autoStart: true
         let deserialized: ReactionConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.id(), "roundtrip-reaction");
-        assert_eq!(deserialized.queries(), &["q1", "q2"]);
+        assert_eq!(query_names(&deserialized), ["q1", "q2"]);
         assert!(!deserialized.auto_start());
     }
 

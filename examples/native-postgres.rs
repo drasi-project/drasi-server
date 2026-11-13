@@ -16,6 +16,7 @@ use drasi_host_sdk::{
     management::NativeBootstrapConfig,
 };
 use drasi_lib::computation::v1::*;
+use drasi_lib::config::ComponentReference;
 use drasi_server::{api::mappings::DtoMapper, computation::ComputationConfig, DrasiServerConfig};
 use serde_json::{json, Value};
 
@@ -24,14 +25,11 @@ const BOOTSTRAP: &str = "drasi.postgres/shared-row-bootstrap";
 const HTTP_SOURCE: &str = "drasi.network/http-source";
 const HTTP_BOOTSTRAP: &str = "drasi.network/http-bootstrap";
 
-fn id(value: &str) -> Result<ComponentId> {
-    Ok(ComponentId::try_new(value)?)
-}
 fn resource(value: &str) -> Result<ResourceId> {
     Ok(ResourceId::try_new(value)?)
 }
-fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
-    Ok(Endpoint::new(id(component)?, PortId::try_new(port)?))
+fn endpoint(component: &ComponentId, port: &str) -> Result<Endpoint> {
+    Ok(Endpoint::new(component.clone(), PortId::try_new(port)?))
 }
 fn stream(source: &str) -> Result<StreamId> {
     Ok(StreamId::try_new(format!("{source}/out"))?)
@@ -110,6 +108,25 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         .resolved_instances(&DtoMapper::new())?
         .pop()
         .context("query instance")?;
+    let source_ids: BTreeMap<String, ComponentId> = sources
+        .iter()
+        .map(|source| {
+            Ok((
+                source["id"].as_str().context("source name")?.to_owned(),
+                ComponentId::generate(),
+            ))
+        })
+        .collect::<Result<_>>()?;
+    let query_ids: BTreeMap<ComponentName, ComponentId> = instance
+        .queries
+        .iter()
+        .map(|query| {
+            (
+                query.name.clone(),
+                query.id.clone().unwrap_or_else(ComponentId::generate),
+            )
+        })
+        .collect();
     let source_plugin = load(libraries, "drasi-computation-source-postgres")?;
     let bootstrap_plugin = load(libraries, "drasi-computation-bootstrap-postgres")?;
     let source_factory: Arc<NativeFactory> = source_plugin
@@ -181,28 +198,35 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         "persistent examples require explicit scoped index/state recipes; memory defaults cannot replace retained state");
 
     for query in &instance.queries {
+        let query_id = query_ids
+            .get(&query.name)
+            .context("assigned query identity")?;
         anyhow::ensure!(
             !query.inputs.is_empty()
                 && query.middleware.is_empty()
                 && query.inputs.iter().all(|source| source.pipeline.is_empty())
                 && query.enable_bootstrap,
             "query {} requires an explicitly composed bootstrap/middleware contract",
-            query.id
+            query.name
         );
-        let progress = format!("{}-progress", query.id);
+        let progress = format!("{}-progress", query.name);
         builder = declare(
             builder,
             &progress,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":query.id}),
+            json!({"kind":"sourceProgress","component":query_id}),
         )?;
         let mut providers = Vec::new();
         for input in &query.inputs {
-            let source = input.component.as_str();
+            let source = input
+                .component
+                .as_name()
+                .context("native PostgreSQL recipes require source names")?
+                .as_str();
             let declaration = sources
                 .iter()
                 .find(|candidate| candidate["id"] == source)
-                .with_context(|| format!("query {} has an unknown source {source}", query.id))?;
+                .with_context(|| format!("query {} has an unknown source {source}", query.name))?;
             let kind = declaration["kind"].as_str().context("source kind")?;
             let metadata = if kind == "postgres" {
                 &bootstrap
@@ -214,12 +238,12 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 http_bootstrap.as_ref().context("HTTP bootstrap metadata")?
             };
             let bootstrap_id = if query.inputs.len() == 1 && kind == "postgres" {
-                format!("{}-postgres-bootstrap", query.id)
+                format!("{}-postgres-bootstrap", query.name)
             } else {
-                format!("{}-{source}-bootstrap", query.id)
+                format!("{}-{source}-bootstrap", query.name)
             };
             let bootstrap_config = NativeBootstrapConfig {
-                component: id(&query.id)?,
+                component: query_id.clone(),
                 implementation: metadata.implementation.clone(),
                 configuration_version: metadata.configuration_version,
                 configuration: BTreeMap::from([
@@ -257,12 +281,12 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         let bootstrap_id = if providers.len() == 1 {
             providers.remove(0)
         } else {
-            let name = format!("{}-bootstrap", query.id);
+            let name = format!("{}-bootstrap", query.name);
             builder = declare(
                 builder,
                 &name,
                 ResourceRole::Bootstrap,
-                json!({"kind":"compositeBootstrap","component":query.id,"providers":providers}),
+                json!({"kind":"compositeBootstrap","component":query_id,"providers":providers}),
             )?;
             for provider in providers {
                 builder = builder.resource_dependency(
@@ -273,11 +297,34 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             }
             name
         };
-        let mut specification = query_factory.specification_from_config(id(&query.id)?, json!({
-            "query":query.query, "stream":stream(&query.id)?,
+        let execution_inputs = query
+            .inputs
+            .iter()
+            .map(|input| {
+                let source_name = input
+                    .component
+                    .as_name()
+                    .context("native PostgreSQL recipes require source names")?;
+                let source_id = source_ids
+                    .get(source_name.as_str())
+                    .context("assigned source identity")?;
+                let mut resolved = input.clone();
+                resolved.component = ComponentReference::by_id(source_id.clone());
+                resolved.to_execution_input()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let execution = QueryExecutionSettings {
+            joins: query.joins.clone().unwrap_or_default(),
+            middleware: query.middleware.clone(),
+            inputs: execution_inputs,
+            result: query.result.clone(),
+            source_transactions: None,
+        };
+        let mut specification = query_factory.specification_from_config(query_id.clone(), json!({
+            "query":query.query, "stream":stream(query.name.as_str())?,
             "language":match query.query_language { drasi_lib::QueryLanguage::Cypher => "cypher", drasi_lib::QueryLanguage::GQL => "gql" },
             "outbox_capacity":query.outbox_capacity,
-            "execution":QueryExecutionSettings::from_legacy_config(query),
+            "execution":execution,
         }))?;
         specification.dependencies = BTreeMap::from([
             ("indexes".into(), vec![resource("query-indexes")?]),
@@ -286,14 +333,18 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             ("bootstrap".into(), vec![resource(&bootstrap_id)?]),
         ]);
         builder = builder
-            .component(specification, query_factory.clone())
-            .bind_stream(endpoint(&query.id, "out")?, stream(&query.id)?);
+            .component(query.name.clone(), specification, query_factory.clone())
+            .bind_stream(endpoint(query_id, "out")?, stream(query.name.as_str())?);
         for source in &query.inputs {
+            let source_name = source
+                .component
+                .as_name()
+                .context("native PostgreSQL recipes require source names")?;
+            let source_id = source_ids
+                .get(source_name.as_str())
+                .context("assigned source identity")?;
             builder = builder.connect(
-                EdgeDefinition::new(
-                    endpoint(&source.component, "out")?,
-                    endpoint(&query.id, "in")?,
-                ),
+                EdgeDefinition::new(endpoint(source_id, "out")?, endpoint(query_id, "in")?),
                 Box::new(BoundedPipeConfig { capacity: 32 }),
             );
         }
@@ -301,12 +352,15 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
 
     for source in sources {
         let source_id = source["id"].as_str().context("source ID")?;
+        let component_id = source_ids
+            .get(source_id)
+            .context("assigned source identity")?;
         if source["kind"] == "http" {
             let factory = http_source_factory
                 .as_ref()
                 .context("HTTP source factory")?;
             let mut specification = factory.specification(
-                id(source_id)?,
+                component_id.clone(),
                 json!({
                     "sourceId":source_id, "stream":stream(source_id)?,
                     "host":source.get("host").cloned().unwrap_or(json!("0.0.0.0")),
@@ -331,20 +385,31 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 );
             }
             builder = builder
-                .component(specification, factory.clone())
-                .bind_stream(endpoint(source_id, "out")?, stream(source_id)?);
+                .component(
+                    ComponentName::try_new(source_id)?,
+                    specification,
+                    factory.clone(),
+                )
+                .bind_stream(endpoint(component_id, "out")?, stream(source_id)?);
             continue;
         }
         let consumers: BTreeMap<_, _> = instance
             .queries
             .iter()
             .filter(|query| {
-                query
-                    .inputs
-                    .iter()
-                    .any(|input| input.component == source_id)
+                query.inputs.iter().any(|input| {
+                    input
+                        .component
+                        .as_name()
+                        .is_some_and(|name| name.as_str() == source_id)
+                })
             })
-            .map(|query| (query.id.clone(), format!("{}-progress", query.id)))
+            .map(|query| {
+                (
+                    query_ids[&query.name].clone(),
+                    format!("{}-progress", query.name),
+                )
+            })
             .collect();
         anyhow::ensure!(
             !consumers.is_empty(),
@@ -356,7 +421,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             &feedback,
             ResourceRole::Checkpoint,
             json!({
-                "kind":"consumerProgress", "producer":source_id, "consumers":consumers,
+                "kind":"consumerProgress", "producer":component_id, "consumers":consumers,
             }),
         )?;
         for progress in consumers.values() {
@@ -367,7 +432,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             )?;
         }
         let mut specification = source_factory.specification(
-            id(source_id)?,
+            component_id.clone(),
             json!({
                 "stream":stream(source_id)?, "settings":{},
                 "persistent":false, "auto_create_slot":false, "start_from_slot":false,
@@ -381,21 +446,27 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             .dependencies
             .insert("consumer_progress".into(), vec![resource(&feedback)?]);
         builder = builder
-            .component(specification, source_factory.clone())
-            .bind_stream(endpoint(source_id, "out")?, stream(source_id)?);
+            .component(
+                ComponentName::try_new(source_id)?,
+                specification,
+                source_factory.clone(),
+            )
+            .bind_stream(endpoint(component_id, "out")?, stream(source_id)?);
     }
-    let mut outlet =
-        outlet_factory.specification_from_config(id("postgres-query-results")?, json!({}))?;
+    let outlet_id = ComponentId::from_uuid(uuid::Uuid::from_u128(0xff01));
+    let mut outlet = outlet_factory.specification_from_config(outlet_id.clone(), json!({}))?;
     outlet
         .dependencies
         .insert("catalog".into(), vec![resource("query-results")?]);
-    builder = builder.component(outlet, outlet_factory);
+    builder = builder.component(
+        ComponentName::try_new("postgres-query-results")?,
+        outlet,
+        outlet_factory,
+    );
     for query in &instance.queries {
+        let query_id = &query_ids[&query.name];
         builder = builder.connect(
-            EdgeDefinition::new(
-                endpoint(&query.id, "out")?,
-                endpoint("postgres-query-results", "in")?,
-            ),
+            EdgeDefinition::new(endpoint(query_id, "out")?, endpoint(&outlet_id, "in")?),
             Box::new(BoundedPipeConfig { capacity: 32 }),
         );
     }

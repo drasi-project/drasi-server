@@ -22,7 +22,7 @@ implementation or a headless dependency shortcut.
 | `/client` runtime | `DrasiClient`, `DrasiSSEClient`, `DrasiError`, `sse034ResultAdapter`, `createLegacyResultAdapter`, `accumulateResult` |
 | `/client` connection and transport types | `DrasiClientOptions`, `DrasiInitializeOptions`, `DrasiSSEClientOptions`, `ReactionReference`, `ReconnectOptions`, `ResultReconciliationOptions`, `ConnectionStatus`, `DrasiRequestContext`, `DrasiHeaders`, `DrasiHeadersProvider`, `EventSourceOptions`, `EventSourceFactory`, `EventSourceLike` |
 | `/client` read and error types | `Component`, `ComponentLinks`, `ComponentStatus`, `QueryLanguage`, `QueryConfig`, `QueryInput`, `QueryInputObject`, `QueryResultOptions`, `QueryJoin`, `QueryJoinKey`, `QueryMiddleware`, `ReactionConfig`, `SseReactionConfig`, `JsonValue`, `DrasiErrorCode`, `DrasiErrorDetails`, `DrasiResourceKind` |
-| `/client` result and subscription types | `ResultRow`, `RowKey`, `ResultChange`, `QuerySnapshot`, `QueryDelta`, `QueryResult`, `ResultAdapter`, `ResultAdapterContext`, `LegacyResultAdapterOptions`, `RouteUnidentified`, `QueryStatus`, `QueryErrorScope`, `QuerySubscription`, `QuerySubscriptionState` |
+| `/client` result and subscription types | `ResultRow`, `RowKey`, `ResultChange`, `OutputSnapshot`, `OutputDelta`, `OutputResult`, `ResultAdapter`, `ResultAdapterContext`, `LegacyResultAdapterOptions`, `RouteUnidentified`, `QueryStatus`, `QueryErrorScope`, `OutputSubscription`, `OutputSubscriptionState` |
 | `/react` runtime | `DrasiProvider`, `DrasiClientProvider`, `useDrasiClient`, `useDrasiQuery`, `useDrasiConnectionStatus`, `useDrasiQueryDefinition`, `useDrasiServerUiUrl`, `useRowAnimation`, `useTableSort`, `useReducedMotion` |
 | `/react` types | `DrasiProviderProps`, `DrasiContextValue`, `UseDrasiQueryOptions`, `UseDrasiQueryResult`, `UseDrasiQueryDefinitionResult`, `AnimationDirection`, `UseRowAnimationOptions`, `UseRowAnimationResult`, `SortConfig`, `UseTableSortOptions`, `UseTableSortResult` |
 | `/components` runtime | `DataTable`, `QueryTable`, `queryTableState`, `Modal`, `CodeIcon`, `ExpandIcon`, `CollapseIcon` |
@@ -266,7 +266,7 @@ export function createProbeAdapter(): ResultAdapter {
       case 'delete': change = { kind: 'delete', before: row(payload.before) }; break;
       default: throw invalid();
     }
-    return [{ kind: 'delta', queryId: payload.queryId, changes: [change], receivedAt: context.receivedAt }];
+    return [{ kind: 'delta', outputId: payload.queryId, changes: [change], receivedAt: context.receivedAt }];
   };
 }
 
@@ -399,7 +399,7 @@ requires a value on current rows, not on delete records. For a table, use
 ```ts
 // @drasi-docs: raw-identity.ts
 import {
-  accumulateResult, type QueryResult, type ResultRow, type RowKey,
+  accumulateResult, type OutputResult, type ResultRow, type RowKey,
 } from '@drasi/react/client';
 import type { UseDrasiQueryOptions } from '@drasi/react/react';
 
@@ -431,12 +431,12 @@ function project(rows: readonly ResultRow[]): ReadingView[] {
 }
 
 export function sparseDeleteExample() {
-  const snapshot: QueryResult = {
-    kind: 'snapshot', queryId: 'readings', receivedAt: 0,
+  const snapshot: OutputResult = {
+    kind: 'snapshot', outputId: 'readings', receivedAt: 0,
     rows: [{ deviceId: 'freezer-1', value: -18 }],
   };
-  const deletion: QueryResult = {
-    kind: 'delta', queryId: 'readings', receivedAt: 1,
+  const deletion: OutputResult = {
+    kind: 'delta', outputId: 'readings', receivedAt: 1,
     changes: [{ kind: 'delete', before: { deviceId: 'freezer-1' } }],
   };
   const rawRows = accumulateResult([], snapshot, rawKey);
@@ -1441,7 +1441,7 @@ with the client when that owner finishes:
 // @drasi-docs: client.ts
 import {
   DrasiClient, accumulateResult,
-  type DrasiError, type QuerySubscriptionState, type ResultRow, type RowKey,
+  type DrasiError, type OutputSubscriptionState, type ResultRow, type RowKey,
 } from '@drasi/react/client';
 
 const readingKey: RowKey = raw => {
@@ -1453,7 +1453,7 @@ const readingKey: RowKey = raw => {
 export async function monitorReadings(
   onRows: (rows: ResultRow[]) => void,
   onError: (error: DrasiError) => void,
-  onStateChange?: (state: QuerySubscriptionState) => void,
+  onStateChange?: (state: OutputSubscriptionState) => void,
 ) {
   const client = new DrasiClient({
     serverUrl: 'https://drasi.example', instanceId: 'analytics',
@@ -1507,7 +1507,7 @@ the owner must supply a trusted browser endpoint and enforce its routing policy.
 | Method | Return / behavior |
 | --- | --- |
 | `connect(outputIds: string[], endpoint: string, signal?: AbortSignal, maxInitialReconnectAttempts?: number)` | `Promise<void>`; replaces pending/current connection work and resolves when open, or rejects after permanent failure/exhaustion/cancellation. The fourth argument is a nonnegative safe integer, defaulting to the configured retry count; it bounds only retries before the first open. Subsequent reconnects use the normal policy. The signal cancels the **pending opening**; use `disconnect()` for lifetime cleanup after it resolves. `outputIds` is not a membership or authorization check at this layer: delivery is keyed by actual subscriptions and normalized result IDs. |
-| `subscribe(queryId: string, onResult: (result: QueryDelta) => void, onError?: (error: DrasiError) => void)` | `() => void`; attaches a delta-only subscriber and returns its plain cleanup function. No REST snapshot, accumulated rows, state callback or query-local refresh method. Provide `onError` for query-scoped protocol/callback failures. |
+| `subscribe(queryId: string, onResult: (result: OutputDelta) => void, onError?: (error: DrasiError) => void)` | `() => void`; attaches a delta-only subscriber and returns its plain cleanup function. No REST snapshot, accumulated rows, state callback or query-local refresh method. Provide `onError` for query-scoped protocol/callback failures. |
 | `getQueryError(queryId: string)` | `DrasiError \| null`; retained query-scoped fault, separate from shared status. A later valid batch for that query clears it; disconnect clears all faults. |
 | `getConnectionStatus()` | `ConnectionStatus`; a status copy. |
 | `onConnectionStatusChange(callback: (status: ConnectionStatus) => void)` | `() => void`; immediate status callback plus later transitions; returned function removes the listener. |

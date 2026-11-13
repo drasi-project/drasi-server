@@ -45,10 +45,10 @@ test('the literal guide adapter normalizes JSON upserts, sparse key-changing upd
   ];
   const deltas = records.map(record => adapter(JSON.parse(JSON.stringify(record)), context));
   assert.deepEqual(deltas, [
-    [{ kind: 'delta', queryId: 'north-room', receivedAt: 123, changes: [{ kind: 'upsert', after: row }] }],
-    [{ kind: 'delta', queryId: 'south-room', receivedAt: 123, changes: [{ kind: 'upsert', after: row }] }],
-    [{ kind: 'delta', queryId: 'north-room', receivedAt: 123, changes: [{ kind: 'update', before: { probeId: key }, after: changed }] }],
-    [{ kind: 'delta', queryId: 'north-room', receivedAt: 123, changes: [{ kind: 'delete', before: { probeId: changed.probeId } }] }],
+    [{ kind: 'delta', outputId: 'north-room', receivedAt: 123, changes: [{ kind: 'upsert', after: row }] }],
+    [{ kind: 'delta', outputId: 'south-room', receivedAt: 123, changes: [{ kind: 'upsert', after: row }] }],
+    [{ kind: 'delta', outputId: 'north-room', receivedAt: 123, changes: [{ kind: 'update', before: { probeId: key }, after: changed }] }],
+    [{ kind: 'delta', outputId: 'north-room', receivedAt: 123, changes: [{ kind: 'delete', before: { probeId: changed.probeId } }] }],
   ]);
   let north = accumulateResult([], deltas[0][0], probeKey);
   const south = accumulateResult([], deltas[1][0], probeKey);
@@ -145,8 +145,13 @@ test('released SSE renders the literal YAML as escaped JSON and the documented a
         if (!data) continue;
         wire.push(data);
         const deltas = adapter(JSON.parse(data), context);
-        const delta = deltas.find(value => value.changes.some(change =>
-          probeKey(change.kind === 'delete' ? change.before : change.after).startsWith(key)));
+        const delta = deltas.find(value => value.changes.some(change => {
+          if (change.kind === 'delete') return probeKey(change.before).startsWith(key);
+          if (change.kind === 'upsert' || change.kind === 'update') {
+            return probeKey(change.after).startsWith(key);
+          }
+          return false;
+        }));
         if (delta) return delta;
       }
     }
@@ -169,7 +174,7 @@ test('released SSE renders the literal YAML as escaped JSON and the documented a
         });
         assert(response.ok, await response.text());
         const delta = await nextChange();
-        assert.equal(delta.queryId, queryId);
+        assert.equal(delta.outputId, queryId);
         assert.deepEqual(delta.changes, [expected]);
         rows = accumulateResult(rows, delta, probeKey);
         assert.deepEqual(rows, operation === 'delete' ? [] : [properties]);

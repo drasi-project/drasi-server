@@ -1,13 +1,18 @@
 {
   "instance": "mysql",
-  "source": "mysql-source",
+  "source": {
+    "id": "8e85e030-6980-4a2d-b6f8-329fc54b921a",
+    "name": "mysql-source"
+  },
   "queries": [
     {
-      "id": "all-items",
+      "id": "492e61c6-567b-47b6-bf22-8dcb527d8702",
+      "name": "all-items",
       "query": "MATCH (n:items) RETURN n.id AS id,n.value AS value"
     },
     {
-      "id": "selected-items",
+      "id": "8cf3c865-85a8-459d-8883-31f411db0688",
+      "name": "selected-items",
       "query": "MATCH (n:items) WHERE n.id >= 2 RETURN n.id AS id,n.value AS value"
     }
   ]

@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use drasi_lib::identity::{IdentityProvider, PasswordIdentityProvider};
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::state_store::StateStoreProvider;
-use drasi_lib::{Reaction, Source};
+use drasi_lib::{ComponentId, Reaction, Source};
 use log::info;
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -161,6 +161,7 @@ pub fn config_resolver_callback() -> ConfigResolverFn {
 /// creation calls.
 pub async fn create_source(
     registry: &PluginRegistry,
+    component_id: ComponentId,
     config: SourceConfig,
 ) -> Result<Box<dyn Source + 'static>> {
     // Clone Arc descriptors so we don't borrow `registry` across awaits
@@ -191,7 +192,7 @@ pub async fn create_source(
 
     // All registry borrows are done — create instances without holding the registry
     let source = descriptor
-        .create_source(&config.id, &config.config, config.auto_start)
+        .create_source(&component_id, &config.config, config.auto_start)
         .await?;
 
     if let (Some(bootstrap_config), Some(bp_descriptor)) = (
@@ -215,6 +216,7 @@ pub async fn create_source(
 /// internally so the caller never holds a read guard across await points.
 pub async fn create_source_locked(
     registry: &tokio::sync::RwLock<PluginRegistry>,
+    component_id: ComponentId,
     config: SourceConfig,
 ) -> Result<(Box<dyn Source + 'static>, HashMap<String, String>)> {
     let (descriptor, bootstrap_descriptor, plugin_meta) = {
@@ -247,7 +249,7 @@ pub async fn create_source_locked(
     }; // lock dropped here
 
     let source = descriptor
-        .create_source(&config.id, &config.config, config.auto_start)
+        .create_source(&component_id, &config.config, config.auto_start)
         .await?;
 
     if let (Some(bootstrap_config), Some(bp_descriptor)) = (
@@ -362,6 +364,7 @@ pub fn resolve_source_bootstrap_provider(
 /// creation calls.
 pub async fn create_reaction(
     registry: &PluginRegistry,
+    component_id: ComponentId,
     config: ReactionConfig,
 ) -> Result<Box<dyn Reaction + 'static>> {
     let descriptor = registry
@@ -377,7 +380,7 @@ pub async fn create_reaction(
 
     descriptor
         .create_reaction(
-            &config.id,
+            &component_id,
             config.queries.clone(),
             &config.config,
             config.auto_start,
@@ -389,6 +392,7 @@ pub async fn create_reaction(
 /// internally so the caller never holds a read guard across await points.
 pub async fn create_reaction_locked(
     registry: &tokio::sync::RwLock<PluginRegistry>,
+    component_id: ComponentId,
     config: ReactionConfig,
 ) -> Result<(Box<dyn Reaction + 'static>, HashMap<String, String>)> {
     let (descriptor, plugin_meta) = {
@@ -406,7 +410,7 @@ pub async fn create_reaction_locked(
 
     let reaction = descriptor
         .create_reaction(
-            &config.id,
+            &component_id,
             config.queries.clone(),
             &config.config,
             config.auto_start,
@@ -674,8 +678,8 @@ mod tests {
         }
         async fn create_reaction(
             &self,
-            _: &str,
-            _: Vec<String>,
+            _: &drasi_lib::ComponentId,
+            _: Vec<drasi_lib::config::ComponentReference>,
             _: &serde_json::Value,
             _: bool,
         ) -> Result<Box<dyn Reaction>> {
@@ -907,7 +911,7 @@ mod tests {
             config: serde_json::json!({}),
         };
 
-        let result = create_source(&registry, config).await;
+        let result = create_source(&registry, ComponentId::generate(), config).await;
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(
@@ -928,7 +932,7 @@ mod tests {
             config: serde_json::json!({}),
         };
 
-        let result = create_reaction(&registry, config).await;
+        let result = create_reaction(&registry, ComponentId::generate(), config).await;
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(

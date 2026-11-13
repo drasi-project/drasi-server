@@ -38,7 +38,7 @@ export function connectionOptions(origin: string): DrasiClientOptions {
   return {
     serverUrl: origin,
     instanceId: 'cold-chain',
-    queryIds: rooms.map(room => room.queryId),
+    outputIds: rooms.map(room => room.queryId),
     reaction: { id: 'cold-chain-events', endpoint: new URL('/events', origin).href },
   };
 }

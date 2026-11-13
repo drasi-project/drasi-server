@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -33,6 +37,22 @@ use drasi_lib::{
     DrasiLib,
 };
 use serde::{Deserialize, Serialize};
+
+fn rocksdb_provider(path: &Path) -> Arc<drasi_index_rocksdb::RocksDbIndexProvider> {
+    static PROVIDERS: OnceLock<
+        Mutex<HashMap<PathBuf, Arc<drasi_index_rocksdb::RocksDbIndexProvider>>>,
+    > = OnceLock::new();
+    let providers = PROVIDERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut providers = providers.lock().expect("RocksDB provider cache poisoned");
+    if let Some(provider) = providers.get(path) {
+        return provider.clone();
+    }
+    let provider = Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
+        path, false, false,
+    ));
+    providers.insert(path.to_path_buf(), provider.clone());
+    provider
+}
 
 mod authoring;
 pub use authoring::{
@@ -116,6 +136,7 @@ pub enum ComputationResourceConfig {
     },
     Configuration {},
     Qos {
+        owner: ComponentId,
         #[schema(value_type = serde_json::Value)]
         definition: QosChannelDefinition,
         path: Option<PathBuf>,
@@ -155,10 +176,9 @@ impl ComputationResourceConfig {
 pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
     let definition = &config.definition;
     anyhow::ensure!(
-        definition.version == 1,
+        definition.version == DESIRED_TOPOLOGY_VERSION,
         "unsupported computation graph configuration version"
     );
-    ComponentId::try_new(definition.graph_id.as_str())?;
     anyhow::ensure!(
         definition.graph_id
             == drasi_lib::management::DesiredInstance::default()
@@ -248,6 +268,7 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             );
         }
         if let ComputationResourceConfig::Qos {
+            owner: _,
             definition,
             path,
             recovery,
@@ -765,13 +786,7 @@ impl ManagementResourceResolver for ServerManagementResources {
                     resource.ownership == ResourceOwnership::Graph,
                     "server-created RocksDB resources require graph cleanup ownership"
                 );
-                LegacyIndexProviderAdapter::scoped(
-                    Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
-                        path, false, false,
-                    )),
-                    instance,
-                )?
-                .resource()
+                LegacyIndexProviderAdapter::scoped(rocksdb_provider(&path), instance)?.resource()
             }
             ComputationResourceConfig::SharedStorage { path, component } => {
                 anyhow::ensure!(
@@ -782,13 +797,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                     resource.ownership == ResourceOwnership::Graph,
                     "shared storage requires graph ownership"
                 );
-                let provider = LegacyIndexProviderAdapter::scoped(
-                    Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
-                        path, false, false,
-                    )),
-                    instance,
-                )?;
-                let indexes = provider.create_indexes(graph, resource.id.as_str()).await?;
+                let provider =
+                    LegacyIndexProviderAdapter::scoped(rocksdb_provider(&path), instance)?;
+                let indexes = provider.create_indexes(graph, &component).await?;
                 SharedStorageGroup::new(graph, component, indexes)?.resource()
             }
             ComputationResourceConfig::SharedQos(_) => {
@@ -877,6 +888,7 @@ impl ManagementResourceResolver for ServerManagementResources {
                 ))),
             ),
             ComputationResourceConfig::Qos {
+                owner,
                 definition,
                 path,
                 recovery,
@@ -898,13 +910,9 @@ impl ManagementResourceResolver for ServerManagementResources {
                     "server QoS requires graph ownership"
                 );
                 let channel = if let Some(path) = path {
-                    let provider = LegacyIndexProviderAdapter::scoped(
-                        Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
-                            path, false, false,
-                        )),
-                        instance,
-                    )?;
-                    let indexes = provider.create_indexes(graph, resource.id.as_str()).await?;
+                    let provider =
+                        LegacyIndexProviderAdapter::scoped(rocksdb_provider(&path), instance)?;
+                    let indexes = provider.create_indexes(graph, &owner).await?;
                     QosChannel::persistent_with_recovery(
                         definition,
                         indexes,
@@ -929,7 +937,7 @@ pub fn configuration_from_snapshot(
     snapshot: &InstanceConfigurationSnapshot,
 ) -> Result<Option<ComputationConfig>> {
     anyhow::ensure!(
-        snapshot.version == 1,
+        snapshot.version == 2,
         "unsupported instance configuration snapshot version"
     );
     let Some(native) = &snapshot.native_components else {
@@ -949,7 +957,8 @@ pub fn register_components<'a>(
     config: &'a ComputationConfig,
     core: &'a DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
-) -> impl std::future::Future<Output = Result<ReconciliationReport>> + Send + 'a {
+) -> impl std::future::Future<Output = Result<drasi_lib::management::AcceptanceReceipt>> + Send + 'a
+{
     let components = build_components_with_registry(config, core, registry);
     async move { Ok(core.add_components(components.await?).await?) }
 }
@@ -1061,9 +1070,7 @@ mod tests {
         };
         let writer =
             tokio::time::timeout(std::time::Duration::from_secs(2), plugins.write()).await?;
-        let report =
-            tokio::time::timeout(std::time::Duration::from_secs(2), registration).await??;
-        assert!(report.committed);
+        tokio::time::timeout(std::time::Duration::from_secs(2), registration).await??;
         drop(writer);
         core.shutdown().await?;
         Ok(())
@@ -1128,8 +1135,14 @@ mod tests {
         validate_definition(&config)?;
         let core = crate::query_test_support::builder().build().await?;
         let batch = build_components_with_registry(&config, &core, &registry).await?;
-        batch.bindings.resources[&resource.id]
-            .get::<drasi_host_sdk::computation::NativeIdentityResource>()?;
+        assert!(
+            batch.bindings.resources.is_empty(),
+            "resource recipes must be constructed by the graph"
+        );
+        assert!(batch
+            .bindings
+            .resource_constructors
+            .contains_key(&resource.id));
         assert_eq!(
             batch.definition.resource_configurations[&resource.id],
             recipe

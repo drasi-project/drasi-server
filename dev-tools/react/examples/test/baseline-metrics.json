@@ -1,18 +1,22 @@
 {
   "issue": 165,
-  "layer": "P7",
+  "layer": "post-P7 explicit-instance and unified graph contracts",
   "environment": "Node 22.20.0 pinned Linux and Node 24.19.0, React 18.3.1, Vite 5.4.19",
   "policy": "Every emitted JS/CSS entry/shared/lazy file is counted. Per-entry totals overlap. The same 2% future-growth ceiling applies independently to every metric; no package or Trading baseline is replaced by these example-only measurements.",
+  "advance": {
+    "previousBaseline": "baseline-metrics-pre-graph-contracts.json",
+    "reason": "Measure the already-shipped explicit instance/output selection and unified graph-result contracts. Preserve the predecessor unchanged and retain the same 2% future-growth policy."
+  },
   "total": {
-    "js": 233119,
-    "jsGzip": 76994,
-    "css": 7392,
-    "cssGzip": 1954
+    "js": 240834,
+    "jsGzip": 79642,
+    "css": 7462,
+    "cssGzip": 1981
   },
   "entries": {
-    "index.html": { "js": 228276, "jsGzip": 74752, "css": 7392, "cssGzip": 1954 },
-    "hooks.html": { "js": 178883, "jsGzip": 57086, "css": 0, "cssGzip": 0 },
-    "showcase.html": { "js": 229129, "jsGzip": 74888, "css": 7392, "cssGzip": 1954 },
-    "query-table.html": { "js": 230748, "jsGzip": 75560, "css": 7462, "cssGzip": 1981 }
+    "index.html": { "js": 234190, "jsGzip": 76487, "css": 7462, "cssGzip": 1981 },
+    "hooks.html": { "js": 183756, "jsGzip": 58449, "css": 0, "cssGzip": 0 },
+    "showcase.html": { "js": 234921, "jsGzip": 76574, "css": 7462, "cssGzip": 1981 },
+    "query-table.html": { "js": 234987, "jsGzip": 76789, "css": 7462, "cssGzip": 1981 }
   }
 }

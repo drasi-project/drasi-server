@@ -24,8 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
-    ComponentViewQuery, ObservabilityQuery,
+    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
+    ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::SourceConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
@@ -49,13 +49,13 @@ pub async fn list_sources(
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
     let sources = core.list_sources().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(sources.len());
-    for (id, status) in sources {
-        let links = component_links(&api_prefix.0, &instance_id, "sources", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_source_info(&id).await {
+    for source in sources {
+        let links = component_links(&api_prefix.0, &instance_id, "sources", source.name.as_str());
+        let error_message = if matches!(source.status, ComponentStatus::Error) {
+            match core.get_source_info_by_id(&source.id).await {
                 Ok(info) => info.error_message,
                 Err(e) => {
-                    log::warn!("Failed to fetch source info for '{id}': {e}");
+                    log::warn!("Failed to fetch source info for '{}': {e}", source.name);
                     None
                 }
             }
@@ -63,8 +63,9 @@ pub async fn list_sources(
             None
         };
         items.push(ComponentListItem {
-            id,
-            status,
+            id: source.id.to_string(),
+            name: source.name.to_string(),
+            status: source.status,
             error_message,
             links,
             config: None,
@@ -134,6 +135,7 @@ pub async fn create_source_handler(
     })?;
 
     let source_id = config.id().to_string();
+    let source_name = parse_component_name(&source_id, "source")?;
 
     // Resolve any top-level `bootstrapProvider: <id>` reference against this
     // instance's declared providers so the source is wired (and bootstraps)
@@ -141,18 +143,25 @@ pub async fn create_source_handler(
     let create_config =
         resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create source instance: {e}");
-            ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to create source: {e}"),
-            )
-        })?;
+    let (source, plugin_meta) = create_source_locked(
+        &plugin_registry,
+        drasi_lib::ComponentId::generate(),
+        create_config,
+    )
+    .await
+    .map_err(|e| {
+        log::error!("Failed to create source instance: {e}");
+        ErrorResponse::new(
+            error_codes::SOURCE_CREATE_FAILED,
+            format!("Failed to create source: {e}"),
+        )
+    })?;
 
     // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_source_with_metadata(source, plugin_meta).await {
+    match core
+        .add_source_with_metadata(source_name, source, plugin_meta)
+        .await
+    {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
@@ -239,6 +248,7 @@ pub async fn upsert_source_handler(
     }
 
     let source_id = config.id().to_string();
+    let source_name = parse_component_name(&source_id, "source")?;
 
     // Resolve any top-level `bootstrapProvider: <id>` reference so the source
     // is wired live; `config` keeps the reference for persistence.
@@ -246,20 +256,30 @@ pub async fn upsert_source_handler(
         resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
 
     // Check if source already exists
-    let exists = core.get_source_status(&source_id).await.is_ok();
+    let exists = core.get_source_status_by_name(&source_name).await.is_ok();
 
     if exists {
-        // Create a new source instance and use update_source to replace in place
-        let (new_source, _meta) = create_source_locked(&plugin_registry, create_config)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create source instance for update: {e}");
-                ErrorResponse::new(
-                    error_codes::SOURCE_CREATE_FAILED,
-                    format!("Failed to create source for update: {e}"),
-                )
-            })?;
-        if let Err(e) = core.update_source(&source_id, new_source).await {
+        let current = core.get_source_info_by_name(&source_name).await?;
+        let definition = drasi_lib::management::OrdinaryComponentRecord {
+            id: current.id,
+            name: source_name.clone(),
+            auto_start: config.auto_start(),
+            component: drasi_lib::management::OrdinaryComponent::Source {
+                kind: config.kind.clone(),
+                configuration: serde_json::to_value(&create_config).map_err(|error| {
+                    ErrorResponse::new(
+                        error_codes::SOURCE_CREATE_FAILED,
+                        "Failed to serialize source configuration",
+                    )
+                    .with_details(ErrorDetail {
+                        component_type: Some("source".to_string()),
+                        component_id: Some(source_id.clone()),
+                        technical_details: Some(error.to_string()),
+                    })
+                })?,
+            },
+        };
+        if let Err(e) = core.update_source_by_name(&source_name, definition).await {
             log::error!("Failed to update source '{source_id}': {e}");
             return Err(ErrorResponse::new(
                 error_codes::SOURCE_CREATE_FAILED,
@@ -291,18 +311,25 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create source instance: {e}");
-            ErrorResponse::new(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to create source: {e}"),
-            )
-        })?;
+    let (source, plugin_meta) = create_source_locked(
+        &plugin_registry,
+        drasi_lib::ComponentId::generate(),
+        create_config,
+    )
+    .await
+    .map_err(|e| {
+        log::error!("Failed to create source instance: {e}");
+        ErrorResponse::new(
+            error_codes::SOURCE_CREATE_FAILED,
+            format!("Failed to create source: {e}"),
+        )
+    })?;
 
     // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_source_with_metadata(source, plugin_meta).await {
+    match core
+        .add_source_with_metadata(source_name, source, plugin_meta)
+        .await
+    {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
@@ -346,9 +373,10 @@ pub async fn get_source(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
+    let name = parse_component_name(&id, "source")?;
     // Read authoritative graph-backed source information.
     let info = core
-        .get_source_info(&id)
+        .get_source_info_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
 
@@ -359,7 +387,10 @@ pub async fn get_source(
             "kind".to_string(),
             serde_json::Value::String(info.source_type.clone()),
         );
-        config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+        config_map.insert(
+            "id".to_string(),
+            serde_json::Value::String(info.name.to_string()),
+        );
         // Include properties from runtime
         for (key, value) in &info.properties {
             config_map.insert(key.clone(), value.clone());
@@ -370,7 +401,8 @@ pub async fn get_source(
     };
 
     Ok(Json(ApiResponse::success(ComponentListItem {
-        id: info.id,
+        id: info.id.to_string(),
+        name: info.name.to_string(),
         status: info.status,
         error_message: info.error_message,
         links: component_links(&api_prefix.0, &instance_id, "sources", &id),
@@ -384,11 +416,12 @@ pub async fn get_source_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    let name = parse_component_name(&id, "source")?;
+    core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let events = core
-        .get_source_events(&id)
+        .get_source_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let collected = events
@@ -404,11 +437,12 @@ pub async fn stream_source_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    let name = parse_component_name(&id, "source")?;
+    core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_source_events(&id)
+        .subscribe_source_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -433,11 +467,12 @@ pub async fn get_source_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    let name = parse_component_name(&id, "source")?;
+    core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
-        .subscribe_source_logs(&id)
+        .subscribe_source_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let data = apply_limit(
@@ -452,11 +487,12 @@ pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    let name = parse_component_name(&id, "source")?;
+    core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_source_logs(&id)
+        .subscribe_source_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -491,7 +527,8 @@ pub async fn delete_source(
     }
 
     super::require_imperative_configuration(&core)?;
-    match core.remove_source(&id, true).await {
+    let name = parse_component_name(&id, "source")?;
+    match core.remove_source_by_name(&name, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {
                 p.unregister_source_identity_provider(&instance_id, &id)
@@ -520,7 +557,8 @@ pub async fn start_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.start_source(&id).await {
+    let name = parse_component_name(&id, "source")?;
+    match core.start_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source started successfully".to_string(),
         }))),
@@ -533,7 +571,8 @@ pub async fn stop_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.stop_source(&id).await {
+    let name = parse_component_name(&id, "source")?;
+    match core.stop_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source stopped successfully".to_string(),
         }))),
@@ -551,8 +590,9 @@ pub async fn push_source_data(
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
+    let name = parse_component_name(&id, "source")?;
     let info = core
-        .get_source_info(&id)
+        .get_source_info_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
 

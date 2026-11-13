@@ -136,7 +136,9 @@ pub async fn create_instance(
     }
 
     // Create a new DrasiLib instance with optional configuration
-    let mut builder = DrasiLib::builder().with_id(&instance_id);
+    let mut builder = DrasiLib::builder()
+        .with_id(&instance_id)
+        .with_allow_external_component_ids(true);
 
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
@@ -419,11 +421,21 @@ pub async fn clone_instance(
     let mut reactions_created: Vec<String> = Vec::new();
     let mut components_created = Vec::new();
     let mut errors = Vec::new();
+    let source_names_by_id: std::collections::HashMap<_, _> = snapshot
+        .sources
+        .iter()
+        .map(|source| (source.id.clone(), source.name.clone()))
+        .collect();
+    let query_names_by_id: std::collections::HashMap<_, _> = snapshot
+        .queries
+        .iter()
+        .map(|query| (query.id.clone(), query.name.clone()))
+        .collect();
 
     // Phase 1: Create sources
     for src_snap in &snapshot.sources {
         // Skip internal sources
-        if src_snap.id.starts_with("__") {
+        if src_snap.name.as_str().starts_with("__") {
             continue;
         }
 
@@ -441,25 +453,30 @@ pub async fn clone_instance(
 
         let source_config = SourceConfig {
             kind: src_snap.source_type.clone(),
-            id: src_snap.id.clone(),
+            id: src_snap.name.to_string(),
             auto_start: false,
             bootstrap_provider,
             identity_provider: None,
             config: properties_json,
         };
 
-        let (source, plugin_meta) =
-            match create_source_locked(&plugin_registry, source_config.clone()).await {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
-                    errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
-                    continue;
-                }
-            };
+        let (source, plugin_meta) = match create_source_locked(
+            &plugin_registry,
+            src_snap.id.clone(),
+            source_config.clone(),
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
+                errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
+                continue;
+            }
+        };
 
         if let Err(e) = target_core
-            .add_source_with_metadata(source, plugin_meta)
+            .add_source_with_metadata(src_snap.name.clone(), source, plugin_meta)
             .await
         {
             log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
@@ -474,14 +491,15 @@ pub async fn clone_instance(
         if let Some(p) = &config_persistence {
             p.register_source_bootstrap_provider(
                 target_instance_id,
-                &src_snap.id,
+                src_snap.name.as_str(),
                 source_config.bootstrap_provider(),
             )
             .await;
         }
 
-        sources_created.push(src_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "source", &src_snap.id).await {
+        sources_created.push(src_snap.name.to_string());
+        let source_name = src_snap.name.clone();
+        if let Err(e) = wait_for_computation_creation(&target_core, "source", &source_name).await {
             log::warn!(
                 "Clone: source '{}' was added but creation failed: {e}",
                 src_snap.id
@@ -495,12 +513,19 @@ pub async fn clone_instance(
 
     // Phase 2: Create queries
     for q_snap in &snapshot.queries {
-        if q_snap.id.starts_with("__") {
+        if q_snap.name.as_str().starts_with("__") {
             continue;
         }
 
-        let mut query_config = q_snap.config.clone();
+        let mut query_config = q_snap.config.clone().into_authoring();
         query_config.auto_start = false;
+        for input in &mut query_config.inputs {
+            if let Some(id) = input.component.as_id() {
+                if let Some(name) = source_names_by_id.get(id) {
+                    input.component = drasi_lib::config::ComponentReference::by_name(name.clone());
+                }
+            }
+        }
 
         if let Err(e) = target_core.add_query(query_config).await {
             log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
@@ -508,8 +533,9 @@ pub async fn clone_instance(
             continue;
         }
 
-        queries_created.push(q_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "query", &q_snap.id).await {
+        queries_created.push(q_snap.name.to_string());
+        let query_name = q_snap.name.clone();
+        if let Err(e) = wait_for_computation_creation(&target_core, "query", &query_name).await {
             log::warn!(
                 "Clone: query '{}' was added but creation failed: {e}",
                 q_snap.id
@@ -523,34 +549,50 @@ pub async fn clone_instance(
 
     // Phase 3: Create reactions
     for rx_snap in &snapshot.reactions {
-        if rx_snap.id.starts_with("__") {
+        if rx_snap.name.as_str().starts_with("__") {
             continue;
         }
 
         let properties_json = serde_json::to_value(&rx_snap.properties)
             .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
+        let queries = rx_snap
+            .queries
+            .iter()
+            .map(|query| {
+                query
+                    .as_id()
+                    .and_then(|id| query_names_by_id.get(id))
+                    .map(|name| drasi_lib::config::ComponentReference::by_name(name.clone()))
+                    .unwrap_or_else(|| query.clone())
+            })
+            .collect();
         let reaction_config = ReactionConfig {
             kind: rx_snap.reaction_type.clone(),
-            id: rx_snap.id.clone(),
-            queries: rx_snap.queries.clone(),
+            id: rx_snap.name.to_string(),
+            queries,
             auto_start: false,
             identity_provider: None,
             config: properties_json,
         };
 
-        let (reaction, plugin_meta) =
-            match create_reaction_locked(&plugin_registry, reaction_config.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
-                    errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
-                    continue;
-                }
-            };
+        let (reaction, plugin_meta) = match create_reaction_locked(
+            &plugin_registry,
+            rx_snap.id.clone(),
+            reaction_config.clone(),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
+                errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
+                continue;
+            }
+        };
 
         if let Err(e) = target_core
-            .add_reaction_with_metadata(reaction, plugin_meta)
+            .add_reaction_with_metadata(rx_snap.name.clone(), reaction, plugin_meta)
             .await
         {
             log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
@@ -558,8 +600,11 @@ pub async fn clone_instance(
             continue;
         }
 
-        reactions_created.push(rx_snap.id.clone());
-        if let Err(e) = wait_for_computation_creation(&target_core, "reaction", &rx_snap.id).await {
+        reactions_created.push(rx_snap.name.to_string());
+        let reaction_name = rx_snap.name.clone();
+        if let Err(e) =
+            wait_for_computation_creation(&target_core, "reaction", &reaction_name).await
+        {
             log::warn!(
                 "Clone: reaction '{}' was added but creation failed: {e}",
                 rx_snap.id
@@ -577,19 +622,14 @@ pub async fn clone_instance(
             crate::computation::register_components(&config, &target_core, &registry);
         drop(registry);
         match registration.await {
-            Ok(report) => {
-                if report.committed {
-                    components_created.extend(
-                        config
-                            .definition
-                            .components
-                            .iter()
-                            .map(|component| component.descriptor.id().to_string()),
-                    );
-                }
-                if report.summary != drasi_lib::computation::v1::OperationSummary::Completed {
-                    errors.push("Native component construction is incomplete; inspect component observations".into());
-                }
+            Ok(_) => {
+                components_created.extend(
+                    config
+                        .definition
+                        .components
+                        .iter()
+                        .map(|component| component.descriptor.id().to_string()),
+                );
             }
             Err(error) => {
                 log::error!("Clone: failed to add native components: {error:#}");

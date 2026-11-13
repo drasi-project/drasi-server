@@ -20,7 +20,7 @@
 mod test_support;
 
 use anyhow::Result;
-use drasi_lib::{channels::ComponentStatus, Query};
+use drasi_lib::{channels::ComponentStatus, ComponentName, Query};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use test_support::mock_components::{create_mock_reaction, create_mock_source};
@@ -42,17 +42,20 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
         create_mock_reaction("counter-reaction", vec!["counter-query".to_string()]);
 
     // Build the core using the new builder API
-    let query = Query::cypher("counter-query")
+    let query = Query::cypher(ComponentName::try_new("counter-query")?)
         .query("MATCH (n:Counter) RETURN n.value as value")
-        .from_input("counter-source")
+        .from_input_by_name(ComponentName::try_new("counter-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id(&server_id)
-            .with_source(counter_source)
-            .with_reaction(counter_reaction)
+            .with_source(ComponentName::try_new("counter-source")?, counter_source)
+            .with_reaction(
+                ComponentName::try_new("counter-reaction")?,
+                counter_reaction,
+            )
             .with_query(query)
             .build()
             .await?,
@@ -62,9 +65,9 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     core.start().await?;
 
     // Wait for source to be running
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "counter-source",
+        &ComponentName::try_new("counter-source")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -77,9 +80,9 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     assert!(!core.is_running().await);
 
     // Wait for source to be stopped before restart
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "counter-source",
+        &ComponentName::try_new("counter-source")?,
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -90,9 +93,9 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for components to start
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "counter-source",
+        &ComponentName::try_new("counter-source")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -123,31 +126,31 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     );
 
     // Build the core using the new builder API
-    let sensor_query = Query::cypher("sensor-alerts")
+    let sensor_query = Query::cypher(ComponentName::try_new("sensor-alerts")?)
         .query("MATCH (s:Sensor) RETURN s")
-        .from_input("sensors-source")
+        .from_input_by_name(ComponentName::try_new("sensors-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
-    let vehicle_query = Query::cypher("vehicle-tracking")
+    let vehicle_query = Query::cypher(ComponentName::try_new("vehicle-tracking")?)
         .query("MATCH (v:Vehicle) RETURN v.id, v.location")
-        .from_input("vehicles-source")
+        .from_input_by_name(ComponentName::try_new("vehicles-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
-    let combined_query = Query::cypher("combined-view")
+    let combined_query = Query::cypher(ComponentName::try_new("combined-view")?)
         .query("MATCH (n) RETURN n")
-        .from_input("sensors-source")
-        .from_input("vehicles-source")
+        .from_input_by_name(ComponentName::try_new("sensors-source")?)
+        .from_input_by_name(ComponentName::try_new("vehicles-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id(&server_id)
-            .with_source(sensors_source)
-            .with_source(vehicles_source)
-            .with_reaction(alert_handler)
+            .with_source(ComponentName::try_new("sensors-source")?, sensors_source)
+            .with_source(ComponentName::try_new("vehicles-source")?, vehicles_source)
+            .with_reaction(ComponentName::try_new("alert-handler")?, alert_handler)
             .with_query(sensor_query)
             .with_query(vehicle_query)
             .with_query(combined_query)
@@ -159,16 +162,16 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     core.start().await?;
 
     // Wait for sources to reach Running
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "sensors-source",
+        &ComponentName::try_new("sensors-source")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
     .await?;
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "alert-handler",
+        &ComponentName::try_new("alert-handler")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -179,12 +182,16 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 
     // Remove dependent queries before removing the source
     // The graph enforces dependency integrity.
-    core.remove_reaction("alert-handler", true).await?;
-    core.remove_query("sensor-alerts").await?;
-    core.remove_query("combined-view").await?;
+    core.remove_reaction_by_name(&ComponentName::try_new("alert-handler")?, true)
+        .await?;
+    core.remove_query_by_name(&ComponentName::try_new("sensor-alerts")?)
+        .await?;
+    core.remove_query_by_name(&ComponentName::try_new("combined-view")?)
+        .await?;
 
     // Test removing a source at runtime using the new API
-    core.remove_source("sensors-source", true).await?;
+    core.remove_source_by_name(&ComponentName::try_new("sensors-source")?, true)
+        .await?;
 
     // Core should still be running (other components continue)
     assert!(core.is_running().await);
@@ -205,18 +212,18 @@ async fn test_component_failure_recovery() -> Result<()> {
     let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
 
     // Build the core using the new builder API
-    let query = Query::cypher("test-query")
+    let query = Query::cypher(ComponentName::try_new("test-query")?)
         // This query references a non-existent property, but should still start
         .query("MATCH (n) RETURN n.nonexistent as value")
-        .from_input("test-source")
+        .from_input_by_name(ComponentName::try_new("test-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id(&server_id)
-            .with_source(test_source)
-            .with_reaction(test_reaction)
+            .with_source(ComponentName::try_new("test-source")?, test_source)
+            .with_reaction(ComponentName::try_new("test-reaction")?, test_reaction)
             .with_query(query)
             .build()
             .await?,
@@ -226,9 +233,9 @@ async fn test_component_failure_recovery() -> Result<()> {
     core.start().await?;
 
     // Wait for source to reach Running
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -241,9 +248,9 @@ async fn test_component_failure_recovery() -> Result<()> {
     core.stop().await?;
 
     // Wait for source to reach Stopped before restart
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -252,9 +259,9 @@ async fn test_component_failure_recovery() -> Result<()> {
     core.start().await?;
 
     // Wait for source to reach Running after restart
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -283,10 +290,22 @@ async fn test_concurrent_operations() -> Result<()> {
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id(&server_id)
-            .with_source(concurrent_source)
-            .with_source(extra_source_0)
-            .with_source(extra_source_2)
-            .with_source(extra_source_4)
+            .with_source(
+                ComponentName::try_new("concurrent-source")?,
+                concurrent_source,
+            )
+            .with_source(
+                ComponentName::try_new("concurrent-source-0")?,
+                extra_source_0,
+            )
+            .with_source(
+                ComponentName::try_new("concurrent-source-2")?,
+                extra_source_2,
+            )
+            .with_source(
+                ComponentName::try_new("concurrent-source-4")?,
+                extra_source_4,
+            )
             .build()
             .await?,
     );
@@ -303,10 +322,14 @@ async fn test_concurrent_operations() -> Result<()> {
             // Alternate between starting and stopping sources
             if i % 2 == 0 {
                 let source_id = format!("concurrent-source-{i}");
-                core_clone.start_source(&source_id).await
+                core_clone
+                    .start_source_by_name(&ComponentName::try_new(source_id).unwrap())
+                    .await
             } else {
                 sleep(Duration::from_millis(10)).await;
-                core_clone.stop_source("concurrent-source").await
+                core_clone
+                    .stop_source_by_name(&ComponentName::try_new("concurrent-source").unwrap())
+                    .await
             }
         });
         handles.push(handle);
@@ -320,9 +343,9 @@ async fn test_concurrent_operations() -> Result<()> {
     // The core should still be in a valid running state
     assert!(core.is_running().await);
 
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "concurrent-source",
+        &ComponentName::try_new("concurrent-source")?,
         &[ComponentStatus::Running, ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )

@@ -27,8 +27,8 @@ use axum::{
 use drasi_lib::{
     channels::{ComponentStatus, QueryResult, SubscriptionResponse},
     computation::v1::{
-        FailureDisposition, GraphEntity, GraphEntityId, GraphError, PluginIdentity,
-        RealizationState,
+        ComponentId, ComponentName, FailureDisposition, GraphEntity, GraphEntityId, GraphError,
+        PluginIdentity, RealizationState,
     },
     context::{ReactionRuntimeContext, SourceRuntimeContext},
     DrasiLib, Query, Reaction, Source,
@@ -70,6 +70,7 @@ struct LifecycleProbe {
 }
 
 struct ProbedSource {
+    id: ComponentId,
     inner: MockSource,
     auto_start: bool,
     properties: HashMap<String, Value>,
@@ -78,8 +79,8 @@ struct ProbedSource {
 
 #[async_trait]
 impl Source for ProbedSource {
-    fn id(&self) -> &str {
-        self.inner.id()
+    fn id(&self) -> &ComponentId {
+        &self.id
     }
 
     fn type_name(&self) -> &str {
@@ -94,12 +95,16 @@ impl Source for ProbedSource {
         self.auto_start
     }
 
-    async fn initialize(&self, context: SourceRuntimeContext) {
+    async fn bind_runtime_context(&self, context: SourceRuntimeContext) {
+        self.inner.bind_runtime_context(context).await;
+    }
+
+    async fn initialize(&self) -> anyhow::Result<()> {
         self.probe.initializations.fetch_add(1, Ordering::SeqCst);
         if self.properties.get("blockInitialization") == Some(&Value::Bool(true)) {
             self.probe.initialization_gate.notified().await;
         }
-        self.inner.initialize(context).await;
+        self.inner.initialize().await
     }
 
     async fn start(&self) -> anyhow::Result<()> {
@@ -152,7 +157,7 @@ impl SourcePluginDescriptor for SourceDescriptor {
 
     async fn create_source(
         &self,
-        id: &str,
+        id: &ComponentId,
         config: &Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn Source>> {
@@ -160,7 +165,8 @@ impl SourcePluginDescriptor for SourceDescriptor {
             anyhow::bail!("source fixture factory failure");
         }
         Ok(Box::new(ProbedSource {
-            inner: MockSource::new(id),
+            id: id.clone(),
+            inner: MockSource::new(id.as_str()),
             auto_start,
             properties: serde_json::from_value(config.clone())?,
             probe: self.0.clone(),
@@ -169,6 +175,8 @@ impl SourcePluginDescriptor for SourceDescriptor {
 }
 
 struct ProbedReaction {
+    id: ComponentId,
+    query_inputs: Vec<drasi_lib::config::ComponentReference>,
     inner: MockReaction,
     auto_start: bool,
     properties: HashMap<String, Value>,
@@ -177,8 +185,8 @@ struct ProbedReaction {
 
 #[async_trait]
 impl Reaction for ProbedReaction {
-    fn id(&self) -> &str {
-        self.inner.id()
+    fn id(&self) -> &ComponentId {
+        &self.id
     }
 
     fn type_name(&self) -> &str {
@@ -189,19 +197,23 @@ impl Reaction for ProbedReaction {
         self.properties.clone()
     }
 
-    fn query_ids(&self) -> Vec<String> {
-        self.inner.query_ids()
+    fn query_inputs(&self) -> Vec<drasi_lib::config::ComponentReference> {
+        self.query_inputs.clone()
     }
 
     fn auto_start(&self) -> bool {
         self.auto_start
     }
 
-    async fn initialize(&self, context: ReactionRuntimeContext) {
+    async fn bind_runtime_context(&self, context: ReactionRuntimeContext) {
+        self.inner.bind_runtime_context(context).await;
+    }
+
+    async fn initialize(&self) -> anyhow::Result<()> {
         if self.properties.get("blockInitialization") == Some(&Value::Bool(true)) {
             self.probe.initialization_gate.notified().await;
         }
-        self.inner.initialize(context).await;
+        self.inner.initialize().await
     }
 
     async fn start(&self) -> anyhow::Result<()> {
@@ -247,8 +259,8 @@ impl ReactionPluginDescriptor for ReactionDescriptor {
 
     async fn create_reaction(
         &self,
-        id: &str,
-        query_ids: Vec<String>,
+        id: &ComponentId,
+        query_inputs: Vec<drasi_lib::config::ComponentReference>,
         config: &Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn Reaction>> {
@@ -256,7 +268,9 @@ impl ReactionPluginDescriptor for ReactionDescriptor {
             anyhow::bail!("reaction fixture factory failure");
         }
         Ok(Box::new(ProbedReaction {
-            inner: MockReaction::new(id, query_ids),
+            id: id.clone(),
+            query_inputs,
+            inner: MockReaction::new(id.as_str(), Vec::new()),
             auto_start,
             properties: serde_json::from_value(config.clone())?,
             probe: self.0.clone(),
@@ -283,6 +297,7 @@ impl Harness {
         let core = Arc::new(
             crate::query_plugin::builder()
                 .with_id("native")
+                .with_allow_external_component_ids(true)
                 .build()
                 .await
                 .unwrap(),
@@ -418,7 +433,10 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
             "pending node configuration must be saved: {persisted}"
         );
 
-        let handle = harness.core.computation_component(&id).unwrap();
+        let handle = harness
+            .core
+            .component_by_name(&ComponentName::try_new(id.clone()).unwrap())
+            .unwrap();
         probe.initialization_gate.notify_one();
         let error = tokio::time::timeout(DEADLINE, handle.wait_started())
             .await
@@ -468,7 +486,10 @@ async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        let handle = harness.core.computation_component(resource).unwrap();
+        let handle = harness
+            .core
+            .component_by_name(&ComponentName::try_new(resource).unwrap())
+            .unwrap();
         tokio::time::timeout(DEADLINE, handle.wait_created())
             .await
             .unwrap()
@@ -494,7 +515,7 @@ async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_
 async fn native_query_creation_keeps_invalid_configuration_and_start_reports_failure() {
     let harness = Harness::new(true).await;
     let config = json!({
-        "id": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
+        "name": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
         "inputs": ["missing-source"], "autoStart": true,
     });
     let (status, body) = request(
@@ -505,7 +526,10 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let handle = harness.core.computation_component("invalid-query").unwrap();
+    let handle = harness
+        .core
+        .component_by_name(&ComponentName::try_new("invalid-query").unwrap())
+        .unwrap();
     assert!(tokio::time::timeout(DEADLINE, handle.wait_created())
         .await
         .unwrap()
@@ -576,14 +600,18 @@ async fn native_factory_failures_remain_create_errors_without_nodes() {
 async fn native_query_attach_streams_results_without_temporary_reaction_nodes() {
     let harness = Harness::new(true).await;
     let (source, input) = ApplicationSource::new(
-        "input",
+        ComponentId::generate(),
         ApplicationSourceConfig {
             properties: Default::default(),
             durability: None,
         },
     )
     .unwrap();
-    let source = harness.core.add_source_with_handle(source).await.unwrap();
+    let source = harness
+        .core
+        .add_source_with_handle(ComponentName::try_new("input").unwrap(), source)
+        .await
+        .unwrap();
     tokio::time::timeout(DEADLINE, source.wait_started())
         .await
         .unwrap()
@@ -591,12 +619,13 @@ async fn native_query_attach_streams_results_without_temporary_reaction_nodes() 
     let query = harness
         .core
         .add_query_with_handle(
-            Query::cypher("selected")
+            Query::cypher(ComponentName::try_new("selected").unwrap())
                 .query("MATCH (n:Item) RETURN n.value AS value")
-                .from_input("input")
+                .from_input_by_name(ComponentName::try_new("input").unwrap())
                 .enable_bootstrap(false)
                 .auto_start(true)
-                .build(),
+                .build()
+                .unwrap(),
         )
         .await
         .unwrap();
@@ -669,7 +698,7 @@ async fn native_query_attach_streams_results_without_temporary_reaction_nodes() 
         .find_map(|line| line.strip_prefix("data:"))
         .expect("SSE query data");
     let result: QueryResult = serde_json::from_str(data.trim()).unwrap();
-    assert_eq!(result.query_id, "selected");
+    assert_eq!(result.query_id, *query.id());
     assert!(matches!(
         &result.results[..],
         [drasi_lib::channels::ResultDiff::Add { data, .. }] if data["value"] == 42
@@ -694,7 +723,13 @@ async fn native_query_attach_streams_results_without_temporary_reaction_nodes() 
         .await
         .unwrap();
     tokio::time::timeout(DEADLINE, async {
-        while harness.core.get_query_results("selected").await.unwrap() != [json!({"value":43})] {
+        while harness
+            .core
+            .get_query_results_by_name(&ComponentName::try_new("selected").unwrap())
+            .await
+            .unwrap()
+            != [json!({"value":43})]
+        {
             tokio::time::sleep(Duration::from_millis(2)).await;
         }
     })
@@ -760,7 +795,10 @@ async fn native_solution_preserves_source_and_reaction_plugin_version_nodes() {
         ("source", SOURCE_PLUGIN, SOURCE_PACKAGE_VERSION),
         ("reaction", REACTION_PLUGIN, REACTION_PACKAGE_VERSION),
     ] {
-        let handle = harness.core.computation_component(id).unwrap();
+        let handle = harness
+            .core
+            .component_by_name(&ComponentName::try_new(id).unwrap())
+            .unwrap();
         let identity = PluginIdentity {
             id: Arc::from(plugin_id),
             version: Arc::from(package_version),
@@ -816,7 +854,10 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
     .await
     .expect("source initialization starts while deployment waits for its health");
     assert!(futures_util::poll!(&mut deployment).is_pending());
-    let handle = harness.core.computation_component("deferred").unwrap();
+    let handle = harness
+        .core
+        .component_by_name(&ComponentName::try_new("deferred").unwrap())
+        .unwrap();
     assert_eq!(
         handle.observed().unwrap().realization,
         RealizationState::Creating
@@ -879,9 +920,9 @@ async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_
             {"kind": "mock", "id": "failed-source", "failStart": true, "autoStart": true},
         ],
         "queries": [
-            {"id": "invalid-query", "query": INVALID_QUERY,
+            {"name": "invalid-query", "query": INVALID_QUERY,
              "inputs": ["good-source"], "autoStart": true},
-            {"id": "good-query", "query": "MATCH (n) RETURN n",
+            {"name": "good-query", "query": "MATCH (n) RETURN n",
              "inputs": ["good-source"], "autoStart": false},
         ],
         "reactions": [
@@ -951,12 +992,16 @@ async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_fai
     let origin = Arc::new(
         crate::query_plugin::builder()
             .with_id("origin")
+            .with_allow_external_component_ids(true)
             .build()
             .await
             .unwrap(),
     );
     origin
-        .add_source(MockSource::new("clone-source"))
+        .add_source(
+            ComponentName::try_new("clone-source").unwrap(),
+            MockSource::new("clone-source"),
+        )
         .await
         .unwrap();
     for (id, query) in [
@@ -965,22 +1010,28 @@ async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_fai
     ] {
         origin
             .add_query(
-                Query::cypher(id)
+                Query::cypher(ComponentName::try_new(id).unwrap())
                     .query(query)
-                    .from_input("clone-source")
+                    .from_input_by_name(ComponentName::try_new("clone-source").unwrap())
                     .auto_start(false)
-                    .build(),
+                    .build()
+                    .unwrap(),
             )
             .await
             .unwrap();
     }
     origin
-        .add_reaction(ProbedReaction {
-            inner: MockReaction::new("factory-reaction", vec![]),
-            auto_start: false,
-            properties: HashMap::from([("failFactory".into(), Value::Bool(true))]),
-            probe: Arc::new(LifecycleProbe::default()),
-        })
+        .add_reaction(
+            ComponentName::try_new("factory-reaction").unwrap(),
+            ProbedReaction {
+                id: ComponentId::generate(),
+                query_inputs: Vec::new(),
+                inner: MockReaction::new("factory-reaction", vec![]),
+                auto_start: false,
+                properties: HashMap::from([("failFactory".into(), Value::Bool(true))]),
+                probe: Arc::new(LifecycleProbe::default()),
+            },
+        )
         .await
         .unwrap();
     harness
@@ -1049,7 +1100,10 @@ async fn default_runtime_reports_autostart_failures_as_node_health() {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        let handle = harness.core.computation_component(&id).unwrap();
+        let handle = harness
+            .core
+            .component_by_name(&ComponentName::try_new(id.clone()).unwrap())
+            .unwrap();
         let error = tokio::time::timeout(DEADLINE, handle.wait_started())
             .await
             .unwrap()

@@ -120,6 +120,7 @@ async fn assert_package_versions_and_component_startup(
     let result = async {
         let (source, metadata) = create_source_locked(
             &registry,
+            drasi_lib::ComponentId::generate(),
             SourceConfig {
                 kind: "mock".into(),
                 id: "version-source".into(),
@@ -137,22 +138,30 @@ async fn assert_package_versions_and_component_startup(
             metadata.get("pluginVersion").map(String::as_str),
             registry.read().await.source_package_version("mock")
         );
-        core.add_source_with_metadata(source, metadata).await?;
+        core.add_source_with_metadata(
+            drasi_lib::ComponentName::try_new("version-source")?,
+            source,
+            metadata,
+        )
+        .await?;
         core.add_query(
-            Query::cypher("version-query")
+            Query::cypher(drasi_lib::ComponentName::try_new("version-query")?)
                 .query("MATCH (n) RETURN n")
-                .from_input("version-source")
+                .from_input_by_name(drasi_lib::ComponentName::try_new("version-source")?)
                 .enable_bootstrap(false)
                 .auto_start(true)
-                .build(),
+                .build()?,
         )
         .await?;
         let (reaction, metadata) = create_reaction_locked(
             &registry,
+            drasi_lib::ComponentId::generate(),
             ReactionConfig {
                 kind: "log".into(),
                 id: "version-reaction".into(),
-                queries: vec!["version-query".into()],
+                queries: vec![drasi_lib::config::ComponentReference::by_name(
+                    drasi_lib::ComponentName::try_new("version-query")?,
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: serde_json::json!({}),
@@ -163,21 +172,33 @@ async fn assert_package_versions_and_component_startup(
             metadata.get("pluginVersion").map(String::as_str),
             registry.read().await.reaction_package_version("log")
         );
-        core.add_reaction_with_metadata(reaction, metadata).await?;
+        core.add_reaction_with_metadata(
+            drasi_lib::ComponentName::try_new("version-reaction")?,
+            reaction,
+            metadata,
+        )
+        .await?;
         core.start().await?;
         for id in ["version-source", "version-query", "version-reaction"] {
             tokio::time::timeout(
                 Duration::from_secs(10),
-                core.computation_component(id)?.wait_started(),
+                core.component_by_name(&drasi_lib::computation::v1::ComponentName::try_new(id)?)?
+                    .wait_started(),
             )
             .await??;
         }
         assert_eq!(
-            core.get_source_status("version-source").await?,
+            core.get_source_status_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                "version-source",
+            )?)
+            .await?,
             ComponentStatus::Running
         );
         assert_eq!(
-            core.get_reaction_status("version-reaction").await?,
+            core.get_reaction_status_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                "version-reaction"
+            )?,)
+                .await?,
             ComponentStatus::Running
         );
         Ok::<_, anyhow::Error>(())

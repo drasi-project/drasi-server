@@ -51,13 +51,18 @@ pub fn test_query(
     query: impl Into<String>,
     inputs: Vec<String>,
 ) -> QueryConfig {
-    let mut builder = Query::cypher(id).query(query).auto_start(true);
+    let mut builder =
+        Query::cypher(drasi_lib::ComponentName::try_new(id.into()).expect("valid test query name"))
+            .query(query)
+            .auto_start(true);
 
     for source in inputs {
-        builder = builder.from_input(source);
+        builder = builder.from_input_by_name(
+            drasi_lib::ComponentName::try_new(source).expect("valid test input name"),
+        );
     }
 
-    builder.build()
+    builder.build().expect("valid test query")
 }
 
 /// Create a log reaction config for testing
@@ -65,7 +70,14 @@ pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConf
     ReactionConfig {
         kind: "log".to_string(),
         id: id.into(),
-        queries,
+        queries: queries
+            .into_iter()
+            .map(|name| {
+                drasi_lib::config::ComponentReference::by_name(
+                    drasi_lib::ComponentName::try_new(name).expect("valid test query name"),
+                )
+            })
+            .collect(),
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({"routes": {}}),
@@ -77,7 +89,14 @@ pub fn log_reaction_manual(id: impl Into<String>, queries: Vec<String>) -> React
     ReactionConfig {
         kind: "log".to_string(),
         id: id.into(),
-        queries,
+        queries: queries
+            .into_iter()
+            .map(|name| {
+                drasi_lib::config::ComponentReference::by_name(
+                    drasi_lib::ComponentName::try_new(name).expect("valid test query name"),
+                )
+            })
+            .collect(),
         auto_start: false,
         identity_provider: None,
         config: serde_json::json!({"routes": {}}),

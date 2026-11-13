@@ -28,6 +28,7 @@ mod test_support;
 use test_support::create_mock_source;
 
 use axum::Router;
+use drasi_lib::ComponentName;
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
@@ -44,7 +45,10 @@ async fn start_real_server() -> (String, String) {
 
     let core = crate::query_plugin::builder()
         .with_id(&instance_id)
-        .with_source(create_mock_source("sensors"))
+        .with_source(
+            ComponentName::try_new("sensors").unwrap(),
+            create_mock_source("sensors"),
+        )
         .build()
         .await
         .expect("build core");

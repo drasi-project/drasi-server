@@ -5,7 +5,7 @@
 
 // Synthetic, deliberately small fixtures. These are NOT recorded server results.
 import type { Stock as ApiStock } from '../../../src/services/TradingApi';
-import nativeComputation from '../../../public/native-computation.json';
+import nativeComputation from '../../../public/native-computation.json' with { type: 'json' };
 import { ALL_QUERIES } from '../../../src/services/queries';
 
 export const FIXED_TIME = '2026-01-15T12:00:00.000Z';

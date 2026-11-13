@@ -1,7 +1,8 @@
 use super::*;
 use drasi_lib::management::{
-    AcceptanceReceipt, CommittedConfiguration, ConfigurationSession, ConfigurationStore,
-    DesiredInstance,
+    AcceptanceReceipt, AcceptedComponentCreation, AcceptedComponentUpdate, CommittedConfiguration,
+    ComponentUpdateCompletion, ConfigurationSession, ConfigurationStore,
+    ConfigurationStoreGuarantees, DesiredInstance,
 };
 use drasi_state_store_redb::RedbConfigurationStore;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,6 +29,10 @@ struct GatedSession {
 
 #[async_trait::async_trait]
 impl ConfigurationStore for GatedStore {
+    fn guarantees(&self) -> ConfigurationStoreGuarantees {
+        self.inner.guarantees()
+    }
+
     async fn open(&self, instance: &str) -> Result<Arc<dyn ConfigurationSession>> {
         Ok(Arc::new(GatedSession {
             inner: self.inner.open(instance).await?,
@@ -51,6 +56,8 @@ impl ConfigurationSession for GatedSession {
         expected_revision: u64,
         request: &str,
         desired: &DesiredInstance,
+        creation: Option<&AcceptedComponentCreation>,
+        updates: &[AcceptedComponentUpdate],
     ) -> Result<AcceptanceReceipt> {
         let armed = self.gate.armed.swap(false, Ordering::SeqCst);
         if armed && self.gate.reject {
@@ -63,7 +70,7 @@ impl ConfigurationSession for GatedSession {
         }
         let receipt = self
             .inner
-            .commit(expected_revision, request, desired)
+            .commit(expected_revision, request, desired, creation, updates)
             .await?;
         if armed {
             self.gate.committed.notify_one();
@@ -74,6 +81,16 @@ impl ConfigurationSession for GatedSession {
             }
         }
         Ok(receipt)
+    }
+
+    async fn complete_updates(
+        &self,
+        expected_revision: u64,
+        updates: &[ComponentUpdateCompletion],
+    ) -> Result<CommittedConfiguration> {
+        self.inner
+            .complete_updates(expected_revision, updates)
+            .await
     }
 
     async fn receipt(&self, request: &str) -> Result<Option<AcceptanceReceipt>> {

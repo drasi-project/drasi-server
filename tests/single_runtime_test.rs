@@ -19,6 +19,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use drasi_lib::{ComponentId, ComponentName};
 use drasi_reaction_application::ApplicationReaction;
 use drasi_server::{
     api::mappings::DtoMapper,
@@ -443,7 +444,7 @@ fn openapi_no_longer_advertises_runtime_selection() {
 #[tokio::test]
 async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     let (source, input) = ApplicationSource::new(
-        "input",
+        ComponentId::generate(),
         ApplicationSourceConfig {
             properties: Default::default(),
             durability: None,
@@ -451,11 +452,11 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     )
     .unwrap();
     let core = Arc::new(
-        DrasiServerBuilder::new()
-            .with_query_factory(crate::query_plugin::factory())
+        crate::query_plugin::builder()
+            .with_allow_external_component_ids(true)
             .with_id(format!("api-{}", uuid::Uuid::new_v4()))
-            .with_source(source)
-            .build_core()
+            .with_source(ComponentName::try_new("input").unwrap(), source)
+            .build()
             .await
             .unwrap(),
     );
@@ -469,7 +470,7 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
         "POST",
         "/api/v1/instances/test/queries",
         json!({
-            "id":"selected", "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.value AS value",
+            "name":"selected", "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.value AS value",
             "queryLanguage":"Cypher", "inputs":["input"],
             "autoStart":true, "enableBootstrap":false,
         }),
@@ -478,19 +479,28 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     assert_eq!(status, StatusCode::OK, "{body}");
     tokio::time::timeout(
         Duration::from_secs(10),
-        core.computation_component("selected")
+        core.component_by_name(&ComponentName::try_new("selected").unwrap())
             .unwrap()
             .wait_started(),
     )
     .await
     .unwrap()
     .unwrap();
-    let (reaction, output) = ApplicationReaction::new("output", vec!["selected".into()]);
+    let (reaction, output) = ApplicationReaction::new(
+        ComponentId::generate(),
+        vec![drasi_lib::config::ComponentReference::by_name(
+            ComponentName::try_new("selected").unwrap(),
+        )],
+    );
     let mut receiver = output.take_receiver().await.unwrap();
-    core.add_reaction(reaction).await.unwrap();
+    core.add_reaction(ComponentName::try_new("output").unwrap(), reaction)
+        .await
+        .unwrap();
     tokio::time::timeout(
         Duration::from_secs(10),
-        core.computation_component("output").unwrap().wait_started(),
+        core.component_by_name(&ComponentName::try_new("output").unwrap())
+            .unwrap()
+            .wait_started(),
     )
     .await
     .unwrap()
@@ -506,7 +516,13 @@ async fn ordinary_api_query_and_reaction_execute_on_the_default_graph() {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let result = receiver.recv().await.expect("reaction output");
-            assert_eq!(result.query_id, "selected");
+            assert_eq!(
+                result.query_id,
+                *core
+                    .component_by_name(&ComponentName::try_new("selected").unwrap())
+                    .unwrap()
+                    .id()
+            );
             if result.results.iter().any(|diff| {
                 matches!(
                     diff,
@@ -679,7 +695,7 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
                 "id":"native-plugin-test",
                 "sources":[{"kind":"http", "id":"input", "host":"127.0.0.1", "port":source_port}],
                 "queries":[{
-                    "id":"selected", "queryLanguage":"Cypher", "autoStart":true,
+                    "name":"selected", "queryLanguage":"Cypher", "autoStart":true,
                     "enableBootstrap":false, "inputs":["input"],
                     "query":"MATCH (n:Item) WHERE n.value > 10 RETURN n.marker AS marker, n.value AS value"
                 }],

@@ -39,13 +39,18 @@ pub fn build_config(
             .map(|s| s.id().to_string())
             .unwrap_or_default();
         vec![QueryConfigDto {
-            id: "my-query".to_string(),
+            id: None,
+            name: drasi_lib::ComponentName::try_new("my-query").expect("constant query name"),
             query: "MATCH (n) RETURN n".to_string(),
             query_language: QueryLanguage::GQL,
             auto_start: true,
             enable_bootstrap: true,
             middleware: vec![],
-            inputs: vec![QueryInputConfigDto::Component(source_id)],
+            inputs: vec![QueryInputConfigDto::Component(
+                drasi_lib::config::ComponentReference::by_name(
+                    drasi_lib::ComponentName::try_new(source_id).expect("validated source name"),
+                ),
+            )],
             result: Default::default(),
             joins: None,
             priority_queue_capacity: None,
@@ -161,7 +166,9 @@ mod tests {
         ReactionConfig {
             kind: "log".to_string(),
             id: id.to_string(),
-            queries: vec!["my-query".to_string()],
+            queries: vec![drasi_lib::config::ComponentReference::by_name(
+                drasi_lib::ComponentName::try_new("my-query").unwrap(),
+            )],
             auto_start: true,
             identity_provider: None,
             config: json!({"routes": {}}),
@@ -173,7 +180,9 @@ mod tests {
         ReactionConfig {
             kind: "sse".to_string(),
             id: id.to_string(),
-            queries: vec!["my-query".to_string()],
+            queries: vec![drasi_lib::config::ComponentReference::by_name(
+                drasi_lib::ComponentName::try_new("my-query").unwrap(),
+            )],
             auto_start: true,
             identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
@@ -222,14 +231,20 @@ mod tests {
         // Check a sample query is generated
         assert_eq!(config.instances[0].queries.len(), 1);
         let query = &config.instances[0].queries[0];
-        assert_eq!(query.id, "my-query");
+        assert!(query.id.is_none());
+        assert_eq!(query.name.as_str(), "my-query");
         assert_eq!(query.query, "MATCH (n) RETURN n".to_string());
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
 
         // Check query subscribes to the source
         assert_eq!(query.inputs.len(), 1);
-        assert_eq!(query.inputs[0], QueryInputConfigDto::Component("my-mock".to_string()));
+        assert_eq!(
+            query.inputs[0],
+            QueryInputConfigDto::Component(drasi_lib::config::ComponentReference::by_name(
+                drasi_lib::ComponentName::try_new("my-mock").unwrap(),
+            ))
+        );
     }
 
     #[test]
@@ -250,7 +265,9 @@ mod tests {
         assert_eq!(config.instances[0].queries.len(), 1);
         assert_eq!(
             config.instances[0].queries[0].inputs[0],
-            QueryInputConfigDto::Component("source-1".to_string())
+            QueryInputConfigDto::Component(drasi_lib::config::ComponentReference::by_name(
+                drasi_lib::ComponentName::try_new("source-1").unwrap(),
+            ))
         );
     }
 
@@ -377,7 +394,7 @@ mod tests {
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(yaml.contains("queries:"));
-        assert!(yaml.contains("id: my-query"));
+        assert!(yaml.contains("name: my-query"));
         assert!(yaml.contains("MATCH (n) RETURN n"));
     }
 

@@ -86,10 +86,6 @@ async fn test_drasi_lib_builder_with_redb_provider() -> Result<()> {
     assert!(core.is_running().await);
 
     assert!(core.computation_control().is_ok());
-    assert_eq!(
-        core.get_source_status("__component_graph__").await?,
-        drasi_lib::ComponentStatus::Running
-    );
 
     core.stop().await?;
     assert!(!core.is_running().await);
@@ -118,10 +114,6 @@ async fn test_drasi_server_builder_with_state_store_provider() -> Result<()> {
     assert!(core.is_running().await);
 
     assert!(core.computation_control().is_ok());
-    assert_eq!(
-        core.get_source_status("__component_graph__").await?,
-        drasi_lib::ComponentStatus::Running
-    );
 
     core.stop().await?;
 
@@ -286,27 +278,27 @@ async fn test_redb_state_store_operations() -> Result<()> {
     let provider = RedbStateStoreProvider::new(&state_path)?;
 
     // Test basic operations
-    let store_id = "test-store";
+    let store_id = drasi_lib::StorePartition::named("test-store");
     let key = "test-key";
     let value = b"test-value".to_vec();
 
     // Set a value
-    provider.set(store_id, key, value.clone()).await?;
+    provider.set(&store_id, key, value.clone()).await?;
 
     // Get the value back
-    let retrieved = provider.get(store_id, key).await?;
+    let retrieved = provider.get(&store_id, key).await?;
     assert!(retrieved.is_some());
     assert_eq!(retrieved.unwrap(), value);
 
     // Check key exists
-    assert!(provider.contains_key(store_id, key).await?);
+    assert!(provider.contains_key(&store_id, key).await?);
 
     // Delete the key
-    let deleted = provider.delete(store_id, key).await?;
+    let deleted = provider.delete(&store_id, key).await?;
     assert!(deleted);
 
     // Verify deleted
-    assert!(!provider.contains_key(store_id, key).await?);
+    assert!(!provider.contains_key(&store_id, key).await?);
 
     Ok(())
 }

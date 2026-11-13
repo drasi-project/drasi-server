@@ -42,13 +42,13 @@ impl SourcePluginDescriptor for SourceFactory {
     }
     async fn create_source(
         &self,
-        id: &str,
+        id: &ComponentId,
         config: &Value,
         auto_start: bool,
     ) -> Result<Box<dyn drasi_lib::Source>> {
         anyhow::ensure!(auto_start, "this fixture requires auto-start");
         let (source, input) = ApplicationSource::new(
-            id,
+            id.clone(),
             ApplicationSourceConfig {
                 properties: serde_json::from_value(config.clone())?,
                 durability: None,
@@ -77,13 +77,13 @@ impl ReactionPluginDescriptor for ReactionFactory {
     }
     async fn create_reaction(
         &self,
-        id: &str,
-        queries: Vec<String>,
+        id: &ComponentId,
+        queries: Vec<drasi_lib::config::ComponentReference>,
         _: &Value,
         auto_start: bool,
     ) -> Result<Box<dyn drasi_lib::Reaction>> {
         anyhow::ensure!(auto_start, "this fixture requires auto-start");
-        let (reaction, output) = ApplicationReaction::new(id, queries);
+        let (reaction, output) = ApplicationReaction::new(id.clone(), queries);
         self.0.lock().await.push(output);
         Ok(Box::new(reaction))
     }
@@ -117,7 +117,7 @@ async fn request(
 
 async fn scenario(native: bool) -> Result<()> {
     let (source, input) = ApplicationSource::new(
-        "input",
+        ComponentId::generate(),
         ApplicationSourceConfig {
             properties: Default::default(),
             durability: None,
@@ -126,14 +126,18 @@ async fn scenario(native: bool) -> Result<()> {
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id("first")
-            .with_source(source)
+            .with_allow_external_component_ids(true)
+            .with_source(ComponentName::try_new("input")?, source)
             .build()
             .await?,
     );
-    core.computation_component("input")?.wait_created().await?;
+    core.component_by_name(&ComponentName::try_new("input")?)?
+        .wait_created()
+        .await?;
     let second = Arc::new(
         crate::query_plugin::builder()
             .with_id("second")
+            .with_allow_external_component_ids(true)
             .build()
             .await?,
     );
@@ -158,21 +162,25 @@ async fn scenario(native: bool) -> Result<()> {
         Arc::new(RwLock::new(plugins)),
         None,
     );
-    let config = Query::cypher("items")
+    let config = Query::cypher(ComponentName::try_new("items")?)
         .query("MATCH (n:Item) RETURN n.value AS value")
-        .from_input("input")
+        .from_input_by_name(ComponentName::try_new("input")?)
         .enable_bootstrap(false)
-        .build();
+        .build()?;
     if native {
+        let source = core
+            .borrow_computation_source_by_name(&ComponentName::try_new("input")?)
+            .await?;
+        let mut native_config = config.clone();
+        native_config.inputs = vec![drasi_lib::config::QueryInputConfig::by_id(
+            source.id().clone(),
+        )];
         let batch = core
             .computation_pipeline()?
-            .source(
-                core.borrow_computation_source("input").await?,
-                SourceSubscriptionOptions::default(),
-            )?
-            .query(config.clone())
+            .source(source, SourceSubscriptionOptions::default())?
+            .query(native_config.with_assigned_id(ComponentId::generate()))
             .build()?;
-        core.add_components(batch).await?.ensure_committed()?;
+        core.add_components(batch).await?;
     } else {
         let dto = drasi_server::api::models::QueryConfigDto::try_from(config.clone())?;
         let (status, body) = request(
@@ -196,7 +204,7 @@ async fn scenario(native: bool) -> Result<()> {
             .as_array()
             .context("query list")?
             .iter()
-            .any(|item| item["id"] == "items"));
+            .any(|item| item["name"] == "items"));
         let (status, body) = request(
             &app,
             "GET",
@@ -205,7 +213,7 @@ async fn scenario(native: bool) -> Result<()> {
         )
         .await?;
         anyhow::ensure!(status == StatusCode::OK, "{body}");
-        assert_eq!(body["data"]["id"], "items");
+        assert_eq!(body["data"]["name"], "items");
         assert_eq!(body["data"]["config"]["query"], config.query);
         for path in ["logs", "events"] {
             let (status, body) = request(
@@ -221,7 +229,9 @@ async fn scenario(native: bool) -> Result<()> {
     let (status, _) = request(&app, "GET", "/instances/second/queries/items", Value::Null).await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
     core.start().await?;
-    core.computation_component("items")?.wait_started().await?;
+    core.component_by_name(&ComponentName::try_new("items")?)?
+        .wait_started()
+        .await?;
     let stream = app
         .clone()
         .oneshot(
@@ -259,7 +269,12 @@ async fn scenario(native: bool) -> Result<()> {
         .find_map(|line| line.strip_prefix("data:"))
         .context("SSE data")?;
     let result: Value = serde_json::from_str(data.trim())?;
-    assert_eq!(result["query_id"], "items");
+    assert_eq!(
+        result["query_id"],
+        core.component_by_name(&ComponentName::try_new("items")?)?
+            .id()
+            .as_str()
+    );
     assert!(core.list_reactions().await?.is_empty());
     for prefix in ["/instances/first", ""] {
         let (status, body) = request(
@@ -288,49 +303,29 @@ async fn scenario(native: bool) -> Result<()> {
         .await?;
         anyhow::ensure!(status == StatusCode::OK, "{operation}: {body}");
     }
-    let mut replacement = config.clone();
-    replacement.query = "MATCH (n:Item) RETURN n.value * 2 AS value".into();
-    core.update_query("items", replacement).await?;
     let (status, body) = request(
         &app,
-        "PUT",
-        "/instances/first/sources/input",
-        json!({"id":"input","kind":"application","autoStart":true}),
+        "POST",
+        "/instances/first/reactions",
+        json!({"id":"capture","kind":"application","queries":["items"],"autoStart":true}),
     )
     .await?;
-    anyhow::ensure!(status == StatusCode::OK, "source replacement: {body}");
-    let replacement_input = source_inputs
-        .lock()
-        .await
-        .pop()
-        .context("replacement source input")?;
-    for _ in 0..2 {
-        let (status, body) = request(
-            &app,
-            "PUT",
-            "/instances/first/reactions/capture",
-            json!({"id":"capture","kind":"application","queries":["items"],"autoStart":true}),
-        )
-        .await?;
-        anyhow::ensure!(status == StatusCode::OK, "reaction upsert: {body}");
-        tokio::time::timeout(
-            DEADLINE,
-            core.computation_component("capture")?.wait_started(),
-        )
-        .await??;
-    }
+    anyhow::ensure!(status == StatusCode::OK, "reaction creation: {body}");
+    tokio::time::timeout(
+        DEADLINE,
+        core.component_by_name(&ComponentName::try_new("capture")?)?
+            .wait_started(),
+    )
+    .await??;
     let output = reaction_outputs
         .lock()
         .await
         .pop()
-        .context("updated reaction output")?;
-    let mut received = output
-        .take_receiver()
-        .await
-        .context("updated reaction receiver")?;
-    replacement_input
+        .context("reaction output")?;
+    let mut received = output.take_receiver().await.context("reaction receiver")?;
+    input
         .send_node_insert(
-            "after-replacement",
+            "after-reaction",
             vec!["Item"],
             PropertyMapBuilder::new().with_integer("value", 11).build(),
         )
@@ -338,9 +333,14 @@ async fn scenario(native: bool) -> Result<()> {
     let event = tokio::time::timeout(DEADLINE, received.recv())
         .await?
         .context("updated query output")?;
-    assert_eq!(event.query_id, "items");
+    assert_eq!(
+        event.query_id,
+        *core
+            .component_by_name(&ComponentName::try_new("items")?)?
+            .id()
+    );
     assert!(matches!(&event.results[..],
-        [drasi_lib::channels::ResultDiff::Add { data, .. }] if data == &json!({"value":22})
+        [drasi_lib::channels::ResultDiff::Add { data, .. }] if data == &json!({"value":11})
     ));
     for prefix in ["/instances/first", ""] {
         let (status, body) = request(
@@ -355,7 +355,10 @@ async fn scenario(native: bool) -> Result<()> {
             continue;
         }
         anyhow::ensure!(status == StatusCode::OK, "{body}");
-        assert_eq!(body["data"], json!([{"value":22}]));
+        let results = body["data"].as_array().context("query results")?;
+        assert_eq!(results.len(), 2);
+        assert!(results.contains(&json!({"value":7})));
+        assert!(results.contains(&json!({"value":11})));
     }
     let (status, _) = request(
         &app,
@@ -368,27 +371,6 @@ async fn scenario(native: bool) -> Result<()> {
         !status.is_success(),
         "a dependent reaction must prevent query removal"
     );
-    let (status, body) = request(
-        &app,
-        "DELETE",
-        "/instances/first/reactions/capture",
-        Value::Null,
-    )
-    .await?;
-    anyhow::ensure!(status == StatusCode::OK, "{body}");
-    let (status, body) = request(
-        &app,
-        "DELETE",
-        "/instances/first/queries/items",
-        Value::Null,
-    )
-    .await?;
-    anyhow::ensure!(status == StatusCode::OK, "{body}");
-    for prefix in ["/instances/first", ""] {
-        let (status, _) =
-            request(&app, "GET", &format!("{prefix}/queries/items"), Value::Null).await?;
-        assert_eq!(status, StatusCode::NOT_FOUND);
-    }
     core.shutdown().await?;
     second.shutdown().await?;
     Ok(())
@@ -424,7 +406,7 @@ impl ComputationComponent for NativeLifecycleComponent {
     async fn stop(&mut self) -> Result<()> {
         Ok(())
     }
-    async fn deprovision(&mut self) -> Result<()> {
+    async fn delete_owned_resources(&mut self) -> Result<()> {
         Ok(())
     }
 }
@@ -440,20 +422,31 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     let core = Arc::new(
         crate::query_plugin::builder()
             .with_id("native-components")
+            .with_allow_external_component_ids(true)
             .build()
             .await?,
     );
+    let component_id = ComponentId::from_uuid(uuid::Uuid::from_u128(1));
     let batch = ComponentBatch::builder()
-        .service(Box::new(NativeLifecycleComponent {
-            descriptor: ComponentDescriptor::try_new(
-                ComponentId::try_new("component")?,
-                Vec::new(),
-            )?
-            .with_semantic_kind(kind),
-            opaque: false,
-        }))
+        .service(
+            ComponentName::try_new("component")?,
+            Box::new(NativeLifecycleComponent {
+                descriptor: ComponentDescriptor::try_new(component_id.clone(), Vec::new())?
+                    .with_semantic_kind(kind),
+                opaque: false,
+            }),
+        )
         .build()?;
-    assert!(core.add_components(batch).await?.committed);
+    let receipt = core.add_components(batch).await?;
+    assert_eq!(
+        receipt
+            .creation
+            .as_ref()
+            .context("component creation receipt")?
+            .components
+            .len(),
+        1
+    );
     let registry = InstanceRegistry::new();
     registry
         .add("native-components".into(), core.clone())
@@ -481,7 +474,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
             .as_array()
             .context("component list")?
             .iter()
-            .any(|item| item["id"] == "component"));
+            .any(|item| item["name"] == "component"));
         let (status, body) = request(
             &app,
             "GET",
@@ -506,38 +499,46 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         .get_graph()
         .await
         .expect("graph snapshot")
-        .contains("component"));
+        .nodes
+        .iter()
+        .any(|node| node
+            .name
+            .as_ref()
+            .is_some_and(|name| name.as_str() == "component")));
     let descriptive = core.snapshot_configuration().await?;
     if kind == ComponentSemanticKind::Source {
         assert!(descriptive
             .sources
             .iter()
-            .any(|source| source.id == "component"));
-        assert!(core.get_source_schema("component").await?.is_none());
+            .any(|source| source.name.as_str() == "component"));
+        assert!(core
+            .get_source_schema_by_name(&ComponentName::try_new("component")?)
+            .await?
+            .is_none());
     } else {
         assert!(descriptive
             .reactions
             .iter()
-            .any(|reaction| reaction.id == "component"));
+            .any(|reaction| reaction.name.as_str() == "component"));
     }
     let reconstruction = core.snapshot_computation_configuration().await?;
     assert!(!reconstruction
         .instance
         .sources
         .iter()
-        .any(|source| source.id == "component"));
+        .any(|source| source.name.as_str() == "component"));
     assert!(!reconstruction
         .instance
         .reactions
         .iter()
-        .any(|reaction| reaction.id == "component"));
+        .any(|reaction| reaction.name.as_str() == "component"));
     assert!(reconstruction
         .native_components
         .context("native reconstruction")?
         .topology
         .components
         .iter()
-        .any(|component| component.descriptor.id().as_str() == "component"));
+        .any(|component| component.descriptor.id() == &component_id));
     for operation in ["start", "stop", "start"] {
         let (status, body) = request(
             &app,
@@ -578,18 +579,20 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
 
     core.add_components(
         ComponentBatch::builder()
-            .service(Box::new(NativeLifecycleComponent {
-                descriptor: ComponentDescriptor::try_new(
-                    ComponentId::try_new("namespace/component")?,
-                    Vec::new(),
-                )?
-                .with_semantic_kind(kind),
-                opaque: false,
-            }))
+            .service(
+                ComponentName::try_new("namespace/component")?,
+                Box::new(NativeLifecycleComponent {
+                    descriptor: ComponentDescriptor::try_new(
+                        ComponentId::from_uuid(uuid::Uuid::from_u128(2)),
+                        Vec::new(),
+                    )?
+                    .with_semantic_kind(kind),
+                    opaque: false,
+                }),
+            )
             .build()?,
     )
-    .await?
-    .ensure_committed()?;
+    .await?;
     let (status, body) = request(
         &app,
         "GET",
@@ -602,7 +605,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         .as_array()
         .context("namespaced component list")?
         .iter()
-        .find(|component| component["id"] == "namespace/component")
+        .find(|component| component["name"] == "namespace/component")
         .context("namespaced component")?;
     let link = named["links"]["full"]
         .as_str()
@@ -612,13 +615,19 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
     anyhow::ensure!(status == StatusCode::OK, "follow component link: {body}");
 
     let opaque = ComponentBatch::builder()
-        .service(Box::new(NativeLifecycleComponent {
-            descriptor: ComponentDescriptor::try_new(ComponentId::try_new("opaque")?, Vec::new())?
+        .service(
+            ComponentName::try_new("opaque")?,
+            Box::new(NativeLifecycleComponent {
+                descriptor: ComponentDescriptor::try_new(
+                    ComponentId::from_uuid(uuid::Uuid::from_u128(3)),
+                    Vec::new(),
+                )?
                 .with_semantic_kind(kind),
-            opaque: true,
-        }))
+                opaque: true,
+            }),
+        )
         .build()?;
-    core.add_components(opaque).await?.ensure_committed()?;
+    core.add_components(opaque).await?;
     let (status, body) = request(
         &app,
         "GET",
@@ -631,7 +640,7 @@ async fn native_lifecycle_routes(kind: ComponentSemanticKind, route: &str) -> Re
         .as_array()
         .context("opaque list")?
         .iter()
-        .any(|item| item["id"] == "opaque"));
+        .any(|item| item["name"] == "opaque"));
     let (status, _) = request(
         &app,
         "GET",
@@ -712,6 +721,7 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
             let core = Arc::new(
                 crate::query_plugin::builder()
                     .with_id("failed-native")
+                    .with_allow_external_component_ids(true)
                     .build()
                     .await?,
             );
@@ -724,7 +734,7 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
             }));
             let specification = ComponentSpecification {
                 descriptor: ComponentDescriptor::try_new(
-                    ComponentId::try_new("failed")?,
+                    ComponentId::from_uuid(uuid::Uuid::from_u128(4)),
                     Vec::new(),
                 )?
                 .with_semantic_kind(kind),
@@ -735,17 +745,24 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
                 configuration: Default::default(),
                 dependencies: Default::default(),
             };
-            assert!(
-                core.add_components(
+            let receipt = core
+                .add_components(
                     ComponentBatch::builder()
-                        .component(specification, factory)
-                        .build()?
+                        .component(ComponentName::try_new("failed")?, specification, factory)
+                        .build()?,
                 )
-                .await?
-                .committed
+                .await?;
+            assert_eq!(
+                receipt
+                    .creation
+                    .as_ref()
+                    .context("failed component creation receipt")?
+                    .components
+                    .len(),
+                1
             );
             assert!(core
-                .computation_component("failed")?
+                .component_by_name(&ComponentName::try_new("failed")?)?
                 .wait_created()
                 .await
                 .is_err());

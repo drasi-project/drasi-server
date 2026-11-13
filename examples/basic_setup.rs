@@ -18,7 +18,7 @@
 //! with queries. Sources and reactions are created as instances and passed
 //! directly to the builder.
 
-use drasi_lib::config::QueryLanguage;
+use drasi_lib::config::{ComponentName, ComponentReference, QueryLanguage};
 use drasi_server::models::{QueryConfigDto, QueryInputConfigDto};
 
 #[tokio::main]
@@ -29,7 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build query configurations using QueryConfigDto
     let available_drivers_query = QueryConfigDto {
-        id: "available-drivers-query".to_string(),
+        id: None,
+        name: ComponentName::try_new("available-drivers-query")?,
         auto_start: true,
         query: r#"
             MATCH (d:Driver {status: 'available'})
@@ -40,9 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component(
-            "vehicle-location-source".to_string(),
-        )],
+        inputs: vec![QueryInputConfigDto::Component(ComponentReference::by_name(
+            ComponentName::try_new("vehicle-location-source")?,
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -55,7 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let pending_orders_query = QueryConfigDto {
-        id: "pending-orders-query".to_string(),
+        id: None,
+        name: ComponentName::try_new("pending-orders-query")?,
         auto_start: true,
         query: r#"
             MATCH (o:Order)
@@ -66,9 +68,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component(
-            "vehicle-location-source".to_string(),
-        )],
+        inputs: vec![QueryInputConfigDto::Component(ComponentReference::by_name(
+            ComponentName::try_new("vehicle-location-source")?,
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,

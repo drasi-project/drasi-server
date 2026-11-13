@@ -326,7 +326,7 @@ impl ConfigPersistence {
             let sources: Vec<SourceConfig> = snapshot
                 .sources
                 .iter()
-                .filter(|s| !s.id.starts_with("__"))
+                .filter(|s| !s.name.as_str().starts_with("__"))
                 .map(|s| {
                     let mut config_map = serde_json::Map::new();
                     for (k, v) in &s.properties {
@@ -334,10 +334,10 @@ impl ConfigPersistence {
                     }
                     SourceConfig {
                         kind: s.source_type.clone(),
-                        id: s.id.clone(),
+                        id: s.name.to_string(),
                         auto_start: s.auto_start,
                         identity_provider: source_identity_provider
-                            .get(&(id.clone(), s.id.clone()))
+                            .get(&(id.clone(), s.name.to_string()))
                             .cloned(),
                         // Prefer the tracked bootstrapProvider (inline or
                         // reference) so it round-trips faithfully. Fall back to
@@ -345,7 +345,7 @@ impl ConfigPersistence {
                         // snapshot only if nothing was tracked (e.g. a source
                         // whose provider was attached out-of-band).
                         bootstrap_provider: source_bootstrap_provider
-                            .get(&(id.clone(), s.id.clone()))
+                            .get(&(id.clone(), s.name.to_string()))
                             .cloned()
                             .or_else(|| {
                                 s.bootstrap_provider.as_ref().map(|bp| {
@@ -386,11 +386,11 @@ impl ConfigPersistence {
                     }
                     ReactionConfig {
                         kind: r.reaction_type.clone(),
-                        id: r.id.clone(),
+                        id: r.name.to_string(),
                         queries: r.queries.clone(),
                         auto_start: r.auto_start,
                         identity_provider: reaction_identity_provider
-                            .get(&(id.clone(), r.id.clone()))
+                            .get(&(id.clone(), r.name.to_string()))
                             .cloned(),
                         config: serde_json::Value::Object(config_map),
                     }
@@ -472,16 +472,21 @@ mod tests {
         context::{ReactionRuntimeContext, SourceRuntimeContext},
         reactions::Reaction,
         sources::Source,
-        DrasiLib, Query,
+        ComponentName, DrasiLib, Query,
     };
     use std::collections::HashMap;
     use tempfile::TempDir;
+
+    fn name(value: &str) -> ComponentName {
+        ComponentName::try_new(value).unwrap()
+    }
 
     // ─── Test Stubs ──────────────────────────────────────────────────
 
     /// Source stub with configurable properties, type name, and auto_start.
     struct TestSource {
-        id: String,
+        id: drasi_lib::ComponentId,
+        name: String,
         type_name: String,
         auto_start: bool,
         props: HashMap<String, serde_json::Value>,
@@ -490,7 +495,8 @@ mod tests {
     impl TestSource {
         fn new(id: &str, kind: &str) -> Self {
             Self {
-                id: id.to_string(),
+                id: drasi_lib::ComponentId::generate(),
+                name: id.to_string(),
                 type_name: kind.to_string(),
                 auto_start: false,
                 props: HashMap::new(),
@@ -510,7 +516,7 @@ mod tests {
 
     #[async_trait]
     impl Source for TestSource {
-        fn id(&self) -> &str {
+        fn id(&self) -> &drasi_lib::ComponentId {
             &self.id
         }
         fn type_name(&self) -> &str {
@@ -550,25 +556,34 @@ mod tests {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
-        async fn initialize(&self, _context: SourceRuntimeContext) {}
+        async fn bind_runtime_context(&self, _context: SourceRuntimeContext) {}
     }
 
     /// Reaction stub with configurable properties, type name, and auto_start.
     struct TestReaction {
-        id: String,
+        id: drasi_lib::ComponentId,
+        name: String,
         type_name: String,
         auto_start: bool,
-        queries: Vec<String>,
+        queries: Vec<drasi_lib::config::ComponentReference>,
         props: HashMap<String, serde_json::Value>,
     }
 
     impl TestReaction {
         fn new(id: &str, kind: &str, queries: Vec<String>) -> Self {
             Self {
-                id: id.to_string(),
+                id: drasi_lib::ComponentId::generate(),
+                name: id.to_string(),
                 type_name: kind.to_string(),
                 auto_start: false,
-                queries,
+                queries: queries
+                    .into_iter()
+                    .map(|name| {
+                        drasi_lib::config::ComponentReference::by_name(
+                            drasi_lib::ComponentName::try_new(name).unwrap(),
+                        )
+                    })
+                    .collect(),
                 props: HashMap::new(),
             }
         }
@@ -586,7 +601,7 @@ mod tests {
 
     #[async_trait]
     impl Reaction for TestReaction {
-        fn id(&self) -> &str {
+        fn id(&self) -> &drasi_lib::ComponentId {
             &self.id
         }
         fn type_name(&self) -> &str {
@@ -595,13 +610,13 @@ mod tests {
         fn properties(&self) -> HashMap<String, serde_json::Value> {
             self.props.clone()
         }
-        fn query_ids(&self) -> Vec<String> {
+        fn query_inputs(&self) -> Vec<drasi_lib::config::ComponentReference> {
             self.queries.clone()
         }
         fn auto_start(&self) -> bool {
             self.auto_start
         }
-        async fn initialize(&self, _context: ReactionRuntimeContext) {}
+        async fn bind_runtime_context(&self, _context: ReactionRuntimeContext) {}
         async fn start(&self) -> anyhow::Result<()> {
             Ok(())
         }
@@ -624,13 +639,15 @@ mod tests {
     ) -> Arc<DrasiLib> {
         let mut builder = crate::query_test_support::builder().with_id(id);
         for s in sources {
-            builder = builder.with_source(s);
+            let name = drasi_lib::ComponentName::try_new(s.name.clone()).unwrap();
+            builder = builder.with_source(name, s);
         }
         for q in queries {
             builder = builder.with_query(q);
         }
         for r in reactions {
-            builder = builder.with_reaction(r);
+            let name = drasi_lib::ComponentName::try_new(r.name.clone()).unwrap();
+            builder = builder.with_reaction(name, r);
         }
         Arc::new(builder.build().await.unwrap())
     }
@@ -691,14 +708,14 @@ mod tests {
         let core = build_core(
             "inst1",
             vec![TestSource::new("src1", "mock")],
-            vec![Query::cypher("q1")
+            vec![Query::cypher(name("q1"))
                 .query("MATCH (n) RETURN n")
-                .from_input("src1")
-                .build()],
+                .from_input_by_name(name("src1"))
+                .build()
+                .unwrap()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )
         .await;
-
         let p = make_persistence(core, "inst1", cfg_path.clone(), true);
         p.save().await.unwrap();
 
@@ -742,7 +759,6 @@ mod tests {
             vec![],
         )
         .await;
-
         let p = make_persistence(core, "inst1", cfg_path.clone(), true);
         p.save().await.unwrap();
 
@@ -886,18 +902,30 @@ mod tests {
                 TestSource::new("metrics", "mock"),
             ],
             vec![
-                Query::cypher("q-alpha")
+                Query::cypher(name("q-alpha"))
                     .query("MATCH (e:Event) RETURN e")
-                    .from_input("events")
-                    .build(),
-                Query::cypher("q-beta")
+                    .from_input_by_name(name("events"))
+                    .build()
+                    .unwrap(),
+                Query::cypher(name("q-beta"))
                     .query("MATCH (m:Metric) WHERE m.value > 10 RETURN m")
-                    .from_input("metrics")
-                    .build(),
+                    .from_input_by_name(name("metrics"))
+                    .build()
+                    .unwrap(),
             ],
             vec![],
         )
         .await;
+        let q_alpha_id = core
+            .component_by_name(&name("q-alpha"))
+            .unwrap()
+            .id()
+            .clone();
+        let events_id = core
+            .component_by_name(&name("events"))
+            .unwrap()
+            .id()
+            .clone();
 
         let p = make_persistence(core, "inst1", cfg_path.clone(), true);
         p.save().await.unwrap();
@@ -909,16 +937,17 @@ mod tests {
         // Verify query text is preserved (camelCase field name)
         let q_alpha = queries
             .iter()
-            .find(|q| q["id"].as_str() == Some("q-alpha"))
+            .find(|q| q["name"].as_str() == Some("q-alpha"))
             .unwrap();
+        assert_eq!(q_alpha["id"].as_str(), Some(q_alpha_id.as_str()));
         assert_eq!(
             q_alpha["query"].as_str().unwrap(),
             "MATCH (e:Event) RETURN e"
         );
 
-        // Verify the input binding uses the bare component shorthand
+        // Assigned snapshots retain the resolved component identity explicitly.
         let inputs = q_alpha["inputs"].as_sequence().unwrap();
-        assert_eq!(inputs[0].as_str().unwrap(), "events");
+        assert_eq!(inputs[0]["id"].as_str(), Some(events_id.as_str()));
         assert!(q_alpha.get("sources").is_none());
     }
 
@@ -930,10 +959,11 @@ mod tests {
         let core = build_core(
             "inst1",
             vec![TestSource::new("src1", "mock")],
-            vec![Query::cypher("q1")
+            vec![Query::cypher(name("q1"))
                 .query("MATCH (n) RETURN n")
-                .from_input("src1")
-                .build()],
+                .from_input_by_name(name("src1"))
+                .build()
+                .unwrap()],
             vec![
                 TestReaction::new("rx-webhook", "http", vec!["q1".into()])
                     .with_property("endpoint", serde_json::json!("https://hook.example.com")),
@@ -1026,10 +1056,11 @@ mod tests {
         let core = build_core(
             "inst1",
             vec![TestSource::new("src1", "mock")],
-            vec![Query::cypher("q1")
+            vec![Query::cypher(name("q1"))
                 .query("MATCH (n) RETURN n")
-                .from_input("src1")
-                .build()],
+                .from_input_by_name(name("src1"))
+                .build()
+                .unwrap()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )
         .await;
@@ -1064,16 +1095,18 @@ mod tests {
                 TestSource::new("src-off", "mock").with_auto_start(false),
             ],
             vec![
-                Query::cypher("q-on")
+                Query::cypher(name("q-on"))
                     .query("MATCH (n) RETURN n")
-                    .from_input("src-on")
+                    .from_input_by_name(name("src-on"))
                     .auto_start(true)
-                    .build(),
-                Query::cypher("q-off")
+                    .build()
+                    .unwrap(),
+                Query::cypher(name("q-off"))
                     .query("MATCH (n) RETURN n")
-                    .from_input("src-off")
+                    .from_input_by_name(name("src-off"))
                     .auto_start(false)
-                    .build(),
+                    .build()
+                    .unwrap(),
             ],
             vec![TestReaction::new("rx1", "log", vec!["q-on".into()])],
         )
@@ -1101,11 +1134,11 @@ mod tests {
         let queries = val["instances"][0]["queries"].as_sequence().unwrap();
         let q_on = queries
             .iter()
-            .find(|q| q["id"].as_str() == Some("q-on"))
+            .find(|q| q["name"].as_str() == Some("q-on"))
             .unwrap();
         let q_off = queries
             .iter()
-            .find(|q| q["id"].as_str() == Some("q-off"))
+            .find(|q| q["name"].as_str() == Some("q-off"))
             .unwrap();
         assert!(q_on["autoStart"].as_bool().unwrap());
         assert!(!q_off["autoStart"].as_bool().unwrap());
@@ -1132,16 +1165,19 @@ mod tests {
             vec![TestSource::new("src1", "mock")
                 .with_auto_start(true)
                 .with_property("interval", serde_json::json!(500))],
-            vec![Query::cypher("q1")
+            vec![Query::cypher(name("q1"))
                 .query("MATCH (s:Sensor) WHERE s.temp > 75 RETURN s")
-                .from_input("src1")
+                .from_input_by_name(name("src1"))
                 .auto_start(true)
-                .build()],
+                .build()
+                .unwrap()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])
                 .with_auto_start(true)
                 .with_property("format", serde_json::json!("json"))],
         )
         .await;
+        let source_id = core.component_by_name(&name("src1")).unwrap().id().clone();
+        let query_id = core.component_by_name(&name("q1")).unwrap().id().clone();
 
         let p = make_persistence(core, "roundtrip-inst", cfg_path.clone(), true);
         p.save().await.unwrap();
@@ -1164,14 +1200,17 @@ mod tests {
         assert_eq!(parsed.instances[0].sources[0].kind, "mock");
 
         assert_eq!(parsed.instances[0].queries.len(), 1);
-        assert_eq!(parsed.instances[0].queries[0].id, "q1");
+        assert_eq!(parsed.instances[0].queries[0].id.as_ref(), Some(&query_id));
+        assert_eq!(parsed.instances[0].queries[0].name.as_str(), "q1");
         assert_eq!(
             parsed.instances[0].queries[0].query,
             "MATCH (s:Sensor) WHERE s.temp > 75 RETURN s"
         );
         assert_eq!(
             parsed.instances[0].queries[0].inputs[0],
-            crate::api::models::QueryInputConfigDto::Component("src1".to_string())
+            crate::api::models::QueryInputConfigDto::Component(
+                drasi_lib::config::ComponentReference::by_id(source_id)
+            )
         );
 
         assert_eq!(parsed.instances[0].reactions.len(), 1);
@@ -1179,7 +1218,7 @@ mod tests {
         assert_eq!(parsed.instances[0].reactions[0].kind, "log");
         assert_eq!(
             parsed.instances[0].reactions[0].queries,
-            vec!["q1".to_string()]
+            vec![drasi_lib::config::ComponentReference::by_name(name("q1"))]
         );
     }
 
@@ -1455,10 +1494,11 @@ mod tests {
         let core = build_core(
             "inst1",
             vec![TestSource::new("src1", "mock")],
-            vec![Query::cypher("q1")
+            vec![Query::cypher(name("q1"))
                 .query("MATCH (n) RETURN n")
-                .from_input("src1")
-                .build()],
+                .from_input_by_name(name("src1"))
+                .build()
+                .unwrap()],
             vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
         )
         .await;

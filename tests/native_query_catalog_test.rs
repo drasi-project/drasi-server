@@ -20,11 +20,17 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex};
 
-const GRAPH: &str = "__drasi_lib_runtime__";
 const DEADLINE: Duration = Duration::from_secs(10);
 
 fn id(value: &str) -> ComponentId {
-    ComponentId::try_new(value).unwrap()
+    let value = match value {
+        "input" => 1,
+        "one" => 2,
+        "two" => 3,
+        "outlet" => 4,
+        other => panic!("missing explicit component ID for {other}"),
+    };
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
 }
 fn resource(value: &str) -> ResourceId {
     ResourceId::try_new(value).unwrap()
@@ -46,7 +52,7 @@ fn source_descriptor() -> ComponentDescriptor {
     .unwrap()
 }
 
-fn desired(specification: ComponentSpecification) -> DesiredComponent {
+fn desired(name: &str, specification: ComponentSpecification) -> DesiredComponent {
     let streams = specification
         .descriptor
         .ports()
@@ -60,6 +66,7 @@ fn desired(specification: ComponentSpecification) -> DesiredComponent {
         })
         .collect();
     DesiredComponent {
+        name: ComponentName::try_new(name).unwrap(),
         descriptor: specification.descriptor.clone(),
         role: specification.role,
         completion: specification.completion,
@@ -71,69 +78,84 @@ fn desired(specification: ComponentSpecification) -> DesiredComponent {
 }
 
 fn configuration() -> Result<ComputationConfig> {
+    let graph_id = drasi_lib::management::DesiredInstance::default()
+        .topology
+        .graph_id;
     let catalog = resource("results");
     let indexes = resource("memory");
-    let mut components = vec![desired(ComponentSpecification {
-        descriptor: source_descriptor(),
-        role: ComponentRole::Source,
-        completion: None,
-        implementation: ImplementationIdentity::try_new("test/catalog-input", "1")?,
-        configuration_version: 1,
-        configuration: BTreeMap::new(),
-        dependencies: BTreeMap::new(),
-    })];
+    let mut components = vec![desired(
+        "input",
+        ComponentSpecification {
+            descriptor: source_descriptor(),
+            role: ComponentRole::Source,
+            completion: None,
+            implementation: ImplementationIdentity::try_new("test/catalog-input", "1")?,
+            configuration_version: 1,
+            configuration: BTreeMap::new(),
+            dependencies: BTreeMap::new(),
+        },
+    )];
     for name in ["one", "two"] {
         let query = ContinuousQueryDefinition {
-            graph_id: GRAPH.into(),
+            graph_id: graph_id.clone(),
             id: id(name),
             query: "MATCH (n:Item) RETURN n.id AS id, n.value AS value".into(),
             language: ComputationQueryLanguage::Cypher,
             output_stream: StreamId::try_new(format!("{name}/out"))?,
             outbox_capacity: NonZeroUsize::new(16).unwrap(),
         };
-        components.push(desired(ComponentSpecification {
-            descriptor: query.descriptor(),
-            role: ComponentRole::Transformer,
-            completion: None,
-            implementation: ContinuousQueryFactory::default()
+        components.push(desired(
+            name,
+            ComponentSpecification {
+                descriptor: query.descriptor(),
+                role: ComponentRole::Transformer,
+                completion: None,
+                implementation: ContinuousQueryFactory::default()
+                    .descriptor()
+                    .implementation
+                    .clone(),
+                configuration_version: 1,
+                configuration: BTreeMap::from([
+                    (
+                        "query".into(),
+                        ConfigurationValue::Literal(json!(query.query)),
+                    ),
+                    (
+                        "stream".into(),
+                        ConfigurationValue::Literal(json!(query.output_stream)),
+                    ),
+                ]),
+                dependencies: BTreeMap::from([
+                    ("indexes".into(), vec![indexes.clone()]),
+                    ("catalog".into(), vec![catalog.clone()]),
+                    (
+                        "source_progress".into(),
+                        vec![resource(&format!("{name}-progress"))],
+                    ),
+                ]),
+            },
+        ));
+    }
+    components.push(desired(
+        "outlet",
+        ComponentSpecification {
+            descriptor: QueryResultsOutlet::new(
+                id("outlet"),
+                QueryResultsCatalog::new(graph_id.as_str())?,
+            )
+            .descriptor()
+            .clone(),
+            role: ComponentRole::Sink,
+            completion: Some(SinkCompletion::Handled),
+            implementation: QueryResultsOutletFactory::default()
                 .descriptor()
                 .implementation
                 .clone(),
             configuration_version: 1,
-            configuration: BTreeMap::from([
-                (
-                    "query".into(),
-                    ConfigurationValue::Literal(json!(query.query)),
-                ),
-                (
-                    "stream".into(),
-                    ConfigurationValue::Literal(json!(query.output_stream)),
-                ),
-            ]),
-            dependencies: BTreeMap::from([
-                ("indexes".into(), vec![indexes.clone()]),
-                ("catalog".into(), vec![catalog.clone()]),
-                (
-                    "source_progress".into(),
-                    vec![resource(&format!("{name}-progress"))],
-                ),
-            ]),
-        }));
-    }
-    components.push(desired(ComponentSpecification {
-        descriptor: QueryResultsOutlet::new(id("outlet"), QueryResultsCatalog::new(GRAPH)?)
-            .descriptor()
-            .clone(),
-        role: ComponentRole::Sink,
-        completion: Some(SinkCompletion::Handled),
-        implementation: QueryResultsOutletFactory::default()
-            .descriptor()
-            .implementation
-            .clone(),
-        configuration_version: 1,
-        configuration: BTreeMap::new(),
-        dependencies: BTreeMap::from([("catalog".into(), vec![catalog.clone()])]),
-    }));
+            configuration: BTreeMap::new(),
+            dependencies: BTreeMap::from([("catalog".into(), vec![catalog.clone()])]),
+        },
+    ));
     let relationships = [
         ("input", "one"),
         ("input", "two"),
@@ -163,13 +185,13 @@ fn configuration() -> Result<ComputationConfig> {
     .collect::<Vec<_>>();
     Ok(ComputationConfig {
         definition: serde_json::from_value(json!({
-            "version":1, "graph_id":GRAPH, "revision":0,
+            "version":DESIRED_TOPOLOGY_VERSION, "graph_id":graph_id, "revision":0,
             "components":components, "relationships":relationships, "resources":resources,
             "resource_configurations":{
                 "memory":{"kind":"memoryIndexes"},
                 "results":{"kind":"queryCatalog"},
-                "one-progress":{"kind":"sourceProgress","component":"one"},
-                "two-progress":{"kind":"sourceProgress","component":"two"}
+                "one-progress":{"kind":"sourceProgress","component":id("one")},
+                "two-progress":{"kind":"sourceProgress","component":id("two")}
             },
             "requirements":PipeRequirements::default(), "boundary_relationships":[],
         }))?,
@@ -184,7 +206,7 @@ fn specification<'a>(
         .definition
         .components
         .iter_mut()
-        .find(|component| component.descriptor.id().as_str() == name)
+        .find(|component| component.name.as_str() == name)
         .unwrap();
     let ComponentConstruction::Factory(specification) = &mut component.construction else {
         panic!("expected factory specification");
@@ -409,10 +431,17 @@ async fn instance(
     mpsc::Sender<OutputEnvelope>,
     mpsc::Receiver<drasi_lib::channels::QueryResult>,
 )> {
-    let (reaction, handle) = ApplicationReaction::new("capture", vec!["one".into(), "two".into()]);
+    let (reaction, handle) = ApplicationReaction::new(
+        ComponentId::generate(),
+        vec![
+            drasi_lib::config::ComponentReference::by_name(ComponentName::try_new("one")?),
+            drasi_lib::config::ComponentReference::by_name(ComponentName::try_new("two")?),
+        ],
+    );
     let core = crate::query_plugin::builder()
         .with_id(name)
-        .with_reaction(reaction)
+        .with_allow_external_component_ids(true)
+        .with_reaction(ComponentName::try_new("capture")?, reaction)
         .build()
         .await?;
     let (sender, input) = mpsc::channel(16);
@@ -437,13 +466,15 @@ async fn instance(
         plugins.transactional_transformer_registry(core.middleware_registry())?,
     )
     .await?;
-    core.add_components(batch.auto_start(false))
-        .await?
-        .ensure_committed()?;
+    core.add_components(batch.auto_start(false)).await?;
     for query in ["one", "two"] {
-        core.computation_component(query)?.wait_created().await?;
+        core.component_by_name(&ComponentName::try_new(query)?)?
+            .wait_created()
+            .await?;
         assert!(
-            core.get_query_results(query).await.is_err(),
+            core.get_query_results_by_name(&ComponentName::try_new(query)?)
+                .await
+                .is_err(),
             "unstarted query is not running"
         );
     }
@@ -476,7 +507,8 @@ async fn instance(
     for component in ["input", "one", "two", "outlet", "capture"] {
         tokio::time::timeout(
             DEADLINE,
-            core.computation_component(component)?.wait_started(),
+            core.component_by_name(&ComponentName::try_new(component)?)?
+                .wait_started(),
         )
         .await??;
     }
@@ -556,12 +588,19 @@ async fn server_catalog_feeds_existing_reactions_and_keeps_instances_isolated() 
             }
         }
         for query in ["one", "two"] {
-            let actual = first.get_query_results(query).await?;
+            let actual = first
+                .get_query_results_by_name(&ComponentName::try_new(query)?)
+                .await?;
             let expected = value
                 .map(|value| vec![json!({"id":"row","value":value})])
                 .unwrap_or_default();
             assert_eq!(actual, expected);
-            assert_eq!(second.get_query_results(query).await?, Vec::<Value>::new());
+            assert_eq!(
+                second
+                    .get_query_results_by_name(&ComponentName::try_new(query)?)
+                    .await?,
+                Vec::<Value>::new()
+            );
         }
     }
     first.shutdown().await?;

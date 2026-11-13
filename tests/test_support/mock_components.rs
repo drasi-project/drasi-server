@@ -35,7 +35,7 @@ pub struct MockSource {
 }
 
 struct MockSourceInner {
-    id: String,
+    id: drasi_lib::ComponentId,
     status: RwLock<ComponentStatus>,
     instance_id: RwLock<String>,
     update_tx: RwLock<Option<ComponentUpdateSender>>,
@@ -44,10 +44,10 @@ struct MockSourceInner {
 }
 
 impl MockSource {
-    pub fn new(id: &str) -> Self {
+    pub fn new(_id: &str) -> Self {
         Self {
             inner: Arc::new(MockSourceInner {
-                id: id.to_string(),
+                id: drasi_lib::ComponentId::generate(),
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
@@ -93,7 +93,7 @@ impl MockSource {
 
 #[async_trait]
 impl SourceTrait for MockSource {
-    fn id(&self) -> &str {
+    fn id(&self) -> &drasi_lib::ComponentId {
         &self.inner.id
     }
 
@@ -147,7 +147,7 @@ impl SourceTrait for MockSource {
         self
     }
 
-    async fn initialize(&self, context: SourceRuntimeContext) {
+    async fn bind_runtime_context(&self, context: SourceRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
         *self.inner.update_tx.write().await = Some(context.update_tx);
     }
@@ -162,19 +162,26 @@ pub struct MockReaction {
 }
 
 struct MockReactionInner {
-    id: String,
-    queries: Vec<String>,
+    id: drasi_lib::ComponentId,
+    queries: Vec<drasi_lib::config::ComponentReference>,
     status: RwLock<ComponentStatus>,
     instance_id: RwLock<String>,
     update_tx: RwLock<Option<ComponentUpdateSender>>,
 }
 
 impl MockReaction {
-    pub fn new(id: &str, queries: Vec<String>) -> Self {
+    pub fn new(_id: &str, queries: Vec<String>) -> Self {
         Self {
             inner: Arc::new(MockReactionInner {
-                id: id.to_string(),
-                queries,
+                id: drasi_lib::ComponentId::generate(),
+                queries: queries
+                    .into_iter()
+                    .map(|name| {
+                        drasi_lib::config::ComponentReference::by_name(
+                            drasi_lib::ComponentName::try_new(name).unwrap(),
+                        )
+                    })
+                    .collect(),
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
@@ -219,7 +226,7 @@ impl MockReaction {
 
 #[async_trait]
 impl ReactionTrait for MockReaction {
-    fn id(&self) -> &str {
+    fn id(&self) -> &drasi_lib::ComponentId {
         &self.inner.id
     }
 
@@ -235,11 +242,11 @@ impl ReactionTrait for MockReaction {
         HashMap::new()
     }
 
-    fn query_ids(&self) -> Vec<String> {
+    fn query_inputs(&self) -> Vec<drasi_lib::config::ComponentReference> {
         self.inner.queries.clone()
     }
 
-    async fn initialize(&self, context: ReactionRuntimeContext) {
+    async fn bind_runtime_context(&self, context: ReactionRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
         *self.inner.update_tx.write().await = Some(context.update_tx);
     }

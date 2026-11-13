@@ -260,7 +260,7 @@ impl From<DrasiError> for ErrorResponse {
         match err.classification() {
             ComponentNotFound {
                 component_type,
-                component_id,
+                subject,
             } => {
                 let code = match component_type.as_str() {
                     "source" => error_codes::SOURCE_NOT_FOUND,
@@ -270,14 +270,14 @@ impl From<DrasiError> for ErrorResponse {
                     _ => error_codes::INTERNAL_ERROR,
                 };
 
-                ErrorResponse::new(code, format!("{component_type} '{component_id}' not found"))
+                ErrorResponse::new(code, format!("{component_type} '{subject}' not found"))
             }
             AlreadyExists {
                 component_type,
-                component_id,
+                subject,
             } => ErrorResponse::new(
                 error_codes::DUPLICATE_RESOURCE,
-                format!("{component_type} '{component_id}' already exists"),
+                format!("{component_type} '{subject}' already exists"),
             ),
             InvalidConfig { message } => {
                 ErrorResponse::new(error_codes::INVALID_REQUEST, message.clone())
@@ -290,12 +290,12 @@ impl From<DrasiError> for ErrorResponse {
             }
             OperationFailed {
                 component_type,
-                component_id,
+                subject,
                 operation,
                 reason,
             } => ErrorResponse::new(
                 error_codes::INTERNAL_ERROR,
-                format!("Failed to {operation} {component_type} '{component_id}': {reason}"),
+                format!("Failed to {operation} {component_type} '{subject}': {reason}"),
             ),
             Internal(ref err) => ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string()),
         }
@@ -317,6 +317,10 @@ pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn subject(name: &str) -> drasi_lib::error::OperationSubject {
+        drasi_lib::error::OperationSubject::Name(drasi_lib::ComponentName::try_new(name).unwrap())
+    }
 
     // ==========================================================================
     // ErrorResponse Tests
@@ -409,7 +413,7 @@ mod tests {
     fn test_from_drasi_error() {
         let drasi_err = DrasiError::ComponentNotFound {
             component_type: "source".to_string(),
-            component_id: "my-source".to_string(),
+            subject: subject("my-source"),
         };
         let error_response: ErrorResponse = drasi_err.into();
 
@@ -544,7 +548,7 @@ mod tests {
     fn test_drasi_error_component_not_found_source() {
         let err = DrasiError::ComponentNotFound {
             component_type: "source".to_string(),
-            component_id: "test-source".to_string(),
+            subject: subject("test-source"),
         };
 
         let response: ErrorResponse = err.into();
@@ -557,7 +561,7 @@ mod tests {
     fn test_drasi_error_component_not_found_query() {
         let err = DrasiError::ComponentNotFound {
             component_type: "query".to_string(),
-            component_id: "test-query".to_string(),
+            subject: subject("test-query"),
         };
 
         let response: ErrorResponse = err.into();
@@ -568,7 +572,7 @@ mod tests {
     fn test_drasi_error_component_not_found_reaction() {
         let err = DrasiError::ComponentNotFound {
             component_type: "reaction".to_string(),
-            component_id: "test-reaction".to_string(),
+            subject: subject("test-reaction"),
         };
 
         let response: ErrorResponse = err.into();
@@ -579,7 +583,7 @@ mod tests {
     fn test_drasi_error_already_exists() {
         let err = DrasiError::AlreadyExists {
             component_type: "source".to_string(),
-            component_id: "duplicate-source".to_string(),
+            subject: subject("duplicate-source"),
         };
 
         let response: ErrorResponse = err.into();
@@ -612,7 +616,7 @@ mod tests {
     fn test_drasi_error_operation_failed() {
         let err = DrasiError::OperationFailed {
             component_type: "source".to_string(),
-            component_id: "failing-source".to_string(),
+            subject: subject("failing-source"),
             operation: "start".to_string(),
             reason: "connection refused".to_string(),
         };
@@ -640,7 +644,7 @@ mod tests {
     fn test_drasi_error_to_status_not_found() {
         let err = DrasiError::ComponentNotFound {
             component_type: "source".to_string(),
-            component_id: "test".to_string(),
+            subject: subject("test"),
         };
         assert_eq!(drasi_error_to_status(&err), StatusCode::NOT_FOUND);
     }
@@ -649,7 +653,7 @@ mod tests {
     fn test_drasi_error_to_status_conflict() {
         let err = DrasiError::AlreadyExists {
             component_type: "query".to_string(),
-            component_id: "test".to_string(),
+            subject: subject("test"),
         };
         assert_eq!(drasi_error_to_status(&err), StatusCode::CONFLICT);
     }
@@ -675,7 +679,7 @@ mod tests {
     fn test_drasi_error_to_status_internal_error() {
         let err1 = DrasiError::OperationFailed {
             component_type: "source".to_string(),
-            component_id: "test".to_string(),
+            subject: subject("test"),
             operation: "start".to_string(),
             reason: "failed".to_string(),
         };
@@ -694,12 +698,29 @@ mod tests {
     #[test]
     fn typed_causes_preserve_public_http_status_codes_and_messages() {
         let constructors: [fn() -> DrasiError; 7] = [
-            || DrasiError::component_not_found("source", "input"),
-            || DrasiError::already_exists("query", "query"),
+            || {
+                DrasiError::component_not_found_by_name(
+                    "source",
+                    &drasi_lib::ComponentName::try_new("input").unwrap(),
+                )
+            },
+            || {
+                DrasiError::already_exists_by_name(
+                    "query",
+                    &drasi_lib::ComponentName::try_new("query").unwrap(),
+                )
+            },
             || DrasiError::invalid_config("missing provider"),
             || DrasiError::invalid_state("not ready"),
             || DrasiError::validation("incompatible pipe"),
-            || DrasiError::operation_failed("source", "input", "stop", "cleanup incomplete"),
+            || {
+                DrasiError::operation_failed(
+                    "source",
+                    subject("input"),
+                    "stop",
+                    "cleanup incomplete",
+                )
+            },
             || DrasiError::Internal(anyhow::anyhow!("unclassified")),
         ];
         for constructor in constructors {

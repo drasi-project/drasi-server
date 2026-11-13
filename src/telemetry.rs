@@ -190,7 +190,10 @@ impl MetricsRuntime {
                             for snapshot in snapshots {
                                 let attributes = [
                                     KeyValue::new("drasi.instance.id", instance_id.clone()),
-                                    KeyValue::new("drasi.query.id", snapshot.query_id),
+                                    KeyValue::new(
+                                        "drasi.query.id",
+                                        snapshot.query_id.to_string(),
+                                    ),
                                     KeyValue::new(
                                         "drasi.component.generation",
                                         snapshot.component_generation.to_string(),
@@ -217,7 +220,9 @@ impl MetricsRuntime {
                                 observe_sequence(observer, snapshot.output_sequence, &output_attributes);
                                 for (key, sequence) in snapshot.input_sequences {
                                     let (kind, id) = match key {
-                                        SourceProgressKey::Source(id) => ("source", id),
+                                        SourceProgressKey::Source(id) => {
+                                            ("source", id.to_string())
+                                        }
                                         SourceProgressKey::Stream(id) => ("stream", id.to_string()),
                                     };
                                     let mut input_attributes = attributes.to_vec();

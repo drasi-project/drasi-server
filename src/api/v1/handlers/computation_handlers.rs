@@ -64,6 +64,7 @@ impl From<ComputationInfo> for ComputationGraphInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ComputationComponentInfo {
     pub id: String,
+    pub name: String,
     pub role: String,
     pub implementation: Option<serde_json::Value>,
     pub auto_start: bool,
@@ -189,14 +190,16 @@ pub async fn create_computation_components(
         })?;
     let snapshot = core.computation_control()?.desired_snapshot();
     for component in &config.definition.components {
-        if snapshot
-            .nodes
-            .iter()
-            .any(|node| node.descriptor.id() == component.descriptor.id())
-        {
+        if snapshot.nodes.iter().any(|node| {
+            node.descriptor.id() == component.descriptor.id() || node.name == component.name
+        }) {
             return Err(ErrorResponse::new(
                 error_codes::DUPLICATE_RESOURCE,
-                format!("Component '{}' already exists", component.descriptor.id()),
+                format!(
+                    "Component ID '{}' or name '{}' already exists",
+                    component.descriptor.id(),
+                    component.name
+                ),
             ));
         }
     }
@@ -213,12 +216,7 @@ pub async fn create_computation_components(
             technical_details: Some(format!("{error:#}")),
         })
     })?;
-    let report = core.add_components(components).await?;
-    if !report.committed {
-        return Err(ErrorResponse::from(drasi_lib::DrasiError::Internal(
-            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(report).into(),
-        )));
-    }
+    core.add_components(components).await?;
     persist_after_operation(&persistence, "creating computation components").await?;
     Ok(Json(ApiResponse::success(
         core.computation_info().await?.into(),
@@ -247,6 +245,7 @@ pub async fn inspect_computation_graph(
             let observed = snapshot.observed.components.get(node.descriptor.id());
             Ok(ComputationComponentInfo {
                 id: node.descriptor.id().to_string(),
+                name: node.name.to_string(),
                 implementation: snapshot
                     .desired
                     .specifications
@@ -490,17 +489,18 @@ async fn native_selection(
         .unwrap_or_default();
     ids.iter()
         .map(|id| {
+            let component_id = ComponentId::try_new(id.as_str())
+                .map_err(|error| operation_error(id, "select component", error))?;
             if !declared
                 .iter()
-                .any(|component| component.descriptor.id().as_str() == id)
+                .any(|component| component.descriptor.id() == &component_id)
             {
                 return Err(ErrorResponse::new(
                     error_codes::INVALID_REQUEST,
                     format!("Native component '{id}' does not exist"),
                 ));
             }
-            ComponentId::try_new(id.as_str())
-                .map_err(|error| operation_error(id, "select component", error))
+            Ok(component_id)
         })
         .collect()
 }

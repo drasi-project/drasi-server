@@ -10,13 +10,22 @@ import { expect, it, vi } from 'vitest';
 import { Modal } from '../src/components/Modal';
 
 const loading = vi.hoisted(() => {
+  let markStarted!: () => void;
   let release!: () => void;
+  const started = new Promise<void>(resolve => { markStarted = resolve; });
   const pending = new Promise<void>(resolve => { release = resolve; });
-  return { pending, loaded: false, release: () => release() };
+  return {
+    started,
+    pending,
+    loaded: false,
+    markStarted: () => markStarted(),
+    release: () => release(),
+  };
 });
 
 // Delay the real primitive module, not its focus or ownership implementation.
 vi.mock('../src/components/ModalLayer', async importOriginal => {
+  loading.markStarted();
   await loading.pending;
   const module = await importOriginal<typeof import('../src/components/ModalLayer')>();
   loading.loaded = true;
@@ -41,6 +50,7 @@ it('does not acquire a late overlay after close or unmount during the initial cl
   }
   const user = userEvent.setup();
   render(<StrictMode><LoadingOwners /></StrictMode>);
+  await loading.started;
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.body.hasAttribute('data-scroll-locked')).toBe(false);
   await user.click(screen.getByRole('button', { name: 'Cancel pending opening' }));

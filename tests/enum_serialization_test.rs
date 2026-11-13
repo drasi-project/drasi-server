@@ -1,6 +1,8 @@
 // Test to verify that SourceConfig and ReactionConfig structs serialize as camelCase
 // This tests the struct wrappers with serde_json::Value config fields
 
+use drasi_lib::config::ComponentReference;
+use drasi_lib::ComponentName;
 use drasi_server::api::models::*;
 use serde_json::json;
 
@@ -161,7 +163,9 @@ fn test_reaction_config_log_serializes_camelcase() {
     let reaction = ReactionConfig {
         kind: "log".to_string(),
         id: "test-log".to_string(),
-        queries: vec!["query1".to_string()],
+        queries: vec![ComponentReference::by_name(
+            ComponentName::try_new("query1").unwrap(),
+        )],
         auto_start: true,
         identity_provider: None,
         config: json!({"routes": {}}),
@@ -186,7 +190,9 @@ fn test_reaction_config_http_serializes_camelcase() {
     let reaction = ReactionConfig {
         kind: "http".to_string(),
         id: "test-http-reaction".to_string(),
-        queries: vec!["query1".to_string()],
+        queries: vec![ComponentReference::by_name(
+            ComponentName::try_new("query1").unwrap(),
+        )],
         auto_start: false,
         identity_provider: None,
         config: json!({
@@ -224,7 +230,9 @@ fn test_reaction_config_grpc_serializes_camelcase() {
     let reaction = ReactionConfig {
         kind: "grpc".to_string(),
         id: "test-grpc-reaction".to_string(),
-        queries: vec!["query1".to_string()],
+        queries: vec![ComponentReference::by_name(
+            ComponentName::try_new("query1").unwrap(),
+        )],
         auto_start: true,
         identity_provider: None,
         config: json!({

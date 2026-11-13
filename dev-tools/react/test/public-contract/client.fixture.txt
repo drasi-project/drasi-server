@@ -43,7 +43,8 @@ export type DefaultRowIsUnknownRecord = Assert<Equal<ResultRow, Record<string, u
 export type DefaultResultIsUnknownRecord = Assert<Equal<Extract<OutputResult, { kind: 'snapshot' }>['rows'][number], Record<string, unknown>>>;
 export type DefaultChangeIsUnknownRecord = Assert<Equal<Extract<ResultChange, { kind: 'upsert' }>['after'], ResultRow>>;
 export type NormalizedResults = Assert<Equal<OutputResult, OutputSnapshot | OutputDelta>>;
-export type NormalizedChangeKinds = Assert<Equal<ResultChange['kind'], 'upsert' | 'update' | 'delete'>>;
+export type NormalizedChangeKinds = Assert<Equal<ResultChange['kind'],
+  'upsert' | 'update' | 'delete' | 'graph-add' | 'graph-replace' | 'graph-patch' | 'graph-delete'>>;
 export type RawIdentityInput = Assert<Equal<Parameters<RowKey>[0], Readonly<ResultRow>>>;
 export type RawIdentityOutput = Assert<Equal<ReturnType<RowKey>, string>>;
 export type SnapshotRowsAreReadonly = Assert<Equal<OutputSnapshot['rows'], readonly ResultRow[]>>;
@@ -162,7 +163,6 @@ const queryConfig: QueryConfig = {
   autoStart: false,
   middleware: [],
   enableBootstrap: true,
-  bootstrapBufferSize: 100,
   outboxCapacity: 100,
   bootstrapTimeoutSecs: 30,
 };
@@ -294,6 +294,14 @@ export function typedChanges(change: ResultChange<Temperature>): number {
       // @ts-expect-error A delete has no after row.
       change.after;
       return change.before.celsius;
+    case 'graph-add':
+      return change.after.celsius;
+    case 'graph-replace':
+      return change.after.celsius - (change.before?.celsius ?? 0);
+    case 'graph-patch':
+      return change.set.celsius ?? change.before?.celsius ?? 0;
+    case 'graph-delete':
+      return change.before?.celsius ?? 0;
     default: {
       const exhaustive: never = change;
       return exhaustive;

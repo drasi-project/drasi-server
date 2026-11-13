@@ -30,7 +30,6 @@ use drasi_lib::channels::{
 use drasi_lib::config::SourceSubscriptionSettings;
 use drasi_lib::context::SourceRuntimeContext;
 use drasi_lib::Source as SourceTrait;
-use drasi_server::DrasiServerBuilder;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -38,7 +37,7 @@ use tokio::time::Duration;
 
 /// A mock source that sends bootstrap data when subscribed.
 struct BootstrapMockSource {
-    id: String,
+    id: drasi_lib::ComponentId,
     status: Arc<RwLock<ComponentStatus>>,
     /// Elements to send during bootstrap.
     bootstrap_elements: Vec<Element>,
@@ -46,9 +45,9 @@ struct BootstrapMockSource {
 }
 
 impl BootstrapMockSource {
-    fn new(id: &str, elements: Vec<Element>) -> Self {
+    fn new(_id: &str, elements: Vec<Element>) -> Self {
         Self {
-            id: id.to_string(),
+            id: drasi_lib::ComponentId::generate(),
             status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
             bootstrap_elements: elements,
             dispatchers: RwLock::new(Vec::new()),
@@ -58,7 +57,7 @@ impl BootstrapMockSource {
 
 #[async_trait]
 impl SourceTrait for BootstrapMockSource {
-    fn id(&self) -> &str {
+    fn id(&self) -> &drasi_lib::ComponentId {
         &self.id
     }
 
@@ -128,9 +127,7 @@ impl SourceTrait for BootstrapMockSource {
         self
     }
 
-    async fn initialize(&self, _context: SourceRuntimeContext) {
-        // No-op
-    }
+    async fn bind_runtime_context(&self, _context: SourceRuntimeContext) {}
 }
 
 /// Helper to create a test element with a given id and name property.
@@ -159,15 +156,20 @@ async fn test_bootstrap_data_appears_in_query_results() {
 
     let source = BootstrapMockSource::new("bootstrap-src", elements);
 
-    let server = DrasiServerBuilder::new()
-        .with_query_factory(crate::query_plugin::factory())
-        .with_source(source)
-        .with_query_config(
-            "bootstrap-query",
-            "MATCH (i:Item) RETURN i.name AS name",
-            vec!["bootstrap-src".to_string()],
+    let server = crate::query_plugin::builder()
+        .with_allow_external_component_ids(true)
+        .with_source(
+            drasi_lib::ComponentName::try_new("bootstrap-src").unwrap(),
+            source,
         )
-        .build_core()
+        .with_query(
+            drasi_lib::Query::cypher(drasi_lib::ComponentName::try_new("bootstrap-query").unwrap())
+                .query("MATCH (i:Item) RETURN i.name AS name")
+                .from_input_by_name(drasi_lib::ComponentName::try_new("bootstrap-src").unwrap())
+                .build()
+                .expect("valid query config"),
+        )
+        .build()
         .await
         .expect("Failed to build server");
 
@@ -176,7 +178,9 @@ async fn test_bootstrap_data_appears_in_query_results() {
     tokio::time::timeout(
         Duration::from_secs(5),
         server
-            .computation_component("bootstrap-query")
+            .component_by_name(
+                &drasi_lib::computation::v1::ComponentName::try_new("bootstrap-query").unwrap(),
+            )
             .expect("query declaration")
             .wait_started(),
     )
@@ -187,7 +191,9 @@ async fn test_bootstrap_data_appears_in_query_results() {
     let results = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let results = server
-                .get_query_results("bootstrap-query")
+                .get_query_results_by_name(
+                    &drasi_lib::computation::v1::ComponentName::try_new("bootstrap-query").unwrap(),
+                )
                 .await
                 .expect("Failed to get query results");
             if results.len() >= 3 {

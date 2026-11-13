@@ -72,16 +72,24 @@ impl DrasiServerBuilder {
     }
 
     /// Add a pre-built source instance (ownership transferred)
-    pub fn with_source(mut self, source: impl SourceTrait + 'static) -> Self {
+    pub fn with_source(
+        mut self,
+        name: drasi_lib::ComponentName,
+        source: impl SourceTrait + 'static,
+    ) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_source(source);
+        *builder = std::mem::take(builder).with_source(name, source);
         self
     }
 
     /// Add a pre-built reaction instance (ownership transferred)
-    pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
+    pub fn with_reaction(
+        mut self,
+        name: drasi_lib::ComponentName,
+        reaction: impl ReactionTrait + 'static,
+    ) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_reaction(reaction);
+        *builder = std::mem::take(builder).with_reaction(name, reaction);
         self
     }
 
@@ -149,16 +157,18 @@ impl DrasiServerBuilder {
         id: impl Into<String>,
         query_str: impl Into<String>,
         sources: Vec<String>,
-    ) -> Self {
-        let mut query_builder = Query::cypher(id).query(query_str);
+    ) -> anyhow::Result<Self> {
+        let mut query_builder =
+            Query::cypher(drasi_lib::ComponentName::try_new(id.into())?).query(query_str);
 
         for source in sources {
-            query_builder = query_builder.from_input(source);
+            query_builder =
+                query_builder.from_input_by_name(drasi_lib::ComponentName::try_new(source)?);
         }
 
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_query(query_builder.build());
-        self
+        *builder = std::mem::take(builder).with_query(query_builder.build()?);
+        Ok(self)
     }
 
     /// Add a query with simple parameters
@@ -167,7 +177,7 @@ impl DrasiServerBuilder {
         id: impl Into<String>,
         query_str: impl Into<String>,
         sources: Vec<String>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         self.with_query_config(id, query_str, sources)
     }
 
@@ -307,6 +317,7 @@ mod tests {
                 "MATCH (n) RETURN n",
                 vec!["test_source".to_string()],
             )
+            .unwrap()
             .with_port(9090);
 
         assert!(builder.enable_api);

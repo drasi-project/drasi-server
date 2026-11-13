@@ -9,9 +9,7 @@ mod database;
 mod generator;
 
 use anyhow::{ensure, Context, Result};
-use drasi_lib::{
-    computation::v1::FactoryRegistry, secret_store::MemorySecretStoreProvider,
-};
+use drasi_lib::{computation::v1::FactoryRegistry, secret_store::MemorySecretStoreProvider};
 use drasi_server::{
     computation::register_components, plugin_registry::PluginRegistry, DrasiServerConfig,
 };
@@ -83,19 +81,22 @@ async fn real_server() -> Result<()> {
         .resolve(&FactoryRegistry::default())?
         .into_owned();
     let proof = async {
-        register_components(&definition, &core, &registry)
-            .await?
-            .ensure_committed()?;
+        register_components(&definition, &core, &registry).await?;
         core.start().await?;
         for query in ["all", "high"] {
             tokio::time::timeout(
                 Duration::from_secs(30),
-                core.computation_component(query)?.wait_started(),
+                core.component_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                    query,
+                )?)?
+                .wait_started(),
             )
             .await??;
         }
         let schema = core
-            .get_source_schema("items")
+            .get_source_schema_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                "items",
+            )?)
             .await?
             .context("Server/public source schema missing")?;
         ensure!(
@@ -103,14 +104,31 @@ async fn real_server() -> Result<()> {
             "Server source inspection did not reach native catalog"
         );
         ensure!(
-            core.get_query_results("all").await?.len() == 2,
+            core.get_query_results_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                "all"
+            )?,)
+                .await?
+                .len()
+                == 2,
             "Server snapshot missing"
         );
         database.sql("INSERT INTO {{schema}}.Items VALUES(3,30,N'Server');")?;
         tokio::time::timeout(Duration::from_secs(25), async {
             loop {
-                if core.get_query_results("all").await?.len() == 3
-                    && core.get_query_results("high").await?.len() == 2
+                if core
+                    .get_query_results_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                        "all",
+                    )?)
+                    .await?
+                    .len()
+                    == 3
+                    && core
+                        .get_query_results_by_name(
+                            &drasi_lib::computation::v1::ComponentName::try_new("high")?,
+                        )
+                        .await?
+                        .len()
+                        == 2
                 {
                     return Ok::<_, anyhow::Error>(());
                 }

@@ -32,7 +32,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::Query;
+use drasi_lib::config::ComponentReference;
+use drasi_lib::ComponentId;
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
@@ -64,11 +65,13 @@ impl SourcePluginDescriptor for MockSourceDescriptor {
     }
     async fn create_source(
         &self,
-        id: &str,
+        id: &ComponentId,
         _config_json: &serde_json::Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::sources::Source>> {
-        Ok(Box::new(create_mock_source(id).with_auto_start(auto_start)))
+        Ok(Box::new(
+            create_mock_source(id.as_str()).with_auto_start(auto_start),
+        ))
     }
 }
 
@@ -91,13 +94,23 @@ impl ReactionPluginDescriptor for MockReactionDescriptor {
     }
     async fn create_reaction(
         &self,
-        id: &str,
-        query_ids: Vec<String>,
+        id: &ComponentId,
+        query_inputs: Vec<ComponentReference>,
         _config_json: &serde_json::Value,
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::reactions::Reaction>> {
         Ok(Box::new(
-            create_mock_reaction(id, query_ids).with_auto_start(auto_start),
+            create_mock_reaction(
+                id.as_str(),
+                query_inputs
+                    .into_iter()
+                    .map(|input| match input {
+                        ComponentReference::Name(name) => name.to_string(),
+                        ComponentReference::Id { id } => id.to_string(),
+                    })
+                    .collect(),
+            )
+            .with_auto_start(auto_start),
         ))
     }
 }
@@ -108,25 +121,9 @@ async fn create_clone_test_router() -> Router {
 }
 
 async fn create_clone_test_router_with_internal_source(include_internal: bool) -> Router {
-    // --- Source instance: has a source, query, and reaction ---
-    let mock_src = create_mock_source("clone-src");
-    let mock_reaction = create_mock_reaction("clone-rx", vec!["clone-query".to_string()]);
-
-    let clone_query = Query::cypher("clone-query")
-        .query(QUERY_TEXT)
-        .from_input("clone-src")
-        .auto_start(true)
-        .build();
-
-    let mut source_builder = crate::query_plugin::builder()
+    let source_core = crate::query_plugin::builder()
         .with_id(SOURCE_INSTANCE)
-        .with_source(mock_src)
-        .with_query(clone_query)
-        .with_reaction(mock_reaction);
-    if include_internal {
-        source_builder = source_builder.with_source(create_mock_source("__internal_hidden"));
-    }
-    let source_core = source_builder
+        .with_allow_external_component_ids(true)
         .build()
         .await
         .expect("Failed to build source instance");
@@ -140,6 +137,7 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
     // --- Target instance: empty ---
     let target_core = crate::query_plugin::builder()
         .with_id(TARGET_INSTANCE)
+        .with_allow_external_component_ids(true)
         .build()
         .await
         .expect("Failed to build target instance");
@@ -172,9 +170,70 @@ async fn create_clone_test_router_with_internal_source(include_internal: bool) -
         solutions_dir,
     );
 
-    Router::new()
+    let router = Router::new()
         .route("/health", axum::routing::get(handlers::health_check))
-        .merge(v1_router)
+        .merge(v1_router);
+
+    for source in ["clone-src"]
+        .into_iter()
+        .chain(include_internal.then_some("__internal_hidden"))
+    {
+        post_component(
+            router.clone(),
+            format!("/instances/{SOURCE_INSTANCE}/sources"),
+            serde_json::json!({
+                "kind": "mock",
+                "id": source,
+                "autoStart": true,
+            }),
+        )
+        .await;
+    }
+    post_component(
+        router.clone(),
+        format!("/instances/{SOURCE_INSTANCE}/queries"),
+        serde_json::json!({
+            "name": "clone-query",
+            "query": QUERY_TEXT,
+            "inputs": ["clone-src"],
+            "autoStart": true,
+        }),
+    )
+    .await;
+    post_component(
+        router.clone(),
+        format!("/instances/{SOURCE_INSTANCE}/reactions"),
+        serde_json::json!({
+            "kind": "log",
+            "id": "clone-rx",
+            "queries": ["clone-query"],
+            "autoStart": true,
+        }),
+    )
+    .await;
+    router
+}
+
+async fn post_component(router: Router, uri: String, body: serde_json::Value) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert!(
+        status.is_success(),
+        "component setup failed ({status}): {}",
+        String::from_utf8_lossy(&bytes)
+    );
 }
 
 /// Helper: issue POST clone request and return (status, body JSON).
@@ -228,7 +287,7 @@ async fn test_clone_creates_all_components() {
     // Perform clone
     let (status, json) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{json}");
     let data = &json["data"];
     assert_eq!(data["success"], true);
     assert!(
@@ -258,39 +317,39 @@ async fn test_clone_creates_all_components() {
 
     // Verify target has the components via GET lists
     let sources = get_list(router.clone(), TARGET_INSTANCE, "sources").await;
-    let source_ids: Vec<&str> = sources["data"]
+    let source_names: Vec<&str> = sources["data"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|s| s["id"].as_str().unwrap())
+        .map(|s| s["name"].as_str().unwrap())
         .collect();
     assert!(
-        source_ids.contains(&"clone-src"),
-        "Target sources should contain clone-src: {source_ids:?}"
+        source_names.contains(&"clone-src"),
+        "Target sources should contain clone-src: {source_names:?}"
     );
 
     let queries = get_list(router.clone(), TARGET_INSTANCE, "queries").await;
-    let query_ids: Vec<&str> = queries["data"]
+    let query_names: Vec<&str> = queries["data"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|q| q["id"].as_str().unwrap())
+        .map(|q| q["name"].as_str().unwrap())
         .collect();
     assert!(
-        query_ids.contains(&"clone-query"),
-        "Target queries should contain clone-query: {query_ids:?}"
+        query_names.contains(&"clone-query"),
+        "Target queries should contain clone-query: {query_names:?}"
     );
 
     let reactions = get_list(router.clone(), TARGET_INSTANCE, "reactions").await;
-    let reaction_ids: Vec<&str> = reactions["data"]
+    let reaction_names: Vec<&str> = reactions["data"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|r| r["id"].as_str().unwrap())
+        .map(|r| r["name"].as_str().unwrap())
         .collect();
     assert!(
-        reaction_ids.contains(&"clone-rx"),
-        "Target reactions should contain clone-rx: {reaction_ids:?}"
+        reaction_names.contains(&"clone-rx"),
+        "Target reactions should contain clone-rx: {reaction_names:?}"
     );
     for (components, id) in [
         (&sources, "clone-src"),
@@ -301,7 +360,7 @@ async fn test_clone_creates_all_components() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|component| component["id"] == id)
+            .find(|component| component["name"] == id)
             .unwrap();
         assert_eq!(component["status"], "Added");
     }
@@ -335,11 +394,12 @@ async fn test_clone_preserves_query_config() {
     let router = create_clone_test_router().await;
 
     // Clone
-    let (status, _) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
-    assert_eq!(status, StatusCode::OK);
+    let (status, json) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
+    assert_eq!(status, StatusCode::OK, "{json}");
 
     // GET the cloned query with ?view=full to retrieve its config
     let response = router
+        .clone()
         .oneshot(
             Request::builder()
                 .uri(format!(
@@ -366,12 +426,30 @@ async fn test_clone_preserves_query_config() {
         "Cloned query text should match source"
     );
 
-    // Verify the input binding was preserved (bare component shorthand)
+    // Verify the input binding resolves to the cloned source's immutable ID.
     let inputs = config["inputs"].as_array().unwrap();
-    let source_ids: Vec<&str> = inputs.iter().map(|s| s.as_str().unwrap()).collect();
+    let source_ids: Vec<&str> = inputs
+        .iter()
+        .filter_map(|input| {
+            input.get("id").and_then(|id| id.as_str()).or_else(|| {
+                input
+                    .get("component")
+                    .and_then(|component| component.get("id"))
+                    .and_then(|id| id.as_str())
+            })
+        })
+        .collect();
+    let target_sources = get_list(router.clone(), TARGET_INSTANCE, "sources").await;
+    let cloned_source_id = target_sources["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|source| source["name"] == "clone-src")
+        .and_then(|source| source["id"].as_str())
+        .expect("cloned source ID");
     assert!(
-        source_ids.contains(&"clone-src"),
-        "Cloned query should reference clone-src: {source_ids:?}"
+        source_ids.contains(&cloned_source_id),
+        "Cloned query should reference source ID {cloned_source_id}: {source_ids:?}; inputs={inputs:?}"
     );
 }
 
@@ -381,13 +459,13 @@ async fn test_clone_filters_internal_sources() {
     let router = create_clone_test_router_with_internal_source(true).await;
 
     let source_sources = get_list(router.clone(), SOURCE_INSTANCE, "sources").await;
-    let source_ids: Vec<&str> = source_sources["data"]
+    let source_names: Vec<&str> = source_sources["data"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|s| s["id"].as_str().unwrap())
+        .map(|s| s["name"].as_str().unwrap())
         .collect();
-    assert!(source_ids.contains(&"__internal_hidden"));
+    assert!(source_names.contains(&"__internal_hidden"));
 
     // Clone
     let (status, json) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
@@ -408,15 +486,15 @@ async fn test_clone_filters_internal_sources() {
 
     // Also verify target sources list has no internal sources
     let target_sources = get_list(router.clone(), TARGET_INSTANCE, "sources").await;
-    let mut target_ids: Vec<&str> = target_sources["data"]
+    let mut target_names: Vec<&str> = target_sources["data"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|s| s["id"].as_str().unwrap())
+        .map(|s| s["name"].as_str().unwrap())
         .collect();
 
-    target_ids.sort_unstable();
-    assert_eq!(target_ids, ["__component_graph__", "clone-src"]);
+    target_names.sort_unstable();
+    assert_eq!(target_names, ["clone-src"]);
 }
 
 #[path = "query_plugin/mod.rs"]

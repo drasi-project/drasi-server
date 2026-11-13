@@ -484,7 +484,9 @@ impl DrasiServer {
 
         let preparation = async {
             for instance in resolved_instances {
-                let mut builder = DrasiLib::builder().with_id(&instance.id);
+                let mut builder = DrasiLib::builder()
+                    .with_id(&instance.id)
+                    .with_allow_external_component_ids(true);
                 if !instance.queries.is_empty() {
                     let registry = plugin_registry.read().await;
                     builder = builder.with_query_factory(
@@ -580,11 +582,16 @@ impl DrasiServer {
                     instance.id
                 );
                 for source_config in instance.sources.clone() {
+                    let source_name = drasi_lib::ComponentName::try_new(source_config.id())?;
                     let source_config =
                         resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
                     let identity_ref = source_config.identity_provider().map(str::to_string);
-                    let (source, plugin_meta) =
-                        create_source_locked(&plugin_registry, source_config).await?;
+                    let (source, plugin_meta) = create_source_locked(
+                        &plugin_registry,
+                        drasi_lib::ComponentId::generate(),
+                        source_config,
+                    )
+                    .await?;
                     if let Some(id) = identity_ref {
                         let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
                             anyhow::anyhow!(
@@ -595,7 +602,7 @@ impl DrasiServer {
                         })?;
                         source.set_identity_provider(provider).await;
                     }
-                    builder = builder.with_source_metadata(source, plugin_meta);
+                    builder = builder.with_source_metadata(source_name, source, plugin_meta);
                 }
 
                 // Add queries from config (already resolved in config/types.rs)
@@ -605,9 +612,14 @@ impl DrasiServer {
 
                 // Create and add reactions from config
                 for reaction_config in instance.reactions.clone() {
+                    let reaction_name = drasi_lib::ComponentName::try_new(reaction_config.id())?;
                     let identity_ref = reaction_config.identity_provider().map(str::to_string);
-                    let (reaction, plugin_meta) =
-                        create_reaction_locked(&plugin_registry, reaction_config).await?;
+                    let (reaction, plugin_meta) = create_reaction_locked(
+                        &plugin_registry,
+                        drasi_lib::ComponentId::generate(),
+                        reaction_config,
+                    )
+                    .await?;
                     if let Some(id) = identity_ref {
                         let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
                             anyhow::anyhow!(
@@ -618,7 +630,7 @@ impl DrasiServer {
                         })?;
                         reaction.set_identity_provider(provider).await;
                     }
-                    builder = builder.with_reaction_metadata(reaction, plugin_meta);
+                    builder = builder.with_reaction_metadata(reaction_name, reaction, plugin_meta);
                 }
 
                 // Build and initialize the core
@@ -654,17 +666,9 @@ impl DrasiServer {
                     let registration =
                         crate::computation::register_components(&computation, &core, &registry);
                     drop(registry);
-                    let report = registration
+                    registration
                         .await
                         .with_context(|| "Failed to configure instance computation components")?;
-                    if !report.committed {
-                        return Err(
-                            drasi_lib::computation::v1::LifecycleReportError::Reconciliation(
-                                report,
-                            )
-                            .into(),
-                        );
-                    }
                 }
             }
             Ok::<_, anyhow::Error>(())
@@ -1246,18 +1250,19 @@ mod single_runtime_tests {
         use drasi_lib::computation::v1::*;
         let resource = ResourceId::try_new("middleware").unwrap();
         let definition = MiddlewareTransformerDefinition {
-            id: ComponentId::try_new("native-transformer").unwrap(),
+            id: ComponentId::from_uuid(uuid::Uuid::from_u128(1)),
             output_stream: StreamId::try_new("native/out").unwrap(),
             middleware: Vec::new(),
             pipeline: Vec::new(),
         };
         let specification = definition.specification(resource.clone()).unwrap();
         let topology: DesiredTopology = serde_json::from_value(serde_json::json!({
-            "version":1, "revision":0,
+            "version":DESIRED_TOPOLOGY_VERSION, "revision":0,
             "components":[{
+                "name":"native-transformer",
                 "descriptor":specification.descriptor, "role":specification.role, "completion":null,
                 "streams":{}, "lifecycle":LifecyclePolicy { auto_start: false }, "input_merge":InputMergePolicy::default(),
-                "construction":ComponentConstruction::Factory(specification),
+                "construction":ComponentConstruction::Factory(specification.clone()),
             }],
             "resources":[{
                 "id":resource, "role":ResourceRole::Middleware,
@@ -1292,11 +1297,65 @@ mod single_runtime_tests {
         let core = &server.instances[0].core;
         assert!(!core.is_running().await);
         let handle = core.computation_control().unwrap();
+        let component = core
+            .component_by_name(&ComponentName::try_new("native-transformer").unwrap())
+            .unwrap();
+        assert_eq!(component.id(), &definition.id);
         assert_eq!(
-            handle.observed().components[&definition.id].realization,
-            RealizationState::Created
+            handle.desired_snapshot().specifications[&definition.id],
+            specification
         );
-        assert!(!handle.observed().components[&definition.id].started);
+        assert_eq!(
+            specification
+                .descriptor
+                .ports()
+                .iter()
+                .map(|port| (port.id().as_str(), port.direction()))
+                .collect::<Vec<_>>(),
+            vec![("in", PortDirection::Input), ("out", PortDirection::Output)]
+        );
+        // This disconnected declaration tests registration, not completed port binding.
+        let expected_waits = vec![
+            DependencyWait::Connection {
+                endpoint: Endpoint::new(definition.id.clone(), PortId::try_new("in").unwrap()),
+            },
+            DependencyWait::Connection {
+                endpoint: Endpoint::new(definition.id.clone(), PortId::try_new("out").unwrap()),
+            },
+            DependencyWait::Stream {
+                endpoint: Endpoint::new(definition.id.clone(), PortId::try_new("out").unwrap()),
+            },
+        ];
+        let mut observations = handle.subscribe_observed();
+        let observed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            observations
+                .wait_for(|graph| {
+                    let observed = &graph.components[&definition.id];
+                    observed.failure.is_some()
+                        || observed.realization == RealizationState::CreationFailed
+                        || (observed.realization == RealizationState::Blocked
+                            && observed.waiting_for.len() == expected_waits.len()
+                            && expected_waits
+                                .iter()
+                                .all(|wait| observed.waiting_for.contains(wait)))
+                })
+                .await
+                .expect("component observations must remain available")
+                .components[&definition.id]
+                .clone()
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "native declaration did not settle on its missing bindings: {:?}",
+                component.observed()
+            )
+        });
+        assert_eq!(observed.realization, RealizationState::Blocked);
+        assert!(observed.failure.is_none(), "{observed:?}");
+        assert_eq!(observed.lifecycle, ComponentLifecycle::Stopped);
+        assert!(!observed.lifecycle_requested);
+        assert!(!observed.started);
         let snapshot = core.snapshot_computation_configuration().await.unwrap();
         assert_eq!(
             serde_json::to_value(
@@ -1390,20 +1449,25 @@ mod single_runtime_tests {
 
     async fn assert_graph_runtime(core: &DrasiLib) {
         core.add_query(
-            drasi_lib::Query::cypher("graph-node")
+            drasi_lib::Query::cypher(drasi_lib::ComponentName::try_new("graph-node").unwrap())
                 .query("MATCH (n) RETURN n")
                 .auto_start(false)
-                .build(),
+                .build()
+                .unwrap(),
         )
         .await
         .unwrap();
-        let handle = core.computation_component("graph-node").unwrap();
+        let handle = core
+            .component_by_name(&drasi_lib::ComponentName::try_new("graph-node").unwrap())
+            .unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(10), handle.wait_created())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
-            core.snapshot_configuration().await.unwrap().queries[0].id,
+            core.snapshot_configuration().await.unwrap().queries[0]
+                .name
+                .as_str(),
             "graph-node"
         );
         core.shutdown().await.unwrap();

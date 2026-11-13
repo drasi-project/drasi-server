@@ -30,25 +30,32 @@ mod api_query_joins_tests {
         config::{QueryJoinConfig, QueryJoinKeyConfig, SourceSubscriptionSettings},
         context::SourceRuntimeContext,
         sources::Source,
-        DrasiLib, Query, QueryConfig,
+        ComponentName, DrasiLib, Query, QueryConfig,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    fn name(value: &str) -> ComponentName {
+        ComponentName::try_new(value).unwrap()
+    }
+
     /// Minimal stub source for graph-backed query dependencies.
     struct StubSource {
-        id: String,
+        id: drasi_lib::ComponentId,
     }
 
     impl StubSource {
         fn new(id: &str) -> Self {
-            Self { id: id.to_string() }
+            let _ = id;
+            Self {
+                id: drasi_lib::ComponentId::generate(),
+            }
         }
     }
 
     #[async_trait]
     impl Source for StubSource {
-        fn id(&self) -> &str {
+        fn id(&self) -> &drasi_lib::ComponentId {
             &self.id
         }
         fn type_name(&self) -> &str {
@@ -88,7 +95,7 @@ mod api_query_joins_tests {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
-        async fn initialize(&self, _context: SourceRuntimeContext) {}
+        async fn bind_runtime_context(&self, _context: SourceRuntimeContext) {}
     }
 
     async fn create_test_environment() -> (Arc<DrasiLib>, Arc<bool>, Option<Arc<ConfigPersistence>>)
@@ -97,14 +104,38 @@ mod api_query_joins_tests {
         // Supply each referenced source before starting dependent queries.
         let core = crate::query_test_support::builder()
             .with_id("test-server")
-            .with_source(StubSource::new("source1"))
-            .with_source(StubSource::new("source2"))
-            .with_source(StubSource::new("vehicles"))
-            .with_source(StubSource::new("drivers"))
-            .with_source(StubSource::new("orders"))
-            .with_source(StubSource::new("restaurants"))
-            .with_source(StubSource::new("products"))
-            .with_source(StubSource::new("categories"))
+            .with_source(
+                ComponentName::try_new("source1").unwrap(),
+                StubSource::new("source1"),
+            )
+            .with_source(
+                ComponentName::try_new("source2").unwrap(),
+                StubSource::new("source2"),
+            )
+            .with_source(
+                ComponentName::try_new("vehicles").unwrap(),
+                StubSource::new("vehicles"),
+            )
+            .with_source(
+                ComponentName::try_new("drivers").unwrap(),
+                StubSource::new("drivers"),
+            )
+            .with_source(
+                ComponentName::try_new("orders").unwrap(),
+                StubSource::new("orders"),
+            )
+            .with_source(
+                ComponentName::try_new("restaurants").unwrap(),
+                StubSource::new("restaurants"),
+            )
+            .with_source(
+                ComponentName::try_new("products").unwrap(),
+                StubSource::new("products"),
+            )
+            .with_source(
+                ComponentName::try_new("categories").unwrap(),
+                StubSource::new("categories"),
+            )
             .build()
             .await
             .expect("Failed to build test core");
@@ -126,6 +157,7 @@ mod api_query_joins_tests {
 
         QueryConfigDto {
             id: config.id,
+            name: config.name,
             auto_start: config.auto_start,
             query: config.query,
             query_language: config.query_language,
@@ -164,15 +196,16 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = Query::cypher("vehicle-driver-query")
+        let query_config = Query::cypher(name("vehicle-driver-query"))
             .query(
                 "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate",
             )
-            .from_input("vehicles")
-            .from_input("drivers")
+            .from_input_by_name(name("vehicles"))
+            .from_input_by_name(name("drivers"))
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -225,14 +258,15 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = Query::cypher("full-order-query")
+        let query_config = Query::cypher(name("full-order-query"))
             .query("MATCH (o:Order)-[:ORDER_TO_RESTAURANT]->(r:Restaurant), (o)-[:ORDER_TO_DRIVER]->(d:Driver) RETURN o.id, r.name, d.name")
-            .from_input("orders")
-            .from_input("restaurants")
-            .from_input("drivers")
+            .from_input_by_name(name("orders"))
+            .from_input_by_name(name("restaurants"))
+            .from_input_by_name(name("drivers"))
             .auto_start(false)
             .with_joins(vec![restaurant_join.clone(), driver_join.clone()])
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -257,11 +291,12 @@ mod api_query_joins_tests {
         let (core, read_only, config_persistence) = create_test_environment().await;
 
         // Create a query without joins
-        let query_config = Query::cypher("simple-query")
+        let query_config = Query::cypher(name("simple-query"))
             .query("MATCH (n:Node) RETURN n")
-            .from_input("source1")
+            .from_input_by_name(name("source1"))
             .auto_start(false)
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -286,12 +321,13 @@ mod api_query_joins_tests {
         let (core, read_only, config_persistence) = create_test_environment().await;
 
         // Create a query with empty joins array
-        let query_config = Query::cypher("empty-joins-query")
+        let query_config = Query::cypher(name("empty-joins-query"))
             .query("MATCH (n) RETURN n")
-            .from_input("source1")
+            .from_input_by_name(name("source1"))
             .auto_start(false)
             .with_joins(vec![]) // Empty joins array
-            .build();
+            .build()
+            .unwrap();
 
         // Call the API handler
         let result = create_query(
@@ -330,13 +366,14 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = Query::cypher("product-category-query")
+        let query_config = Query::cypher(name("product-category-query"))
             .query("MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name")
-            .from_input("products")
-            .from_input("categories")
+            .from_input_by_name(name("products"))
+            .from_input_by_name(name("categories"))
             .auto_start(false)
             .with_joins(vec![join_config.clone()])
-            .build();
+            .build()
+            .unwrap();
 
         // Create the query
         let _ = create_query(
@@ -373,7 +410,8 @@ mod api_query_joins_tests {
 
         let data = &json_response["data"];
         // The structure is data.id, data.config.query, data.config.sources, data.config.joins
-        assert_eq!(data["id"], "product-category-query");
+        assert!(uuid::Uuid::parse_str(data["id"].as_str().unwrap()).is_ok());
+        assert_eq!(data["name"], "product-category-query");
         let joins_value = data["config"]["joins"].clone();
         let joins = if joins_value.is_array() {
             joins_value.as_array().unwrap().clone()
@@ -405,19 +443,21 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = Query::cypher("test-query")
+        let query_config = Query::cypher(name("test-query"))
             .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
-            .from_input("source1")
-            .from_input("source2")
+            .from_input_by_name(name("source1"))
+            .from_input_by_name(name("source2"))
             .auto_start(true)
             .with_joins(vec![join_config])
-            .build();
+            .build()
+            .unwrap();
 
         // Serialize to JSON
         let json = serde_json::to_value(&query_config).unwrap();
 
         // Verify JSON structure
-        assert_eq!(json["id"], "test-query");
+        assert!(json["id"].is_null());
+        assert_eq!(json["name"], "test-query");
         assert_eq!(
             json["query"],
             "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b"
@@ -464,12 +504,13 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = Query::cypher("readonly-test-query")
+        let query_config = Query::cypher(name("readonly-test-query"))
             .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
-            .from_input("source1")
+            .from_input_by_name(name("source1"))
             .auto_start(false)
             .with_joins(vec![join_config])
-            .build();
+            .build()
+            .unwrap();
 
         // Try to create query in read-only mode
         let result = create_query(

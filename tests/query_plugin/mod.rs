@@ -28,7 +28,9 @@ pub fn factory() -> Arc<dyn drasi_lib::computation::v1::ComponentFactory> {
 }
 
 pub fn builder() -> drasi_lib::DrasiLibBuilder {
-    drasi_lib::DrasiLib::builder().with_query_factory(factory())
+    drasi_lib::DrasiLib::builder()
+        .with_allow_external_component_ids(true)
+        .with_query_factory(factory())
 }
 
 pub fn registry() -> Arc<tokio::sync::RwLock<drasi_host_sdk::PluginRegistry>> {

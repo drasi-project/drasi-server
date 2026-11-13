@@ -22,7 +22,7 @@
 
 use anyhow::Result;
 use drasi_index_rocksdb::RocksDbIndexProvider;
-use drasi_lib::IndexBackendPlugin;
+use drasi_lib::{ComponentName, IndexBackendPlugin};
 use drasi_server::DrasiServerConfig;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -118,10 +118,6 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
     assert!(core.computation_control().is_ok());
-    assert_eq!(
-        core.get_source_status("__component_graph__").await?,
-        drasi_lib::ComponentStatus::Running
-    );
 
     core.stop().await?;
     assert!(!core.is_running().await);
@@ -154,10 +150,6 @@ async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
     assert!(core.computation_control().is_ok());
-    assert_eq!(
-        core.get_source_status("__component_graph__").await?,
-        drasi_lib::ComponentStatus::Running
-    );
 
     core.stop().await?;
 
@@ -284,9 +276,9 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
     let provider = RocksDbIndexProvider::new(index_path.clone(), true, false);
 
     // Build DrasiLib with the provider and a query
-    let query = Query::cypher("test-query")
+    let query = Query::cypher(ComponentName::try_new("test-query")?)
         .query("MATCH (n) RETURN n")
-        .build();
+        .build()?;
 
     let core = crate::query_plugin::builder()
         .with_id("test-directory-creation")
@@ -302,7 +294,8 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
     core.start().await?;
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        core.computation_component("test-query")?.wait_started(),
+        core.component_by_name(&ComponentName::try_new("test-query")?)?
+            .wait_started(),
     )
     .await
     .expect("query should finish starting")?;
@@ -396,16 +389,16 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
     let provider = RocksDbIndexProvider::new(index_path.clone(), true, false);
 
     // Inherits the instance default (RocksDB).
-    let persisted = Query::cypher("persisted-query")
+    let persisted = Query::cypher(ComponentName::try_new("persisted-query")?)
         .query("MATCH (n) RETURN n")
-        .build();
+        .build()?;
     // Explicitly overrides back to in-memory, despite the RocksDB default.
-    let volatile = Query::cypher("volatile-query")
+    let volatile = Query::cypher(ComponentName::try_new("volatile-query")?)
         .query("MATCH (n) RETURN n")
         .with_storage_backend(StorageBackendRef::Inline(StorageBackendSpec::Memory {
             enable_archive: true,
         }))
-        .build();
+        .build()?;
 
     let core = crate::query_plugin::builder()
         .with_id("test-per-query-override")
@@ -422,7 +415,8 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
     for id in ["persisted-query", "volatile-query"] {
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            core.computation_component(id)?.wait_started(),
+            core.component_by_name(&ComponentName::try_new(id)?)?
+                .wait_started(),
         )
         .await
         .expect("query should finish starting")?;
@@ -432,7 +426,7 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
     // RocksDB materializes one on-disk database per persisted query under
     // `index_path` (`{index_path}/{query_id}`). Exactly one entry must exist:
     // the inheriting query persisted, the explicit in-memory override did not.
-    let entries: Vec<_> = std::fs::read_dir(&index_path)
+    let entries: Vec<_> = std::fs::read_dir(index_path.join(".drasi-long-identifiers-v1"))
         .map(|dir| dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect())
         .unwrap_or_default();
     assert_eq!(
@@ -452,12 +446,13 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
 async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
     use drasi_lib::{Query, StorageBackendRef};
 
-    let query = Query::cypher("needs-rocksdb")
+    let query = Query::cypher(ComponentName::try_new("needs-rocksdb")?)
         .query("MATCH (n) RETURN n")
+        .enable_bootstrap(false)
         .with_storage_backend(StorageBackendRef::Named(
             drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME.to_string(),
         ))
-        .build();
+        .build()?;
 
     // No index provider registered at all.
     let core = crate::query_plugin::builder()
@@ -466,26 +461,15 @@ async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
         .build()
         .await?;
 
-    let start_error = core
-        .start()
-        .await
-        .expect_err("unknown backend must be reported by instance startup");
-    assert!(
-        start_error
-            .downcast_ref::<drasi_lib::error::PartialStartError>()
-            .is_some(),
-        "{start_error:#}"
-    );
-    let error = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        core.computation_component("needs-rocksdb")?.wait_started(),
-    )
-    .await?
-    .expect_err("unregistered storage backend must fail node startup");
+    let handle = core.component_by_name(&ComponentName::try_new("needs-rocksdb")?)?;
+    let error = tokio::time::timeout(std::time::Duration::from_secs(5), handle.wait_created())
+        .await?
+        .expect_err("unregistered storage backend must fail query construction");
 
     assert!(error.to_string().contains("rocksdb"), "{error}");
     assert_eq!(
-        core.get_query_status("needs-rocksdb").await?,
+        core.get_query_status_by_name(&ComponentName::try_new("needs-rocksdb")?)
+            .await?,
         drasi_lib::ComponentStatus::Error
     );
     core.shutdown().await?;
@@ -582,7 +566,7 @@ async fn assert_create_instance_persist_index_via_http(
         .get(instance_id)
         .await
         .expect("created instance should be registered");
-    let query_id = format!("{instance_id}-query");
+    let query_name = format!("{instance_id}-query");
     let response = router
         .oneshot(
             Request::builder()
@@ -590,7 +574,7 @@ async fn assert_create_instance_persist_index_via_http(
                 .uri(format!("/instances/{instance_id}/queries"))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                    "id": query_id,
+                    "name": query_name,
                     "query": "MATCH (n) RETURN n",
                     "autoStart": true,
                 }))?))?,
@@ -606,7 +590,8 @@ async fn assert_create_instance_persist_index_via_http(
     );
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        core.computation_component(&query_id)?.wait_started(),
+        core.component_by_name(&ComponentName::try_new(query_name.clone())?)?
+            .wait_started(),
     )
     .await
     .expect("query should reach Running")?;

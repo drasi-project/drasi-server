@@ -14,7 +14,11 @@
 
 //! Query configuration DTOs with camelCase serialization.
 
-use drasi_lib::config::{QueryInputConfig, QueryLanguage};
+use drasi_lib::computation::v1::PortId;
+use drasi_lib::config::{
+    AssignedQueryConfig, ComponentId, ComponentName, ComponentReference, QueryInputConfig,
+    QueryLanguage,
+};
 use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -24,7 +28,8 @@ use serde_json::Map;
 #[schema(as = QueryConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryConfigDto {
-    pub id: String,
+    pub id: Option<ComponentId>,
+    pub name: ComponentName,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
     pub query: String,
@@ -66,7 +71,7 @@ pub struct QueryConfigDto {
 #[serde(untagged, from = "QueryInputConfig")]
 pub enum QueryInputConfigDto {
     /// Consume the named component's primary output.
-    Component(String),
+    Component(ComponentReference),
     Expanded(QueryInputObjectDto),
 }
 
@@ -76,10 +81,10 @@ pub enum QueryInputConfigDto {
 #[serde(deny_unknown_fields)]
 pub struct QueryInputObjectDto {
     /// Upstream component ID (a source, query or transformer).
-    pub component: String,
+    pub component: ComponentReference,
     /// Output port on the component. Omit to use its primary (or only) output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub port: Option<String>,
+    pub port: Option<PortId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -181,6 +186,7 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
 
         Ok(Self {
             id: config.id,
+            name: config.name,
             auto_start: config.auto_start,
             query: config.query,
             query_language: config.query_language,
@@ -206,5 +212,13 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
             outbox_capacity: config.outbox_capacity,
             bootstrap_timeout_secs: config.bootstrap_timeout_secs,
         })
+    }
+}
+
+impl TryFrom<AssignedQueryConfig> for QueryConfigDto {
+    type Error = serde_json::Error;
+
+    fn try_from(config: AssignedQueryConfig) -> Result<Self, Self::Error> {
+        QueryConfigDto::try_from(config.into_authoring())
     }
 }

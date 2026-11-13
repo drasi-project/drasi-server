@@ -14,12 +14,17 @@ use drasi_server::api::models::queries::query::{QueryConfigDto, QueryInputConfig
 #[test]
 fn test_query_config_dto_serializes_camelcase() {
     let dto = QueryConfigDto {
-        id: "test-query".to_string(),
+        id: Some(drasi_lib::ComponentId::generate()),
+        name: drasi_lib::ComponentName::try_new("test-query").unwrap(),
         auto_start: true,
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("my-source".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(
+            drasi_lib::config::ComponentReference::by_name(
+                drasi_lib::ComponentName::try_new("my-source").unwrap(),
+            ),
+        )],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: Some(1000),
@@ -67,10 +72,16 @@ fn test_query_config_dto_serializes_camelcase() {
     );
 
     // Nested query input DTO: a bare component name or an expanded object
-    assert!(json.get("sources").is_none(), "sources was replaced by inputs");
+    assert!(
+        json.get("sources").is_none(),
+        "sources was replaced by inputs"
+    );
     let input = json["inputs"].as_array().unwrap().first().unwrap();
     assert!(input.is_string() || input.get("component").is_some());
-    assert!(input.get("sourceId").is_none(), "sourceId was replaced by component");
+    assert!(
+        input.get("sourceId").is_none(),
+        "sourceId was replaced by component"
+    );
 }
 
 #[test]

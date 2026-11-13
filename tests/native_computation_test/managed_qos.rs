@@ -29,7 +29,7 @@ async fn server_qos_recovery_recipes_roundtrip_restore_and_refuse_implicit_disab
             json!({"kind":kind,"failureScope":drasi_core::interface::FailureMode::ProcessRestart,
                 "receiptCapacity":4})
         };
-        let recipe = json!({"kind":"qos","definition":definition,
+        let recipe = json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a3","definition":definition,
             "path":directory.path().join(kind),"recovery":recovery});
         let mut config = ComputationConfig {
             definition: DesiredInstance::default().topology,

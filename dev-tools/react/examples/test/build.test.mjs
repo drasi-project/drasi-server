@@ -87,16 +87,33 @@ test('example budgets count every entry and enforce exactly the inherited 2% gro
   assert.throws(() => assertExampleBudget({ total: { ...boundary, js: undefined }, entries: { 'hooks.html': boundary } }, baseline), /Missing example/);
 });
 
-test('the approved QueryTable entry is the only baseline addition and retains every original cap', async () => {
+test('approved example advances preserve both predecessor records and the exact current measurement', async () => {
   const bytes = await readFile(new URL('baseline-metrics-original.json', import.meta.url));
   assert.equal(createHash('sha256').update(bytes).digest('hex'),
     'affe56d1808dfb2d60d7e6e5a9c79d8ac9ad54381416c4ef2a8d7944bb017fdd');
   const original = JSON.parse(bytes);
-  const baseline = JSON.parse(await readFile(new URL('baseline-metrics.json', import.meta.url), 'utf8'));
-  const restored = structuredClone(baseline);
+  const predecessorBytes = await readFile(new URL('baseline-metrics-pre-graph-contracts.json', import.meta.url));
+  assert.equal(createHash('sha256').update(predecessorBytes).digest('hex'),
+    'a7b32950525f4c07d318918754e04bd98f723daad18e0146a2d1634d9bc06c40');
+  const predecessor = JSON.parse(predecessorBytes);
+  const restored = structuredClone(predecessor);
   delete restored.entries['query-table.html'];
   assert.deepEqual(restored, original);
-  assert.deepEqual(baseline.entries['query-table.html'], { js: 230748, jsGzip: 75560, css: 7462, cssGzip: 1981 });
+  assert.deepEqual(predecessor.entries['query-table.html'],
+    { js: 230748, jsGzip: 75560, css: 7462, cssGzip: 1981 });
+
+  const baseline = JSON.parse(await readFile(new URL('baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.deepEqual(baseline.advance, {
+    previousBaseline: 'baseline-metrics-pre-graph-contracts.json',
+    reason: 'Measure the already-shipped explicit instance/output selection and unified graph-result contracts. Preserve the predecessor unchanged and retain the same 2% future-growth policy.',
+  });
+  assert.deepEqual(baseline.total, { js: 240834, jsGzip: 79642, css: 7462, cssGzip: 1981 });
+  assert.deepEqual(baseline.entries, {
+    'index.html': { js: 234190, jsGzip: 76487, css: 7462, cssGzip: 1981 },
+    'hooks.html': { js: 183756, jsGzip: 58449, css: 0, cssGzip: 0 },
+    'showcase.html': { js: 234921, jsGzip: 76574, css: 7462, cssGzip: 1981 },
+    'query-table.html': { js: 234987, jsGzip: 76789, css: 7462, cssGzip: 1981 },
+  });
   for (const [name, expected] of Object.entries({ total: baseline.total, ...baseline.entries })) {
     for (const metric of ['js', 'jsGzip', 'css', 'cssGzip']) {
       const evidence = structuredClone(baseline);

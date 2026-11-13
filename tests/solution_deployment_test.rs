@@ -108,7 +108,9 @@ async fn test_deploy_solution_mock_source_log_reaction() {
     // Verify components exist in DrasiLib
     let sources = core.list_sources().await.unwrap();
     // Note: There might be pre-registered components too
-    assert!(sources.iter().any(|(id, _)| id == "solution-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-source"));
 
     // =========================================================================
     // DATA FLOW VALIDATION
@@ -393,7 +395,9 @@ async fn test_deploy_solution_to_non_default_instance() {
     let sources = secondary_core.list_sources().await.unwrap();
     // The deployed solution adds "solution-source"
     // Note: may have pre-registered "secondary-instance-source" too
-    assert!(sources.iter().any(|(id, _)| id == "solution-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-source"));
 }
 
 #[tokio::test]
@@ -443,7 +447,9 @@ async fn test_deploy_solution_instance_isolation() {
         .find(|(id, _, _)| id == "instance-a")
         .unwrap();
     let sources_a = instance_a_core.list_sources().await.unwrap();
-    assert!(sources_a.iter().any(|(id, _)| id == "solution-source"));
+    assert!(sources_a
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-source"));
 
     // Verify instance-b does NOT have the deployed components
     // (only has its pre-registered "instance-b-source")
@@ -453,9 +459,13 @@ async fn test_deploy_solution_instance_isolation() {
         .unwrap();
     let sources_b = instance_b_core.list_sources().await.unwrap();
     // test-source should NOT be in instance-b
-    assert!(!sources_b.iter().any(|(id, _)| id == "solution-source"));
+    assert!(!sources_b
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-source"));
     // But instance-b should have its own pre-registered source
-    assert!(sources_b.iter().any(|(id, _)| id == "instance-b-source"));
+    assert!(sources_b
+        .iter()
+        .any(|entry| entry.name.as_str() == "instance-b-source"));
 }
 
 // =============================================================================
@@ -809,11 +819,15 @@ async fn test_solution_log_reaction_receives_subscription() {
 
     // Verify the log reaction was created and started
     let reactions = core.list_reactions().await.unwrap();
-    assert!(reactions.iter().any(|(id, _)| id == "solution-logger"));
+    assert!(reactions
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-logger"));
 
     // Verify the reaction is subscribed to the query
     let queries = core.list_queries().await.unwrap();
-    assert!(queries.iter().any(|(id, _)| id == "solution-query"));
+    assert!(queries
+        .iter()
+        .any(|entry| entry.name.as_str() == "solution-query"));
 
     // =========================================================================
     // DATA FLOW VALIDATION - Verify data flows through the reaction pipeline
@@ -887,12 +901,18 @@ async fn test_deploy_solution_with_joins_creates_query() {
 
     // Verify both sources exist
     let sources = core.list_sources().await.unwrap();
-    assert!(sources.iter().any(|(id, _)| id == "sensor-source"));
-    assert!(sources.iter().any(|(id, _)| id == "location-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "sensor-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "location-source"));
 
     // Verify the join query exists
     let queries = core.list_queries().await.unwrap();
-    assert!(queries.iter().any(|(id, _)| id == "joined-query"));
+    assert!(queries
+        .iter()
+        .any(|entry| entry.name.as_str() == "joined-query"));
 }
 
 #[tokio::test]
@@ -995,13 +1015,21 @@ reactions:
 
     // Verify all 3 sources were created
     let sources = core.list_sources().await.unwrap();
-    assert!(sources.iter().any(|(id, _)| id == "users-source"));
-    assert!(sources.iter().any(|(id, _)| id == "orders-source"));
-    assert!(sources.iter().any(|(id, _)| id == "products-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "users-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "orders-source"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "products-source"));
 
     // Verify query with multiple joins exists
     let queries = core.list_queries().await.unwrap();
-    assert!(queries.iter().any(|(id, _)| id == "order-details-query"));
+    assert!(queries
+        .iter()
+        .any(|entry| entry.name.as_str() == "order-details-query"));
 }
 
 // =============================================================================
@@ -1096,15 +1124,25 @@ reactions:
 
     // Verify all components were created
     let sources = core.list_sources().await.unwrap();
-    assert!(sources.iter().any(|(id, _)| id == "sensor-feed"));
+    assert!(sources
+        .iter()
+        .any(|entry| entry.name.as_str() == "sensor-feed"));
 
     let queries = core.list_queries().await.unwrap();
-    assert!(queries.iter().any(|(id, _)| id == "all-readings"));
-    assert!(queries.iter().any(|(id, _)| id == "high-temp-alerts"));
+    assert!(queries
+        .iter()
+        .any(|entry| entry.name.as_str() == "all-readings"));
+    assert!(queries
+        .iter()
+        .any(|entry| entry.name.as_str() == "high-temp-alerts"));
 
     let reactions = core.list_reactions().await.unwrap();
-    assert!(reactions.iter().any(|(id, _)| id == "readings-logger"));
-    assert!(reactions.iter().any(|(id, _)| id == "alerts-logger"));
+    assert!(reactions
+        .iter()
+        .any(|entry| entry.name.as_str() == "readings-logger"));
+    assert!(reactions
+        .iter()
+        .any(|entry| entry.name.as_str() == "alerts-logger"));
 
     // Verify all components were started
     let deploy_response = &json["data"];
@@ -1214,19 +1252,25 @@ async fn test_e2e_multi_instance_deployment() {
     for (instance_id, core, _components) in &instances_data {
         let sources = core.list_sources().await.unwrap();
         assert!(
-            sources.iter().any(|(id, _)| id == "solution-source"),
+            sources
+                .iter()
+                .any(|entry| entry.name.as_str() == "solution-source"),
             "Instance '{instance_id}' missing solution-source"
         );
 
         let queries = core.list_queries().await.unwrap();
         assert!(
-            queries.iter().any(|(id, _)| id == "solution-query"),
+            queries
+                .iter()
+                .any(|entry| entry.name.as_str() == "solution-query"),
             "Instance '{instance_id}' missing solution-query"
         );
 
         let reactions = core.list_reactions().await.unwrap();
         assert!(
-            reactions.iter().any(|(id, _)| id == "solution-logger"),
+            reactions
+                .iter()
+                .any(|entry| entry.name.as_str() == "solution-logger"),
             "Instance '{instance_id}' missing solution-logger"
         );
     }

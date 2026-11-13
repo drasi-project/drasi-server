@@ -13,6 +13,7 @@ use std::{
 use anyhow::{Context, Result};
 use drasi_host_sdk::computation::{NativeFactory, NativePlugin};
 use drasi_lib::computation::v1::*;
+use drasi_lib::config::ComponentReference;
 use drasi_server::{api::mappings::DtoMapper, computation::ComputationConfig, DrasiServerConfig};
 use serde_json::{json, Value};
 
@@ -25,11 +26,8 @@ fn factory(plugin: &NativePlugin, name: &str) -> Result<Arc<NativeFactory>> {
         .with_context(|| format!("network library does not supply {name}"))
 }
 
-fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
-    Ok(Endpoint::new(
-        ComponentId::try_new(component)?,
-        PortId::try_new(port)?,
-    ))
+fn endpoint(component: &ComponentId, port: &str) -> Result<Endpoint> {
+    Ok(Endpoint::new(component.clone(), PortId::try_new(port)?))
 }
 
 fn literal(value: Value) -> ConfigurationValue {
@@ -181,6 +179,8 @@ fn main() -> Result<()> {
         "source durability and coordinated bootstrap require explicit native resource bindings"
     );
     let source_id = source["id"].as_str().context("source ID")?;
+    let source_component_id = ComponentId::generate();
+    let source_name = ComponentName::try_new(source_id)?;
     let source_factory = network_factory(&libraries, transport, "source")?;
     let sink_factory = network_factory(&libraries, transport, "sink")?;
     let mut source_config = json!({
@@ -207,11 +207,8 @@ fn main() -> Result<()> {
             ],
         );
     }
-    let source_spec = validated_specification(
-        &source_factory,
-        ComponentId::try_new(source_id)?,
-        source_config,
-    )?;
+    let source_spec =
+        validated_specification(&source_factory, source_component_id.clone(), source_config)?;
     let indexes = ResourceId::try_new("indexes")?;
     let query_factory = Arc::new(ContinuousQueryFactory::default());
     let mut builder = ComponentBatch::builder()
@@ -222,8 +219,11 @@ fn main() -> Result<()> {
             binding: "indexes".into(),
         })?
         .resource_configuration(indexes.clone(), json!({"kind":"memoryIndexes"}))?
-        .component(source_spec, source_factory)
-        .bind_stream(endpoint(source_id, "out")?, StreamId::try_new(source_id)?);
+        .component(source_name.clone(), source_spec, source_factory)
+        .bind_stream(
+            endpoint(&source_component_id, "out")?,
+            StreamId::try_new(source_id)?,
+        );
     let mut resolved = config.resolved_instances(&DtoMapper::new())?;
     let instance = resolved.pop().context("resolved instance")?;
     anyhow::ensure!(
@@ -235,10 +235,14 @@ fn main() -> Result<()> {
             !query.enable_bootstrap
                 && query.middleware.is_empty()
                 && query.inputs.len() == 1
-                && query.inputs[0].component == source_id,
+                && query.inputs[0]
+                    .component
+                    .as_name()
+                    .is_some_and(|name| name == &source_name),
             "comparison expects one direct source and no query bootstrap/middleware"
         );
-        let stream = StreamId::try_new(format!("{}/out", query.id))?;
+        let query_id = query.id.clone().unwrap_or_else(ComponentId::generate);
+        let stream = StreamId::try_new(format!("{}/out", query.name))?;
         let language = match query.query_language {
             drasi_lib::QueryLanguage::Cypher => ComputationQueryLanguage::Cypher,
             drasi_lib::QueryLanguage::GQL => ComputationQueryLanguage::Gql,
@@ -247,12 +251,21 @@ fn main() -> Result<()> {
             graph_id: drasi_lib::management::DesiredInstance::default()
                 .topology
                 .graph_id,
-            id: ComponentId::try_new(query.id.as_str())?,
+            id: query_id.clone(),
             query: query.query.clone(),
             language,
             output_stream: stream.clone(),
             outbox_capacity: std::num::NonZeroUsize::new(query.outbox_capacity)
                 .context("query outbox capacity must be nonzero")?,
+        };
+        let mut resolved_input = query.inputs[0].clone();
+        resolved_input.component = ComponentReference::by_id(source_component_id.clone());
+        let execution = QueryExecutionSettings {
+            joins: query.joins.clone().unwrap_or_default(),
+            middleware: query.middleware.clone(),
+            inputs: vec![resolved_input.to_execution_input()?],
+            result: query.result.clone(),
+            source_transactions: None,
         };
         let specification = ComponentSpecification {
             descriptor: definition.descriptor(),
@@ -276,25 +289,26 @@ fn main() -> Result<()> {
                 ),
                 (
                     "execution".into(),
-                    literal(serde_json::to_value(
-                        QueryExecutionSettings::from_legacy_config(query),
-                    )?),
+                    literal(serde_json::to_value(execution)?),
                 ),
             ]),
             dependencies: BTreeMap::from([("indexes".into(), vec![indexes.clone()])]),
         };
         builder = builder
-            .component(specification, query_factory.clone())
-            .bind_stream(endpoint(&query.id, "out")?, stream)
+            .component(query.name.clone(), specification, query_factory.clone())
+            .bind_stream(endpoint(&query_id, "out")?, stream)
             .connect(
-                EdgeDefinition::new(endpoint(source_id, "out")?, endpoint(&query.id, "in")?),
+                EdgeDefinition::new(
+                    endpoint(&source_component_id, "out")?,
+                    endpoint(&query_id, "in")?,
+                ),
                 Box::new(BoundedPipeConfig { capacity }),
             );
         let matches: Vec<_> = value["instances"][0]["reactions"]
             .as_array()
             .context("reaction array")?
             .iter()
-            .filter(|reaction| reaction["queries"] == json!([query.id]))
+            .filter(|reaction| reaction["queries"] == json!([query.name]))
             .collect();
         anyhow::ensure!(
             matches.len() == 1,
@@ -306,22 +320,27 @@ fn main() -> Result<()> {
             "mixed transport comparison is not supported"
         );
         let reaction_id = reaction["id"].as_str().context("reaction ID")?;
+        let reaction_component_id = ComponentId::generate();
         let native_config = if transport == "http" {
-            http_sink_config(reaction, &query.id)?
+            http_sink_config(reaction, query.name.as_str())?
         } else {
-            grpc_sink_config(reaction, &query.id)?
+            grpc_sink_config(reaction, query.name.as_str())?
         };
         builder = builder
             .component(
+                ComponentName::try_new(reaction_id)?,
                 validated_specification(
                     &sink_factory,
-                    ComponentId::try_new(reaction_id)?,
+                    reaction_component_id.clone(),
                     native_config,
                 )?,
                 sink_factory.clone(),
             )
             .connect(
-                EdgeDefinition::new(endpoint(&query.id, "out")?, endpoint(reaction_id, "in")?),
+                EdgeDefinition::new(
+                    endpoint(&query_id, "out")?,
+                    endpoint(&reaction_component_id, "in")?,
+                ),
                 Box::new(BoundedPipeConfig { capacity }),
             );
     }

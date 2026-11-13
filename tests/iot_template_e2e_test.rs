@@ -285,7 +285,11 @@ reactions:
 
     // With threshold 75, no results should be produced
     // MockSource generates temperatures in range 20-30
-    let results = core.get_query_results("high-temp-alert").await;
+    let results = core
+        .get_query_results_by_name(
+            &drasi_lib::computation::v1::ComponentName::try_new("high-temp-alert").unwrap(),
+        )
+        .await;
 
     match results {
         Ok(results) => {

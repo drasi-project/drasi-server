@@ -16,6 +16,16 @@ fn resource(name: &str) -> ResourceId {
     ResourceId::try_new(name).expect("resource")
 }
 
+fn component(name: &str) -> ComponentId {
+    let value = match name {
+        "source" => 1,
+        "sink" => 2,
+        "query" => 3,
+        other => panic!("missing explicit component ID for {other}"),
+    };
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
+}
+
 fn config(path: &Path) -> Result<ComputationConfig> {
     let mut definition = DesiredInstance::default().topology;
     for (name, role) in [
@@ -38,7 +48,7 @@ fn config(path: &Path) -> Result<ComputationConfig> {
     };
     definition.resource_configurations.insert(
         resource("z-storage"),
-        json!({"kind":"sharedStorage","component":"query","path":path}),
+        json!({"kind":"sharedStorage","component":component("query"),"path":path}),
     );
     definition.resource_configurations.insert(resource("a-journal"),
         json!({"kind":"sharedQos","definition":channel,
@@ -319,7 +329,7 @@ fn pipeline(
 ) -> Result<(ComputationConfig, FactoryRegistry)> {
     let mut config = config(path)?;
     let mut factories = FactoryRegistry::standard();
-    for (name, role, schema, direction, port) in [
+    for (index, (name, role, schema, direction, port)) in [
         (
             "source",
             ComponentRole::Source,
@@ -334,7 +344,10 @@ fn pipeline(
             PortDirection::Input,
             "in",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let implementation = ImplementationIdentity::try_new(format!("test/{name}"), "1")?;
         factories.register(Arc::new(EndpointFactory {
             descriptor: FactoryDescriptor {
@@ -349,7 +362,7 @@ fn pipeline(
             block,
         }))?;
         let descriptor = ComponentDescriptor::try_new(
-            ComponentId::try_new(name)?,
+            ComponentId::from_uuid(uuid::Uuid::from_u128(index as u128 + 1)),
             vec![PortDescriptor::new(
                 PortId::try_new(port)?,
                 direction,
@@ -359,6 +372,7 @@ fn pipeline(
         )?;
         let completion = (role == ComponentRole::Sink).then_some(SinkCompletion::Handled);
         config.definition.components.push(DesiredComponent {
+            name: ComponentName::try_new(name)?,
             descriptor: descriptor.clone(),
             role,
             completion,
@@ -382,7 +396,7 @@ fn pipeline(
     }
     let query = ContinuousQueryDefinition {
         graph_id: config.definition.graph_id.clone(),
-        id: ComponentId::try_new("query")?,
+        id: ComponentId::from_uuid(uuid::Uuid::from_u128(3)),
         query: "MATCH (n:Item) RETURN 7 AS value".into(),
         language: ComputationQueryLanguage::Cypher,
         output_stream: StreamId::try_new("query/out")?,
@@ -390,6 +404,7 @@ fn pipeline(
     };
     let descriptor = query.descriptor();
     config.definition.components.push(DesiredComponent {
+        name: ComponentName::try_new("query")?,
         descriptor: descriptor.clone(),
         role: ComponentRole::Transformer,
         completion: None,
@@ -439,8 +454,8 @@ fn pipeline(
     ] {
         config.definition.relationships.push(DesiredRelationship {
             definition: EdgeDefinition {
-                from: Endpoint::new(ComponentId::try_new(from)?, PortId::try_new("out")?),
-                to: Endpoint::new(ComponentId::try_new(to)?, PortId::try_new("in")?),
+                from: Endpoint::new(component(from), PortId::try_new("out")?),
+                to: Endpoint::new(component(to), PortId::try_new("in")?),
             },
             policy: RelationshipPolicy::default(),
             pipe,
@@ -472,7 +487,7 @@ async fn imperative_server_shared_configuration_executes_actual_query_and_pipe()
         "storage must be acquired by the graph"
     );
     assert_eq!(batch.bindings.resource_constructors.len(), 2);
-    core.add_components(batch).await?.ensure_committed()?;
+    core.add_components(batch).await?;
     core.start().await?;
     let result = tokio::time::timeout(DEADLINE, receive.recv())
         .await?
@@ -488,7 +503,7 @@ async fn imperative_server_shared_configuration_executes_actual_query_and_pipe()
     let identity = QueryRecoveryIdentity::from_envelope(&result)?;
     assert_eq!(identity.construction_scope(), "shared-pipeline");
     assert_eq!(identity.graph_id(), config.definition.graph_id);
-    assert_eq!(identity.query_id(), "query");
+    assert_eq!(identity.query_id(), &component("query"));
     assert!(identity.incarnation().is_none());
     core.shutdown().await?;
     Ok(())
@@ -613,6 +628,7 @@ fn separate_storage(config: &mut ComputationConfig, path: &Path) -> Result<()> {
         .get_mut(&resource("a-journal"))
         .context("journal recipe")?;
     journal["kind"] = json!("qos");
+    journal["owner"] = json!("00000000-0000-0000-0000-0000000000a1");
     journal["path"] = json!(path.join("journal"));
     config
         .definition
@@ -644,18 +660,16 @@ async fn force_unhandled_pipeline(core: &DrasiLib) -> Result<()> {
         control.force_cancel_components(
             control.desired_snapshot().revision,
             GraphSelection::Exact(vec![
-                ComponentId::try_new("source")?,
-                ComponentId::try_new("query")?,
-                ComponentId::try_new("sink")?,
+                component("source"),
+                component("query"),
+                component("sink"),
             ]),
         ),
     )
     .await
     .with_context(|| format!("pending pipeline force deadline: {:?}", control.observed()))??;
     assert!(
-        report
-            .interrupted
-            .contains_key(&ComponentId::try_new("sink")?),
+        report.interrupted.contains_key(&component("sink")),
         "the deliberately unhandled sink was not reported as interrupted"
     );
     assert_eq!(report.cleanup.summary, OperationSummary::Completed);
@@ -752,10 +766,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
     control
         .quiesce_components(
             control.desired_snapshot().revision,
-            GraphSelection::Exact(vec![
-                ComponentId::try_new("source")?,
-                ComponentId::try_new("query")?,
-            ]),
+            GraphSelection::Exact(vec![component("source"), component("query")]),
         )
         .await?;
     force_unhandled_pipeline(&core).await?;
@@ -789,10 +800,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
         .values()
         .all(|component| component.lifecycle == ComponentLifecycle::Stopped));
     let control = core.computation_control()?;
-    let producers = GraphSelection::Exact(vec![
-        ComponentId::try_new("source")?,
-        ComponentId::try_new("query")?,
-    ]);
+    let producers = GraphSelection::Exact(vec![component("source"), component("query")]);
     let revision = control.desired_snapshot().revision;
     assert_eq!(
         tokio::time::timeout(
@@ -834,7 +842,7 @@ async fn loss_authorized_query_retirement(shared: bool) -> Result<()> {
         if missing_resource {
             incomplete.resources.remove(&resource("a-journal"));
         } else {
-            incomplete.components.remove(&ComponentId::try_new("sink")?);
+            incomplete.components.remove(&component("sink"));
         }
         removed.retirement = Some(incomplete);
         assert!(core
@@ -1710,7 +1718,7 @@ async fn assert_unsafe_changes_rejected(core: &Arc<DrasiLib>, directory: &Path) 
         downgraded.topology.resource_configurations[&resource("a-journal")]["definition"].clone();
     downgraded.topology.resource_configurations.insert(
         resource("a-journal"),
-        json!({"kind":"qos","definition":definition,"path":directory.join("separate")}),
+        json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a2","definition":definition,"path":directory.join("separate")}),
     );
     downgraded
         .topology

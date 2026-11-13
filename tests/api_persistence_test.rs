@@ -17,7 +17,8 @@
 
 mod test_support;
 
-use drasi_lib::config::QueryLanguage;
+use drasi_lib::config::{ComponentReference, QueryLanguage};
+use drasi_lib::ComponentName;
 use drasi_server::models::{ConfigValue, QueryConfigDto, QueryInputConfigDto};
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use std::fs;
@@ -25,6 +26,14 @@ use tempfile::TempDir;
 
 fn default_mock_config() -> serde_json::Value {
     serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000})
+}
+
+fn component_name(value: &str) -> ComponentName {
+    ComponentName::try_new(value).unwrap()
+}
+
+fn component_reference(value: &str) -> ComponentReference {
+    ComponentReference::by_name(component_name(value))
 }
 
 #[tokio::test]
@@ -110,12 +119,15 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Create query using QueryConfigDto
     let query = QueryConfigDto {
-        id: "test-query-1".to_string(),
+        id: None,
+        name: component_name("test-query-1"),
         auto_start: true,
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("test-source-1".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(component_reference(
+            "test-source-1",
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -131,7 +143,7 @@ async fn test_persistence_saves_complete_configuration() {
     let reaction = ReactionConfig {
         kind: "log".to_string(),
         id: "test-reaction-1".to_string(),
-        queries: vec!["test-query-1".to_string()],
+        queries: vec![component_reference("test-query-1")],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({"routes": {}}),
@@ -183,7 +195,11 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Verify queries
     assert_eq!(loaded_config.instances[0].queries.len(), 1);
-    assert_eq!(loaded_config.instances[0].queries[0].id, "test-query-1");
+    assert!(loaded_config.instances[0].queries[0].id.is_none());
+    assert_eq!(
+        loaded_config.instances[0].queries[0].name.as_str(),
+        "test-query-1"
+    );
     assert_eq!(
         loaded_config.instances[0].queries[0].query,
         "MATCH (n) RETURN n".to_string()
@@ -191,7 +207,7 @@ async fn test_persistence_saves_complete_configuration() {
     assert_eq!(loaded_config.instances[0].queries[0].inputs.len(), 1);
     assert_eq!(
         loaded_config.instances[0].queries[0].inputs[0],
-        QueryInputConfigDto::Component("test-source-1".to_string())
+        QueryInputConfigDto::Component(component_reference("test-source-1"))
     );
 
     // Verify reactions
@@ -203,7 +219,7 @@ async fn test_persistence_saves_complete_configuration() {
     assert_eq!(loaded_config.instances[0].reactions[0].queries().len(), 1);
     assert_eq!(
         loaded_config.instances[0].reactions[0].queries()[0],
-        "test-query-1"
+        component_reference("test-query-1")
     );
 }
 
@@ -349,12 +365,15 @@ fn test_multiple_queries_persist_correctly() {
 
     // Create two queries
     let query1 = QueryConfigDto {
-        id: "query-1".to_string(),
+        id: None,
+        name: component_name("query-1"),
         auto_start: true,
         query: "MATCH (n:Node) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(component_reference(
+            "source-1",
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -367,12 +386,15 @@ fn test_multiple_queries_persist_correctly() {
     };
 
     let query2 = QueryConfigDto {
-        id: "query-2".to_string(),
+        id: None,
+        name: component_name("query-2"),
         auto_start: false,
         query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(component_reference(
+            "source-1",
+        ))],
         enable_bootstrap: false,
         joins: None,
         priority_queue_capacity: None,
@@ -416,7 +438,7 @@ fn test_multiple_queries_persist_correctly() {
     let q1 = loaded_config.instances[0]
         .queries
         .iter()
-        .find(|q| q.id == "query-1")
+        .find(|q| q.name.as_str() == "query-1")
         .expect("query-1 not found");
     assert!(q1.auto_start);
     assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
@@ -425,7 +447,7 @@ fn test_multiple_queries_persist_correctly() {
     let q2 = loaded_config.instances[0]
         .queries
         .iter()
-        .find(|q| q.id == "query-2")
+        .find(|q| q.name.as_str() == "query-2")
         .expect("query-2 not found");
     assert!(!q2.auto_start);
     assert_eq!(
@@ -441,12 +463,15 @@ fn test_adding_query_preserves_existing_queries() {
 
     // Create initial config with one query
     let query1 = QueryConfigDto {
-        id: "existing-query".to_string(),
+        id: None,
+        name: component_name("existing-query"),
         auto_start: true,
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(component_reference(
+            "source-1",
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -481,12 +506,15 @@ fn test_adding_query_preserves_existing_queries() {
     let mut loaded_config = load_config_file(&config_path).expect("Failed to load config");
 
     let query2 = QueryConfigDto {
-        id: "new-query".to_string(),
+        id: None,
+        name: component_name("new-query"),
         auto_start: false,
         query: "MATCH (s:Sensor) RETURN s".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("source-1".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(component_reference(
+            "source-1",
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -516,7 +544,7 @@ fn test_adding_query_preserves_existing_queries() {
         final_config.instances[0]
             .queries
             .iter()
-            .any(|q| q.id == "existing-query"),
+            .any(|q| q.name.as_str() == "existing-query"),
         "Original query should still exist"
     );
 
@@ -525,7 +553,7 @@ fn test_adding_query_preserves_existing_queries() {
         final_config.instances[0]
             .queries
             .iter()
-            .any(|q| q.id == "new-query"),
+            .any(|q| q.name.as_str() == "new-query"),
         "New query should be added"
     );
 }
@@ -547,13 +575,13 @@ instances:
         id: test-source
         autoStart: true
     queries:
-      - id: first-query
+      - name: first-query
         autoStart: true
         query: "MATCH (n:Node) RETURN n"
         queryLanguage: Cypher
         inputs:
           - test-source
-      - id: second-query
+      - name: second-query
         autoStart: false
         query: "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s"
         queryLanguage: Cypher
@@ -575,7 +603,7 @@ instances:
     let q1 = config.instances[0]
         .queries
         .iter()
-        .find(|q| q.id == "first-query")
+        .find(|q| q.name.as_str() == "first-query")
         .expect("first-query not found");
     assert!(q1.auto_start);
     assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
@@ -584,7 +612,7 @@ instances:
     let q2 = config.instances[0]
         .queries
         .iter()
-        .find(|q| q.id == "second-query")
+        .find(|q| q.name.as_str() == "second-query")
         .expect("second-query not found");
     assert!(!q2.auto_start);
     assert_eq!(

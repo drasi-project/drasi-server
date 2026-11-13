@@ -56,15 +56,17 @@ mod serialization_tests {
 
     #[test]
     fn test_query_config_json_serialization() {
-        let config = Query::cypher("test-query")
+        let config = Query::cypher(drasi_lib::ComponentName::try_new("test-query").unwrap())
             .query("MATCH (n) RETURN n")
-            .from_input("source1")
-            .from_input("source2")
+            .from_input_by_name(drasi_lib::ComponentName::try_new("source1").unwrap())
+            .from_input_by_name(drasi_lib::ComponentName::try_new("source2").unwrap())
             .auto_start(false)
-            .build();
+            .build()
+            .unwrap();
 
         let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-query");
+        assert!(json["id"].is_null());
+        assert_eq!(json["name"], "test-query");
         assert_eq!(json["query"], "MATCH (n) RETURN n");
         assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
 

@@ -501,6 +501,7 @@ async fn collect_plugin_dependents(
                         "graphId": scope.root_graph,
                         "owners": scope.owners,
                         "componentId": component.desired.descriptor.id(),
+                        "componentName": component.desired.name,
                         "componentType": "computation",
                         "kind": kind,
                         "running": component.observed.as_ref().is_some_and(|state| state.lifecycle == ComponentLifecycle::Running),
@@ -765,6 +766,7 @@ mod tests {
     #[tokio::test]
     async fn dependents_use_graph_metadata_and_preserve_instance_scope() {
         let registry = InstanceRegistry::new();
+        let mut expected = Vec::new();
         for instance_id in ["first", "second"] {
             let core = Arc::new(
                 crate::query_test_support::builder()
@@ -782,7 +784,7 @@ mod tests {
                 metadata.remove("pluginVersion");
             }
             let (source, _) = ApplicationSource::new(
-                "shared-source",
+                drasi_lib::ComponentId::generate(),
                 ApplicationSourceConfig {
                     properties: HashMap::from([(
                         "password".into(),
@@ -792,18 +794,26 @@ mod tests {
                 },
             )
             .unwrap();
-            core.add_source_with_metadata(source, metadata.clone())
-                .await
-                .unwrap();
-            let (reaction, _) = ApplicationReaction::builder("shared-reaction")
-                .with_queries(Vec::new())
+            core.add_source_with_metadata(
+                drasi_lib::ComponentName::try_new("shared-source").unwrap(),
+                source,
+                metadata.clone(),
+            )
+            .await
+            .unwrap();
+            let (reaction, _) = ApplicationReaction::builder(drasi_lib::ComponentId::generate())
+                .with_query_inputs(Vec::new())
                 .with_auto_start(false)
                 .build();
-            core.add_reaction_with_metadata(reaction, metadata)
-                .await
-                .unwrap();
+            core.add_reaction_with_metadata(
+                drasi_lib::ComponentName::try_new("shared-reaction").unwrap(),
+                reaction,
+                metadata,
+            )
+            .await
+            .unwrap();
             let (unrelated, _) = ApplicationSource::new(
-                "unrelated",
+                drasi_lib::ComponentId::generate(),
                 ApplicationSourceConfig {
                     properties: HashMap::new(),
                     durability: None,
@@ -811,6 +821,7 @@ mod tests {
             )
             .unwrap();
             core.add_source_with_metadata(
+                drasi_lib::ComponentName::try_new("unrelated").unwrap(),
                 unrelated,
                 HashMap::from([
                     ("pluginId".into(), "other-plugin".into()),
@@ -822,41 +833,51 @@ mod tests {
             core.start().await.unwrap();
             tokio::time::timeout(
                 Duration::from_secs(10),
-                core.computation_component("shared-source")
-                    .unwrap()
-                    .wait_started(),
+                core.component_by_name(
+                    &drasi_lib::computation::v1::ComponentName::try_new("shared-source").unwrap(),
+                )
+                .unwrap()
+                .wait_started(),
             )
             .await
             .unwrap()
             .unwrap();
             tokio::time::timeout(
                 Duration::from_secs(10),
-                core.computation_component("shared-reaction")
-                    .unwrap()
-                    .wait_created(),
+                core.component_by_name(
+                    &drasi_lib::computation::v1::ComponentName::try_new("shared-reaction").unwrap(),
+                )
+                .unwrap()
+                .wait_created(),
             )
             .await
             .unwrap()
             .unwrap();
+            for (kind, name, running) in [
+                ("source", "shared-source", true),
+                ("reaction", "shared-reaction", false),
+            ] {
+                let component_id = core
+                    .component_by_name(&drasi_lib::ComponentName::try_new(name).unwrap())
+                    .unwrap()
+                    .id()
+                    .clone();
+                expected.push(json!({
+                    "instanceId": instance_id,
+                    "componentId": {"Component": component_id},
+                    "componentType": kind,
+                    "kind": "application",
+                    "running": running,
+                }));
+            }
             registry.add(instance_id.into(), core).await.unwrap();
         }
         let dependents = collect_plugin_dependents(&registry, "fixture-plugin")
             .await
             .unwrap();
         assert_eq!(dependents.len(), 4);
-        for instance_id in ["first", "second"] {
-            for (kind, id, running) in [
-                ("source", "shared-source", true),
-                ("reaction", "shared-reaction", false),
-            ] {
-                assert!(
-                    dependents.contains(&json!({
-                        "instanceId":instance_id, "componentId":id, "componentType":kind,
-                        "kind":"application", "running":running
-                    })),
-                    "{dependents:?}"
-                );
-            }
+        for dependent in expected {
+            assert!(dependents.contains(&dependent), "{dependents:?}");
         }
         assert!(!serde_json::to_string(&dependents)
             .unwrap()

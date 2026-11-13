@@ -21,7 +21,7 @@ test('shared query notices preserve each live page status, stale label and acces
 test('explicit references contain no definitions or instance-discovery defaults', () => {
   const options = connectionOptions('http://127.0.0.1:5373');
   assert.equal(options.instanceId, 'cold-chain');
-  assert.deepEqual(options.queryIds, ['north-room', 'south-room']);
+  assert.deepEqual(options.outputIds, ['north-room', 'south-room']);
   assert.deepEqual(options.reaction, { id: 'cold-chain-events', endpoint: 'http://127.0.0.1:5373/events' });
 });
 
@@ -32,7 +32,7 @@ test('raw identity remains separate from validated render projection and handles
   assert.equal(probeKey({ probeId: 'probe-1001' }), 'probe-1001');
   assert.throws(() => readingOptions.transform({ probeId: 'probe-1001' }));
   assert.deepEqual(accumulateResult([raw], {
-    kind: 'delta', queryId: 'north-room', receivedAt: 1,
+    kind: 'delta', outputId: 'north-room', receivedAt: 1,
     changes: [{ kind: 'delete', before: { probeId: 'probe-1001' } }],
   }, probeKey), []);
 });

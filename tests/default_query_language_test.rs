@@ -19,7 +19,8 @@
 //! 2. The default can be overridden by explicitly setting queryLanguage
 //! 3. Both GQL and Cypher are supported
 
-use drasi_lib::config::QueryLanguage;
+use drasi_lib::config::{ComponentReference, QueryLanguage};
+use drasi_lib::{ComponentId, ComponentName};
 use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use drasi_server::api::models::{QueryConfigDto, QueryInputConfigDto};
 
@@ -54,12 +55,15 @@ inputs:
 fn test_explicit_cypher_language() {
     // Create a query config with explicit Cypher language
     let dto = QueryConfigDto {
-        id: "test-query".to_string(),
+        id: None,
+        name: ComponentName::try_new("test-query").unwrap(),
         auto_start: false,
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("test-source".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(ComponentReference::by_name(
+            ComponentName::try_new("test-source").unwrap(),
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,
@@ -90,12 +94,15 @@ fn test_explicit_cypher_language() {
 fn test_explicit_gql_language() {
     // Create a query config with explicit GQL language
     let dto = QueryConfigDto {
-        id: "test-query".to_string(),
+        id: Some(ComponentId::try_new("00112233-4455-4677-8899-aabbccddeeff").unwrap()),
+        name: ComponentName::try_new("test-query").unwrap(),
         auto_start: false,
         query: "MATCH (n) RETURN n".to_string(),
         query_language: QueryLanguage::GQL,
         middleware: vec![],
-        inputs: vec![QueryInputConfigDto::Component("test-source".to_string())],
+        inputs: vec![QueryInputConfigDto::Component(ComponentReference::by_name(
+            ComponentName::try_new("test-source").unwrap(),
+        ))],
         enable_bootstrap: true,
         joins: None,
         priority_queue_capacity: None,

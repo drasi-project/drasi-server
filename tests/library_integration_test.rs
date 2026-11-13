@@ -19,7 +19,7 @@
 
 mod test_support;
 
-use drasi_lib::channels::ComponentStatus;
+use drasi_lib::{channels::ComponentStatus, ComponentName};
 use drasi_server::DrasiServerBuilder;
 use std::sync::Arc;
 use test_support::mock_components::{create_mock_reaction, create_mock_source};
@@ -33,7 +33,7 @@ async fn test_basic_server_lifecycle() {
     // Create a basic server using the new builder API
     let server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(test_source)
+        .with_source(ComponentName::try_new("test-source").unwrap(), test_source)
         .build_core()
         .await
         .expect("Failed to build server");
@@ -43,9 +43,9 @@ async fn test_basic_server_lifecycle() {
     server.start().await.expect("Failed to start server");
 
     // Wait for source to reach Running before stopping
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &server.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source").unwrap(),
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -68,13 +68,17 @@ async fn test_server_with_components() {
     // Create server with components using the new builder API
     let server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(test_source)
-        .with_reaction(test_reaction)
+        .with_source(ComponentName::try_new("test_source").unwrap(), test_source)
+        .with_reaction(
+            ComponentName::try_new("test_reaction").unwrap(),
+            test_reaction,
+        )
         .with_query_config(
             "test_query",
             "MATCH (n) RETURN n",
             vec!["test_source".to_string()],
         )
+        .expect("valid query configuration")
         .build_core()
         .await
         .expect("Failed to build server");
@@ -84,9 +88,9 @@ async fn test_server_with_components() {
     server.start().await.expect("Failed to start server");
 
     // Wait for source to reach Running
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &server.component_graph(),
-        "test_source",
+        &ComponentName::try_new("test_source").unwrap(),
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -107,7 +111,10 @@ async fn test_source_lifecycle_operations() {
     // Start with server with source
     let server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(test_source)
+        .with_source(
+            ComponentName::try_new("lifecycle_source").unwrap(),
+            test_source,
+        )
         .build_core()
         .await
         .expect("Failed to build server");
@@ -117,9 +124,9 @@ async fn test_source_lifecycle_operations() {
     server.start().await.expect("Failed to start server");
 
     // Wait for source to reach Running before lifecycle operations
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &server.component_graph(),
-        "lifecycle_source",
+        &ComponentName::try_new("lifecycle_source").unwrap(),
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -131,14 +138,14 @@ async fn test_source_lifecycle_operations() {
 
     // Stop the source
     server
-        .stop_source("lifecycle_source")
+        .stop_source_by_name(&ComponentName::try_new("lifecycle_source").unwrap())
         .await
         .expect("Failed to stop source");
 
     // Wait for source to reach Stopped before removal
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &server.component_graph(),
-        "lifecycle_source",
+        &ComponentName::try_new("lifecycle_source").unwrap(),
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -147,7 +154,7 @@ async fn test_source_lifecycle_operations() {
 
     // Remove the source
     server
-        .remove_source("lifecycle_source", true)
+        .remove_source_by_name(&ComponentName::try_new("lifecycle_source").unwrap(), true)
         .await
         .expect("Failed to remove source");
 
@@ -162,7 +169,7 @@ async fn test_server_with_api() {
     // Create server with API
     let _server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(test_source)
+        .with_source(ComponentName::try_new("api_source").unwrap(), test_source)
         .with_port(0) // Use port 0 for random available port
         .build()
         .await
@@ -185,7 +192,10 @@ async fn test_config_persistence() {
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(persist_source)
+        .with_source(
+            ComponentName::try_new("persist_source").unwrap(),
+            persist_source,
+        )
         .with_config_file(config_file)
         .build()
         .await
@@ -210,11 +220,26 @@ async fn test_concurrent_start_stop_operations() {
     // Start with server with all sources pre-registered
     let server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(source1)
-        .with_source(source2)
-        .with_source(source3)
-        .with_source(source4)
-        .with_source(source5)
+        .with_source(
+            ComponentName::try_new("concurrent_source_1").unwrap(),
+            source1,
+        )
+        .with_source(
+            ComponentName::try_new("concurrent_source_2").unwrap(),
+            source2,
+        )
+        .with_source(
+            ComponentName::try_new("concurrent_source_3").unwrap(),
+            source3,
+        )
+        .with_source(
+            ComponentName::try_new("concurrent_source_4").unwrap(),
+            source4,
+        )
+        .with_source(
+            ComponentName::try_new("concurrent_source_5").unwrap(),
+            source5,
+        )
         .build_core()
         .await
         .expect("Failed to build server");
@@ -227,7 +252,9 @@ async fn test_concurrent_start_stop_operations() {
         timeout(
             Duration::from_secs(5),
             server
-                .computation_component(&format!("concurrent_source_{i}"))
+                .component_by_name(
+                    &ComponentName::try_new(format!("concurrent_source_{i}")).unwrap(),
+                )
                 .unwrap()
                 .wait_started(),
         )
@@ -243,7 +270,9 @@ async fn test_concurrent_start_stop_operations() {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
             let source_id = format!("concurrent_source_{i}");
-            server_clone.stop_source(&source_id).await
+            server_clone
+                .stop_source_by_name(&ComponentName::try_new(source_id).unwrap())
+                .await
         });
         stop_tasks.push(task);
     }
@@ -261,7 +290,9 @@ async fn test_concurrent_start_stop_operations() {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
             let source_id = format!("concurrent_source_{i}");
-            server_clone.start_source(&source_id).await
+            server_clone
+                .start_source_by_name(&ComponentName::try_new(source_id).unwrap())
+                .await
         });
         start_tasks.push(task);
     }
@@ -279,9 +310,9 @@ async fn test_concurrent_start_stop_operations() {
     // Wait for all sources to reach Running before stopping
     for i in 1..=5 {
         let source_id = format!("concurrent_source_{i}");
-        drasi_lib::wait_for_status(
+        drasi_lib::wait_for_status_by_name(
             &server.component_graph(),
-            &source_id,
+            &ComponentName::try_new(source_id.as_str()).unwrap(),
             &[ComponentStatus::Running],
             std::time::Duration::from_secs(5),
         )
@@ -300,7 +331,10 @@ async fn test_graceful_shutdown_timeout() {
     // Create server with a source
     let server = DrasiServerBuilder::new()
         .with_query_factory(crate::query_plugin::factory())
-        .with_source(timeout_source)
+        .with_source(
+            ComponentName::try_new("timeout_source").unwrap(),
+            timeout_source,
+        )
         .build_core()
         .await
         .expect("Failed to build server");
@@ -310,9 +344,9 @@ async fn test_graceful_shutdown_timeout() {
     server.start().await.expect("Failed to start server");
 
     // Wait for source to reach Running before stopping
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &server.component_graph(),
-        "timeout_source",
+        &ComponentName::try_new("timeout_source").unwrap(),
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )

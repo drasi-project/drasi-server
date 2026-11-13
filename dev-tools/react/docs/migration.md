@@ -191,7 +191,7 @@ For Part B, migrate these breaking result contracts:
    identity. Action/render callbacks still receive the typed output.
 2. Supply required `QueryTable.queryOptions`; `rowKey` remains only its
    transformed render/animation key. Do not move accumulation identity there.
-3. Narrow normalized `QueryResult.kind`. Replace `result.data`,
+3. Narrow normalized `OutputResult.kind`. Replace `result.data`,
    `result.snapshot` and `result.timestamp` with snapshot `rows` or delta
    `changes` and display-only `receivedAt`/optional `sourceTimestamp`. Preserve
    `before` and `after` on updates, especially key changes.

@@ -23,8 +23,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use super::{
-    apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
-    ComponentViewQuery, ObservabilityQuery,
+    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
+    ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
@@ -44,13 +44,13 @@ pub async fn list_queries(
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
     let queries = core.list_queries().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(queries.len());
-    for (id, status) in queries {
-        let links = component_links(&api_prefix.0, &instance_id, "queries", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_query_info(&id).await {
+    for query in queries {
+        let links = component_links(&api_prefix.0, &instance_id, "queries", query.name.as_str());
+        let error_message = if matches!(query.status, ComponentStatus::Error) {
+            match core.get_query_info_by_id(&query.id).await {
                 Ok(info) => info.error_message,
                 Err(e) => {
-                    log::warn!("Failed to fetch query info for '{id}': {e}");
+                    log::warn!("Failed to fetch query info for '{}': {e}", query.name);
                     None
                 }
             }
@@ -58,8 +58,9 @@ pub async fn list_queries(
             None
         };
         items.push(ComponentListItem {
-            id,
-            status,
+            id: query.id.to_string(),
+            name: query.name.to_string(),
+            status: query.status,
             error_message,
             links,
             config: None,
@@ -99,7 +100,7 @@ pub async fn create_query(
             };
             ErrorResponse::new(code, format!("{error:#}"))
         })?;
-    let query_id = config_dto.id.clone();
+    let query_id = config_dto.name.to_string();
 
     // Convert QueryConfigDto to drasi-lib's QueryConfig
     let mapper = DtoMapper::default();
@@ -185,7 +186,8 @@ pub async fn get_query(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
-    match core.get_query_config(&id).await {
+    let name = parse_component_name(&id, "query")?;
+    match core.get_query_config_by_name(&name).await {
         Ok(query_config) => {
             let config = if view.include_config() {
                 let dto = QueryConfigDto::try_from(query_config.clone()).map_err(|e| {
@@ -206,16 +208,18 @@ pub async fn get_query(
                 None
             };
             let status = core
-                .get_query_status(&query_config.id)
+                .get_query_status_by_id(&query_config.id)
                 .await
                 .unwrap_or(ComponentStatus::Error);
-            let error_message = if let Ok(info) = core.get_query_info(&query_config.id).await {
+            let error_message = if let Ok(info) = core.get_query_info_by_id(&query_config.id).await
+            {
                 info.error_message
             } else {
                 None
             };
             Ok(Json(ApiResponse::success(ComponentListItem {
-                id: query_config.id.clone(),
+                id: query_config.id.to_string(),
+                name: query_config.name.to_string(),
                 status,
                 error_message,
                 links: component_links(&api_prefix.0, &instance_id, "queries", &id),
@@ -232,11 +236,12 @@ pub async fn get_query_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    core.get_query_status(&id)
+    let name = parse_component_name(&id, "query")?;
+    core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let events = core
-        .get_query_events(&id)
+        .get_query_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let collected = events
@@ -252,11 +257,12 @@ pub async fn stream_query_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_query_status(&id)
+    let name = parse_component_name(&id, "query")?;
+    core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_query_events(&id)
+        .subscribe_query_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -281,11 +287,12 @@ pub async fn get_query_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_query_status(&id)
+    let name = parse_component_name(&id, "query")?;
+    core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
-        .subscribe_query_logs(&id)
+        .subscribe_query_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let data = apply_limit(
@@ -300,11 +307,12 @@ pub async fn stream_query_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_query_status(&id)
+    let name = parse_component_name(&id, "query")?;
+    core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_query_logs(&id)
+        .subscribe_query_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -339,7 +347,8 @@ pub async fn delete_query(
     }
 
     super::require_imperative_configuration(&core)?;
-    match core.remove_query(&id).await {
+    let name = parse_component_name(&id, "query")?;
+    match core.remove_query_by_name(&name).await {
         Ok(_) => {
             persist_after_operation(&config_persistence, "deleting query").await?;
 
@@ -362,7 +371,8 @@ pub async fn start_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.start_query(&id).await {
+    let name = parse_component_name(&id, "query")?;
+    match core.start_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query started successfully".to_string(),
         }))),
@@ -375,7 +385,8 @@ pub async fn stop_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.stop_query(&id).await {
+    let name = parse_component_name(&id, "query")?;
+    match core.stop_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query stopped successfully".to_string(),
         }))),
@@ -388,7 +399,8 @@ pub async fn get_query_results(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, ErrorResponse> {
-    match core.get_query_results(&id).await {
+    let name = parse_component_name(&id, "query")?;
+    match core.get_query_results_by_name(&name).await {
         Ok(results) => Ok(Json(ApiResponse::success(results))),
         Err(e) => Err(ErrorResponse::from(e)),
     }
@@ -399,12 +411,13 @@ pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_query_config(&id)
+    let name = parse_component_name(&id, "query")?;
+    core.get_query_config_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
 
     let subscription = core
-        .subscribe_query_results(&id)
+        .subscribe_query_results_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let snapshot = Event::default()

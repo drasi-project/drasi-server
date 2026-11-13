@@ -6,6 +6,8 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
+const emulatedX64 = process.env.DRASI_EMULATED_X64 === '1';
+
 export default defineConfig({
   resolve: {
     mainFields: ['module', 'main'],
@@ -19,6 +21,9 @@ export default defineConfig({
     clearMocks: true,
     restoreMocks: true,
     unstubGlobals: true,
+    fileParallelism: !emulatedX64,
+    maxWorkers: emulatedX64 ? 1 : undefined,
+    minWorkers: emulatedX64 ? 1 : undefined,
     server: {
       deps: {
         // Linked local packages must use Vite's React deduplication, not Node's

@@ -4,20 +4,18 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { test, expect, expectSymbols, openTrading, panel, row, tradingDialog, prepareTradingPage } from './fixtures';
-import { QUERY_IDS } from '../fixtures/synthetic/trading';
 
-test('partial setup repairs only the known missing/stopped resources before reconnecting', async ({ page, request }) => {
+test('stopped setup restarts only the known resources before reconnecting', async ({ page, request }) => {
   await openTrading(page);
-  expect((await request.post('/__fixture/partial')).ok()).toBe(true);
+  expect((await request.post('/__fixture/stopped')).ok()).toBe(true);
   await page.reload();
   await expect(page.getByText('Connected', { exact: true })).toBeVisible();
   await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
   await expect(panel(page, 'Portfolio').getByText('$2,000.00')).toBeVisible();
   const state = await (await request.get('/__fixture/state')).json();
   const writes = state.requests.filter((item: { method: string }) => item.method === 'POST');
-  expect(writes.slice(12).map((item: { path: string }) => item.path)).toEqual([
+  expect(writes.slice(2).map((item: { path: string }) => item.path)).toEqual([
     '/api/v1/instances/trading-server/queries/watchlist-query/start',
-    '/api/v1/instances/trading-server/queries',
     '/api/v1/instances/trading-server/reactions/sse-stream/start',
   ]);
   expect(state.connections).toBe(1);
@@ -34,7 +32,10 @@ test('concurrent tabs share app-owned setup without duplicate start storms', asy
     await Promise.all([openTrading(page), openTrading(second)]);
     const state = await (await request.get('/__fixture/state')).json();
     const writes = state.requests.filter((item: { method: string }) => item.method === 'POST');
-    expect(writes.map((item: { body: { id: string } }) => item.body.id)).toEqual([...QUERY_IDS, 'sse-stream']);
+    expect(writes.map((item: { path: string }) => item.path)).toEqual([
+      '/api/v1/instances/trading-server/computation/components',
+      '/api/v1/instances/trading-server/reactions',
+    ]);
     expect(state.connections).toBe(2); // One per independent tab, never a setup connection.
     expect(errors).toEqual([]);
   } finally {
@@ -72,14 +73,17 @@ test('a second tab retries an unavailable existing stream without provisioning',
 test('fresh automatic setup and existing-resource reload use the unchanged startup contract', async ({ page, request }) => {
   await openTrading(page);
   const initial = await (await request.get('/__fixture/state')).json();
-  const created = initial.requests.filter((item: { method: string; path: string }) => item.method === 'POST' && item.path === '/api/v1/instances/trading-server/queries');
-  expect(created.map((item: { body: { id: string } }) => item.body.id)).toEqual(QUERY_IDS);
+  expect(initial.requests.filter((item: { method: string }) => item.method === 'POST')
+    .map((item: { path: string }) => item.path)).toEqual([
+    '/api/v1/instances/trading-server/computation/components',
+    '/api/v1/instances/trading-server/reactions',
+  ]);
   expect(initial.connections).toBe(1);
   await page.reload();
   await expect(page.getByText('Connected', { exact: true })).toBeVisible();
   await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
   const reloaded = await (await request.get('/__fixture/state')).json();
-  expect(reloaded.requests.filter((item: { method: string }) => item.method === 'POST')).toHaveLength(12);
+  expect(reloaded.requests.filter((item: { method: string }) => item.method === 'POST')).toHaveLength(2);
   expect(reloaded.connections).toBe(1);
 });
 

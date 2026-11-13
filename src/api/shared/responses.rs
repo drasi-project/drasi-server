@@ -30,8 +30,10 @@ pub struct HealthResponse {
 /// Response listing a component with its status
 #[derive(Serialize, ToSchema)]
 pub struct ComponentListItem {
-    /// ID of the component
+    /// Immutable UUID of the component
     pub id: String,
+    /// Current graph-owned component name
+    pub name: String,
     /// Current status of the component
     pub status: ComponentStatus,
     /// Error message if the component is in error state

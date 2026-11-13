@@ -144,7 +144,7 @@ pub struct ComponentEventDto {
 impl From<ComponentEvent> for ComponentEventDto {
     fn from(event: ComponentEvent) -> Self {
         Self {
-            component_id: event.component_id,
+            component_id: event.component_id.to_string(),
             component_type: ComponentTypeDto::from(event.component_type),
             status: ComponentStatusDto::from(event.status),
             timestamp: event.timestamp,
@@ -173,7 +173,7 @@ impl From<LogMessage> for LogMessageDto {
             timestamp: message.timestamp,
             level: LogLevelDto::from(message.level),
             message: message.message,
-            component_id: message.component_id,
+            component_id: message.component_id.to_string(),
             component_type: ComponentLogTypeDto::from(message.component_type),
         }
     }
@@ -196,11 +196,12 @@ mod tests {
             (ComponentLogType::Sink, "Sink"),
             (ComponentLogType::Service, "Service"),
         ] {
+            let component_id = drasi_lib::ComponentId::generate();
             let message = LogMessage::with_instance(
                 LogLevel::Info,
                 "started",
                 "instance",
-                "component",
+                component_id.clone(),
                 category,
             );
             let timestamp = message.timestamp;
@@ -211,7 +212,7 @@ mod tests {
                     "timestamp": timestamp,
                     "level": "Info",
                     "message": "started",
-                    "componentId": "component",
+                    "componentId": component_id,
                     "componentType": name
                 })
             );

@@ -22,7 +22,7 @@
 mod test_support;
 
 use anyhow::Result;
-use drasi_lib::Query;
+use drasi_lib::{ComponentName, Query};
 use std::sync::Arc;
 use test_support::mock_components::create_mock_source;
 
@@ -37,7 +37,7 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     // Build the core using the new builder API
     let core = crate::query_plugin::builder()
         .with_id(&server_id)
-        .with_source(test_source)
+        .with_source(ComponentName::try_new("test-source")?, test_source)
         .build()
         .await?;
 
@@ -52,9 +52,9 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running before testing stop
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -69,9 +69,9 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     assert!(!core.is_running().await);
 
     // Wait for source to reach Stopped before restarting
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -86,9 +86,9 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running again
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -110,15 +110,15 @@ async fn test_server_with_query() -> Result<()> {
     let test_source = create_mock_source("test-source");
 
     // Build the core with a query
-    let query = Query::cypher("test-query")
+    let query = Query::cypher(ComponentName::try_new("test-query")?)
         .query("MATCH (n) RETURN n")
-        .from_input("test-source")
+        .from_input_by_name(ComponentName::try_new("test-source")?)
         .auto_start(true)
-        .build();
+        .build()?;
 
     let core = crate::query_plugin::builder()
         .with_id(&server_id)
-        .with_source(test_source)
+        .with_source(ComponentName::try_new("test-source")?, test_source)
         .with_query(query)
         .build()
         .await?;
@@ -133,9 +133,9 @@ async fn test_server_with_query() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for components to reach Running before stopping
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source")?,
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )

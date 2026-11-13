@@ -299,7 +299,7 @@ pub async fn create_solution_template(
     if let Err(e) = request.validate() {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
-            e.to_string(),
+            format!("{e:?}"),
         ));
     }
 
@@ -321,7 +321,11 @@ pub async fn create_solution_template(
 
     // Collect sources from snapshot, converting to DTO for camelCase serialization
     for source_id in &request.source_ids {
-        if let Some(source_snap) = snapshot.sources.iter().find(|s| &s.id == source_id) {
+        if let Some(source_snap) = snapshot
+            .sources
+            .iter()
+            .find(|s| s.name.as_str() == source_id)
+        {
             let properties_json = serde_json::to_value(&source_snap.properties)
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
@@ -338,7 +342,7 @@ pub async fn create_solution_template(
 
             let source_dto = SourceConfig {
                 kind: source_snap.source_type.clone(),
-                id: source_snap.id.clone(),
+                id: source_snap.name.to_string(),
                 auto_start: source_snap.auto_start,
                 bootstrap_provider,
                 identity_provider: None,
@@ -358,7 +362,11 @@ pub async fn create_solution_template(
 
     // Collect queries from snapshot, converting to DTO for camelCase serialization
     for query_id in &request.query_ids {
-        if let Some(query_snap) = snapshot.queries.iter().find(|q| &q.id == query_id) {
+        if let Some(query_snap) = snapshot
+            .queries
+            .iter()
+            .find(|q| q.name.as_str() == query_id)
+        {
             let query_dto = match QueryConfigDto::try_from(query_snap.config.clone()) {
                 Ok(dto) => dto,
                 Err(e) => {
@@ -381,13 +389,17 @@ pub async fn create_solution_template(
 
     // Collect reactions from snapshot, converting to DTO for camelCase serialization
     for reaction_id in &request.reaction_ids {
-        if let Some(reaction_snap) = snapshot.reactions.iter().find(|r| &r.id == reaction_id) {
+        if let Some(reaction_snap) = snapshot
+            .reactions
+            .iter()
+            .find(|r| r.name.as_str() == reaction_id)
+        {
             let properties_json = serde_json::to_value(&reaction_snap.properties)
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
             let reaction_dto = ReactionConfig {
                 kind: reaction_snap.reaction_type.clone(),
-                id: reaction_snap.id.clone(),
+                id: reaction_snap.name.to_string(),
                 queries: reaction_snap.queries.clone(),
                 auto_start: reaction_snap.auto_start,
                 identity_provider: None,
@@ -443,7 +455,11 @@ pub async fn create_solution_template(
     // Collect required plugin references from the selected components
     let mut plugin_refs: Vec<String> = Vec::new();
     for source_id in &request.source_ids {
-        if let Some(s) = snapshot.sources.iter().find(|s| &s.id == source_id) {
+        if let Some(s) = snapshot
+            .sources
+            .iter()
+            .find(|s| s.name.as_str() == source_id)
+        {
             let ref_str = format!("source/{}", s.source_type);
             if !plugin_refs.contains(&ref_str) {
                 plugin_refs.push(ref_str);
@@ -457,7 +473,11 @@ pub async fn create_solution_template(
         }
     }
     for reaction_id in &request.reaction_ids {
-        if let Some(r) = snapshot.reactions.iter().find(|r| &r.id == reaction_id) {
+        if let Some(r) = snapshot
+            .reactions
+            .iter()
+            .find(|r| r.name.as_str() == reaction_id)
+        {
             let ref_str = format!("reaction/{}", r.reaction_type);
             if !plugin_refs.contains(&ref_str) {
                 plugin_refs.push(ref_str);
@@ -580,7 +600,7 @@ pub async fn deploy_solution(
     if let Err(e) = request.validate() {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
-            e.to_string(),
+            format!("{e:?}"),
         ));
     }
 
@@ -867,20 +887,39 @@ pub async fn deploy_solution(
         // Force autoStart to false for initial creation
         source_config.set_auto_start(false);
 
-        let (source, plugin_meta) =
-            match create_source_locked(plugin_registry, source_config.clone()).await {
-                Ok(s) => s,
-                Err(e) => {
-                    creation_errors.push(SolutionDeployError::creation(
-                        "source",
-                        &source_id,
-                        e.to_string(),
-                    ));
-                    continue;
-                }
-            };
+        let (source, plugin_meta) = match create_source_locked(
+            plugin_registry,
+            drasi_lib::ComponentId::generate(),
+            source_config.clone(),
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "source",
+                    &source_id,
+                    format!("{e:?}"),
+                ));
+                continue;
+            }
+        };
 
-        if let Err(e) = core.add_source_with_metadata(source, plugin_meta).await {
+        let source_name = match super::handlers::parse_component_name(&source_id, "source") {
+            Ok(name) => name,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "source",
+                    &source_id,
+                    format!("{e:?}"),
+                ));
+                continue;
+            }
+        };
+        if let Err(e) = core
+            .add_source_with_metadata(source_name.clone(), source, plugin_meta)
+            .await
+        {
             creation_errors.push(SolutionDeployError::creation(
                 "source",
                 &source_id,
@@ -890,7 +929,7 @@ pub async fn deploy_solution(
         }
 
         created_sources.push(source_id.clone());
-        match wait_for_computation_creation(&core, "source", &source_id).await {
+        match wait_for_computation_creation(&core, "source", &source_name).await {
             Ok(handle) => {
                 if should_start {
                     components_to_start.push(("source", source_id, handle));
@@ -906,7 +945,7 @@ pub async fn deploy_solution(
 
     // Create queries (stopped)
     for (mut query_dto, should_start) in validated_queries {
-        let query_id = query_dto.id.clone();
+        let query_id = query_dto.name.to_string();
 
         // Force autoStart to false for initial creation
         query_dto.auto_start = false;
@@ -936,7 +975,19 @@ pub async fn deploy_solution(
         }
 
         created_queries.push(query_id.clone());
-        match wait_for_computation_creation(&core, "query", &query_id).await {
+        let query_name = match drasi_lib::computation::v1::ComponentName::try_new(query_id.clone())
+        {
+            Ok(name) => name,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "query",
+                    &query_id,
+                    e.to_string(),
+                ));
+                continue;
+            }
+        };
+        match wait_for_computation_creation(&core, "query", &query_name).await {
             Ok(handle) => {
                 if should_start {
                     components_to_start.push(("query", query_id, handle));
@@ -957,20 +1008,39 @@ pub async fn deploy_solution(
         // Force autoStart to false for initial creation
         reaction_config.set_auto_start(false);
 
-        let (reaction, plugin_meta) =
-            match create_reaction_locked(plugin_registry, reaction_config.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    creation_errors.push(SolutionDeployError::creation(
-                        "reaction",
-                        &reaction_id,
-                        e.to_string(),
-                    ));
-                    continue;
-                }
-            };
+        let (reaction, plugin_meta) = match create_reaction_locked(
+            plugin_registry,
+            drasi_lib::ComponentId::generate(),
+            reaction_config.clone(),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "reaction",
+                    &reaction_id,
+                    format!("{e:?}"),
+                ));
+                continue;
+            }
+        };
 
-        if let Err(e) = core.add_reaction_with_metadata(reaction, plugin_meta).await {
+        let reaction_name = match super::handlers::parse_component_name(&reaction_id, "reaction") {
+            Ok(name) => name,
+            Err(e) => {
+                creation_errors.push(SolutionDeployError::creation(
+                    "reaction",
+                    &reaction_id,
+                    format!("{e:?}"),
+                ));
+                continue;
+            }
+        };
+        if let Err(e) = core
+            .add_reaction_with_metadata(reaction_name.clone(), reaction, plugin_meta)
+            .await
+        {
             creation_errors.push(SolutionDeployError::creation(
                 "reaction",
                 &reaction_id,
@@ -980,7 +1050,7 @@ pub async fn deploy_solution(
         }
 
         created_reactions.push(reaction_id.clone());
-        match wait_for_computation_creation(&core, "reaction", &reaction_id).await {
+        match wait_for_computation_creation(&core, "reaction", &reaction_name).await {
             Ok(handle) => {
                 if should_start {
                     components_to_start.push(("reaction", reaction_id, handle));

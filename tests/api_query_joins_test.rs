@@ -4,7 +4,8 @@ mod test_support;
 
 use axum::Extension;
 use drasi_lib::{
-    config::{QueryJoinConfig, QueryJoinKeyConfig}, Query, QueryConfig,
+    config::{QueryJoinConfig, QueryJoinKeyConfig},
+    ComponentName, Query, QueryConfig,
 };
 use drasi_server::api::models::query::QueryConfigDto;
 use drasi_server::api::shared::extractor::ConfigBody;
@@ -14,10 +15,10 @@ use test_support::mock_components::create_mock_source;
 
 // Helper to build a minimal QueryConfig with joins
 fn build_query_config() -> QueryConfig {
-    Query::cypher("watchlist-joined-query-test")
+    Query::cypher(ComponentName::try_new("watchlist-joined-query-test").unwrap())
         .query("MATCH (s:stocks)<-[:HAS_PRICE]-(sp:stock_prices) RETURN s.symbol AS symbol")
-        .from_input("postgres-stocks")
-        .from_input("price-feed")
+        .from_input_by_name(ComponentName::try_new("postgres-stocks").unwrap())
+        .from_input_by_name(ComponentName::try_new("price-feed").unwrap())
         .auto_start(false)
         .with_joins(vec![QueryJoinConfig {
             id: "HAS_PRICE".to_string(),
@@ -33,12 +34,14 @@ fn build_query_config() -> QueryConfig {
             ],
         }])
         .build()
+        .unwrap()
 }
 
 // Helper to convert QueryConfig to QueryConfigDto for API calls
 fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
     QueryConfigDto {
         id: config.id,
+        name: config.name,
         auto_start: config.auto_start,
         query: config.query,
         query_language: config.query_language,
@@ -63,8 +66,14 @@ async fn test_create_query_with_joins_via_handler() {
     // Create a minimal DrasiLib with stub sources for the referenced source IDs
     let core = crate::query_plugin::builder()
         .with_id("test-server")
-        .with_source(create_mock_source("postgres-stocks"))
-        .with_source(create_mock_source("price-feed"))
+        .with_source(
+            ComponentName::try_new("postgres-stocks").unwrap(),
+            create_mock_source("postgres-stocks"),
+        )
+        .with_source(
+            ComponentName::try_new("price-feed").unwrap(),
+            create_mock_source("price-feed"),
+        )
         .build()
         .await
         .expect("Failed to build test core");

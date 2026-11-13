@@ -18,7 +18,13 @@ use drasi_server::{
 };
 use serde_json::{json, Value};
 
+fn component_id(value: u128) -> ComponentId {
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
+}
+
 fn input() -> Value {
+    let query = component_id(1);
+    let outlet = component_id(2);
     json!({"graph": {
         "resources": {
             "indexes": {"kind": "memoryIndexes"},
@@ -26,16 +32,16 @@ fn input() -> Value {
         },
         "components": [
             {
-                "id": "query", "kind": "drasi/continuous-query", "autoStart": false,
+                "id": query.clone(), "name": "query", "kind": "drasi/continuous-query", "autoStart": false,
                 "resources": {"indexes": "indexes", "catalog": "results"},
                 "config": {"query": "MATCH (n) RETURN n.value AS value"}
             },
             {
-                "id": "results-outlet", "kind": "drasi/query-results-outlet", "autoStart": false,
+                "id": outlet.clone(), "name": "results-outlet", "kind": "drasi/query-results-outlet", "autoStart": false,
                 "resources": {"catalog": ["results"]}
             }
         ],
-        "connections": [{"from": "query", "to": "results-outlet"}]
+        "connections": [{"from": query, "to": outlet}]
     }})
 }
 
@@ -67,7 +73,7 @@ fn readable_graph_uses_actual_contracts_and_round_trips_as_an_expanded_definitio
     let config = resolve(input(), &factories)?;
     assert_eq!(config.definition.components.len(), 2);
     assert_eq!(config.definition.resources.len(), 2);
-    assert_eq!(config.definition.graph_id, "__drasi_lib_runtime__");
+    ComponentId::try_new(config.definition.graph_id.as_str())?;
     let query = &config.definition.components[0];
     let ComponentConstruction::Factory(spec) = &query.construction else {
         panic!("factory recipe");
@@ -241,7 +247,7 @@ fn invalid_components_resources_connections_and_catalogs_are_rejected() -> Resul
     for bad in [
         {
             let mut bad = input();
-            bad["graph"]["components"][1]["id"] = json!("query");
+            bad["graph"]["components"][1]["id"] = json!(component_id(1));
             bad
         },
         {
@@ -256,7 +262,8 @@ fn invalid_components_resources_connections_and_catalogs_are_rejected() -> Resul
         },
         {
             let mut bad = input();
-            bad["graph"]["connections"][0]["from"] = json!({"component": "query", "port": "in"});
+            bad["graph"]["connections"][0]["from"] =
+                json!({"component": component_id(1), "port": "in"});
             bad
         },
         {
@@ -379,13 +386,13 @@ fn factory_versions_and_multi_port_endpoints_must_be_unambiguous() -> Result<()>
         .as_array_mut()
         .context("component array")?
         .push(json!({
-            "id": "sensor/group", "kind": "test/source", "version": "1"
+            "id": component_id(3), "name": "sensor/group", "kind": "test/source", "version": "1"
         }));
     value["graph"]["connections"]
         .as_array_mut()
         .context("connection array")?
         .push(json!({
-            "from": "sensor/group", "to": "query", "capacity": 7
+            "from": component_id(3), "to": component_id(1), "capacity": 7
         }));
     let error = resolve(value.clone(), &factories)
         .err()
@@ -395,10 +402,10 @@ fn factory_versions_and_multi_port_endpoints_must_be_unambiguous() -> Result<()>
         "{error:#}"
     );
     value["graph"]["connections"][1]["from"] =
-        json!({"component": "sensor/group", "port": "right"});
+        json!({"component": component_id(3), "port": "right"});
     let config = resolve(value, &factories)?;
     let edge = &config.definition.relationships[1];
-    assert_eq!(edge.definition.from.component.as_str(), "sensor/group");
+    assert_eq!(edge.definition.from.component, component_id(3));
     assert_eq!(edge.definition.from.port.as_str(), "right");
     assert!(matches!(edge.pipe, DesiredPipe::Bounded { capacity: 7 }));
     assert_eq!(creates.load(Ordering::SeqCst), 0);
@@ -416,11 +423,11 @@ fn readable_graph_uses_the_declared_primary_without_constructing_components() ->
     value["graph"]["components"]
         .as_array_mut()
         .unwrap()
-        .push(json!({"id":"sensor", "kind":"test/source", "version":"1"}));
+        .push(json!({"id":component_id(4), "name":"sensor", "kind":"test/source", "version":"1"}));
     value["graph"]["connections"]
         .as_array_mut()
         .unwrap()
-        .push(json!({"from":"sensor", "to":"query"}));
+        .push(json!({"from":component_id(4), "to":component_id(1)}));
     let config = resolve(value, &factories)?;
     assert_eq!(
         config.definition.relationships[1]
@@ -446,7 +453,7 @@ fn transaction_query_description_uses_the_transaction_input_schema() -> Result<(
         ..Default::default()
     };
     let specification = factory.specification_from_config(
-        ComponentId::try_new("transaction-query")?,
+        component_id(5),
         json!({"query": "MATCH (n) RETURN n", "execution": execution}),
     )?;
     assert_eq!(

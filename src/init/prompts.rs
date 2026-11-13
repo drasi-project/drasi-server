@@ -556,6 +556,12 @@ fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
 }
 
 /// Prompt for Log reaction configuration.
+fn sample_query_reference() -> drasi_lib::config::ComponentReference {
+    drasi_lib::config::ComponentReference::by_name(
+        drasi_lib::ComponentName::try_new("my-query").expect("constant query name"),
+    )
+}
+
 fn prompt_log_reaction() -> Result<ReactionConfig> {
     println!("Configuring Log Reaction");
     println!("------------------------");
@@ -567,7 +573,7 @@ fn prompt_log_reaction() -> Result<ReactionConfig> {
     Ok(ReactionConfig {
         kind: "log".to_string(),
         id,
-        queries: vec!["my-query".to_string()],
+        queries: vec![sample_query_reference()],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -593,7 +599,7 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
     Ok(ReactionConfig {
         kind: "http".to_string(),
         id,
-        queries: vec!["my-query".to_string()],
+        queries: vec![sample_query_reference()],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -626,7 +632,7 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
     Ok(ReactionConfig {
         kind: "sse".to_string(),
         id,
-        queries: vec!["my-query".to_string()],
+        queries: vec![sample_query_reference()],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -656,7 +662,7 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
     Ok(ReactionConfig {
         kind: "grpc".to_string(),
         id,
-        queries: vec!["my-query".to_string()],
+        queries: vec![sample_query_reference()],
         auto_start: true,
         identity_provider: None,
         config: serde_json::json!({
@@ -940,7 +946,7 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
     Ok(ReactionConfig {
         kind: kind.to_string(),
         id,
-        queries: vec!["my-query".to_string()],
+        queries: vec![sample_query_reference()],
         auto_start: true,
         identity_provider: None,
         config,

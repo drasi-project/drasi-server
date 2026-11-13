@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 use anyhow::{Context, Result};
-use drasi_lib::computation::v1::{ConfigurationValue, ResourceId};
+use drasi_lib::computation::v1::{ComponentName, ConfigurationValue, ResourceId};
 use drasi_server::{
     api::v1::routes::build_v1_router,
     computation::{configuration_from_snapshot, register_components, ComputationConfig},
@@ -165,9 +165,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         );
         let setup = async {
             let registry = plugins.read().await;
-            register_components(&current, &core, &registry)
-                .await?
-                .ensure_committed()?;
+            register_components(&current, &core, &registry).await?;
             drop(registry);
             core.start().await?;
             let components = std::iter::once("source".to_owned()).chain(
@@ -178,7 +176,8 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
             for component in components {
                 tokio::time::timeout(
                     DEADLINE,
-                    core.computation_component(&component)?.wait_started(),
+                    core.component_by_name(&ComponentName::try_new(component.clone())?)?
+                        .wait_started(),
                 )
                 .await??;
             }
@@ -215,7 +214,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         let client = reqwest::Client::builder().timeout(DEADLINE).build()?;
         let result = async {
             let schema = core
-                .get_source_schema("source")
+                .get_source_schema_by_name(&ComponentName::try_new("source")?)
                 .await?
                 .context("Server native source schema")?;
             anyhow::ensure!(
@@ -223,11 +222,15 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                 "Server-configured source did not expose actual SQLite schema"
             );
             let graph_schema = core.get_graph_schema().await?;
+            let source_id = core
+                .component_by_name(&ComponentName::try_new("source")?)?
+                .id()
+                .clone();
             anyhow::ensure!(
                 graph_schema
                     .nodes
                     .get("items")
-                    .is_some_and(|node| node.sources.contains("source")),
+                    .is_some_and(|node| node.sources.contains(&source_id)),
                 "Server instance inspection omitted native SQLite"
             );
             if round == 0 {

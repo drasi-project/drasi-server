@@ -24,8 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
-    ComponentViewQuery, ObservabilityQuery,
+    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
+    ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::ReactionConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
@@ -47,13 +47,18 @@ pub async fn list_reactions(
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
     let reactions = core.list_reactions().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(reactions.len());
-    for (id, status) in reactions {
-        let links = component_links(&api_prefix.0, &instance_id, "reactions", &id);
-        let error_message = if matches!(status, ComponentStatus::Error) {
-            match core.get_reaction_info(&id).await {
+    for reaction in reactions {
+        let links = component_links(
+            &api_prefix.0,
+            &instance_id,
+            "reactions",
+            reaction.name.as_str(),
+        );
+        let error_message = if matches!(reaction.status, ComponentStatus::Error) {
+            match core.get_reaction_info_by_id(&reaction.id).await {
                 Ok(info) => info.error_message,
                 Err(e) => {
-                    log::warn!("Failed to fetch reaction info for '{id}': {e}");
+                    log::warn!("Failed to fetch reaction info for '{}': {e}", reaction.name);
                     None
                 }
             }
@@ -61,8 +66,9 @@ pub async fn list_reactions(
             None
         };
         items.push(ComponentListItem {
-            id,
-            status,
+            id: reaction.id.to_string(),
+            name: reaction.name.to_string(),
+            status: reaction.status,
             error_message,
             links,
             config: None,
@@ -98,19 +104,27 @@ pub async fn create_reaction_handler(
     })?;
 
     let reaction_id = config.id().to_string();
+    let reaction_name = parse_component_name(&reaction_id, "reaction")?;
 
-    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create reaction instance: {e}");
-            ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to create reaction: {e}"),
-            )
-        })?;
+    let (reaction, plugin_meta) = create_reaction_locked(
+        &plugin_registry,
+        drasi_lib::ComponentId::generate(),
+        config.clone(),
+    )
+    .await
+    .map_err(|e| {
+        log::error!("Failed to create reaction instance: {e}");
+        ErrorResponse::new(
+            error_codes::REACTION_CREATE_FAILED,
+            format!("Failed to create reaction: {e}"),
+        )
+    })?;
 
     // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
+    match core
+        .add_reaction_with_metadata(reaction_name, reaction, plugin_meta)
+        .await
+    {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
@@ -184,22 +198,27 @@ pub async fn upsert_reaction_handler(
     }
 
     let reaction_id = config.id().to_string();
+    let reaction_name = parse_component_name(&reaction_id, "reaction")?;
 
     // Check if reaction already exists
-    let exists = core.get_reaction_info(&reaction_id).await.is_ok();
+    let exists = core.get_reaction_info_by_name(&reaction_name).await.is_ok();
 
     if exists {
-        // Create a new reaction instance and use update_reaction to replace in place
-        let (new_reaction, _meta) = create_reaction_locked(&plugin_registry, config.clone())
+        let current = core.get_reaction_info_by_name(&reaction_name).await?;
+        let definition = drasi_lib::management::OrdinaryComponentRecord {
+            id: current.id,
+            name: reaction_name.clone(),
+            auto_start: config.auto_start,
+            component: drasi_lib::management::OrdinaryComponent::Reaction {
+                kind: config.kind.clone(),
+                configuration: config.config.clone(),
+                inputs: config.queries.clone(),
+            },
+        };
+        if let Err(e) = core
+            .update_reaction_by_name(&reaction_name, definition)
             .await
-            .map_err(|e| {
-                log::error!("Failed to create reaction instance for update: {e}");
-                ErrorResponse::new(
-                    error_codes::REACTION_CREATE_FAILED,
-                    format!("Failed to create reaction for update: {e}"),
-                )
-            })?;
-        if let Err(e) = core.update_reaction(&reaction_id, new_reaction).await {
+        {
             log::error!("Failed to update reaction '{reaction_id}': {e}");
             return Err(ErrorResponse::new(
                 error_codes::REACTION_CREATE_FAILED,
@@ -225,18 +244,25 @@ pub async fn upsert_reaction_handler(
         })));
     }
 
-    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create reaction instance: {e}");
-            ErrorResponse::new(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to create reaction: {e}"),
-            )
-        })?;
+    let (reaction, plugin_meta) = create_reaction_locked(
+        &plugin_registry,
+        drasi_lib::ComponentId::generate(),
+        config.clone(),
+    )
+    .await
+    .map_err(|e| {
+        log::error!("Failed to create reaction instance: {e}");
+        ErrorResponse::new(
+            error_codes::REACTION_CREATE_FAILED,
+            format!("Failed to create reaction: {e}"),
+        )
+    })?;
 
     // DrasiLib owns auto-start when adding to a running instance.
-    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
+    match core
+        .add_reaction_with_metadata(reaction_name, reaction, plugin_meta)
+        .await
+    {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
@@ -274,9 +300,10 @@ pub async fn get_reaction(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
+    let name = parse_component_name(&id, "reaction")?;
     // Read authoritative graph-backed reaction information.
     let info = core
-        .get_reaction_info(&id)
+        .get_reaction_info_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
 
@@ -287,13 +314,16 @@ pub async fn get_reaction(
             "kind".to_string(),
             serde_json::Value::String(info.reaction_type.clone()),
         );
-        config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+        config_map.insert(
+            "id".to_string(),
+            serde_json::Value::String(info.name.to_string()),
+        );
         config_map.insert(
             "queries".to_string(),
             serde_json::Value::Array(
                 info.queries
                     .iter()
-                    .map(|q| serde_json::Value::String(q.clone()))
+                    .map(|q| serde_json::to_value(q).expect("component reference serializes"))
                     .collect(),
             ),
         );
@@ -307,7 +337,8 @@ pub async fn get_reaction(
     };
 
     Ok(Json(ApiResponse::success(ComponentListItem {
-        id: info.id,
+        id: info.id.to_string(),
+        name: info.name.to_string(),
         status: info.status,
         error_message: info.error_message,
         links: component_links(&api_prefix.0, &instance_id, "reactions", &id),
@@ -321,11 +352,12 @@ pub async fn get_reaction_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    core.get_reaction_status(&id)
+    let name = parse_component_name(&id, "reaction")?;
+    core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let events = core
-        .get_reaction_events(&id)
+        .get_reaction_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let collected = events
@@ -341,11 +373,12 @@ pub async fn stream_reaction_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_reaction_status(&id)
+    let name = parse_component_name(&id, "reaction")?;
+    core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_reaction_events(&id)
+        .subscribe_reaction_events_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -370,11 +403,12 @@ pub async fn get_reaction_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_reaction_status(&id)
+    let name = parse_component_name(&id, "reaction")?;
+    core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
-        .subscribe_reaction_logs(&id)
+        .subscribe_reaction_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let data = apply_limit(
@@ -389,11 +423,12 @@ pub async fn stream_reaction_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_reaction_status(&id)
+    let name = parse_component_name(&id, "reaction")?;
+    core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_reaction_logs(&id)
+        .subscribe_reaction_logs_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -428,7 +463,8 @@ pub async fn delete_reaction(
     }
 
     super::require_imperative_configuration(&core)?;
-    match core.remove_reaction(&id, true).await {
+    let name = parse_component_name(&id, "reaction")?;
+    match core.remove_reaction_by_name(&name, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {
                 p.unregister_reaction_identity_provider(&instance_id, &id)
@@ -455,7 +491,8 @@ pub async fn start_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.start_reaction(&id).await {
+    let name = parse_component_name(&id, "reaction")?;
+    match core.start_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction started successfully".to_string(),
         }))),
@@ -468,7 +505,8 @@ pub async fn stop_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    match core.stop_reaction(&id).await {
+    let name = parse_component_name(&id, "reaction")?;
+    match core.stop_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction stopped successfully".to_string(),
         }))),

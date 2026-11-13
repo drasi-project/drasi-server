@@ -23,27 +23,35 @@ use serde_json::{json, Value};
 #[serde(deny_unknown_fields)]
 struct Recipe {
     instance: String,
-    source: String,
+    source: Component,
     queries: Vec<Query>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Component {
+    id: ComponentId,
+    name: ComponentName,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Query {
-    id: String,
+    id: ComponentId,
+    name: ComponentName,
     query: String,
 }
 
-fn id(value: &str) -> Result<ComponentId> {
-    Ok(ComponentId::try_new(value)?)
+fn fixed_id(value: u128) -> ComponentId {
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
 }
 fn resource(value: &str) -> Result<ResourceId> {
     Ok(ResourceId::try_new(value)?)
 }
-fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
-    Ok(Endpoint::new(id(component)?, PortId::try_new(port)?))
+fn endpoint(component: &ComponentId, port: &str) -> Result<Endpoint> {
+    Ok(Endpoint::new(component.clone(), PortId::try_new(port)?))
 }
-fn stream(component: &str) -> Result<StreamId> {
+fn stream(component: &ComponentName) -> Result<StreamId> {
     Ok(StreamId::try_new(format!("{component}/out"))?)
 }
 fn literal(value: impl serde::Serialize) -> Result<ConfigurationValue> {
@@ -96,7 +104,6 @@ fn declare(
 
 fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
     let recipe: Recipe = serde_json::from_slice(&std::fs::read(recipe)?)?;
-    id(&recipe.instance)?;
     anyhow::ensure!(
         !recipe.queries.is_empty(),
         "MySQL needs actual query owners"
@@ -139,14 +146,14 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
     }
     let mut consumers = BTreeMap::new();
     for query in &recipe.queries {
-        let progress = format!("{}-progress", query.id);
-        let bootstrap_id = format!("{}-bootstrap", query.id);
+        let progress = format!("{}-progress", query.name);
+        let bootstrap_id = format!("{}-bootstrap", query.name);
         anyhow::ensure!(
             consumers
                 .insert(query.id.clone(), progress.clone())
                 .is_none(),
             "duplicate MySQL query owner {}",
-            query.id
+            query.name
         );
         builder = declare(
             builder,
@@ -155,12 +162,12 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             json!({"kind":"sourceProgress","component":query.id}),
         )?;
         let configuration = NativeBootstrapConfig {
-            component: id(&query.id)?,
+            component: query.id.clone(),
             implementation: bootstrap.implementation.clone(),
             configuration_version: bootstrap.configuration_version,
             configuration: BTreeMap::from([
-                ("source".into(), literal(&recipe.source)?),
-                ("stream".into(), literal(stream(&recipe.source)?)?),
+                ("source".into(), literal(&recipe.source.id)?),
+                ("stream".into(), literal(stream(&recipe.source.name)?)?),
                 ("settings".into(), reference("DRASI_MYSQL_SOURCE_SETTINGS")?),
             ]),
             source_progress: Some(resource(&progress)?),
@@ -185,9 +192,9 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             ResourceRole::SecretStore,
         )?;
         let mut specification = query_factory.specification_from_config(
-            id(&query.id)?,
+            query.id.clone(),
             json!({
-                "query":query.query,"language":"cypher","stream":stream(&query.id)?,
+                "query":query.query,"language":"cypher","stream":stream(&query.name)?,
                 "outbox_capacity":32,
             }),
         )?;
@@ -198,10 +205,13 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             ("bootstrap".into(), vec![resource(&bootstrap_id)?]),
         ]);
         builder = builder
-            .component(specification, query_factory.clone())
-            .bind_stream(endpoint(&query.id, "out")?, stream(&query.id)?)
+            .component(query.name.clone(), specification, query_factory.clone())
+            .bind_stream(endpoint(&query.id, "out")?, stream(&query.name)?)
             .connect(
-                EdgeDefinition::new(endpoint(&recipe.source, "out")?, endpoint(&query.id, "in")?),
+                EdgeDefinition::new(
+                    endpoint(&recipe.source.id, "out")?,
+                    endpoint(&query.id, "in")?,
+                ),
                 Box::new(BoundedPipeConfig { capacity: 8 }),
             );
     }
@@ -209,7 +219,7 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         builder,
         "mysql-consumers",
         ResourceRole::Checkpoint,
-        json!({"kind":"consumerProgress","producer":recipe.source,"consumers":consumers}),
+        json!({"kind":"consumerProgress","producer":recipe.source.id,"consumers":consumers}),
     )?;
     for progress in consumers.values() {
         builder = builder.resource_dependency(
@@ -219,8 +229,8 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         )?;
     }
     let mut source = source_factory.specification(
-        id(&recipe.source)?,
-        json!({"stream":stream(&recipe.source)?,"settings":{},"persistent":false}),
+        recipe.source.id.clone(),
+        json!({"stream":stream(&recipe.source.name)?,"settings":{},"persistent":false}),
     )?;
     source
         .configuration
@@ -229,21 +239,33 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         "consumer_progress".into(),
         vec![resource("mysql-consumers")?],
     );
-    let mut sink = sink_factory.specification(id("mysql-procedures")?, json!({"settings":{}}))?;
+    let sink_id = fixed_id(0xff01);
+    let outlet_id = fixed_id(0xff02);
+    let mut sink = sink_factory.specification(sink_id.clone(), json!({"settings":{}}))?;
     sink.configuration
         .insert("settings".into(), reference("DRASI_MYSQL_SINK_SETTINGS")?);
-    let mut outlet =
-        outlet_factory.specification_from_config(id("mysql-query-results")?, json!({}))?;
+    let mut outlet = outlet_factory.specification_from_config(outlet_id.clone(), json!({}))?;
     outlet
         .dependencies
         .insert("catalog".into(), vec![resource("mysql-results")?]);
     builder = builder
-        .component(source, source_factory)
-        .bind_stream(endpoint(&recipe.source, "out")?, stream(&recipe.source)?)
-        .component(sink, sink_factory)
-        .component(outlet, outlet_factory);
+        .component(recipe.source.name.clone(), source, source_factory)
+        .bind_stream(
+            endpoint(&recipe.source.id, "out")?,
+            stream(&recipe.source.name)?,
+        )
+        .component(
+            ComponentName::try_new("mysql-procedures")?,
+            sink,
+            sink_factory,
+        )
+        .component(
+            ComponentName::try_new("mysql-query-results")?,
+            outlet,
+            outlet_factory,
+        );
     for query in &recipe.queries {
-        for destination in ["mysql-procedures", "mysql-query-results"] {
+        for destination in [&sink_id, &outlet_id] {
             builder = builder.connect(
                 EdgeDefinition::new(endpoint(&query.id, "out")?, endpoint(destination, "in")?),
                 Box::new(BoundedPipeConfig { capacity: 8 }),

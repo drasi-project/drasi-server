@@ -21,6 +21,8 @@
 
 mod test_support;
 
+use drasi_lib::config::ComponentReference;
+use drasi_lib::ComponentName;
 use drasi_server::models::ConfigValue;
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use tempfile::TempDir;
@@ -99,7 +101,9 @@ fn test_secret_reference_survives_reaction_config_roundtrip() {
             reactions: vec![ReactionConfig {
                 kind: "http".to_string(),
                 id: "webhook".to_string(),
-                queries: vec!["q1".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("q1").unwrap(),
+                )],
                 auto_start: true,
                 config: serde_json::json!({
                     "endpoint": "https://api.example.com",
@@ -273,7 +277,9 @@ fn test_camelcase_keys_preserved_in_reaction_config_roundtrip() {
             reactions: vec![ReactionConfig {
                 kind: "sse".to_string(),
                 id: "sse-reaction".to_string(),
-                queries: vec!["q1".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("q1").unwrap(),
+                )],
                 auto_start: true,
                 config: serde_json::json!({
                     "ssePath": "/events",
@@ -485,7 +491,9 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                 ReactionConfig {
                     kind: "log".to_string(),
                     id: "reaction-1".to_string(),
-                    queries: vec!["q1".to_string()],
+                    queries: vec![ComponentReference::by_name(
+                        ComponentName::try_new("q1").unwrap(),
+                    )],
                     auto_start: true,
                     config: serde_json::json!({"routes": {}}),
                     identity_provider: None,
@@ -493,7 +501,9 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                 ReactionConfig {
                     kind: "http".to_string(),
                     id: "reaction-2".to_string(),
-                    queries: vec!["q1".to_string()],
+                    queries: vec![ComponentReference::by_name(
+                        ComponentName::try_new("q1").unwrap(),
+                    )],
                     auto_start: true,
                     config: serde_json::json!({
                         "endpoint": { "kind": "EnvironmentVariable", "name": "WEBHOOK_URL" },

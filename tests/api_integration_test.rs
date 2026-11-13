@@ -29,7 +29,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::Query;
+use drasi_lib::{ComponentName, Query};
 use drasi_server::api::v1::handlers;
 use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
@@ -49,7 +49,6 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 async fn create_test_router_with_id(
     instance_id: &str,
 ) -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
-    
     use drasi_server::api::v1::routes::build_v1_router;
     use drasi_server::plugin_registry::PluginRegistry;
 
@@ -67,29 +66,52 @@ async fn create_test_router_with_id(
     let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
 
     // Reactions require running queries so they can capture a valid subscription head.
-    let reaction_query = Query::cypher("reaction-query")
+    let reaction_query = Query::cypher(ComponentName::try_new("reaction-query").unwrap())
         .query("MATCH (n:Node) RETURN n")
-        .from_input("reaction-source")
+        .from_input_by_name(ComponentName::try_new("reaction-source").unwrap())
         .auto_start(true)
-        .build();
-    let auto_query = Query::cypher("auto-query")
+        .build()
+        .unwrap();
+    let auto_query = Query::cypher(ComponentName::try_new("auto-query").unwrap())
         .query("MATCH (n:Node) RETURN n")
-        .from_input("reaction-source")
+        .from_input_by_name(ComponentName::try_new("reaction-source").unwrap())
         .auto_start(true)
-        .build();
+        .build()
+        .unwrap();
 
     // Create a minimal DrasiLib using the builder with mock instances
     let core = crate::query_plugin::builder()
         .with_id(instance_id)
-        .with_source(test_source.clone())
-        .with_source(query_source.clone())
-        .with_source(auto_source.clone())
-        .with_source(log_source.clone())
-        .with_source(reaction_source)
+        .with_source(
+            ComponentName::try_new("test-source").unwrap(),
+            test_source.clone(),
+        )
+        .with_source(
+            ComponentName::try_new("query-source").unwrap(),
+            query_source.clone(),
+        )
+        .with_source(
+            ComponentName::try_new("auto-source").unwrap(),
+            auto_source.clone(),
+        )
+        .with_source(
+            ComponentName::try_new("log-source").unwrap(),
+            log_source.clone(),
+        )
+        .with_source(
+            ComponentName::try_new("reaction-source").unwrap(),
+            reaction_source,
+        )
         .with_query(reaction_query)
         .with_query(auto_query)
-        .with_reaction(test_reaction.clone())
-        .with_reaction(auto_reaction.clone())
+        .with_reaction(
+            ComponentName::try_new("test-reaction").unwrap(),
+            test_reaction.clone(),
+        )
+        .with_reaction(
+            ComponentName::try_new("auto-reaction").unwrap(),
+            auto_reaction.clone(),
+        )
         .build()
         .await
         .expect("Failed to build test core");
@@ -111,7 +133,11 @@ async fn create_test_router_with_id(
     ] {
         timeout(
             Duration::from_secs(10),
-            core.computation_component(id).unwrap().wait_started(),
+            core.component_by_name(
+                &drasi_lib::computation::v1::ComponentName::try_new(id).unwrap(),
+            )
+            .unwrap()
+            .wait_started(),
         )
         .await
         .expect("fixture node should start within the deadline")
@@ -258,14 +284,19 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
         .as_str()
         .unwrap()
         .contains("late-api-source"));
-    core.add_source_with_handle(create_mock_source("late-api-source"))
-        .await
-        .unwrap();
+    core.add_source_with_handle(
+        ComponentName::try_new("late-api-source").unwrap(),
+        create_mock_source("late-api-source"),
+    )
+    .await
+    .unwrap();
     timeout(
         Duration::from_secs(5),
-        core.computation_component("late-api-query")
-            .unwrap()
-            .wait_started(),
+        core.component_by_name(
+            &drasi_lib::computation::v1::ComponentName::try_new("late-api-query").unwrap(),
+        )
+        .unwrap()
+        .wait_started(),
     )
     .await
     .expect("dependency should start the query")
@@ -400,9 +431,9 @@ async fn test_source_lifecycle_via_api() {
     assert!(json["data"]["links"]["full"].is_string());
 
     // Wait for source to reach Running before attempting stop
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -428,9 +459,9 @@ async fn test_source_lifecycle_via_api() {
     assert_eq!(json["success"], true);
 
     // Wait for source to reach Stopped before attempting start
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -456,9 +487,9 @@ async fn test_source_lifecycle_via_api() {
     assert_eq!(json["success"], true);
 
     // Wait for source to reach Running before attempting second stop
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -484,9 +515,9 @@ async fn test_source_lifecycle_via_api() {
     assert_eq!(json["success"], true);
 
     // Wait for source to reach Stopped before deleting
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "test-source",
+        &ComponentName::try_new("test-source").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
     )
@@ -515,11 +546,12 @@ async fn test_query_lifecycle_via_api() {
     let base = "/instances/test-server";
 
     // Create a query using DrasiLib (not via API - queries can still be created dynamically)
-    let query_config = Query::cypher("test-query")
+    let query_config = Query::cypher(ComponentName::try_new("test-query").unwrap())
         .query("MATCH (n:Node) RETURN n")
-        .from_input("query-source")
+        .from_input_by_name(ComponentName::try_new("query-source").unwrap())
         .auto_start(false)
-        .build();
+        .build()
+        .unwrap();
     core.add_query(query_config.clone()).await.unwrap();
 
     // List queries via API
@@ -613,7 +645,7 @@ async fn test_source_logs_snapshot_via_api() {
     // Use log-source (not test-source) to avoid races with the lifecycle test
     // which deletes test-source and clears its log history in the global registry.
     let (history, mut rx) = _core
-        .subscribe_source_logs("log-source")
+        .subscribe_source_logs_by_name(&ComponentName::try_new("log-source").unwrap())
         .await
         .expect("subscribe_source_logs failed");
 
@@ -667,7 +699,7 @@ async fn test_reaction_logs_snapshot_via_api() {
 
     // Subscribe first to get the broadcast receiver, then emit the log.
     let (history, mut rx) = _core
-        .subscribe_reaction_logs("test-reaction")
+        .subscribe_reaction_logs_by_name(&ComponentName::try_new("test-reaction").unwrap())
         .await
         .expect("subscribe_reaction_logs failed");
 
@@ -804,11 +836,12 @@ async fn test_query_results_endpoint() {
     let base = "/instances/test-server";
 
     // Add a query
-    let query_config = Query::cypher("results-query")
+    let query_config = Query::cypher(ComponentName::try_new("results-query").unwrap())
         .query("MATCH (n) RETURN n")
-        .from_input("query-source")
+        .from_input_by_name(ComponentName::try_new("query-source").unwrap())
         .auto_start(false)
-        .build();
+        .build()
+        .unwrap();
     core.add_query(query_config.clone()).await.unwrap();
 
     // Try to get results — returns error status (query not running)
@@ -862,15 +895,16 @@ async fn test_query_attach_sse_stream() {
     let base = "/instances/test-server";
 
     // Add a query to attach to
-    let query_config = Query::cypher("attach-query")
+    let query_config = Query::cypher(ComponentName::try_new("attach-query").unwrap())
         .query("MATCH (n) RETURN n")
-        .from_input("query-source")
+        .from_input_by_name(ComponentName::try_new("query-source").unwrap())
         .auto_start(true)
-        .build();
+        .build()
+        .unwrap();
     core.add_query(query_config.clone()).await.unwrap();
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "attach-query",
+        &ComponentName::try_new("attach-query").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -925,22 +959,29 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
     let base = "/instances/test-server";
 
     // Add a query to attach to
-    let query_config = Query::cypher("attach-reaction-test")
+    let query_config = Query::cypher(ComponentName::try_new("attach-reaction-test").unwrap())
         .query("MATCH (n) RETURN n")
-        .from_input("query-source")
+        .from_input_by_name(ComponentName::try_new("query-source").unwrap())
         .auto_start(true)
-        .build();
+        .build()
+        .unwrap();
     core.add_query(query_config.clone()).await.unwrap();
-    drasi_lib::wait_for_status(
+    drasi_lib::wait_for_status_by_name(
         &core.component_graph(),
-        "attach-reaction-test",
+        &ComponentName::try_new("attach-reaction-test").unwrap(),
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
     .await
     .expect("attach-reaction-test should auto-start");
 
-    let reactions_before = core.list_reactions().await.unwrap();
+    let reactions_before = core
+        .list_reactions()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| (entry.id, entry.name, entry.status))
+        .collect::<Vec<_>>();
     let control = core.computation_control().unwrap();
     let nodes_before = control
         .observed()
@@ -964,7 +1005,15 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    assert_eq!(core.list_reactions().await.unwrap(), reactions_before);
+    assert_eq!(
+        core.list_reactions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.id, entry.name, entry.status))
+            .collect::<Vec<_>>(),
+        reactions_before
+    );
     assert_eq!(
         control
             .observed()
@@ -975,7 +1024,15 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
         nodes_before
     );
     drop(response);
-    assert_eq!(core.list_reactions().await.unwrap(), reactions_before);
+    assert_eq!(
+        core.list_reactions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.id, entry.name, entry.status))
+            .collect::<Vec<_>>(),
+        reactions_before
+    );
     core.stop().await.unwrap();
 }
 

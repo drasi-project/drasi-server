@@ -47,7 +47,15 @@ pub fn load(directory: &Path, package: &str) -> Result<Arc<NativePlugin>> {
     drasi_host_sdk::computation::load(&path).with_context(|| format!("load {}", path.display()))
 }
 fn id(value: &str) -> Result<ComponentId> {
-    Ok(ComponentId::try_new(value)?)
+    let value = match value {
+        "source" => 1,
+        "first" => 2,
+        "second" => 3,
+        "first-results" => 4,
+        "second-results" => 5,
+        other => anyhow::bail!("missing explicit component ID for {other}"),
+    };
+    Ok(ComponentId::from_uuid(uuid::Uuid::from_u128(value)))
 }
 fn resource(value: &str) -> Result<ResourceId> {
     Ok(ResourceId::try_new(value)?)
@@ -208,7 +216,7 @@ pub fn definition_with_mode(
         ]);
     }
     builder = builder
-        .component(source_spec, source)
+        .component(ComponentName::try_new("source")?, source_spec, source)
         .bind_stream(endpoint("source", "out")?, StreamId::try_new("source/out")?);
     builder = declare(
         builder,
@@ -300,8 +308,12 @@ pub fn definition_with_mode(
             dependencies: BTreeMap::from([("catalog".into(), vec![resource("catalog")?])]),
         };
         builder = builder
-            .component(query, query_factory.clone())
-            .component(outlet, outlet_factory.clone())
+            .component(ComponentName::try_new(*name)?, query, query_factory.clone())
+            .component(
+                ComponentName::try_new(outlet_id.as_str())?,
+                outlet,
+                outlet_factory.clone(),
+            )
             .bind_stream(
                 endpoint(name, "out")?,
                 StreamId::try_new(format!("{name}/out"))?,

@@ -22,7 +22,7 @@
 //! - All bootstrap provider types produce valid configurations
 //! - Generated configs use camelCase field names
 
-use drasi_lib::config::QueryLanguage;
+use drasi_lib::config::{ComponentName, ComponentReference, QueryLanguage};
 use drasi_server::api::models::*;
 use drasi_server::DrasiServerConfig;
 use serde_json::json;
@@ -797,7 +797,9 @@ fn test_log_reaction_generates_valid_yaml() {
             reactions: vec![ReactionConfig {
                 kind: "log".to_string(),
                 id: "log-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("my-query").unwrap(),
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"routes": {}}),
@@ -858,7 +860,9 @@ fn test_http_reaction_generates_valid_yaml() {
             reactions: vec![ReactionConfig {
                 kind: "http".to_string(),
                 id: "http-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("my-query").unwrap(),
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"baseUrl": "https://api.example.com", "token": "secret-token", "timeoutMs": 5000, "routes": {}}),
@@ -920,7 +924,9 @@ fn test_sse_reaction_generates_valid_yaml() {
             reactions: vec![ReactionConfig {
                 kind: "sse".to_string(),
                 id: "sse-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("my-query").unwrap(),
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
@@ -985,7 +991,9 @@ fn test_grpc_reaction_generates_valid_yaml() {
             reactions: vec![ReactionConfig {
                 kind: "grpc".to_string(),
                 id: "grpc-reaction".to_string(),
-                queries: vec!["my-query".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("my-query").unwrap(),
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"endpoint": "grpc://localhost:50052", "timeoutMs": 5000, "batchSize": 100, "batchFlushTimeoutMs": 1000, "maxRetries": 3, "connectionRetryAttempts": 5, "initialConnectionTimeoutMs": 10000, "metadata": {}}),
@@ -1052,14 +1060,17 @@ fn test_query_generates_valid_yaml() {
             activation_timeout_secs: None,
             sources: vec![],
             queries: vec![QueryConfigDto {
-                id: "my-query".to_string(),
+                id: None,
+                name: ComponentName::try_new("my-query").unwrap(),
                 query: "MATCH (n) RETURN n".to_string(),
                 query_language: QueryLanguage::Cypher,
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
                 inputs: vec![QueryInputConfigDto::Expanded(QueryInputObjectDto {
-                    component: "test-source".to_string(),
+                    component: ComponentReference::by_name(
+                        ComponentName::try_new("test-source").unwrap(),
+                    ),
                     port: None,
                     nodes: vec!["Node".to_string()],
                     relations: vec!["REL".to_string()],
@@ -1162,13 +1173,16 @@ fn test_full_config_roundtrip() {
                 config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
             }],
             queries: vec![QueryConfigDto {
-                id: "sensor-query".to_string(),
+                id: None,
+                name: ComponentName::try_new("sensor-query").unwrap(),
                 query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
                 query_language: QueryLanguage::Cypher,
                 auto_start: true,
                 enable_bootstrap: true,
                 middleware: vec![],
-                inputs: vec![QueryInputConfigDto::Component("mock-source".to_string())],
+                inputs: vec![QueryInputConfigDto::Component(ComponentReference::by_name(
+                    ComponentName::try_new("mock-source").unwrap(),
+                ))],
                 joins: None,
                 priority_queue_capacity: None,
                 dispatch_buffer_capacity: None,
@@ -1181,7 +1195,9 @@ fn test_full_config_roundtrip() {
             reactions: vec![ReactionConfig {
                 kind: "log".to_string(),
                 id: "log-reaction".to_string(),
-                queries: vec!["sensor-query".to_string()],
+                queries: vec![ComponentReference::by_name(
+                    ComponentName::try_new("sensor-query").unwrap(),
+                )],
                 auto_start: true,
                 identity_provider: None,
                 config: json!({"routes": {}}),

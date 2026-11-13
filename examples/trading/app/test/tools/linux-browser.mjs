@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const app = join(root, 'examples/trading/app');
 const script = 'examples/trading/app/test/tools/linux-browser.mjs';
 const args = process.argv.slice(2);
+const containerCli = process.env.DRASI_TEST_CONTAINER_CLI ?? 'docker';
 
 function run(command, parameters, cwd) {
   const result = spawnSync(command, parameters, { cwd, stdio: 'inherit' });
@@ -24,12 +25,22 @@ function run(command, parameters, cwd) {
 if (args[0] !== '--inside') {
   await mkdir(join(app, '.test-runtime'), { recursive: true });
   const artifacts = await mkdtemp(join(app, '.test-runtime/linux-browser-'));
+  const environment = ['--env', 'CI=true'];
+  for (const name of ['npm_config_registry', 'npm_config_prefer_offline']) {
+    if (process.env[name]) environment.push('--env', `${name}=${process.env[name]}`);
+  }
+  if (process.arch !== 'x64') {
+    environment.push('--env', 'GOGC=off', '--env', 'DRASI_EMULATED_X64=1');
+  }
+  const cacheMount = process.env.DRASI_NPM_CACACHE
+    ? ['--mount', `type=bind,source=${process.env.DRASI_NPM_CACACHE},target=/root/.npm/_cacache`]
+    : [];
   console.log(`Linux browser artifacts: ${artifacts}`);
-  run('docker', [
+  run(containerCli, [
     'run', '--rm', '--init', '--platform', 'linux/amd64', '--shm-size=1g',
     '--mount', `type=bind,source=${root},target=/repo,readonly`,
     '--mount', `type=bind,source=${artifacts},target=/artifacts`,
-    '--env', 'CI=true', image, 'node', `/repo/${script}`, '--inside', ...args,
+    ...cacheMount, ...environment, image, 'node', `/repo/${script}`, '--inside', ...args,
   ]);
   if (args.includes('--update-snapshots')) {
     await cp(join(artifacts, '__screenshots__'), join(app, 'test/browser/__screenshots__'), { recursive: true });

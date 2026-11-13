@@ -69,8 +69,9 @@ fn registry() -> Result<PluginRegistry> {
     Ok(registry)
 }
 
-fn desired(spec: ComponentSpecification) -> DesiredComponent {
+fn desired(name: &str, spec: ComponentSpecification) -> DesiredComponent {
     DesiredComponent {
+        name: ComponentName::try_new(name).unwrap(),
         streams: spec
             .descriptor
             .ports()
@@ -287,53 +288,62 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
         outbox_capacity: NonZeroUsize::new(16).unwrap(),
     };
     topology.components = vec![
-        desired(factory(COUNTER).specification(
-            id("input"),
-            json!({"stream":"input/out","count":1,"paused":true}),
-        )?),
-        desired(ComponentSpecification {
-            descriptor: query.descriptor(),
-            role: ComponentRole::Transformer,
-            completion: None,
-            implementation: ContinuousQueryFactory::default()
+        desired(
+            "input",
+            factory(COUNTER).specification(
+                id("input"),
+                json!({"stream":"input/out","count":1,"paused":true}),
+            )?,
+        ),
+        desired(
+            "query",
+            ComponentSpecification {
+                descriptor: query.descriptor(),
+                role: ComponentRole::Transformer,
+                completion: None,
+                implementation: ContinuousQueryFactory::default()
+                    .descriptor()
+                    .implementation
+                    .clone(),
+                configuration_version: 1,
+                configuration: BTreeMap::from([
+                    (
+                        "query".into(),
+                        ConfigurationValue::Literal(json!(query.query)),
+                    ),
+                    (
+                        "stream".into(),
+                        ConfigurationValue::Literal(json!(query.output_stream)),
+                    ),
+                ]),
+                dependencies: BTreeMap::from([
+                    ("indexes".into(), vec![indexes]),
+                    ("bootstrap".into(), vec![resource("bootstrap")]),
+                    ("source_progress".into(), vec![resource("progress")]),
+                    ("catalog".into(), vec![resource("catalog")]),
+                ]),
+            },
+        ),
+        desired(
+            "outlet",
+            ComponentSpecification {
+                descriptor: QueryResultsOutlet::new(
+                    id("outlet"),
+                    QueryResultsCatalog::new(topology.graph_id.as_str())?,
+                )
                 .descriptor()
-                .implementation
                 .clone(),
-            configuration_version: 1,
-            configuration: BTreeMap::from([
-                (
-                    "query".into(),
-                    ConfigurationValue::Literal(json!(query.query)),
-                ),
-                (
-                    "stream".into(),
-                    ConfigurationValue::Literal(json!(query.output_stream)),
-                ),
-            ]),
-            dependencies: BTreeMap::from([
-                ("indexes".into(), vec![indexes]),
-                ("bootstrap".into(), vec![resource("bootstrap")]),
-                ("source_progress".into(), vec![resource("progress")]),
-                ("catalog".into(), vec![resource("catalog")]),
-            ]),
-        }),
-        desired(ComponentSpecification {
-            descriptor: QueryResultsOutlet::new(
-                id("outlet"),
-                QueryResultsCatalog::new(topology.graph_id.as_str())?,
-            )
-            .descriptor()
-            .clone(),
-            role: ComponentRole::Sink,
-            completion: Some(SinkCompletion::Handled),
-            implementation: QueryResultsOutletFactory::default()
-                .descriptor()
-                .implementation
-                .clone(),
-            configuration_version: 1,
-            configuration: BTreeMap::new(),
-            dependencies: BTreeMap::from([("catalog".into(), vec![resource("catalog")])]),
-        }),
+                role: ComponentRole::Sink,
+                completion: Some(SinkCompletion::Handled),
+                implementation: QueryResultsOutletFactory::default()
+                    .descriptor()
+                    .implementation
+                    .clone(),
+                configuration_version: 1,
+                configuration: BTreeMap::new(),
+                dependencies: BTreeMap::from([("catalog".into(), vec![resource("catalog")])]),
+            },
+        ),
     ];
     topology.relationships = [("input", "query"), ("query", "outlet")]
         .into_iter()
@@ -487,17 +497,17 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
             .build()
             .await?;
         let result = async {
-            register_components(&yaml, &core, &plugins)
-                .await?
-                .ensure_committed()?;
+            register_components(&yaml, &core, &plugins).await?;
             core.start().await?;
             tokio::time::timeout(
                 DEADLINE,
-                core.computation_component("query")?.wait_started(),
+                core.component_by_name(&ComponentName::try_new("query")?)?
+                    .wait_started(),
             )
             .await??;
             assert_eq!(
-                core.get_query_results("query").await?,
+                core.get_query_results_by_name(&ComponentName::try_new("query")?)
+                    .await?,
                 vec![json!({"value":value})]
             );
             let saved = core.snapshot_computation_configuration().await?;
@@ -570,7 +580,12 @@ async fn native_bootstrap_server_recipes_restore_snapshot_and_preserve_secret_re
             .await?;
         core.start().await?;
         assert!(core.reconcile_desired_state().await?.converged());
-        assert_eq!(core.get_query_results("query").await?.len(), expected);
+        assert_eq!(
+            core.get_query_results_by_name(&ComponentName::try_new("query")?)
+                .await?
+                .len(),
+            expected
+        );
         let saved = core.snapshot_computation_configuration().await?;
         let rebuilt = configuration_from_snapshot(&saved)?.context("native snapshot")?;
         assert_eq!(
@@ -620,7 +635,7 @@ async fn native_bootstrap_domain_retires_actual_progress_and_metadata_resources(
         &mut config.definition,
         "journal",
         ResourceRole::StateStore,
-        json!({"kind":"qos","definition":channel,"path":directory.path().join("journal"),
+        json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a4","definition":channel,"path":directory.path().join("journal"),
             "recovery":{"kind":"replay","failureScope":FailureMode::ProcessRestart,"receiptCapacity":16}}),
     );
     let mut accepted = None;
@@ -657,7 +672,12 @@ async fn native_bootstrap_domain_retires_actual_progress_and_metadata_resources(
         }
         core.start().await?;
         assert!(core.reconcile_desired_state().await?.converged());
-        assert_eq!(core.get_query_results("query").await?.len(), 3);
+        assert_eq!(
+            core.get_query_results_by_name(&ComponentName::try_new("query")?)
+                .await?
+                .len(),
+            3
+        );
         let control = core.computation_control()?;
         control
             .quiesce_components(control.desired_snapshot().revision, GraphSelection::All)
@@ -734,7 +754,12 @@ async fn native_bootstrap_imperative_api_reconstructs_snapshot_in_another_instan
         .await?;
         assert_eq!(status, StatusCode::OK, "{body}");
         core.start().await?;
-        assert_eq!(core.get_query_results("query").await?.len(), count);
+        assert_eq!(
+            core.get_query_results_by_name(&ComponentName::try_new("query")?)
+                .await?
+                .len(),
+            count
+        );
         config = configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?
             .context("native clone")?;
         assert!(!serde_json::to_string(&config)?.contains("fixture-only"));
@@ -801,7 +826,7 @@ fn standalone_journal_config(path: &Path) -> Result<ComputationConfig> {
         &mut topology,
         "journal",
         ResourceRole::StateStore,
-        json!({"kind":"qos","definition":journal_definition()?,"path":path,
+        json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a5","definition":journal_definition()?,"path":path,
             "recovery":{"kind":"replay","failureScope":FailureMode::ProcessRestart,"receiptCapacity":4}}),
     );
     Ok(ComputationConfig {
@@ -1439,15 +1464,22 @@ async fn native_transaction_sequence_retires_its_standalone_owner_and_restores_c
             };
             topology.components = vec![
                 desired(
+                    "input",
                     factory(COUNTER)
                         .specification(id("input"), json!({"stream":"input/out","count":4}))?,
                 ),
-                desired(transaction.specification(
-                    &registry,
-                    resource("transformers"),
-                    resource("indexes"),
-                )?),
-                desired(factory(CAPTURE).specification(id("capture"), json!({"path":output}))?),
+                desired(
+                    "transaction",
+                    transaction.specification(
+                        &registry,
+                        resource("transformers"),
+                        resource("indexes"),
+                    )?,
+                ),
+                desired(
+                    "capture",
+                    factory(CAPTURE).specification(id("capture"), json!({"path":output}))?,
+                ),
             ];
             let channel = QosChannelDefinition {
                 stream: StreamId::try_new("transaction/out")?,
@@ -1490,7 +1522,7 @@ async fn native_transaction_sequence_retires_its_standalone_owner_and_restores_c
                 &mut topology,
                 "journal",
                 ResourceRole::StateStore,
-                json!({"kind":"qos","definition":channel,"path":directory.path().join("journal"),
+                json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a6","definition":channel,"path":directory.path().join("journal"),
                     "recovery":{"kind":"replay","failureScope":FailureMode::ProcessRestart,"receiptCapacity":8}}),
             );
             validate_definition(&ComputationConfig {
@@ -1576,11 +1608,14 @@ fn consumer_config(path: &Path) -> Result<ComputationConfig> {
     sink.dependencies
         .insert("consumer".into(), vec![resource("delivery")]);
     topology.components = vec![
-        desired(super::factory(COUNTER).specification(
-            id("input"),
-            json!({"stream":"input/out","count":1,"paused":true}),
-        )?),
-        desired(sink),
+        desired(
+            "input",
+            super::factory(COUNTER).specification(
+                id("input"),
+                json!({"stream":"input/out","count":1,"paused":true}),
+            )?,
+        ),
+        desired("consumer", sink),
     ];
     let channel = journal_definition()?;
     topology.relationships = vec![DesiredRelationship {
@@ -1604,7 +1639,7 @@ fn consumer_config(path: &Path) -> Result<ComputationConfig> {
         &mut topology,
         "journal",
         ResourceRole::StateStore,
-        json!({"kind":"qos","definition":channel,"path":path.join("journal"),
+        json!({"kind":"qos","owner":"00000000-0000-0000-0000-0000000000a7","definition":channel,"path":path.join("journal"),
             "recovery":{"kind":"replay","failureScope":FailureMode::ProcessRestart,"receiptCapacity":4}}),
     );
     topology.resource_dependencies.insert(
@@ -1679,7 +1714,10 @@ async fn consumer_count(config: &ComputationConfig) -> Result<Option<ElementValu
         .await?;
     let consumer = resource.get::<NativeConsumerResource>()?;
     let transaction = ComputationTransaction::try_new(
-        consumer.provider.create_indexes(graph, "consumer").await?,
+        consumer
+            .provider
+            .create_indexes(graph, &id("consumer"))
+            .await?,
     )?;
     let reference = ElementReference::new("transaction-step/636f6e73756d6572/values", "count");
     let value = transaction

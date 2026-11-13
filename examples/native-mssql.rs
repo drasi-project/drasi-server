@@ -14,7 +14,15 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 fn id(value: &str) -> ComponentId {
-    ComponentId::try_new(value).expect("constant id")
+    let value = match value {
+        "items" => 1,
+        "all" => 2,
+        "high" => 3,
+        "effect" => 4,
+        "query-results" => 5,
+        other => panic!("missing explicit component ID for {other}"),
+    };
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
 }
 fn resource(value: &str) -> ResourceId {
     ResourceId::try_new(value).expect("constant resource")
@@ -157,7 +165,7 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
             ("bootstrap".into(), vec![resource(&bootstrap_id)]),
         ]);
         builder = builder
-            .component(query, query_factory.clone())
+            .component(ComponentName::try_new(name)?, query, query_factory.clone())
             .bind_stream(endpoint(name, "out"), stream(name))
             .connect(
                 EdgeDefinition::new(endpoint("items", "out"), endpoint(name, "in")),
@@ -184,9 +192,13 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
         .dependencies
         .insert("catalog".into(), vec![resource("results")]);
     builder = builder
-        .component(source, source_factory)
-        .component(sink, sink_factory)
-        .component(outlet, outlet_factory)
+        .component(ComponentName::try_new("items")?, source, source_factory)
+        .component(ComponentName::try_new("effect")?, sink, sink_factory)
+        .component(
+            ComponentName::try_new("query-results")?,
+            outlet,
+            outlet_factory,
+        )
         .bind_stream(endpoint("items", "out"), stream("items"))
         .connect(
             EdgeDefinition::new(endpoint("all", "out"), endpoint("effect", "in")),

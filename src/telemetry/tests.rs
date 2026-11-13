@@ -31,7 +31,7 @@ async fn collect(State(state): State<Arc<CollectorState>>, Json(body): Json<Valu
 
 async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
     let (source, input) = ApplicationSource::new(
-        "input",
+        drasi_lib::ComponentId::generate(),
         ApplicationSourceConfig {
             properties: Default::default(),
             durability: None,
@@ -40,14 +40,14 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
     let core = Arc::new(
         crate::query_test_support::builder()
             .with_id(id)
-            .with_source(source)
+            .with_source(drasi_lib::ComponentName::try_new("input")?, source)
             .with_query(
-                Query::cypher("items")
+                Query::cypher(drasi_lib::ComponentName::try_new("items")?)
                     .query("MATCH (n:Item) RETURN n.value AS value")
-                    .from_input("input")
+                    .from_input_by_name(drasi_lib::ComponentName::try_new("input")?)
                     .enable_bootstrap(false)
                     .auto_start(true)
-                    .build(),
+                    .build()?,
             )
             .build()
             .await?,
@@ -55,10 +55,16 @@ async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> 
     core.start().await?;
     tokio::time::timeout(
         Duration::from_secs(5),
-        core.computation_component("items")?.wait_started(),
+        core.component_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+            "items",
+        )?)?
+        .wait_started(),
     )
     .await??;
-    core.get_query_results("items").await?;
+    core.get_query_results_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+        "items",
+    )?)
+    .await?;
     Ok((core, input))
 }
 
@@ -233,7 +239,13 @@ async fn exported_progress_and_owned_shutdown() -> Result<()> {
         .await?;
     tokio::time::timeout(Duration::from_millis(500), async {
         loop {
-            if second.get_query_results("items").await? == vec![json!({"value": 99})] {
+            if second
+                .get_query_results_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+                    "items",
+                )?)
+                .await?
+                == vec![json!({"value": 99})]
+            {
                 break Result::<()>::Ok(());
             }
             tokio::task::yield_now().await;

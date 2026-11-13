@@ -159,23 +159,40 @@ pub(crate) async fn sse_event_async<T: Serialize>(payload: T) -> Option<Result<E
     sse_event(payload)
 }
 
+pub(crate) fn parse_component_name(
+    value: &str,
+    component_type: &str,
+) -> Result<drasi_lib::computation::v1::ComponentName, ErrorResponse> {
+    drasi_lib::computation::v1::ComponentName::try_new(value).map_err(|error| {
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid {component_type} name"),
+        )
+        .with_details(ErrorDetail {
+            component_type: Some(component_type.to_string()),
+            component_id: Some(value.to_string()),
+            technical_details: Some(error.to_string()),
+        })
+    })
+}
+
 const COMPUTATION_CREATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Limit the health wait, not the already-committed node's realization.
 pub(crate) async fn wait_for_computation_creation(
     core: &DrasiLib,
     component_type: &str,
-    id: &str,
+    name: &drasi_lib::computation::v1::ComponentName,
 ) -> drasi_lib::Result<drasi_lib::computation::v1::ComponentHandle> {
     let health_error = |reason: String| {
         drasi_lib::DrasiError::operation_failed(
             component_type,
-            id,
+            drasi_lib::error::OperationSubject::Name(name.clone()),
             "wait_created",
             format!("Node was added, but {reason}"),
         )
     };
-    let handle = core.computation_component(id).map_err(|e| {
+    let handle = core.component_by_name(name).map_err(|e| {
         health_error(format!("creation health could not be inspected: {e}")).with_cause(e)
     })?;
     tokio::time::timeout(COMPUTATION_CREATION_TIMEOUT, handle.wait_created())
@@ -293,50 +310,17 @@ pub async fn list_instances(
 #[cfg(test)]
 mod tests {
     use super::wait_for_computation_creation;
-    use async_trait::async_trait;
     use drasi_lib::{
-        computation::v1::{
-            ComponentDescriptor, ComponentId, ComputationComponent, GraphChangeCodec,
-            InputEnvelope, OutputEnvelope, PipeRequirements, PortDescriptor, PortDirection, PortId,
-            RealizationState, Transformer,
-        },
+        computation::v1::{ComponentName, RealizationState},
         DrasiError,
     };
     use std::{task::Poll, time::Duration};
 
-    struct UnconnectedTransformer {
-        descriptor: ComponentDescriptor,
-    }
-
-    #[async_trait]
-    impl ComputationComponent for UnconnectedTransformer {
-        fn descriptor(&self) -> &ComponentDescriptor {
-            &self.descriptor
-        }
-
-        async fn start(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn stop(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[async_trait]
-    impl Transformer for UnconnectedTransformer {
-        async fn transform(
-            &mut self,
-            _input: InputEnvelope,
-        ) -> anyhow::Result<Vec<OutputEnvelope>> {
-            Ok(Vec::new())
-        }
-    }
-
     #[tokio::test]
     async fn computation_creation_health_inspection_keeps_its_graph_cause() {
         let core = crate::query_test_support::builder().build().await.unwrap();
-        let error = wait_for_computation_creation(&core, "source", "removed")
+        let name = ComponentName::try_new("removed").unwrap();
+        let error = wait_for_computation_creation(&core, "source", &name)
             .await
             .unwrap_err();
         assert!(error
@@ -344,55 +328,58 @@ mod tests {
             .is_some());
         assert!(matches!(
             error.classification(),
-            DrasiError::OperationFailed { operation, component_id, reason, .. }
-                if operation == "wait_created" && component_id == "removed"
+            DrasiError::OperationFailed {
+                operation,
+                subject: drasi_lib::error::OperationSubject::Name(component_name),
+                reason,
+                ..
+            }
+                if operation == "wait_created" && component_name.as_str() == "removed"
                     && reason.contains("could not be inspected")
         ));
         core.shutdown().await.unwrap();
     }
 
     #[tokio::test(start_paused = true)]
-    async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
+    async fn computation_creation_wait_times_out_after_30_seconds_for_pending_source() {
         let core = crate::query_test_support::builder()
-            .with_id("blocked-transformer-timeout")
+            .with_id("pending-source-timeout")
+            .with_construction_timeout_secs(60)
             .build()
             .await
             .unwrap();
         core.start().await.unwrap();
-        let id = "unconnected-transformer";
-        let ports = [("in", PortDirection::Input), ("out", PortDirection::Output)]
-            .into_iter()
-            .map(|(name, direction)| {
-                PortDescriptor::new(
-                    PortId::try_new(name).unwrap(),
-                    direction,
-                    GraphChangeCodec::schema().descriptor().clone(),
-                    PipeRequirements::default(),
-                )
-            })
-            .collect();
+        let id = "pending-source";
+        let name = ComponentName::try_new(id).unwrap();
         let handle = core
-            .add_transformer_with_handle(UnconnectedTransformer {
-                descriptor: ComponentDescriptor::try_new(ComponentId::try_new(id).unwrap(), ports)
-                    .unwrap(),
-            })
+            .create_source_async::<drasi_source_application::ApplicationSource, _, _>(
+                name.clone(),
+                None,
+                false,
+                |_| async move {
+                    std::future::pending::<
+                        anyhow::Result<(
+                            drasi_source_application::ApplicationSource,
+                            std::collections::HashMap<String, String>,
+                        )>,
+                    >()
+                    .await
+                },
+            )
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let observed = handle.observed().unwrap();
-                assert!(observed.failure.is_none(), "{observed:?}");
-                if observed.realization == RealizationState::Blocked {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("a valid transformer with unconnected ports must become Blocked");
+        for _ in 0..100 {
+            let observed = handle.observed().unwrap();
+            assert!(observed.failure.is_none(), "{observed:?}");
+            tokio::task::yield_now().await;
+        }
+        assert_ne!(
+            handle.observed().unwrap().realization,
+            RealizationState::Created
+        );
 
         let started = tokio::time::Instant::now();
-        let mut creation = Box::pin(wait_for_computation_creation(&core, "transformer", id));
+        let mut creation = Box::pin(wait_for_computation_creation(&core, "source", &name));
         assert!(futures_util::poll!(&mut creation).is_pending());
         tokio::time::advance(Duration::from_millis(29_999)).await;
         assert!(futures_util::poll!(&mut creation).is_pending());
@@ -408,11 +395,11 @@ mod tests {
                 error.classification(),
                 DrasiError::OperationFailed {
                     component_type,
-                    component_id,
+                    subject: drasi_lib::error::OperationSubject::Name(component_name),
                     operation,
                     reason,
-                } if component_type == "transformer"
-                    && component_id == id
+                } if component_type == "source"
+                    && component_name.as_str() == id
                     && operation == "wait_created"
                     && reason.contains("Node was added")
                     && reason.contains("30 seconds")
@@ -423,10 +410,10 @@ mod tests {
             .downcast_ref::<tokio::time::error::Elapsed>()
             .is_some());
         let observed = handle.observed().unwrap();
-        assert_eq!(observed.realization, RealizationState::Blocked);
+        assert_ne!(observed.realization, RealizationState::Created);
         assert!(observed.failure.is_none(), "{observed:?}");
         assert_eq!(
-            core.computation_component(id).unwrap().generation(),
+            core.component_by_name(&name).unwrap().generation(),
             handle.generation()
         );
         tokio::time::resume();

@@ -12,7 +12,8 @@ use std::{
 use anyhow::{Context, Result};
 use drasi_host_sdk::computation::NativeFactory;
 use drasi_lib::computation::v1::{
-    BoundedPipeConfig, ComponentBatch, ComponentId, EdgeDefinition, Endpoint, PortId, StreamId,
+    BoundedPipeConfig, ComponentBatch, ComponentId, ComponentName, EdgeDefinition, Endpoint,
+    PortId, StreamId,
 };
 use drasi_server::{
     api::models::ConfigValue, computation::ComputationConfig, config::DrasiServerConfig,
@@ -42,9 +43,20 @@ fn factory(directory: &Path, library: &str, name: &str) -> Result<Arc<NativeFact
 
 fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
     Ok(Endpoint::new(
-        ComponentId::try_new(component)?,
+        component_id(component),
         PortId::try_new(port)?,
     ))
+}
+
+fn component_id(name: &str) -> ComponentId {
+    let value = match name {
+        "counter" => 1,
+        "middleware" => 2,
+        "arithmetic" => 3,
+        "capture" => 4,
+        other => panic!("missing explicit component ID for {other}"),
+    };
+    ComponentId::from_uuid(uuid::Uuid::from_u128(value))
 }
 
 #[allow(clippy::print_stdout)]
@@ -80,16 +92,16 @@ fn main() -> Result<()> {
         "drasi.standard/capture",
     )?;
     let mut builder = ComponentBatch::builder()
-        .component(counter.specification(ComponentId::try_new("counter")?,
+        .component(ComponentName::try_new("counter")?, counter.specification(component_id("counter"),
             json!({"stream":"counter/out","count":4,"start":2,"step":3}))?, counter)
-        .component(middleware.specification(ComponentId::try_new("middleware")?, json!({
+        .component(ComponentName::try_new("middleware")?, middleware.specification(component_id("middleware"), json!({
             "stream":"middleware/out",
             "middleware":[{"name":"relabel","kind":"relabel","config":{"labelMappings":{"Counter":"Projected"}}}],
             "pipeline":["relabel"],
         }))?, middleware)
-        .component(arithmetic.specification(ComponentId::try_new("arithmetic")?,
+        .component(ComponentName::try_new("arithmetic")?, arithmetic.specification(component_id("arithmetic"),
             json!({"stream":"arithmetic/out","add":10,"multiply":2}))?, arithmetic)
-        .component(capture.specification(ComponentId::try_new("capture")?, json!({"path":path}))?, capture);
+        .component(ComponentName::try_new("capture")?, capture.specification(component_id("capture"), json!({"path":path}))?, capture);
     for (from, to) in [
         ("counter", "middleware"),
         ("middleware", "arithmetic"),

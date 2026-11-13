@@ -59,7 +59,10 @@ async fn test_drasi_lib_builder_with_redb_wal_provider() -> Result<()> {
     assert!(core.is_running().await);
     assert!(core.computation_control().is_ok());
     assert_eq!(
-        core.get_source_status("__component_graph__").await?,
+        core.get_source_status_by_name(&drasi_lib::computation::v1::ComponentName::try_new(
+            "__component_graph__"
+        )?,)
+            .await?,
         drasi_lib::ComponentStatus::Running
     );
 

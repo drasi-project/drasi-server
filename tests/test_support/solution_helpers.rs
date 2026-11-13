@@ -21,7 +21,7 @@
 //! - Creating mock HTTP servers for HTTP source/reaction testing
 
 use axum::Router;
-use drasi_lib::{DrasiLib, Query};
+use drasi_lib::{ComponentName, DrasiLib, Query};
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
@@ -30,6 +30,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{sleep, Instant};
+
+fn component_name(value: &str) -> Result<ComponentName, String> {
+    ComponentName::try_new(value).map_err(|error| error.to_string())
+}
 
 use super::mock_components::{create_mock_reaction, create_mock_source, MockReaction, MockSource};
 
@@ -247,19 +251,29 @@ pub async fn create_test_router_with_solutions(
     let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
 
     // The prerequisite query must be running before the reaction subscribes.
-    let test_query = Query::cypher("test-query")
+    let test_query = Query::cypher(ComponentName::try_new("test-query").unwrap())
         .query("MATCH (n:Node) RETURN n")
-        .from_input("reaction-source")
+        .from_input_by_name(ComponentName::try_new("reaction-source").unwrap())
         .auto_start(true)
-        .build();
+        .build()
+        .unwrap();
 
     // Build DrasiLib
     let core = crate::query_plugin::builder()
         .with_id(instance_id)
-        .with_source(test_source.clone())
-        .with_source(reaction_source)
+        .with_source(
+            ComponentName::try_new("test-source").unwrap(),
+            test_source.clone(),
+        )
+        .with_source(
+            ComponentName::try_new("reaction-source").unwrap(),
+            reaction_source,
+        )
         .with_query(test_query)
-        .with_reaction(test_reaction.clone())
+        .with_reaction(
+            ComponentName::try_new("test-reaction").unwrap(),
+            test_reaction.clone(),
+        )
         .build()
         .await
         .expect("Failed to build test core");
@@ -318,19 +332,29 @@ pub async fn create_multi_instance_test_router(
         let test_reaction = create_mock_reaction(&reaction_id, vec![query_id.clone()]);
 
         // The prerequisite query must be running before the reaction subscribes.
-        let reaction_query = Query::cypher(&query_id)
+        let reaction_query = Query::cypher(ComponentName::try_new(query_id.clone()).unwrap())
             .query("MATCH (n:Node) RETURN n")
-            .from_input(&reaction_source_id)
+            .from_input_by_name(ComponentName::try_new(reaction_source_id.clone()).unwrap())
             .auto_start(true)
-            .build();
+            .build()
+            .unwrap();
 
         // Build DrasiLib
         let core = crate::query_plugin::builder()
             .with_id(instance_id)
-            .with_source(test_source.clone())
-            .with_source(reaction_source)
+            .with_source(
+                ComponentName::try_new(source_id.clone()).unwrap(),
+                test_source.clone(),
+            )
+            .with_source(
+                ComponentName::try_new(reaction_source_id.clone()).unwrap(),
+                reaction_source,
+            )
             .with_query(reaction_query)
-            .with_reaction(test_reaction.clone())
+            .with_reaction(
+                ComponentName::try_new(reaction_id.clone()).unwrap(),
+                test_reaction.clone(),
+            )
             .build()
             .await
             .expect("Failed to build test core");
@@ -382,7 +406,7 @@ pub async fn wait_for_reaction_log(
 
     loop {
         let (history, _) = core
-            .subscribe_reaction_logs(reaction_id)
+            .subscribe_reaction_logs_by_name(&component_name(reaction_id)?)
             .await
             .map_err(|e| format!("Failed to get reaction logs: {e}"))?;
 
@@ -415,7 +439,7 @@ pub async fn wait_for_any_reaction_log(
 
     loop {
         let (history, _) = core
-            .subscribe_reaction_logs(reaction_id)
+            .subscribe_reaction_logs_by_name(&component_name(reaction_id)?)
             .await
             .map_err(|e| format!("Failed to get reaction logs: {e}"))?;
 
@@ -456,7 +480,10 @@ pub async fn wait_for_query_results(
 
     // First wait for the query to be running
     loop {
-        match core.get_query_status(query_id).await {
+        match core
+            .get_query_status_by_name(&component_name(query_id)?)
+            .await
+        {
             Ok(ComponentStatus::Running) => {
                 break;
             }
@@ -479,7 +506,10 @@ pub async fn wait_for_query_results(
 
     // Now poll for results
     loop {
-        match core.get_query_results(query_id).await {
+        match core
+            .get_query_results_by_name(&component_name(query_id)?)
+            .await
+        {
             Ok(results) if !results.is_empty() => {
                 return Ok(results);
             }
@@ -496,7 +526,9 @@ pub async fn wait_for_query_results(
 
         if Instant::now() >= deadline {
             // Try to get diagnostic info
-            let status = core.get_query_status(query_id).await;
+            let status = core
+                .get_query_status_by_name(&component_name(query_id)?)
+                .await;
             return Err(format!(
                 "Timeout waiting for results from query '{query_id}'. Status: {status:?}"
             ));
@@ -518,7 +550,10 @@ pub async fn wait_for_query_results_count(
     let deadline = Instant::now() + timeout;
 
     loop {
-        match core.get_query_results(query_id).await {
+        match core
+            .get_query_results_by_name(&component_name(query_id)?)
+            .await
+        {
             Ok(results) if results.len() >= min_count => {
                 return Ok(results);
             }
