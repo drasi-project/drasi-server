@@ -124,6 +124,33 @@ pub struct ApiResponseSchema {
 pub struct StatusResponse {
     /// Status message
     pub message: String,
+    /// Desired-state outcome for changes to a persisted instance
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<ConfigurationChange>,
+}
+
+/// Accepted desired-state change on an instance with a `configurationStore`.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigurationChange {
+    /// Request ID; replay it as `Idempotency-Key` to retry safely
+    pub request_id: String,
+    /// Committed desired-state revision; pass it as `If-Match` on the next change
+    pub revision: u64,
+    /// Whether the change is durably committed to the configuration store
+    pub durable: bool,
+    /// Component UUID created, updated or removed by this change
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_id: Option<String>,
+    /// Accepted update plan when an existing component is updated in place
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub plan: Option<drasi_lib::computation::v1::ComponentUpdatePlan>,
+    /// Management status of the instance's desired state
+    pub status: String,
+    /// YAML write-back failure; the change remains applied and durable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_back_error: Option<String>,
 }
 
 /// Response listing available API versions

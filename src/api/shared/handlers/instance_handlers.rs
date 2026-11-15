@@ -31,6 +31,7 @@ use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
+use drasi_lib::management::{OrdinaryComponent, OrdinaryComponentDefinition};
 use drasi_lib::DrasiLib;
 
 /// Request body for creating a new instance
@@ -309,6 +310,7 @@ pub async fn create_instance(
 
     Ok(Json(ApiResponse::success(StatusResponse {
         message: format!("Instance '{instance_id}' created successfully"),
+        configuration: None,
     })))
 }
 
@@ -414,7 +416,75 @@ pub async fn clone_instance(
             format!("Target instance '{target_instance_id}' not found"),
         )
     })?;
-    super::require_imperative_configuration(&target_core)?;
+    if target_core.configuration_is_persistent() {
+        if computation.is_some() {
+            return Err(ErrorResponse::new(
+                error_codes::CONFIGURATION_TRANSITION_REQUIRED,
+                "Native components cannot be cloned into a persisted instance; submit them to computation/desired",
+            ));
+        }
+        let definitions = if source_core.configuration_is_persistent() {
+            persisted_definitions(&source_core)
+        } else {
+            snapshot_definitions(&snapshot)
+        }
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Source instance configuration cannot be cloned",
+            )
+            .with_details(ErrorDetail {
+                component_type: Some("instance".to_string()),
+                component_id: Some(source_instance_id.to_string()),
+                technical_details: Some(format!("{error:#}")),
+            })
+        })?;
+        if definitions
+            .iter()
+            .any(|definition| matches!(definition.component, OrdinaryComponent::Query { .. }))
+        {
+            crate::query_plugin::ensure_registered(&target_core, &plugin_registry)
+                .await
+                .map_err(|error| {
+                    ErrorResponse::new(error_codes::PLUGIN_NOT_FOUND, format!("{error:#}"))
+                })?;
+        }
+        let mut response = CloneInstanceResponse {
+            success: true,
+            sources_created: Vec::new(),
+            queries_created: Vec::new(),
+            reactions_created: Vec::new(),
+            components_created: Vec::new(),
+            errors: Vec::new(),
+        };
+        for definition in &definitions {
+            let name = definition.name.to_string();
+            match definition.component {
+                OrdinaryComponent::Source { .. } => response.sources_created.push(name),
+                OrdinaryComponent::Query { .. } => response.queries_created.push(name),
+                _ => response.reactions_created.push(name),
+            }
+        }
+        if !definitions.is_empty() {
+            let status = crate::api::shared::managed_components::add_components(
+                &target_core,
+                &config_persistence,
+                "clone",
+                definitions,
+            )
+            .await?;
+            if let Some(error) = status
+                .configuration
+                .and_then(|change| change.write_back_error)
+            {
+                response
+                    .errors
+                    .push(format!("Configuration file write-back failed: {error}"));
+                response.success = false;
+            }
+        }
+        return Ok(Json(ApiResponse::success(response)));
+    }
 
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
@@ -656,4 +726,124 @@ pub async fn clone_instance(
         components_created,
         errors,
     })))
+}
+
+/// Stopped copies of a persisted instance's stored ordinary recipes. Stored
+/// recipes keep secret references unresolved; references become names.
+fn persisted_definitions(core: &DrasiLib) -> anyhow::Result<Vec<OrdinaryComponentDefinition>> {
+    use crate::ordinary_resolver::{component_names, named_reference};
+    let desired = core.desired_configuration()?.desired;
+    let names = component_names(&desired);
+    desired
+        .ordinary
+        .iter()
+        .map(|record| {
+            let component = match &record.component {
+                OrdinaryComponent::Query { .. } => {
+                    let mut query = record.query_configuration()?.into_authoring();
+                    query.id = None;
+                    query.auto_start = false;
+                    for input in &mut query.inputs {
+                        input.component = named_reference(&names, input.component.clone());
+                    }
+                    return OrdinaryComponentDefinition::query(query);
+                }
+                OrdinaryComponent::Reaction {
+                    kind,
+                    configuration,
+                    inputs,
+                } => OrdinaryComponent::Reaction {
+                    kind: kind.clone(),
+                    configuration: configuration.clone(),
+                    inputs: inputs
+                        .iter()
+                        .cloned()
+                        .map(|input| named_reference(&names, input))
+                        .collect(),
+                },
+                OrdinaryComponent::ProcessLocal { .. } => {
+                    anyhow::bail!("process-local component '{}' cannot be cloned", record.name)
+                }
+                component => component.clone(),
+            };
+            Ok(OrdinaryComponentDefinition {
+                id: None,
+                name: record.name.clone(),
+                auto_start: false,
+                component,
+            })
+        })
+        .collect()
+}
+
+/// Stopped ordinary definitions reconstructed from an unmanaged instance's snapshot.
+fn snapshot_definitions(
+    snapshot: &drasi_lib::ConfigurationSnapshot,
+) -> anyhow::Result<Vec<OrdinaryComponentDefinition>> {
+    use crate::ordinary_resolver::{reaction_definition, source_definition};
+    let names: std::collections::BTreeMap<_, _> = snapshot
+        .sources
+        .iter()
+        .map(|source| (source.id.clone(), source.name.clone()))
+        .chain(
+            snapshot
+                .queries
+                .iter()
+                .map(|query| (query.id.clone(), query.name.clone())),
+        )
+        .collect();
+    let named = |reference: drasi_lib::config::ComponentReference| {
+        crate::ordinary_resolver::named_reference(&names, reference)
+    };
+    let mut definitions = Vec::new();
+    for source in snapshot
+        .sources
+        .iter()
+        .filter(|s| !s.name.as_str().starts_with("__"))
+    {
+        let config = SourceConfig {
+            kind: source.source_type.clone(),
+            id: source.name.to_string(),
+            auto_start: false,
+            bootstrap_provider: source.bootstrap_provider.as_ref().map(|provider| {
+                BootstrapProviderRef::Inline(BootstrapProviderConfig {
+                    kind: provider.kind.clone(),
+                    config: serde_json::to_value(&provider.properties)
+                        .unwrap_or_else(|_| serde_json::Value::Object(Default::default())),
+                })
+            }),
+            identity_provider: None,
+            config: serde_json::to_value(&source.properties)?,
+        };
+        definitions.push(source_definition(&config)?);
+    }
+    for query in snapshot
+        .queries
+        .iter()
+        .filter(|q| !q.name.as_str().starts_with("__"))
+    {
+        let mut config = query.config.clone().into_authoring();
+        config.id = None;
+        config.auto_start = false;
+        for input in &mut config.inputs {
+            input.component = named(input.component.clone());
+        }
+        definitions.push(OrdinaryComponentDefinition::query(config)?);
+    }
+    for reaction in snapshot
+        .reactions
+        .iter()
+        .filter(|r| !r.name.as_str().starts_with("__"))
+    {
+        let config = ReactionConfig {
+            kind: reaction.reaction_type.clone(),
+            id: reaction.name.to_string(),
+            queries: reaction.queries.iter().cloned().map(named).collect(),
+            auto_start: false,
+            identity_provider: None,
+            config: serde_json::to_value(&reaction.properties)?,
+        };
+        definitions.push(reaction_definition(&config)?);
+    }
+    Ok(definitions)
 }

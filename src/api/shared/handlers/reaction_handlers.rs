@@ -31,6 +31,7 @@ use crate::api::models::ReactionConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
+use crate::api::shared::managed_components::{self as managed, ComponentRole, WriteMode};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::factories::create_reaction_locked;
 use crate::persistence::ConfigPersistence;
@@ -94,7 +95,6 @@ pub async fn create_reaction_handler(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse reaction config: {e}");
         ErrorResponse::new(
@@ -105,6 +105,18 @@ pub async fn create_reaction_handler(
 
     let reaction_id = config.id().to_string();
     let reaction_name = parse_component_name(&reaction_id, "reaction")?;
+
+    if core.configuration_is_persistent() {
+        return managed::write_reaction(
+            &core,
+            &config_persistence,
+            &plugin_registry,
+            &config,
+            WriteMode::Create,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
 
     let (reaction, plugin_meta) = create_reaction_locked(
         &plugin_registry,
@@ -141,6 +153,7 @@ pub async fn create_reaction_handler(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Reaction '{reaction_id}' created successfully"),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -178,7 +191,6 @@ pub async fn upsert_reaction_handler(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse reaction config: {e}");
         ErrorResponse::new(
@@ -199,6 +211,18 @@ pub async fn upsert_reaction_handler(
 
     let reaction_id = config.id().to_string();
     let reaction_name = parse_component_name(&reaction_id, "reaction")?;
+
+    if core.configuration_is_persistent() {
+        return managed::write_reaction(
+            &core,
+            &config_persistence,
+            &plugin_registry,
+            &config,
+            WriteMode::Upsert,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
 
     // Check if reaction already exists
     let exists = core.get_reaction_info_by_name(&reaction_name).await.is_ok();
@@ -241,6 +265,7 @@ pub async fn upsert_reaction_handler(
 
         return Ok(Json(ApiResponse::success(StatusResponse {
             message: format!("Reaction '{reaction_id}' updated successfully"),
+            configuration: None,
         })));
     }
 
@@ -279,6 +304,7 @@ pub async fn upsert_reaction_handler(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Reaction '{reaction_id}' created successfully"),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -462,8 +488,17 @@ pub async fn delete_reaction(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let name = parse_component_name(&id, "reaction")?;
+    if core.configuration_is_persistent() {
+        return managed::delete_component(
+            &core,
+            &config_persistence,
+            ComponentRole::Reaction,
+            &name,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
     match core.remove_reaction_by_name(&name, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {
@@ -474,6 +509,7 @@ pub async fn delete_reaction(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction deleted successfully".to_string(),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -495,6 +531,7 @@ pub async fn start_reaction(
     match core.start_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction started successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }
@@ -509,6 +546,7 @@ pub async fn stop_reaction(
     match core.stop_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction stopped successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }

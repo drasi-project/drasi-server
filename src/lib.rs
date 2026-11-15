@@ -23,6 +23,7 @@ pub mod index_provider;
 mod instance_paths;
 pub mod instance_registry;
 pub mod managed_configuration;
+pub mod ordinary_resolver;
 pub mod persistence;
 pub mod plugin_install;
 pub mod plugin_lockfile;

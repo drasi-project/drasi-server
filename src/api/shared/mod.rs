@@ -20,6 +20,7 @@
 pub mod error;
 pub mod extractor;
 pub mod handlers;
+pub mod managed_components;
 pub mod responses;
 pub mod solutions;
 

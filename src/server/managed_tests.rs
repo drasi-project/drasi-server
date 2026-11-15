@@ -334,3 +334,37 @@ fn managed_file_configuration_accepts_missing_and_configured_ids() -> anyhow::Re
     }
     Ok(())
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn declared_components_seed_persisted_instances_and_are_validated() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("server.yaml");
+    let plugins = directory.path().join("plugins");
+    let mut config = settings(directory.path())?;
+    config.instances[0].sources = vec![serde_json::from_value(serde_json::json!({
+        "kind": "unregistered",
+        "id": "orders",
+        "autoStart": false,
+    }))?];
+    config.save_to_file(&path)?;
+    // Components are a first-start seed rather than a validation error.
+    crate::load_config_file(&path)?.validate()?;
+    let error = match DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await {
+        Ok(_) => anyhow::bail!("unknown source kinds must be rejected while seeding"),
+        Err(error) => format!("{error:#}"),
+    };
+    assert!(error.contains("unregistered"), "{error}");
+
+    // Nothing was stored, so a corrected seed initializes the instance.
+    config.instances[0].sources.clear();
+    config.save_to_file(&path)?;
+    let server = DrasiServer::new(path, 0, plugins, false, false).await?;
+    let core = &server.instances[0].core;
+    assert!(core.desired_configuration()?.desired.ordinary.is_empty());
+    assert!(core
+        .configuration_receipt(crate::managed_configuration::INITIAL_REQUEST_ID)
+        .await?
+        .is_some());
+    core.shutdown().await?;
+    Ok(())
+}

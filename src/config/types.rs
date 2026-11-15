@@ -427,11 +427,8 @@ impl DrasiServerConfig {
             }
             seen.insert(id.clone());
             if let Some(store) = &instance.configuration_store {
+                // Declared sources, queries and reactions seed the store on first start.
                 store.validate()?;
-                anyhow::ensure!(
-                    instance.sources.is_empty() && instance.queries.is_empty() && instance.reactions.is_empty(),
-                    "Instance '{id}': configurationStore requires reconstructible computation definitions; ordinary sources/queries/reactions cannot be adopted automatically"
-                );
             }
             if let Some(computation) = instance
                 .computation

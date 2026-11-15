@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::{
     computation::{ComputationConfigInput, ServerManagementResources},
+    ordinary_resolver::{InstanceComponentSettings, OrdinarySeed, ServerOrdinaryResolver},
     plugin_registry::PluginRegistry,
 };
 
@@ -101,9 +102,16 @@ impl ConfigurationStores {
     ) -> Result<Arc<RedbConfigurationStore>> {
         config.validate()?;
         let ConfigurationStoreConfig::Redb { path, key_file } = config;
-        let file = tokio::fs::File::open(key_file)
-            .await
-            .context("read configuration encryption key")?;
+        let file = match tokio::fs::File::open(key_file).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                generate_key(path, key_file).await?;
+                tokio::fs::File::open(key_file)
+                    .await
+                    .context("read configuration encryption key")?
+            }
+            Err(error) => return Err(error).context("read configuration encryption key"),
+        };
         let mut key = Vec::with_capacity(33);
         file.take(33)
             .read_to_end(&mut key)
@@ -154,6 +162,7 @@ impl ConfigurationStores {
         .context("configuration database worker failed")?
     }
 
+    /// Prepare a persisted instance without declared ordinary components.
     pub async fn configure(
         &self,
         builder: DrasiLibBuilder,
@@ -163,25 +172,127 @@ impl ConfigurationStores {
         plugins: Arc<RwLock<PluginRegistry>>,
         secrets: Option<Arc<dyn SecretStoreProvider>>,
     ) -> Result<DrasiLibBuilder> {
+        self.configure_with_components(
+            builder,
+            instance,
+            config,
+            seed,
+            OrdinarySeed::default(),
+            InstanceComponentSettings::default(),
+            plugins,
+            secrets,
+        )
+        .await
+    }
+
+    /// Prepare a persisted instance. On first start the store is seeded with
+    /// the declared computation topology and ordinary components, keyed by
+    /// [`INITIAL_REQUEST_ID`]; afterwards the store is authoritative.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn configure_with_components(
+        &self,
+        builder: DrasiLibBuilder,
+        instance: &str,
+        config: &ConfigurationStoreConfig,
+        seed: Option<&ComputationConfigInput>,
+        ordinary: OrdinarySeed<'_>,
+        settings: InstanceComponentSettings,
+        plugins: Arc<RwLock<PluginRegistry>>,
+        secrets: Option<Arc<dyn SecretStoreProvider>>,
+    ) -> Result<DrasiLibBuilder> {
         let provider = self.open(config).await?;
-        let factories = crate::computation::native_factory_registry(&*plugins.read().await)?;
+        let (factories, query_factory, records) = {
+            let registry = plugins.read().await;
+            let factories = crate::computation::native_factory_registry(&registry)?;
+            let query_factory = match crate::query_plugin::factory(&registry) {
+                Ok(factory) => Some(factory),
+                Err(error) if ordinary.queries.is_empty() => {
+                    log::debug!("Persisted instance '{instance}' has no query factory: {error}");
+                    None
+                }
+                Err(error) => return Err(error).context("query plugin for declared queries"),
+            };
+            // Seed errors only matter when the store is still empty.
+            let records = ordinary.records(&registry, &settings);
+            (factories, query_factory, records)
+        };
         provider
             .initialize_if_absent_with(instance, INITIAL_REQUEST_ID, || {
-                seed.map(|config| {
-                    config
-                        .resolve(&factories)
-                        .map(|config| DesiredInstance::from(config.definition.clone()))
-                })
-                .transpose()
-                .map(Option::unwrap_or_default)
+                let mut desired = seed
+                    .map(|config| {
+                        config
+                            .resolve(&factories)
+                            .map(|config| DesiredInstance::from(config.definition.clone()))
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                desired.ordinary = records.context("invalid declared components")?;
+                let desired = desired.normalized()?;
+                crate::ordinary_resolver::ensure_references_resolved(&desired)?;
+                Ok(desired)
             })
-            .await?;
-        Ok(builder
+            .await
+            .with_context(|| format!("initialize configuration store for instance '{instance}'"))?;
+        let mut builder = builder
             .with_id(instance)
             .with_component_factories(factories)
-            .with_management_resources(Arc::new(LiveResources { plugins, secrets }))
-            .with_configuration_store(provider))
+            .with_management_resources(Arc::new(LiveResources {
+                plugins: plugins.clone(),
+                secrets,
+            }))
+            .with_ordinary_component_resolver(Arc::new(ServerOrdinaryResolver::new(
+                plugins, settings,
+            )))
+            .with_configuration_store(provider);
+        if let Some(factory) = query_factory {
+            builder = builder.with_query_factory(factory);
+        }
+        Ok(builder)
     }
+}
+
+/// Create a configuration key only for a new database. A database without its
+/// key fails closed rather than being re-keyed.
+async fn generate_key(database: &std::path::Path, key_file: &std::path::Path) -> Result<()> {
+    anyhow::ensure!(
+        !tokio::fs::try_exists(database).await.unwrap_or(true),
+        "configuration encryption key file is missing for an existing configuration database"
+    );
+    let mut key = [0u8; 32];
+    getrandom::getrandom(&mut key)
+        .map_err(|error| anyhow::anyhow!("generate configuration encryption key: {error}"))?;
+    if let Some(parent) = key_file.parent().filter(|p| !p.as_os_str().is_empty()) {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .context("create configuration key directory")?;
+    }
+    let key_file = key_file.to_path_buf();
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        use std::io::Write;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = match options.open(&key_file) {
+            Ok(file) => file,
+            // A concurrent preparation created it; use that key.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            Err(error) => return Err(error).context("create configuration encryption key"),
+        };
+        file.write_all(&key)
+            .and_then(|_| file.sync_all())
+            .context("write configuration encryption key")?;
+        log::info!(
+            "Generated configuration encryption key at {}",
+            key_file.display()
+        );
+        Ok(())
+    })
+    .await
+    .context("configuration key worker failed")?
 }
 
 pub(crate) async fn start_instance(core: &drasi_lib::DrasiLib) -> Result<()> {

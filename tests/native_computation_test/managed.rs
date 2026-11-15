@@ -163,7 +163,21 @@ async fn durable_router_receipts_native_execution_and_authoritative_restart() ->
                 .0,
                 StatusCode::CONFLICT
             );
-            for path in ["sources/counter", "queries/missing", "reactions/capture"] {
+            // Native components change only through computation/desired;
+            // ordinary components use desired-state REST writes.
+            for (path, expected, code) in [
+                (
+                    "sources/counter",
+                    StatusCode::CONFLICT,
+                    "MANAGED_CONFIGURATION_REQUIRED",
+                ),
+                ("queries/missing", StatusCode::NOT_FOUND, "QUERY_NOT_FOUND"),
+                (
+                    "reactions/capture",
+                    StatusCode::CONFLICT,
+                    "MANAGED_CONFIGURATION_REQUIRED",
+                ),
+            ] {
                 let (status, body) = request(
                     &app,
                     "DELETE",
@@ -172,8 +186,8 @@ async fn durable_router_receipts_native_execution_and_authoritative_restart() ->
                     "application/json",
                 )
                 .await?;
-                assert_eq!(status, StatusCode::CONFLICT, "{body}");
-                assert_eq!(body["code"], "MANAGED_CONFIGURATION_REQUIRED");
+                assert_eq!(status, expected, "{body}");
+                assert_eq!(body["code"], code);
             }
             let mut foreign = desired.clone();
             foreign.topology.graph_id = "foreign-graph".into();

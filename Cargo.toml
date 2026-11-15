@@ -99,6 +99,7 @@ indicatif = "0.17"
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1.0", features = ["v4"] }
+getrandom = "0.2"
 indexmap = "2.0"
 thiserror = "1.0"
 dotenvy = "0.15"

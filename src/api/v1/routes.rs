@@ -59,6 +59,9 @@ pub fn build_v1_router(
         .merge(instance_routes)
         .merge(catalog_routes)
         .nest("/instances/:instanceId", instance_resource_routes)
+        .layer(axum::middleware::from_fn(
+            crate::api::shared::managed_components::preconditions_middleware,
+        ))
         .layer(Extension(registry))
         .layer(Extension(read_only))
         .layer(Extension(config_persistence))

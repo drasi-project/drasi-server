@@ -31,6 +31,7 @@ use crate::api::models::SourceConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
+use crate::api::shared::managed_components::{self as managed, ComponentRole, WriteMode};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::factories::{create_source_locked, resolve_source_bootstrap_provider};
 use crate::instance_registry::InstanceRegistry;
@@ -125,7 +126,6 @@ pub async fn create_source_handler(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse source config: {e}");
         ErrorResponse::new(
@@ -136,6 +136,20 @@ pub async fn create_source_handler(
 
     let source_id = config.id().to_string();
     let source_name = parse_component_name(&source_id, "source")?;
+
+    if core.configuration_is_persistent() {
+        let providers = instance_registry.bootstrap_providers(&instance_id).await;
+        return managed::write_source(
+            &core,
+            &config_persistence,
+            &plugin_registry,
+            providers,
+            &config,
+            WriteMode::Create,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
 
     // Resolve any top-level `bootstrapProvider: <id>` reference against this
     // instance's declared providers so the source is wired (and bootstraps)
@@ -189,6 +203,7 @@ pub async fn create_source_handler(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Source '{source_id}' created successfully"),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -228,7 +243,6 @@ pub async fn upsert_source_handler(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
         log::error!("Failed to parse source config: {e}");
         ErrorResponse::new(
@@ -249,6 +263,20 @@ pub async fn upsert_source_handler(
 
     let source_id = config.id().to_string();
     let source_name = parse_component_name(&source_id, "source")?;
+
+    if core.configuration_is_persistent() {
+        let providers = instance_registry.bootstrap_providers(&instance_id).await;
+        return managed::write_source(
+            &core,
+            &config_persistence,
+            &plugin_registry,
+            providers,
+            &config,
+            WriteMode::Upsert,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
 
     // Resolve any top-level `bootstrapProvider: <id>` reference so the source
     // is wired live; `config` keeps the reference for persistence.
@@ -308,6 +336,7 @@ pub async fn upsert_source_handler(
 
         return Ok(Json(ApiResponse::success(StatusResponse {
             message: format!("Source '{source_id}' updated successfully"),
+            configuration: None,
         })));
     }
 
@@ -352,6 +381,7 @@ pub async fn upsert_source_handler(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Source '{source_id}' created successfully"),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -526,8 +556,12 @@ pub async fn delete_source(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let name = parse_component_name(&id, "source")?;
+    if core.configuration_is_persistent() {
+        return managed::delete_component(&core, &config_persistence, ComponentRole::Source, &name)
+            .await
+            .map(|status| Json(ApiResponse::success(status)));
+    }
     match core.remove_source_by_name(&name, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {
@@ -540,6 +574,7 @@ pub async fn delete_source(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Source deleted successfully".to_string(),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -561,6 +596,7 @@ pub async fn start_source(
     match core.start_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source started successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }
@@ -575,6 +611,7 @@ pub async fn stop_source(
     match core.stop_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source stopped successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }

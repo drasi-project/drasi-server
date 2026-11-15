@@ -30,6 +30,7 @@ use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
+use crate::api::shared::managed_components::{self as managed, ComponentRole, WriteMode};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
@@ -86,7 +87,6 @@ pub async fn create_query(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     crate::query_plugin::ensure_registered(&core, &plugins)
         .await
         .map_err(|error| {
@@ -112,6 +112,25 @@ pub async fn create_query(
             format!("Invalid query configuration: {e}"),
         )
     })?;
+
+    if core.configuration_is_persistent() {
+        let definition = drasi_lib::management::OrdinaryComponentDefinition::query(config)
+            .map_err(|e| {
+                ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    format!("Invalid query configuration: {e:#}"),
+                )
+            })?;
+        return managed::write_component(
+            &core,
+            &config_persistence,
+            ComponentRole::Query,
+            WriteMode::Create,
+            definition,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
 
     // Pre-flight join validation/logging (non-fatal warnings)
     if let Some(joins) = &config.joins {
@@ -156,6 +175,7 @@ pub async fn create_query(
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query created successfully".to_string(),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -340,14 +360,19 @@ pub async fn delete_query(
         ));
     }
 
-    super::require_imperative_configuration(&core)?;
     let name = parse_component_name(&id, "query")?;
+    if core.configuration_is_persistent() {
+        return managed::delete_component(&core, &config_persistence, ComponentRole::Query, &name)
+            .await
+            .map(|status| Json(ApiResponse::success(status)));
+    }
     match core.remove_query_by_name(&name).await {
         Ok(_) => {
             persist_after_operation(&config_persistence, "deleting query").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query deleted successfully".to_string(),
+                configuration: None,
             })))
         }
         Err(e) => {
@@ -369,6 +394,7 @@ pub async fn start_query(
     match core.start_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query started successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }
@@ -383,6 +409,7 @@ pub async fn stop_query(
     match core.stop_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query stopped successfully".to_string(),
+            configuration: None,
         }))),
         Err(e) => Err(ErrorResponse::from(e)),
     }

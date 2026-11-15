@@ -64,6 +64,63 @@ pub struct ConfigPersistence {
     /// `bootstrapProvider: <id>` references. Seeded from the original config
     /// and kept current by the source API handlers.
     source_bootstrap_provider: Arc<RwLock<IndexMap<(String, String), BootstrapProviderRef>>>,
+    /// Serializes file writes; each write renders the latest state, so queued
+    /// writers coalesce into an up-to-date file.
+    save_lock: tokio::sync::Mutex<()>,
+    /// Last configuration write-back failure, cleared by a successful write.
+    last_write_error: std::sync::Mutex<Option<String>>,
+}
+
+type RenderedComponents = (Vec<SourceConfig>, Vec<QueryConfigDto>, Vec<ReactionConfig>);
+
+/// Render a persisted instance's ordinary components from its committed
+/// desired state. Secret references are stored unresolved, so none are
+/// expanded here. The native topology is not rendered: it may hold values
+/// accepted only into the encrypted store, which must not reach plaintext YAML.
+fn render_desired(id: &str, core: &drasi_lib::DrasiLib) -> Result<RenderedComponents> {
+    use crate::ordinary_resolver::{
+        component_names, named_reference, reaction_config, source_config,
+    };
+    use drasi_lib::management::OrdinaryComponent;
+
+    let committed = core
+        .desired_configuration()
+        .map_err(|e| anyhow::anyhow!("Failed to read desired state of instance '{id}': {e}"))?;
+    let desired = committed.desired;
+    let names = component_names(&desired);
+    let mut sources = Vec::new();
+    let mut queries = Vec::new();
+    let mut reactions = Vec::new();
+    for record in &desired.ordinary {
+        match &record.component {
+            OrdinaryComponent::Source { .. } => sources.push(source_config(record)?),
+            OrdinaryComponent::Query { .. } => {
+                let mut query = record.query_configuration()?.into_authoring();
+                for input in &mut query.inputs {
+                    input.component = named_reference(&names, input.component.clone());
+                }
+                queries.push(QueryConfigDto::try_from(query).with_context(|| {
+                    format!(
+                        "Cannot serialize query '{}' in instance '{id}'",
+                        record.name
+                    )
+                })?);
+            }
+            OrdinaryComponent::Reaction { inputs, .. } => {
+                let queries = inputs
+                    .iter()
+                    .cloned()
+                    .map(|input| named_reference(&names, input))
+                    .collect();
+                reactions.push(reaction_config(record, queries)?);
+            }
+            OrdinaryComponent::ProcessLocal { .. } => anyhow::bail!(
+                "Cannot persist process-local component '{}' in instance '{id}'",
+                record.name
+            ),
+        }
+    }
+    Ok((sources, queries, reactions))
 }
 
 fn capture_instance_settings(
@@ -139,6 +196,8 @@ impl ConfigPersistence {
             source_identity_provider: Arc::new(RwLock::new(source_identity_provider)),
             reaction_identity_provider: Arc::new(RwLock::new(reaction_identity_provider)),
             source_bootstrap_provider: Arc::new(RwLock::new(source_bootstrap_provider)),
+            save_lock: tokio::sync::Mutex::new(()),
+            last_write_error: std::sync::Mutex::new(None),
         })
     }
 
@@ -283,6 +342,7 @@ impl ConfigPersistence {
             debug!("Persistence disabled (persist_config: false), skipping save");
             return Ok(());
         }
+        let _writer = self.save_lock.lock().await;
 
         info!(
             "Saving configuration to {}",
@@ -307,6 +367,10 @@ impl ConfigPersistence {
                     settings.configuration_store.is_some(),
                     "Cannot persist managed instance '{id}' without its configurationStore"
                 );
+                let (sources, queries, reactions) = render_desired(&id, &core)?;
+                settings.sources = sources;
+                settings.queries = queries;
+                settings.reactions = reactions;
                 instance_configs.push(settings);
                 continue;
             }
@@ -442,6 +506,28 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
         Ok(())
+    }
+
+    /// Write the configuration after a durable desired-state change. A failure
+    /// does not undo the accepted change: it is logged, recorded for
+    /// [`Self::last_write_error`] and returned for the API response.
+    pub async fn write_back(&self) -> std::result::Result<(), String> {
+        let result = self.save().await.map_err(|e| format!("{e:#}"));
+        if let Err(error) = &result {
+            error!("Configuration write-back failed; the accepted change remains applied: {error}");
+        }
+        if let Ok(mut last) = self.last_write_error.lock() {
+            *last = result.clone().err();
+        }
+        result
+    }
+
+    /// Most recent write-back failure, if the last write failed.
+    pub fn last_write_error(&self) -> Option<String> {
+        self.last_write_error
+            .lock()
+            .ok()
+            .and_then(|last| last.clone())
     }
 
     /// Check if the config file is writable

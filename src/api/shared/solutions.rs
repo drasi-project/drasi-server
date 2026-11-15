@@ -871,6 +871,21 @@ pub async fn deploy_solution(
         ));
     }
 
+    if core.configuration_is_persistent() {
+        return deploy_persisted(
+            &core,
+            &persistence,
+            &registry,
+            plugin_registry,
+            instance_id,
+            &mapper,
+            validated_sources,
+            validated_queries,
+            validated_reactions,
+        )
+        .await;
+    }
+
     // ===== PHASE 2: CREATION =====
     // All configs validated successfully. Now create components in order:
     // Sources first, then Queries, then Reactions.
@@ -1121,6 +1136,96 @@ fn resolve_yaml_variables(
             }
         })
         .to_string()
+}
+
+/// Deploy a solution to a persisted instance as one atomic desired-state request.
+#[allow(clippy::too_many_arguments)]
+async fn deploy_persisted(
+    core: &drasi_lib::DrasiLib,
+    persistence: &Option<Arc<ConfigPersistence>>,
+    registry: &InstanceRegistry,
+    plugin_registry: &tokio::sync::RwLock<PluginRegistry>,
+    instance_id: &str,
+    mapper: &DtoMapper,
+    sources: Vec<(SourceConfig, bool)>,
+    queries: Vec<(QueryConfigDto, bool)>,
+    reactions: Vec<(ReactionConfig, bool)>,
+) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
+    use super::managed_components::{add_components, reaction_component, source_component};
+
+    let providers = registry.bootstrap_providers(instance_id).await;
+    let mut definitions = Vec::new();
+    let mut started = Vec::new();
+    let mut response = SolutionDeployResponse {
+        success: true,
+        sources_created: Vec::new(),
+        queries_created: Vec::new(),
+        reactions_created: Vec::new(),
+        components_started: Vec::new(),
+        errors: Vec::new(),
+    };
+    for (source, auto_start) in &sources {
+        definitions.push(source_component(plugin_registry, providers.clone(), source).await?);
+        response.sources_created.push(source.id().to_string());
+        if *auto_start {
+            started.push(source.id().to_string());
+        }
+    }
+    if !queries.is_empty() {
+        crate::query_plugin::ensure_registered(core, plugin_registry)
+            .await
+            .map_err(|error| {
+                ErrorResponse::new(error_codes::PLUGIN_NOT_FOUND, format!("{error:#}"))
+            })?;
+    }
+    for (query, auto_start) in &queries {
+        let query_id = query.name.to_string();
+        let config = mapper
+            .map_with(query, &QueryConfigMapper)
+            .map_err(anyhow::Error::from)
+            .and_then(drasi_lib::management::OrdinaryComponentDefinition::query)
+            .map_err(|error| {
+                ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    format!("in query '{query_id}': {error:#}"),
+                )
+            })?;
+        definitions.push(config);
+        response.queries_created.push(query_id.clone());
+        if *auto_start {
+            started.push(query_id);
+        }
+    }
+    for (reaction, auto_start) in &reactions {
+        definitions.push(reaction_component(plugin_registry, reaction).await?);
+        response.reactions_created.push(reaction.id().to_string());
+        if *auto_start {
+            started.push(reaction.id().to_string());
+        }
+    }
+    let status = add_components(core, persistence, "solution", definitions).await?;
+    if let Some(change) = &status.configuration {
+        if change.status != "converged" {
+            response.errors.push(SolutionDeployError::creation(
+                "solution",
+                instance_id,
+                format!(
+                    "accepted as request '{}'; {}",
+                    change.request_id, change.status
+                ),
+            ));
+        }
+        if let Some(error) = &change.write_back_error {
+            response.errors.push(SolutionDeployError::creation(
+                "solution",
+                instance_id,
+                format!("configuration file write-back failed: {error}"),
+            ));
+        }
+    }
+    // Desired state starts autoStart components when it realizes them.
+    response.components_started = started;
+    Ok(Json(ApiResponse::success(response)))
 }
 
 #[cfg(test)]

@@ -447,6 +447,7 @@ pub async fn delete_computation_components(
     persist_after_operation(&persistence, "deleting computation components").await?;
     Ok(Json(ApiResponse::success(StatusResponse {
         message: "Computation components removed".into(),
+        configuration: None,
     })))
 }
 

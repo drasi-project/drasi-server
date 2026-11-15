@@ -750,6 +750,18 @@ unless a YAML save has written it explicitly. Store paths, keys, and Server-wide
 bootstrap settings still come from the file, which must remain syntactically
 valid. Shared stores require explicit instance IDs to avoid ambiguous selection.
 
+A stored instance may also declare `sources`, `queries` and `reactions`. They
+seed the store on first start only (the YAML `id` becomes the component name and
+Server assigns a stable UUID). Afterwards REST create, update (`PUT`) and delete
+calls on that instance write desired state to the store. They accept optional
+`Idempotency-Key` and `If-Match` (revision) headers. A change of component kind
+returns `409 CONFIGURATION_TRANSITION_REQUIRED`. Accepted changes are written
+back to the YAML file with secret references preserved, never resolved values.
+Identity and bootstrap providers used by stored components must be declared in
+the instance's YAML settings. If the key file is missing and the store database
+does not exist, a 32-byte key is generated with mode `0600`. If the database
+exists but its key is missing, startup fails.
+
 Successful create/upsert responses acknowledge an added graph node, not completed
 initialization or activation. Inspect component status, events, and errors for
 readiness; explicit start operations wait for startup and report failures. Clone

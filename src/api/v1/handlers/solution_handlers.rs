@@ -145,8 +145,7 @@ pub async fn deploy_solution(
             "Server is in read-only mode. Cannot deploy solutions.",
         ));
     }
-    let core = shared::get_instance_or_error(&registry, &instance_id).await?;
-    shared::require_imperative_configuration(&core)?;
+    shared::get_instance_or_error(&registry, &instance_id).await?;
     solutions::deploy_solution(
         registry,
         persistence,

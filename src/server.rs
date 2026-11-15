@@ -487,7 +487,8 @@ impl DrasiServer {
                 let mut builder = DrasiLib::builder()
                     .with_id(&instance.id)
                     .with_allow_external_component_ids(true);
-                if !instance.queries.is_empty() {
+                let persisted = instance.configuration_store.is_some();
+                if !instance.queries.is_empty() && !persisted {
                     let registry = plugin_registry.read().await;
                     builder = builder.with_query_factory(
                         crate::query_plugin::factory(&registry).with_context(|| {
@@ -575,13 +576,24 @@ impl DrasiServer {
                 // referencing source instantiates its own provider from the config.
                 let bootstrap_providers =
                     build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
+                // Persisted instances seed declared components into their store.
+                let declared = if persisted {
+                    (Vec::new(), Vec::new(), Vec::new())
+                } else {
+                    (
+                        instance.sources.clone(),
+                        instance.queries.clone(),
+                        instance.reactions.clone(),
+                    )
+                };
+                let (declared_sources, declared_queries, declared_reactions) = declared;
                 // Create and add sources from config
                 info!(
                     "Loading {} source(s) from configuration for instance '{}'",
                     instance.sources.len(),
                     instance.id
                 );
-                for source_config in instance.sources.clone() {
+                for source_config in declared_sources {
                     let source_name = drasi_lib::ComponentName::try_new(source_config.id())?;
                     let source_config =
                         resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
@@ -606,12 +618,12 @@ impl DrasiServer {
                 }
 
                 // Add queries from config (already resolved in config/types.rs)
-                for query_config in &instance.queries {
-                    builder = builder.with_query(query_config.clone());
+                for query_config in declared_queries {
+                    builder = builder.with_query(query_config);
                 }
 
                 // Create and add reactions from config
-                for reaction_config in instance.reactions.clone() {
+                for reaction_config in declared_reactions {
                     let reaction_name = drasi_lib::ComponentName::try_new(reaction_config.id())?;
                     let identity_ref = reaction_config.identity_provider().map(str::to_string);
                     let (reaction, plugin_meta) = create_reaction_locked(
@@ -636,11 +648,20 @@ impl DrasiServer {
                 // Build and initialize the core
                 if let Some(store) = &instance.configuration_store {
                     builder = configuration_stores
-                        .configure(
+                        .configure_with_components(
                             builder,
                             &instance.id,
                             store,
                             instance.computation.as_ref(),
+                            crate::ordinary_resolver::OrdinarySeed {
+                                sources: &instance.sources,
+                                queries: &instance.queries,
+                                reactions: &instance.reactions,
+                            },
+                            crate::ordinary_resolver::InstanceComponentSettings {
+                                identity_providers: identity_providers.clone(),
+                                bootstrap_providers: bootstrap_providers.clone(),
+                            },
                             plugin_registry.clone(),
                             process_secret_store
                                 .clone()
