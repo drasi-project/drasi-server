@@ -59,8 +59,8 @@ async fn instance_registry_without_context_keeps_core_default_binding_behavior()
     let recorder = PrometheusBuilder::new().build_recorder();
     let context = MetricRegistrationContext::new(Arc::new(recorder), Default::default())?;
     let logging = logging()?;
-    let bindings = TelemetryBindings::new(metrics_only(), logging.clone())
-        .with_metric_context(context);
+    let bindings =
+        TelemetryBindings::new(metrics_only(), logging.clone()).with_metric_context(context);
     let supplied = bindings.apply_to(DrasiLib::builder().with_id("legacy-registry"))?;
     let builder = crate::instance_registry::InstanceRegistry::new().bind_builder(supplied)?;
     let core = builder.build().await?;

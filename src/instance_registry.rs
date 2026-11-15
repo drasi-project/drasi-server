@@ -109,12 +109,18 @@ impl InstanceRegistry {
         bindings: TelemetryBindings,
         cleanup: ServerCleanupHandle,
     ) -> Self {
-        self.runtime = Some(Arc::new(RuntimeContext { bindings: Some(bindings), cleanup }));
+        self.runtime = Some(Arc::new(RuntimeContext {
+            bindings: Some(bindings),
+            cleanup,
+        }));
         self
     }
 
     pub(crate) fn with_cleanup_context(mut self, cleanup: ServerCleanupHandle) -> Self {
-        self.runtime = Some(Arc::new(RuntimeContext { bindings: None, cleanup }));
+        self.runtime = Some(Arc::new(RuntimeContext {
+            bindings: None,
+            cleanup,
+        }));
         self
     }
 
@@ -122,7 +128,11 @@ impl InstanceRegistry {
         &self,
         builder: drasi_lib::DrasiLibBuilder,
     ) -> anyhow::Result<drasi_lib::DrasiLibBuilder> {
-        match self.runtime.as_ref().and_then(|context| context.bindings.as_ref()) {
+        match self
+            .runtime
+            .as_ref()
+            .and_then(|context| context.bindings.as_ref())
+        {
             Some(bindings) => bindings.apply_to(builder),
             None => Ok(builder),
         }
@@ -135,7 +145,11 @@ impl InstanceRegistry {
     pub(crate) fn plugin_log_registry(
         &self,
     ) -> Option<Arc<drasi_lib::observability::ComponentLogRegistry>> {
-        self.runtime.as_ref()?.bindings.as_ref().map(|bindings| bindings.logging().registry())
+        self.runtime
+            .as_ref()?
+            .bindings
+            .as_ref()
+            .map(|bindings| bindings.logging().registry())
     }
 
     pub(crate) async fn publish_instance(
@@ -150,8 +164,8 @@ impl InstanceRegistry {
             Ok(())
         };
         if let Some(context) = &self.runtime {
-            if let Some(request) = ManagementRequest::current()
-                .filter(|request| request.belongs_to(&context.cleanup))
+            if let Some(request) =
+                ManagementRequest::current().filter(|request| request.belongs_to(&context.cleanup))
             {
                 request.publish(publish)
             } else {

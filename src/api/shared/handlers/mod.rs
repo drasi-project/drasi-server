@@ -53,6 +53,21 @@ use drasi_lib::DrasiLib;
 #[derive(Debug, Clone)]
 pub struct ApiPrefix(pub String);
 
+pub(crate) fn parse_component_id(
+    id: &str,
+) -> Result<drasi_lib::config::ComponentId, Box<ErrorResponse>> {
+    drasi_lib::config::ComponentId::try_new(id).map_err(|error| {
+        Box::new(
+            ErrorResponse::new(error_codes::INVALID_REQUEST, "A component UUID is required")
+                .with_details(ErrorDetail {
+                    component_type: None,
+                    component_id: Some(id.to_owned()),
+                    technical_details: Some(error.to_string()),
+                }),
+        )
+    })
+}
+
 pub(crate) fn require_imperative_configuration(core: &DrasiLib) -> Result<(), ErrorResponse> {
     if core.configuration_is_persistent() {
         return Err(ErrorResponse::new(
@@ -283,20 +298,30 @@ pub(crate) async fn wait_for_computation_creation(
             format!("Node was added, but {reason}"),
         )
     };
-    let handle = core.computation_component(id).map_err(|e| {
-        health_error(format!("creation health could not be inspected: {e}")).with_cause(e)
-    })?;
-    tokio::time::timeout(COMPUTATION_CREATION_TIMEOUT, handle.wait_created())
-        .await
-        .map_err(|error| {
-            health_error(format!(
-                "creation was not confirmed within {} seconds; it may still be pending or blocked",
-                COMPUTATION_CREATION_TIMEOUT.as_secs()
-            ))
-            .with_cause(error)
-        })?
-        .map_err(|e| health_error(format!("creation was not confirmed: {e}")).with_cause(e))?;
-    Ok(handle)
+    tokio::time::timeout(COMPUTATION_CREATION_TIMEOUT, async {
+        // Accepted definitions can precede physical graph publication.
+        if core.has_managed_configuration() {
+            core.reconcile_desired_state().await.map_err(|error| {
+                health_error("configuration realization failed".into()).with_cause(error)
+            })?;
+        }
+        let handle = core.computation_component(id).map_err(|e| {
+            health_error(format!("creation health could not be inspected: {e}")).with_cause(e)
+        })?;
+        handle
+            .wait_created()
+            .await
+            .map_err(|e| health_error(format!("creation was not confirmed: {e}")).with_cause(e))?;
+        Ok(handle)
+    })
+    .await
+    .map_err(|error| {
+        health_error(format!(
+            "creation was not confirmed within {} seconds; it may still be pending or blocked",
+            COMPUTATION_CREATION_TIMEOUT.as_secs()
+        ))
+        .with_cause(error)
+    })?
 }
 
 /// Save host settings after an accepted operation. Component definitions may

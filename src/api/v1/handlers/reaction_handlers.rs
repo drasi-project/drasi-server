@@ -317,7 +317,7 @@ pub async fn stream_reaction_logs(
         .get(&instance_id)
         .await
         .ok_or_else(|| ErrorResponse::new(error_codes::INTERNAL_ERROR, "Instance not found"))?;
-    shared::stream_reaction_logs(Extension(core), Path(id)).await
+    shared::stream_reaction_logs_with_cleanup(core, id, registry.cleanup_handle()).await
 }
 
 /// Delete a reaction

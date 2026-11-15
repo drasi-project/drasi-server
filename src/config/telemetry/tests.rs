@@ -444,5 +444,5 @@ async fn startup_rejects_unavailable_capabilities_before_loading_plugins() {
         Ok(_) => panic!("unsupported inspection must not start"),
         Err(error) => error,
     };
-    assert!(error.to_string().contains("inspection API (OBS-06)"));
+    assert!(format!("{error:#}").contains("inspection API (OBS-06)"));
 }

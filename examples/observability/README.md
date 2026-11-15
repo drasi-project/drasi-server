@@ -1,13 +1,14 @@
 # Observability configuration example
 
-This is a runnable **configuration-first** example for OBS-02
+This is a runnable **configuration-first, logs-only** example for OBS-02/03
 ([#235](https://github.com/drasi-project/drasi-server/issues/235)). It demonstrates
 policy validation, environment overrides, the init wizard, and startup errors
 for capabilities that are not implemented yet.
 
 It is **not an end-to-end observability demo**. There are no instances, sources,
-queries, reactions, collectors or dashboards. New telemetry runtime/exporter,
-process-metric and inspection support will be integrated in later work. A health
+queries, reactions, collectors or dashboards. OBS-03 owns startup logging and
+retained shutdown, but installs no new providers/exporters or process/CPU metrics.
+Production tracing/metrics are OBS-04/05; process/inspection are OBS-06. A health
 response proves that the Server is responding, not that telemetry was exported.
 
 ## Prerequisites
@@ -48,6 +49,14 @@ curl --noproxy '*' -i http://127.0.0.1:18081/api/v1/telemetry
 
 Both return HTTP 404. Stop this Server with **Ctrl+C** in its terminal.
 No background processes or containers are started by the launcher.
+The Server itself retains its actual cleanup workers: the first SIGINT/SIGTERM
+closes admission and starts one attempt, repeated signals do not restart it.
+The 30-second overall wait and shared telemetry allowance (default five seconds,
+capped by remaining time) are bounded waits, not a hard exit guarantee. Pending
+HTTP/SSE or producer work remains owned beyond expiry; the CLI reports it and
+retains Tokio until accepted joins finish, then exits nonzero. Logging closes
+last. Failed unfinished cleanup requiring explicit retry is retained, not retried
+in a busy loop.
 
 To avoid another local listener:
 
@@ -186,5 +195,10 @@ expose scrape/inspection endpoints to untrusted networks when later support is
 added; protect them with a trusted proxy or restricted network.
 
 See [telemetry configuration](../../docs/telemetry-configuration.md) for the full
-policy contract. This example can grow into a real source/query/reaction and
+policy and `TelemetryBindings`/preparation/`shutdown` ownership APIs. Borrowed
+providers, native collectors, recorders and logging remain caller-owned.
+Server hot reload's owned backend is polling/debounce (no notify threads);
+legacy root metrics use an owned ManualReader loop with the existing HTTP/JSON
+contract, not new production telemetry. Neither is enabled by this example.
+This example can grow into a real source/query/reaction and
 collector demonstration as the later runtime/exporter issues land.

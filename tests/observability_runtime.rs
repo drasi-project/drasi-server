@@ -5,18 +5,24 @@ use anyhow::{Context, Result};
 use drasi_lib::{
     observability::{
         ComponentLogKey, ComponentLogRuntime, ComponentLogType, LogPolicy, LoggingError,
-        OpenTelemetryContextAdapter, TelemetryProfile, TelemetrySettings, TELEMETRY_TARGET,
+        MetricRegistrationContext, NativeSpanCollector, OpenTelemetryContextAdapter,
+        OpenTelemetrySpanProcessor, TelemetryProfile, TelemetrySettings, TELEMETRY_TARGET,
     },
     DrasiLib, ShutdownCompletion,
 };
 use drasi_server::{
     server::{CleanupPhase, ServerCleanupError, ServerPreparation},
     telemetry::StandaloneTelemetry,
-    DrasiServer, TelemetryBindings,
+    DrasiServer, DrasiServerBuilder, TelemetryBindings,
 };
 use drasi_source_application::ApplicationSource;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use opentelemetry_sdk::{
+    error::OTelSdkResult,
+    trace::{BatchSpanProcessor, Sampler, SpanData, SpanExporter},
+};
 use std::{
     io::Write,
     sync::{
@@ -30,10 +36,10 @@ use tracing::instrument::WithSubscriber;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
 // Exercise the real command entry point without exporting binary-only CLI APIs.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::print_stdout)]
 #[path = "../src/cli_styles.rs"]
 mod cli_styles;
-#[allow(dead_code)]
+#[allow(dead_code, clippy::print_stdout)]
 #[path = "../src/plugin/mod.rs"]
 mod plugin;
 
@@ -193,6 +199,12 @@ fn embedded_debug_collection_is_independent_of_disabled_logging() -> Result<()> 
 }
 
 #[test]
+fn two_public_servers_borrow_one_live_caller_collection() -> Result<()> {
+    children("two-public-servers", None)?;
+    Ok(())
+}
+
+#[test]
 fn configured_empty_server_owns_logging_before_any_core_exists() -> Result<()> {
     for console in children("task5-configured-off", None)? {
         assert!(console.contains("task5 empty configured startup diagnostic"));
@@ -203,7 +215,12 @@ fn configured_empty_server_owns_logging_before_any_core_exists() -> Result<()> {
 #[test]
 fn standalone_runtime_handoff_reuses_the_original_capture_and_owner() -> Result<()> {
     for console in children("task5-runtime-handoff", None)? {
-        assert_eq!(console.matches("task5 capture survives ownership handoff").count(), 1);
+        assert_eq!(
+            console
+                .matches("task5 capture survives ownership handoff")
+                .count(),
+            1
+        );
     }
     Ok(())
 }
@@ -216,24 +233,41 @@ fn configured_policy_rejection_awaits_the_handed_off_logging_owner() -> Result<(
 
 #[tokio::test]
 async fn configured_file_and_borrowed_policy_are_explicitly_exclusive() -> Result<()> {
-    let directory = tempfile::Builder::new().prefix("task5-exclusive-").tempdir_in(".")?;
+    let directory = tempfile::Builder::new()
+        .prefix("task5-exclusive-")
+        .tempdir_in(".")?;
     let path = directory.path().join("server.yaml");
-    std::fs::write(&path, "persistConfig: false\ntelemetry:\n  profile: off\ninstances: []\n")?;
+    std::fs::write(
+        &path,
+        "persistConfig: false\ntelemetry:\n  profile: off\ninstances: []\n",
+    )?;
     let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
     let bindings = TelemetryBindings::new(
-        TelemetrySettings::new(TelemetryProfile::Off), logging.clone(),
+        TelemetrySettings::new(TelemetryProfile::Off),
+        logging.clone(),
     );
     let preparation = DrasiServer::prepare_new_with_telemetry(
-        path, 0, directory.path().join("plugins"), false, false, bindings,
+        path,
+        0,
+        directory.path().join("plugins"),
+        false,
+        false,
+        bindings,
     );
     let cleanup = preparation.cleanup_handle();
     let error = match preparation.finish().await {
         Ok(_) => anyhow::bail!("YAML telemetry silently replaced borrowed policy"),
         Err(error) => error,
     };
-    assert!(format!("{error:#}").contains("mutually exclusive"), "{error:#}");
+    assert!(
+        format!("{error:#}").contains("mutually exclusive"),
+        "{error:#}"
+    );
     assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
-    assert!(!logging.is_closed(), "rejection must not close borrowed capture");
+    assert!(
+        !logging.is_closed(),
+        "rejection must not close borrowed capture"
+    );
     logging.shutdown(WAIT).await?;
     Ok(())
 }
@@ -243,7 +277,11 @@ async fn configured_file_and_borrowed_policy_are_explicitly_exclusive() -> Resul
 #[tokio::test]
 async fn cli_empty_server_logs_before_plugins_and_constructor_failure() -> Result<()> {
     let console = cli_startup(false, None).await?;
-    assert_eq!(console.matches("Loading cdylib plugins from:").count(), 1, "{console}");
+    assert_eq!(
+        console.matches("Loading cdylib plugins from:").count(),
+        1,
+        "{console}"
+    );
     assert!(console.contains("No cdylib plugins found"), "{console}");
     Ok(())
 }
@@ -251,12 +289,30 @@ async fn cli_empty_server_logs_before_plugins_and_constructor_failure() -> Resul
 #[tokio::test]
 async fn cli_missing_config_diagnostics_are_visible_before_file_creation() -> Result<()> {
     let console = cli_startup(true, None).await?;
-    assert_eq!(console.matches("Creating default configuration.").count(), 1, "{console}");
-    assert_eq!(console.matches("Default configuration created at:").count(), 1, "{console}");
-    assert_eq!(console.matches("Loading cdylib plugins from:").count(), 1, "{console}");
-    let creating = console.find("Creating default configuration.").context("creation diagnostic")?;
-    let created = console.find("Default configuration created at:").context("created diagnostic")?;
-    let loading = console.find("Loading cdylib plugins from:").context("plugin loading diagnostic")?;
+    assert_eq!(
+        console.matches("Creating default configuration.").count(),
+        1,
+        "{console}"
+    );
+    assert_eq!(
+        console.matches("Default configuration created at:").count(),
+        1,
+        "{console}"
+    );
+    assert_eq!(
+        console.matches("Loading cdylib plugins from:").count(),
+        1,
+        "{console}"
+    );
+    let creating = console
+        .find("Creating default configuration.")
+        .context("creation diagnostic")?;
+    let created = console
+        .find("Default configuration created at:")
+        .context("created diagnostic")?;
+    let loading = console
+        .find("Loading cdylib plugins from:")
+        .context("plugin loading diagnostic")?;
     assert!(creating < created && created < loading, "{console}");
     Ok(())
 }
@@ -264,40 +320,68 @@ async fn cli_missing_config_diagnostics_are_visible_before_file_creation() -> Re
 #[tokio::test]
 async fn cli_rust_log_overrides_the_file_level_without_reinstalling_logging() -> Result<()> {
     let console = cli_startup(false, Some("info")).await?;
-    assert_eq!(console.matches("Loading cdylib plugins from:").count(), 1, "{console}");
-    assert!(!console.contains("global default trace dispatcher has already been set"), "{console}");
+    assert_eq!(
+        console.matches("Loading cdylib plugins from:").count(),
+        1,
+        "{console}"
+    );
+    assert!(
+        !console.contains("global default trace dispatcher has already been set"),
+        "{console}"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn cli_validate_logs_plugin_scan_without_activating_unavailable_policy() -> Result<()> {
-    let directory = tempfile::Builder::new().prefix("task5-validate-").tempdir_in(".")?;
+    let directory = tempfile::Builder::new()
+        .prefix("task5-validate-")
+        .tempdir_in(".")?;
     let path = directory.path().join("server.yaml");
     let plugins = directory.path().join("plugins");
     std::fs::create_dir(&plugins)?;
-    std::fs::write(&path, concat!(
-        "persistConfig: false\nverifyPlugins: false\ninstances: []\n",
-        "telemetry:\n  profile: basic\n  metrics:\n    backend: prometheus\n",
-    ))?;
-    let output = timeout(Duration::from_secs(40), tokio::process::Command::new(
-        env!("CARGO_BIN_EXE_drasi-server"),
+    std::fs::write(
+        &path,
+        concat!(
+            "persistConfig: false\nverifyPlugins: false\ninstances: []\n",
+            "telemetry:\n  profile: basic\n  metrics:\n    backend: prometheus\n",
+        ),
+    )?;
+    let output = timeout(
+        Duration::from_secs(40),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"))
+            .arg("validate")
+            .arg("--config")
+            .arg(&path)
+            .arg("--plugins-dir")
+            .arg(&plugins)
+            .env("RUST_LOG", "info")
+            .env("NO_COLOR", "1")
+            .kill_on_drop(true)
+            .output(),
     )
-        .arg("validate").arg("--config").arg(&path)
-        .arg("--plugins-dir").arg(&plugins)
-        .env("RUST_LOG", "info").env("NO_COLOR", "1")
-        .kill_on_drop(true).output()).await??;
-    let console = format!("{}{}", String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr));
+    .await??;
+    let console = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(output.status.success(), "{console}");
     assert!(console.contains("Configuration policy valid"), "{console}");
-    assert_eq!(console.matches("Loading cdylib plugins from:").count(), 1, "{console}");
+    assert_eq!(
+        console.matches("Loading cdylib plugins from:").count(),
+        1,
+        "{console}"
+    );
     Ok(())
 }
 
 async fn cli_startup(missing: bool, rust_log: Option<&str>) -> Result<String> {
     use tokio::io::AsyncReadExt;
 
-    let directory = tempfile::Builder::new().prefix("task5-cli-").tempdir_in(".")?;
+    let directory = tempfile::Builder::new()
+        .prefix("task5-cli-")
+        .tempdir_in(".")?;
     let path = directory.path().join("server.yaml");
     let plugins = directory.path().join("plugins");
     std::fs::create_dir(&plugins)?;
@@ -314,14 +398,22 @@ async fn cli_startup(missing: bool, rust_log: Option<&str>) -> Result<String> {
         ))?;
     }
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"));
-    command.arg("--config").arg(&path)
-        .arg("--port").arg(occupied.local_addr()?.port().to_string())
-        .arg("--plugins-dir").arg(&plugins).arg("--disable-ui")
-        .env_remove("RUST_LOG").env("NO_COLOR", "1").kill_on_drop(true);
+    command
+        .arg("--config")
+        .arg(&path)
+        .arg("--port")
+        .arg(occupied.local_addr()?.port().to_string())
+        .arg("--plugins-dir")
+        .arg(&plugins)
+        .arg("--disable-ui")
+        .env_remove("RUST_LOG")
+        .env("NO_COLOR", "1")
+        .kill_on_drop(true);
     if let Some(directives) = rust_log {
         command.env("RUST_LOG", directives);
     }
-    let mut child = command.stdin(std::process::Stdio::null())
+    let mut child = command
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -336,7 +428,8 @@ async fn cli_startup(missing: bool, rust_log: Option<&str>) -> Result<String> {
             stderr.read_to_end(&mut err),
         )?;
         Ok::<_, std::io::Error>(status)
-    }).await;
+    })
+    .await;
     let status = match result {
         Ok(status) => status?,
         Err(error) => {
@@ -344,27 +437,45 @@ async fn cli_startup(missing: bool, rust_log: Option<&str>) -> Result<String> {
             let killed = child.start_kill();
             let status = child.wait().await.context("reaping timed-out CLI")?;
             tokio::try_join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err))?;
-            let settings = std::fs::read_to_string(&path).ok()
+            let settings = std::fs::read_to_string(&path)
+                .ok()
                 .and_then(|yaml| serde_yaml::from_str::<serde_yaml::Value>(&yaml).ok())
-                .map(|document| format!(
-                    "host={:?}, port={:?}, verifyPlugins={:?}, persistConfig={:?}",
-                    document["host"], document["port"],
-                    document["verifyPlugins"], document["persistConfig"],
-                ));
-            let console = format!("{}{}", String::from_utf8_lossy(&out),
-                String::from_utf8_lossy(&err));
-            return Err(error).with_context(|| format!(
-                "CLI startup stalled: missing={missing}, reserved={}, pid={pid:?}, \
+                .map(|document| {
+                    format!(
+                        "host={:?}, port={:?}, verifyPlugins={:?}, persistConfig={:?}",
+                        document["host"],
+                        document["port"],
+                        document["verifyPlugins"],
+                        document["persistConfig"],
+                    )
+                });
+            let console = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out),
+                String::from_utf8_lossy(&err)
+            );
+            return Err(error).with_context(|| {
+                format!(
+                    "CLI startup stalled: missing={missing}, reserved={}, pid={pid:?}, \
                  kill={killed:?}, exit={status:?}, generated={settings:?}\n{console}",
-                occupied.local_addr().expect("reserved listener address"),
-            ));
+                    occupied.local_addr().expect("reserved listener address"),
+                )
+            });
         }
     };
-    let console = format!("{}{}", String::from_utf8_lossy(&out),
-        String::from_utf8_lossy(&err));
-    assert!(!status.success(), "occupied management port unexpectedly started: {console}");
+    let console = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&err)
+    );
+    assert!(
+        !status.success(),
+        "occupied management port unexpectedly started: {console}"
+    );
     let document: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&path)?)?;
-    assert!(document["instances"].as_sequence().is_none_or(Vec::is_empty));
+    assert!(document["instances"]
+        .as_sequence()
+        .is_none_or(Vec::is_empty));
     Ok(console)
 }
 
@@ -396,6 +507,7 @@ fn observability_runtime_child() -> Result<()> {
             "logger-conflict" => logger_conflict().await,
             "subscriber-conflict" => subscriber_conflict().await,
             "embedded-debug" => embedded_debug().await,
+            "two-public-servers" => two_public_servers().await,
             _ if scenario.starts_with("task5-") => configured_startup_scenario(&scenario).await,
             _ if scenario.starts_with("plugin-") => plugin_scenario(&scenario).await,
             _ => anyhow::bail!("unknown logging scenario: {scenario}"),
@@ -404,7 +516,9 @@ fn observability_runtime_child() -> Result<()> {
 }
 
 async fn configured_startup_scenario(scenario: &str) -> Result<()> {
-    let directory = tempfile::Builder::new().prefix("task5-runtime-").tempdir_in(".")?;
+    let directory = tempfile::Builder::new()
+        .prefix("task5-runtime-")
+        .tempdir_in(".")?;
     let path = directory.path().join("server.yaml");
     let plugins = directory.path().join("plugins");
     std::fs::create_dir(&plugins)?;
@@ -413,9 +527,10 @@ async fn configured_startup_scenario(scenario: &str) -> Result<()> {
     } else {
         "telemetry:\n  profile: off\n"
     };
-    std::fs::write(&path, format!(
-        "persistConfig: false\nverifyPlugins: false\ninstances: []\n{policy}"
-    ))?;
+    std::fs::write(
+        &path,
+        format!("persistConfig: false\nverifyPlugins: false\ninstances: []\n{policy}"),
+    )?;
     let environment = std::env::var_os("RUST_LOG");
     if scenario == "task5-configured-off" {
         let preparation = DrasiServer::prepare_new(path, 0, plugins, false, false);
@@ -430,41 +545,64 @@ async fn configured_startup_scenario(scenario: &str) -> Result<()> {
         let original_owner = standalone.cleanup_handle();
         // A real, empty borrowing Core exposes the capture for the handoff
         // assertions; it is retired before transferring its standalone owner.
-        let probe = standalone.bindings().apply_to(
-            DrasiLib::builder().with_id("task5-handoff-probe"),
-        )?.build().await?;
-        let logging = probe.component_logging().context("missing handoff capture")?.clone();
-        assert_eq!(probe.shutdown_with_outcome().await.completion, ShutdownCompletion::Complete);
-        drop(probe);
-        let preparation = DrasiServer::prepare_new_with_runtime(
-            path, 0, plugins, false, false, standalone,
+        let probe = standalone
+            .bindings()
+            .apply_to(DrasiLib::builder().with_id("task5-handoff-probe"))?
+            .build()
+            .await?;
+        let logging = probe
+            .component_logging()
+            .context("missing handoff capture")?
+            .clone();
+        assert_eq!(
+            probe.shutdown_with_outcome().await.completion,
+            ShutdownCompletion::Complete
         );
+        drop(probe);
+        let preparation =
+            DrasiServer::prepare_new_with_runtime(path, 0, plugins, false, false, standalone);
         let owner = preparation.cleanup_handle();
         if scenario == "task5-runtime-rejection" {
-            assert!(preparation.finish().await.is_err(), "unavailable policy activated");
+            assert!(
+                preparation.finish().await.is_err(),
+                "unavailable policy activated"
+            );
             assert_eq!(owner.status().phase, CleanupPhase::Complete);
             assert_eq!(original_owner.status().phase, CleanupPhase::Complete);
-            assert!(logging.is_closed(), "early rejection bypassed owned capture cleanup");
+            assert!(
+                logging.is_closed(),
+                "early rejection bypassed owned capture cleanup"
+            );
         } else {
             let server = preparation.finish().await?;
-            assert!(!logging.is_closed(), "handoff dropped the original standalone owner");
+            assert!(
+                !logging.is_closed(),
+                "handoff dropped the original standalone owner"
+            );
             assert_eq!(original_owner.status().phase, CleanupPhase::Prepared);
             log::info!("task5 capture survives ownership handoff");
-            assert!(logging.try_log(drasi_lib::observability::LogMessage::with_instance(
-                drasi_lib::observability::LogLevel::Info,
-                "task5 same capture after handoff", "task5-handoff-probe",
-                COMPONENT, ComponentLogType::Source,
-            )));
+            assert!(
+                logging.try_log(drasi_lib::observability::LogMessage::with_instance(
+                    drasi_lib::observability::LogLevel::Info,
+                    "task5 same capture after handoff",
+                    "task5-handoff-probe",
+                    COMPONENT,
+                    ComponentLogType::Source,
+                ))
+            );
             // Closing the original address must close Server's same owner,
             // rather than shutting down a second, detached logging scope.
             original_owner.wait_until(Instant::now() + WAIT).await?;
             assert_eq!(owner.status().phase, CleanupPhase::Complete);
             assert!(logging.is_closed());
             owner.wait_until(Instant::now() + WAIT).await?;
-            let key = ComponentLogKey::new(
-                "task5-handoff-probe", ComponentLogType::Source, COMPONENT,
-            );
-            assert!(logging.registry().get_history_by_key(&key).await.iter()
+            let key =
+                ComponentLogKey::new("task5-handoff-probe", ComponentLogType::Source, COMPONENT);
+            assert!(logging
+                .registry()
+                .get_history_by_key(&key)
+                .await
+                .iter()
                 .any(|entry| entry.message == "task5 same capture after handoff"));
             drop(server);
         }
@@ -643,6 +781,7 @@ async fn subscriber_conflict() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 async fn plugin_scenario(scenario: &str) -> Result<()> {
     let directory = tempfile::Builder::new()
         .prefix("task3-selected-registry-")
@@ -750,6 +889,261 @@ async fn embedded_debug() -> Result<()> {
     );
     provider.force_flush()?;
     provider.shutdown()?;
+    logging.shutdown(WAIT).await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct CountedSpans {
+    exporter: InMemorySpanExporter,
+    shutdowns: Arc<AtomicUsize>,
+}
+
+struct CallerRecorder(Arc<metrics_exporter_prometheus::PrometheusRecorder>);
+
+impl metrics::Recorder for CallerRecorder {
+    fn describe_counter(
+        &self,
+        key: metrics::KeyName,
+        unit: Option<metrics::Unit>,
+        description: metrics::SharedString,
+    ) {
+        self.0.describe_counter(key, unit, description);
+    }
+    fn describe_gauge(
+        &self,
+        key: metrics::KeyName,
+        unit: Option<metrics::Unit>,
+        description: metrics::SharedString,
+    ) {
+        self.0.describe_gauge(key, unit, description);
+    }
+    fn describe_histogram(
+        &self,
+        key: metrics::KeyName,
+        unit: Option<metrics::Unit>,
+        description: metrics::SharedString,
+    ) {
+        self.0.describe_histogram(key, unit, description);
+    }
+    fn register_counter(
+        &self,
+        key: &metrics::Key,
+        metadata: &metrics::Metadata<'_>,
+    ) -> metrics::Counter {
+        self.0.register_counter(key, metadata)
+    }
+    fn register_gauge(
+        &self,
+        key: &metrics::Key,
+        metadata: &metrics::Metadata<'_>,
+    ) -> metrics::Gauge {
+        self.0.register_gauge(key, metadata)
+    }
+    fn register_histogram(
+        &self,
+        key: &metrics::Key,
+        metadata: &metrics::Metadata<'_>,
+    ) -> metrics::Histogram {
+        self.0.register_histogram(key, metadata)
+    }
+}
+
+impl SpanExporter for CountedSpans {
+    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+        self.exporter.export(batch).await
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.shutdowns.fetch_add(1, Ordering::SeqCst);
+        self.exporter.shutdown_with_timeout(timeout)
+    }
+}
+
+// Real deferred application-source processors and Core lifecycle observations,
+// not manually emitted operation spans or a synthetic collection timer.
+async fn two_public_servers() -> Result<()> {
+    let logging = ComponentLogRuntime::new(LogPolicy::new("debug")?)?;
+    let exporter = InMemorySpanExporter::default();
+    let shutdowns = Arc::new(AtomicUsize::new(0));
+    let processor = OpenTelemetrySpanProcessor::new(
+        BatchSpanProcessor::builder(CountedSpans {
+            exporter: exporter.clone(),
+            shutdowns: shutdowns.clone(),
+        })
+        .build(),
+        Sampler::AlwaysOn,
+    );
+    let provider = SdkTracerProvider::builder()
+        .with_sampler(processor.sampler())
+        .with_span_processor(processor.clone())
+        .build();
+    let collector = NativeSpanCollector::new(Arc::new(processor), Default::default())?;
+    let recorder = Arc::new(PrometheusBuilder::new().build_recorder());
+    let rendered = recorder.handle();
+    metrics::set_global_recorder(CallerRecorder(recorder.clone()))
+        .map_err(|_| anyhow::anyhow!("caller recorder installation failed"))?;
+    let context = MetricRegistrationContext::new(recorder, Default::default())?;
+    let bindings = TelemetryBindings::new(
+        TelemetrySettings::new(TelemetryProfile::Debug),
+        logging.clone(),
+    )
+    .with_metric_context(context)
+    .with_context_adapter(Arc::new(OpenTelemetryContextAdapter))
+    .with_native_span_collector(collector.clone());
+    tracing_log::LogTracer::init()?;
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry()
+            .with(logging.layer())
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("caller-owned"))),
+    )?;
+    let mut servers = Vec::new();
+    for instance_id in ["a", "b"] {
+        let handle = Arc::new(std::sync::OnceLock::new());
+        let published = handle.clone();
+        let core = DrasiServerBuilder::new()
+            .with_id(instance_id)
+            .with_telemetry_bindings(bindings.clone())
+            .with_source_factory("input", true, move |id| {
+                let (source, input) = ApplicationSource::new(
+                    id.as_str(),
+                    drasi_source_application::ApplicationSourceConfig {
+                        properties: Default::default(),
+                        durability: None,
+                    },
+                )?;
+                published
+                    .set(input)
+                    .map_err(|_| anyhow::anyhow!("duplicate source factory"))?;
+                Ok(source)
+            })
+            .build_core()
+            .await?;
+        let server = DrasiServer::from_core_with_telemetry(
+            core.clone(),
+            false,
+            false,
+            "127.0.0.1".into(),
+            0,
+            None,
+            bindings.clone(),
+        )
+        .await?;
+        let cleanup = server.cleanup_handle();
+        let run = tokio::spawn(server.run());
+        let source = core.component_by_name("input")?;
+        timeout(WAIT, source.wait_started()).await??;
+        let input = handle
+            .get()
+            .context("real deferred source constructor")?
+            .clone();
+        input
+            .send_node_insert(
+                "first",
+                vec!["Item"],
+                drasi_source_application::PropertyMapBuilder::new().build(),
+            )
+            .await?;
+        let key = ComponentLogKey::new(instance_id, ComponentLogType::Source, source.id().as_str());
+        timeout(WAIT, async {
+            loop {
+                logging.flush().await?;
+                if logging
+                    .registry()
+                    .get_history_by_key(&key)
+                    .await
+                    .iter()
+                    .any(|record| record.message.contains("received event"))
+                {
+                    return Ok::<_, anyhow::Error>(());
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await??;
+        servers.push((core, input, key, cleanup, run));
+    }
+    let metrics = rendered.render();
+    for id in ["a", "b"] {
+        assert!(
+            metrics
+                .lines()
+                .any(|line| line.starts_with("drasi_component_")
+                    && line.contains(&format!("instance_id=\"{id}\""))),
+            "{metrics}"
+        );
+    }
+    let (_, _, _, cleanup_a, run_a) = servers.remove(0);
+    cleanup_a.request_shutdown()?;
+    timeout(WAIT, run_a).await???;
+    assert_eq!(cleanup_a.status().phase, CleanupPhase::Complete);
+    assert!(!logging.is_closed());
+    collector.flush(WAIT).await?;
+    provider.force_flush()?;
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 0);
+
+    let (core_b, input_b, key_b, cleanup_b, run_b) = servers.remove(0);
+    let before = logging
+        .registry()
+        .get_history_by_key(&key_b)
+        .await
+        .iter()
+        .filter(|record| record.message.contains("received event"))
+        .count();
+    input_b
+        .send_node_insert(
+            "after-a",
+            vec!["Item"],
+            drasi_source_application::PropertyMapBuilder::new().build(),
+        )
+        .await?;
+    timeout(WAIT, async {
+        loop {
+            logging.flush().await?;
+            let after = logging
+                .registry()
+                .get_history_by_key(&key_b)
+                .await
+                .iter()
+                .filter(|record| record.message.contains("received event"))
+                .count();
+            if after > before {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await??;
+    assert!(core_b.is_running().await);
+    cleanup_b.request_shutdown()?;
+    timeout(WAIT, run_b).await???;
+    assert_eq!(cleanup_b.status().phase, CleanupPhase::Complete);
+    assert!(!logging.is_closed());
+    collector.flush(WAIT).await?;
+    provider.force_flush()?;
+    let spans = exporter.get_finished_spans()?;
+    for id in ["a", "b"] {
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.name == "application_source_processor"
+                    && span
+                        .attributes
+                        .iter()
+                        .any(|attribute| attribute.key.as_str() == "instance_id"
+                            && attribute.value.as_str() == id)),
+            "missing real background span for {id}"
+        );
+    }
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 0);
+    metrics::counter!("caller_global_probe").increment(1);
+    assert!(rendered
+        .render()
+        .lines()
+        .any(|line| line == "caller_global_probe 1"));
+    collector.shutdown(WAIT).await?;
+    provider.shutdown()?;
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
     logging.shutdown(WAIT).await?;
     Ok(())
 }

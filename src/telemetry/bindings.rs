@@ -127,9 +127,7 @@ impl TelemetryBindings {
         self.logging.clone()
     }
 
-    pub(crate) fn plugin_callback_context(
-        &self,
-    ) -> Result<Arc<drasi_host_sdk::CallbackContext>> {
+    pub(crate) fn plugin_callback_context(&self) -> Result<Arc<drasi_host_sdk::CallbackContext>> {
         Ok(Arc::new(drasi_host_sdk::CallbackContext {
             instance_id: String::new(),
             runtime_handle: tokio::runtime::Handle::try_current()?,

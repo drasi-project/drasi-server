@@ -1,6 +1,6 @@
-# Telemetry configuration (OBS-02)
+# Telemetry configuration and runtime ownership (OBS-02/03)
 
-Telemetry is a startup-only, process-wide Server policy. There are no
+Telemetry is a startup-only, Server-wide policy. There are no
 per-instance overrides or writable telemetry API. Change configuration and
 restart to apply it. `logLevel` and `RUST_LOG` continue to control ordinary
 logging independently of telemetry profiles.
@@ -8,9 +8,12 @@ logging independently of telemetry profiles.
 ## Availability
 
 OBS-02 implements typed configuration, validation, reference-preserving
-persistence and the existing `drasi-server init --output ...` wizard. It does
+persistence and the existing `drasi-server init --output ...` wizard. OBS-03
+adds standalone logging composition, explicit borrowed bindings and retained
+construction/running cleanup. It does
 **not** install new subscribers, providers, exporters, scrape routes, inspection
-routes or process collectors. These belong to OBS-03 through OBS-06.
+routes or process collectors. Production tracing is OBS-04, production metrics
+are OBS-05, and process/inspection support is OBS-06.
 
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Successful validation does
@@ -65,8 +68,9 @@ The legacy `metrics` contract remains HTTP/JSON with a full metrics URL,
 
 The shutdown setting is one shared telemetry drain-plus-flush budget, capped
 by the remaining overall termination deadline. It is not a new budget per
-provider or a replacement for component cleanup. OBS-02 validates this contract;
-runtime deadline enforcement belongs to OBS-03.
+provider or a replacement for component cleanup. OBS-03 enforces it for the
+Server's owned collection/logging; borrowed collection is never flushed or
+closed by Server.
 
 Profiles reuse Core's catalogue rules: Debug adds Debug details to Basic;
 Persistence adds supported storage/recovery details to Basic, not all Debug
@@ -172,3 +176,120 @@ startup; invalid selections or values fail rather than silently defaulting.
 
 For a runnable, collector-free walkthrough, see the
 [observability example](../examples/observability/README.md).
+
+## OBS-03 ownership APIs
+
+Standalone startup installs ordinary console logging, component capture and
+the `log` bridge before plugin/component construction. `RUST_LOG` wins; absent
+it, the fallback is `<logLevel>,oci_client=error`. Off is a collection policy,
+not a log filter. Invalid filters and unrelated installed logger/subscriber
+globals fail explicitly; Server never adopts an unknown global integration.
+Global installation cannot be undone, so retry that installation in a fresh
+process. No new global provider or metrics recorder is installed.
+
+Embedding applications compose their own subscriber, logger, recorder/context
+and optional native-span collector. Pass `TelemetryBindings` with
+`DrasiServerBuilder::with_telemetry_bindings` or
+`DrasiServer::prepare_new_with_telemetry`. One `MetricRegistrationContext` per
+recorder can be shared by multiple Servers. Install the caller's composed
+subscriber before construction: a scoped subscriber around only `build` does
+not cover Core's real management/reconciliation background work.
+
+```rust,no_run
+use drasi_server::{DrasiServerBuilder, TelemetryBindings};
+
+async fn embedded(bindings: TelemetryBindings) -> anyhow::Result<()> {
+    let preparation = DrasiServerBuilder::new()
+        .with_id("analytics")
+        .with_telemetry_bindings(bindings)
+        .prepare();
+    let cleanup = preparation.cleanup_handle();
+    let server = preparation.finish().await?;
+    server.shutdown().await?; // Also valid before run().
+    assert_eq!(cleanup.status().pending_workers, 0);
+    // Caller collection is still open. Caller closes it after all users stop.
+    Ok(())
+}
+```
+
+`prepare` and `prepare_with_owned_handles` expose the cleanup handle before
+awaiting construction; cancelling a waiter never discards accepted work.
+After construction registers its result, admission is released independently
+of that waiter. Keeping an unconsumed preparation or suspended `finish` does
+not prevent shutdown from joining its workers and cleaning up its resources.
+Publication is separately fenced: `finish` rejects after shutdown, including
+when construction had already succeeded.
+`prepare_with_owned_handles` returns started Core handles with a retained
+`shutdown` owner; creation/start acknowledgements are not node readiness.
+Configured owned telemetry cannot be returned bare through `build_core` or
+the legacy two-field `build_with_handles` result. Borrowed bindings remain
+supported there. `from_core_with_telemetry`/`from_cores_with_telemetry` check
+already configured Cores, rather than replacing live cached instruments.
+Opaque recorder/exporter compatibility remains the preconfiguring caller's
+obligation. Configured YAML policy and borrowed policy are mutually exclusive.
+
+`StandaloneTelemetry::prepare` provides a logs-only owner and
+`cleanup_handle` before initialization. `DrasiServer::prepare_new_with_runtime`
+transfers that actual owner, not just a clone of its bindings, into Server.
+
+### One cleanup attempt, bounded waiting
+
+`DrasiServer::run(self)` remains consuming. Keep `cleanup_handle()` before
+calling it. `DrasiServer::shutdown(&self)` and `ServerCleanupHandle::request_shutdown`
+address the same attempt as SIGINT/SIGTERM, run cancellation and startup failure.
+First request closes admission/HTTP ingress and anchors one absolute 30-second
+wait. Subsequent requests/waits do not start new teardown.
+
+Accepted management/startup work (including unpublished instances) is joined.
+The watcher consumer and actual polling backend stop; actual Core producer
+retirement fences callbacks. HTTP graceful Serve retains all its connections:
+its five-second cap is capped by the remaining overall deadline. If necessary,
+Core shutdown proceeds after that cap, but Serve is still joined before
+collection closes. Normal source/query/reaction log SSE bodies end when their
+Server closes admission, without closing shared logging channels or another
+Server's subscriptions. Direct routers without a Server lifecycle context
+retain their channel-driven behavior. No abort/drop is treated as a connection
+join. Owned legacy metrics then drain/close; owned logging drains and joins last.
+The default shared collection allowance is five seconds, configurable 1..300,
+always capped by that same attempt's remaining overall deadline.
+
+`wait_until(deadline)` bounds the observer, not physical cleanup. On timeout
+`ServerCleanupError` retains its typed causes and reachable handle. `status()`
+distinguishes `Complete` with historical errors from pending workers and
+`retry_required`. `wait_for_completion()` waits for accepted physical joins
+without replenishing phase allowances; it returns at an explicit-retry boundary.
+`retry_until` alone retries failed unfinished operations. Borrowed logging,
+recorders, collectors and providers are never flushed or shut down.
+
+The CLI reports incomplete cleanup immediately, retains Tokio/its handle until
+accepted joins finish, then exits nonzero for any missed deadline/historical
+failure. A failed unfinished phase requiring explicit retry remains retained and
+reported, not busy-looped. This is not a hard process-exit guarantee: a permanently
+stalled producer/connection can keep the process alive. SIGKILL cannot clean up.
+
+### Polling and legacy reader boundaries
+
+Server hot reload uses the additive Host SDK `prepare_owned_polling` handoff,
+even when native watcher features are enabled. The initial directory snapshot
+emits nothing; once per configured debounce/scan interval, size/mtime changes
+produce Added/Changed/Removed events for plugin binaries. Rapid edits coalesce
+to that snapshot; unchanged-size rebuilds are detected by mtime. Failed scans
+report typed errors, never fabricated removals. Scanning runs off Tokio and the
+actual loop is stop/join-owned. Server creates no notify/debouncer backend.
+The owned handle is single-use: stop intent rejects new starts, and completed
+cleanup (even before the first start) returns a typed finalized-handle error.
+Pending submission cannot publish completion; cancelled/expired joins retain
+the original worker.
+Legacy SDK `start`/`start_polling`/`stop` callers retain their old signatures;
+this does not claim their opaque native threads are joined.
+
+Legacy root `metrics` now uses the SDK's existing
+`experimental_metrics_custom_reader`/`ManualReader` API and one application-owned
+blocking loop, not SDK `PeriodicReader`'s opaque thread. The same provider,
+resource/service identity, callback, scope, gauge, labels, signed-range guard,
+HTTP/JSON exporter, rustls verification and header-environment behavior remain.
+Interval and timeout remain milliseconds; exporter temporality and serial
+interval scheduling match legacy behavior. Cancellation/timeout retain the real
+worker; one actual SDK/exporter shutdown runs there, with all network/SDK/Drop
+work off the executor. No fresh final collection/flush starts after phase expiry;
+already accepted work and safe close/join remain owned and expiry is an error.

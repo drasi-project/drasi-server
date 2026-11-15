@@ -243,7 +243,11 @@ impl PluginOrchestrator {
         &self,
         supplied: Option<Arc<CallbackContext>>,
     ) -> Option<Arc<CallbackContext>> {
-        let Some(log_registry) = self.instances.get().and_then(|registry| registry.plugin_log_registry()) else {
+        let Some(log_registry) = self
+            .instances
+            .get()
+            .and_then(|registry| registry.plugin_log_registry())
+        else {
             return supplied;
         };
         Some(Arc::new(CallbackContext {
@@ -281,11 +285,16 @@ impl PluginOrchestrator {
             let this = self.clone();
             let reference = reference.to_owned();
             let registry = registry_override.map(str::to_owned);
-            return cleanup.start_management(move || async move {
-                this.install_and_load_inner(&reference, registry.as_deref(), callback_context).await
-            })?.finish().await?;
+            return cleanup
+                .start_management(move || async move {
+                    this.install_and_load_inner(&reference, registry.as_deref(), callback_context)
+                        .await
+                })?
+                .finish()
+                .await?;
         }
-        self.install_and_load_inner(reference, registry_override, callback_context).await
+        self.install_and_load_inner(reference, registry_override, callback_context)
+            .await
     }
 
     async fn install_and_load_inner(
@@ -334,9 +343,12 @@ impl PluginOrchestrator {
         if let Some(cleanup) = self.unowned_request() {
             let this = self.clone();
             let path = path.to_owned();
-            return cleanup.start_management(move || async move {
-                this.load_plugin_verified(&path, callback_context).await
-            })?.finish().await?;
+            return cleanup
+                .start_management(move || async move {
+                    this.load_plugin_verified(&path, callback_context).await
+                })?
+                .finish()
+                .await?;
         }
         self.load_plugin_verified(path, callback_context).await
     }
@@ -468,8 +480,10 @@ impl PluginOrchestrator {
             }
         }
 
-        let (plugin_id, kinds) = self.lifecycle
-            .load_plugin(path, self.callback_context(callback_context)).await?;
+        let (plugin_id, kinds) = self
+            .lifecycle
+            .load_plugin(path, self.callback_context(callback_context))
+            .await?;
 
         let info = PluginInfo {
             id: plugin_id.clone(),

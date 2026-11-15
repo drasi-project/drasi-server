@@ -323,11 +323,12 @@ pub async fn get_source_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    let id = super::parse_component_id(&id).map_err(|error| *error)?;
+    core.get_source_status_by_id(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
-        .subscribe_source_logs(&id)
+        .subscribe_source_logs_by_id(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let data = apply_limit(
@@ -342,11 +343,20 @@ pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_source_status(&id)
+    stream_source_logs_with_cleanup(core, id, None).await
+}
+
+pub(crate) async fn stream_source_logs_with_cleanup(
+    core: Arc<drasi_lib::DrasiLib>,
+    id: String,
+    cleanup: Option<crate::server::ServerCleanupHandle>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
+    let id = super::parse_component_id(&id).map_err(|error| *error)?;
+    core.get_source_status_by_id(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
-        .subscribe_source_logs(&id)
+        .subscribe_source_logs_by_id(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let history_stream =
@@ -361,7 +371,13 @@ pub async fn stream_source_logs(
         }
     })
     .filter_map(sse_event_async);
-    let stream = history_stream.chain(live_stream);
+    // End only this Server's body; the registry may be borrowed by other hosts.
+    let stream = history_stream.chain(live_stream).take_until(async move {
+        match cleanup {
+            Some(cleanup) => cleanup.admission_closed().await,
+            None => std::future::pending::<()>().await,
+        }
+    });
     Ok(Sse::new(stream))
 }
 

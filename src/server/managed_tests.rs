@@ -65,7 +65,7 @@ async fn file_only_instances_generate_fresh_ids_on_each_load() -> anyhow::Result
     )?;
     let mut ids = Vec::new();
     for _ in 0..2 {
-        let server = DrasiServer::new(
+        let server = configured_test_server(
             path.clone(),
             0,
             directory.path().join("plugins"),
@@ -96,7 +96,7 @@ async fn generated_managed_id_and_accepted_configuration_survive_file_changes() 
         .remove("id");
     std::fs::write(&path, serde_yaml::to_string(&document)?)?;
     let (id, accepted) = {
-        let server = DrasiServer::new(
+        let server = configured_test_server(
             path.clone(),
             0,
             directory.path().join("plugins"),
@@ -118,7 +118,7 @@ async fn generated_managed_id_and_accepted_configuration_survive_file_changes() 
     });
     std::fs::write(&path, serde_yaml::to_string(&document)?)?;
     {
-        let server = DrasiServer::new(
+        let server = configured_test_server(
             path.clone(),
             0,
             directory.path().join("plugins"),
@@ -189,7 +189,7 @@ async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> 
     }))?);
     config.save_to_file(&path)?;
     let accepted = {
-        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let server = configured_test_server(path.clone(), 0, plugins.clone(), false, false).await?;
         let core = &server.instances[0].core;
         let accepted = core.desired_configuration()?.desired;
         assert_eq!(accepted.topology.components.len(), 1);
@@ -212,7 +212,7 @@ async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> 
     graph.default_pipe_capacity = 0;
     config.save_to_file(&path)?;
     {
-        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let server = configured_test_server(path.clone(), 0, plugins.clone(), false, false).await?;
         let core = &server.instances[0].core;
         assert_eq!(core.desired_configuration()?.desired, accepted);
         assert_eq!(core.desired_configuration()?.revision, 1);
@@ -222,7 +222,7 @@ async fn stored_authored_seed_overrides_later_invalid_factory_declarations() -> 
     config.instances[0].id =
         crate::api::models::ConfigValue::Static("uninitialized-readable".into()).into();
     config.save_to_file(&path)?;
-    assert!(DrasiServer::new(path, 0, plugins, false, false)
+    assert!(configured_test_server(path, 0, plugins, false, false)
         .await
         .is_err());
     Ok(())
@@ -240,7 +240,7 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
     config.instances[0].computation = Some(definition.into());
     config.save_to_file(&path)?;
     {
-        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let server = configured_test_server(path.clone(), 0, plugins.clone(), false, false).await?;
         let core = &server.instances[0].core;
         assert_eq!(core.desired_configuration()?.desired, accepted);
         assert_eq!(core.desired_configuration()?.revision, 1);
@@ -268,7 +268,7 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
     );
     config.save_to_file(&path)?;
     {
-        let server = DrasiServer::new(path.clone(), 0, plugins.clone(), false, false).await?;
+        let server = configured_test_server(path.clone(), 0, plugins.clone(), false, false).await?;
         let core = &server.instances[0].core;
         assert_eq!(core.desired_configuration()?.desired, accepted);
         assert_eq!(core.desired_configuration()?.revision, 1);
@@ -280,7 +280,7 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
     config.instances[0].id = crate::api::models::ConfigValue::Static("uninitialized".into()).into();
     config.save_to_file(&path)?;
     assert!(
-        DrasiServer::new(path.clone(), 0, plugins.clone(), false, false)
+        configured_test_server(path.clone(), 0, plugins.clone(), false, false)
             .await
             .is_err()
     );
@@ -296,7 +296,7 @@ async fn stored_definitions_override_obsolete_yaml_and_keep_failed_startup_inspe
             std::fs::remove_file(&key_file)?;
         }
         assert!(
-            DrasiServer::new(path.clone(), 0, plugins.clone(), false, false)
+            configured_test_server(path.clone(), 0, plugins.clone(), false, false)
                 .await
                 .is_err(),
             "key failures must not fall back to empty or in-memory state"

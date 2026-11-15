@@ -47,6 +47,348 @@ use tokio::{
 
 const WAIT: Duration = Duration::from_secs(5);
 
+#[tokio::test(start_paused = true)]
+async fn running_api_deadline_retains_the_actual_serve_worker() -> Result<()> {
+    let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
+    let cleanup = ServerCleanupHandle::new(
+        TelemetryBindings::new(
+            TelemetrySettings::new(TelemetryProfile::Off),
+            logging.clone(),
+        )
+        .with_shutdown_timeout_seconds(300),
+    )?;
+    let (stop, stopping) = oneshot::channel();
+    let (release, released) = oneshot::channel();
+    let (entered, entering) = oneshot::channel();
+    cleanup.start_api(stop, async move {
+        let _ = stopping.await;
+        let _ = entered.send(());
+        let _ = released.await;
+        Ok(())
+    })?;
+    cleanup.request_shutdown()?;
+    entering.await?;
+    let wait = cleanup.wait_until(Instant::now() + Duration::from_secs(30));
+    tokio::pin!(wait);
+    tokio::select! {
+        result = &mut wait => panic!("API still owns accepted connections: {result:?}"),
+        _ = tokio::time::sleep(Duration::from_secs(6)) => {}
+    }
+    assert!(cleanup.status().pending_workers > 0);
+    tokio::time::advance(Duration::from_secs(25)).await;
+    assert!(wait.await.is_err());
+    assert!(cleanup.status().deadline_missed);
+    assert!(
+        !logging.is_closed(),
+        "borrowed logging is not closed at deadline"
+    );
+    release.send(()).expect("retained serve worker");
+    assert!(cleanup.wait_for_completion().await.is_err());
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert!(!cleanup.status().retry_required);
+    assert!(
+        !logging.is_closed(),
+        "borrowed logging remains caller-owned after completion"
+    );
+    tokio::time::resume();
+    logging.shutdown(WAIT).await?;
+    Ok(())
+}
+
+async fn cancelled_real_api_drain_retains_connections(sse: bool) -> Result<()> {
+    use axum::{
+        response::sse::{Event, Sse},
+        routing::get,
+        Router,
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let cleanup = ServerCleanupHandle::bootstrap();
+    let (stop, stopping) = oneshot::channel();
+    let gate = Arc::new(Notify::new());
+    let gate_for_stream = gate.clone();
+    let app = Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route(
+            "/stream",
+            get(move || {
+                let gate = gate_for_stream.clone();
+                async move {
+                    Sse::new(async_stream::stream! {
+                        yield Ok::<_, std::convert::Infallible>(Event::default().data("ready"));
+                        gate.notified().await;
+                    })
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    cleanup.start_api(stop, async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = stopping.await;
+            })
+            .await
+    })?;
+    let mut connection = tokio::net::TcpStream::connect(addr).await?;
+    if sse {
+        connection
+            .write_all(b"GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await?;
+        let mut buffer = [0; 1024];
+        let read = timeout(WAIT, connection.read(&mut buffer)).await??;
+        assert!(String::from_utf8_lossy(&buffer[..read]).contains("200"));
+    } else {
+        connection
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\n")
+            .await?;
+        reqwest::get(format!("http://{addr}/health"))
+            .await?
+            .error_for_status()?;
+    }
+    assert!(timeout(Duration::from_millis(20), cleanup.shutdown())
+        .await
+        .is_err());
+    assert!(cleanup.status().pending_workers > 0);
+    gate.notify_one();
+    drop(connection);
+    timeout(WAIT, cleanup.wait_for_completion()).await??;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_http_drain_on_current_thread_joins_real_serve() -> Result<()> {
+    cancelled_real_api_drain_retains_connections(false).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_sse_drain_on_multiple_threads_joins_real_serve() -> Result<()> {
+    cancelled_real_api_drain_retains_connections(true).await
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_sse_drain_on_current_thread_joins_real_serve() -> Result<()> {
+    cancelled_real_api_drain_retains_connections(true).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_http_drain_on_multiple_threads_joins_real_serve() -> Result<()> {
+    cancelled_real_api_drain_retains_connections(false).await
+}
+
+// Break caught: a normal source-log subscription waits for shared-channel
+// closure, forcing healthy graceful Serve to time out or never join.
+async fn normal_source_log_sse_shutdown(owned_logging: bool) -> Result<()> {
+    use crate::instance_registry::InstanceRegistry;
+    use axum::{routing::get, Extension, Router};
+
+    let (bindings, logging) = bindings()?;
+    let cleanup = ServerCleanupHandle::new(bindings.clone())?;
+    if owned_logging {
+        cleanup.retain_logging(logging.clone())?;
+    }
+    let control = Control::new(false, false);
+    let core = core(&cleanup, &bindings, "normal-log-sse", control.clone()).await?;
+    let component_id = core.component_by_name("input")?.id().to_string();
+    let key = ComponentLogKey::new("normal-log-sse", ComponentLogType::Source, &component_id);
+    let (_, mut independent_logs) = logging.registry().subscribe_by_key(&key).await;
+    let registry = InstanceRegistry::from_map(indexmap::indexmap! {
+        "normal-log-sse".into() => core,
+    })
+    .with_runtime_context(bindings, cleanup.clone());
+    let app = Router::new()
+        .route(
+            "/api/v1/instances/:instanceId/sources/:id/logs/stream",
+            get(crate::api::v1::handlers::stream_source_logs),
+        )
+        .layer(Extension(registry));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let (stop, stopping) = oneshot::channel();
+    cleanup.start_api(stop, async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = stopping.await;
+            })
+            .await
+    })?;
+    let mut response = reqwest::get(format!(
+        "http://{address}/api/v1/instances/normal-log-sse/sources/{component_id}/logs/stream"
+    ))
+    .await?
+    .error_for_status()?;
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    assert!(logging.try_log(LogMessage::with_instance(
+        LogLevel::Info,
+        "normal SSE is responsive",
+        "normal-log-sse",
+        &component_id,
+        ComponentLogType::Source,
+    )));
+    timeout(WAIT, async {
+        let mut bytes = Vec::new();
+        loop {
+            bytes.extend_from_slice(&response.chunk().await?.context("SSE closed early")?);
+            let text = String::from_utf8_lossy(&bytes);
+            if let Some(event) = text
+                .split_inclusive("\n\n")
+                .find(|event| event.ends_with("\n\n") && event.contains("normal SSE is responsive"))
+            {
+                let data = event
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .find(|line| line.contains("normal SSE is responsive"))
+                    .context("missing SSE log payload")?;
+                let payload: serde_json::Value = serde_json::from_str(data)?;
+                assert_eq!(payload["componentId"], component_id);
+                assert_eq!(payload["componentType"], "Source");
+                assert_eq!(payload["level"], "Info");
+                return Ok::<_, anyhow::Error>(());
+            }
+        }
+    })
+    .await??;
+
+    // Keep the responsive HTTP subscription alive throughout cleanup.
+    timeout(WAIT, cleanup.shutdown()).await??;
+    timeout(WAIT, async {
+        while response.chunk().await?.is_some() {}
+        Ok::<_, reqwest::Error>(())
+    })
+    .await??;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert!(!cleanup.status().deadline_missed);
+    assert!(!cleanup.status().retry_required);
+    assert_eq!(control.disposals.load(Ordering::SeqCst), 1);
+    if owned_logging {
+        assert!(logging.is_closed(), "owned capture must join after Serve");
+    } else {
+        assert!(!logging.is_closed(), "shared capture must stay open");
+        assert!(logging.try_log(LogMessage::with_instance(
+            LogLevel::Info,
+            "independent subscription survives",
+            "normal-log-sse",
+            &component_id,
+            ComponentLogType::Source,
+        )));
+        timeout(WAIT, async {
+            loop {
+                if independent_logs.recv().await?.message == "independent subscription survives" {
+                    return Ok::<_, anyhow::Error>(());
+                }
+            }
+        })
+        .await??;
+        logging.shutdown(WAIT).await?;
+    }
+    Ok(())
+}
+
+// Break caught: stopping A terminates B's or a legacy direct router's body,
+// rather than only subscriptions bound to A's lifecycle.
+async fn source_log_sse_shutdown_is_server_local() -> Result<()> {
+    use crate::api::v1::handlers::ResourcePath;
+    use crate::instance_registry::InstanceRegistry;
+    use axum::{extract::Path, response::IntoResponse, Extension};
+    use futures_util::StreamExt;
+
+    let (bindings, logging) = bindings()?;
+    let cleanup_a = ServerCleanupHandle::new(bindings.clone())?;
+    let cleanup_b = ServerCleanupHandle::new(bindings.clone())?;
+    let control_a = Control::new(false, false);
+    let core_a = core(&cleanup_a, &bindings, "log-server-a", control_a).await?;
+    let core_b = core(
+        &cleanup_b,
+        &bindings,
+        "log-server-b",
+        Control::new(false, false),
+    )
+    .await?;
+    let component_a = core_a.component_by_name("input")?.id().to_string();
+    let component_b = core_b.component_by_name("input")?.id().to_string();
+    let registry_a = InstanceRegistry::from_map(indexmap::indexmap! {
+        "log-server-a".into() => core_a,
+    })
+    .with_runtime_context(bindings.clone(), cleanup_a.clone());
+    let registry_b = InstanceRegistry::from_map(indexmap::indexmap! {
+        "log-server-b".into() => core_b.clone(),
+    })
+    .with_runtime_context(bindings, cleanup_b.clone());
+    let body_a = crate::api::v1::handlers::stream_source_logs(
+        Extension(registry_a),
+        Path(ResourcePath {
+            instance_id: "log-server-a".into(),
+            id: component_a,
+        }),
+    )
+    .await
+    .expect("server A source log stream must be available")
+    .into_response()
+    .into_body()
+    .into_data_stream();
+    let body_b = crate::api::v1::handlers::stream_source_logs(
+        Extension(registry_b),
+        Path(ResourcePath {
+            instance_id: "log-server-b".into(),
+            id: component_b.clone(),
+        }),
+    )
+    .await
+    .expect("server B source log stream must be available")
+    .into_response()
+    .into_body()
+    .into_data_stream()
+    .boxed();
+    let legacy_registry = InstanceRegistry::from_map(indexmap::indexmap! {
+        "log-server-b".into() => core_b.clone(),
+    });
+    let legacy = crate::api::v1::handlers::stream_source_logs(
+        Extension(legacy_registry),
+        Path(ResourcePath {
+            instance_id: "log-server-b".into(),
+            id: component_b.clone(),
+        }),
+    )
+    .await
+    .expect("legacy source log stream must be available")
+    .into_response()
+    .into_body()
+    .into_data_stream()
+    .boxed();
+    tokio::pin!(body_a, body_b, legacy);
+    cleanup_a.shutdown().await?;
+    assert!(timeout(WAIT, body_a.next()).await?.is_none());
+    assert!(!logging.is_closed());
+    assert!(logging.try_log(LogMessage::with_instance(
+        LogLevel::Info,
+        "B remains subscribed",
+        "log-server-b",
+        &component_b,
+        ComponentLogType::Source,
+    )));
+    for body in [&mut body_b, &mut legacy] {
+        timeout(WAIT, async {
+            loop {
+                let bytes = body.next().await.context("unrelated SSE ended")??;
+                if String::from_utf8_lossy(&bytes).contains("B remains subscribed") {
+                    return Ok::<_, anyhow::Error>(());
+                }
+            }
+        })
+        .await??;
+    }
+    cleanup_b.shutdown().await?;
+    assert!(timeout(WAIT, body_b.next()).await?.is_none());
+    assert!(timeout(Duration::from_millis(20), async {
+        while legacy.next().await.is_some() {}
+    })
+    .await
+    .is_err());
+    drop(core_b);
+    logging.shutdown(WAIT).await?;
+    Ok(())
+}
+
 #[path = "task5_tests.rs"]
 mod task5;
 
@@ -674,6 +1016,102 @@ async fn shutdown_closes_admission_atomically() -> Result<()> {
     Ok(())
 }
 
+// Break caught: a completed constructor leaves its admission in an unconsumed
+// result, making cleanup wait for the caller who is waiting for cleanup.
+async fn unpublished_preparations_release_admission() -> Result<()> {
+    use super::lifecycle::test_support::latest_preparation_finished;
+
+    for blocking in [false, true] {
+        for suspended_finish in [false, true] {
+            let (bindings, logging) = bindings()?;
+            let cleanup = ServerCleanupHandle::new(bindings.clone())?;
+            let control = Control::new(false, false);
+            let (created, ready) = oneshot::channel();
+            let (release, construction) = oneshot::channel();
+            let operation = {
+                let logging = logging.clone();
+                let control = control.clone();
+                move |owner: ServerCleanupHandle| async move {
+                    owner.retain_logging(logging)?;
+                    let core = core(&owner, &bindings, "unpublished-preparation", control).await?;
+                    created
+                        .send(Arc::downgrade(&core))
+                        .expect("observer present");
+                    let server = super::DrasiServer::from_prepared_cores(
+                        vec![(core.as_ref().clone(), None)],
+                        false,
+                        false,
+                        "127.0.0.1".into(),
+                        0,
+                        None,
+                        owner,
+                        true,
+                    );
+                    drop(core);
+                    construction.await?;
+                    Ok(server)
+                }
+            };
+            let preparation = if blocking {
+                ServerPreparation::start_blocking(cleanup.admit()?, move |owner| {
+                    tokio::runtime::Handle::current().block_on(operation(owner))
+                })?
+            } else {
+                ServerPreparation::start(cleanup.admit()?, operation)?
+            };
+            let weak = timeout(WAIT, ready).await??;
+            let complete_constructor = async {
+                release.send(()).expect("constructor remains owned");
+                timeout(WAIT, async {
+                    while !latest_preparation_finished(&cleanup).await {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await?;
+                cleanup.request_shutdown()?;
+                timeout(WAIT, cleanup.wait_for_completion()).await??;
+                assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+                assert_eq!(cleanup.status().pending_workers, 0);
+                assert!(!cleanup.status().deadline_missed);
+                assert!(!cleanup.status().retry_required);
+                assert!(
+                    logging.is_closed(),
+                    "capture cleanup is independent of publication"
+                );
+                assert_eq!(control.disposals.load(Ordering::SeqCst), 1);
+                released(&weak).await?;
+                Ok::<_, anyhow::Error>(())
+            };
+            let error = if suspended_finish {
+                let finish = preparation.finish();
+                tokio::pin!(finish);
+                assert!(futures::poll!(&mut finish).is_pending());
+                complete_constructor.await?;
+                finish
+                    .await
+                    .err()
+                    .context("late Server publication must reject")?
+            } else {
+                complete_constructor.await?;
+                preparation
+                    .finish()
+                    .await
+                    .err()
+                    .context("late Server publication must reject")?
+            };
+            let aggregate = error
+                .downcast_ref::<ServerCleanupError>()
+                .context("late publication keeps the typed cleanup outcome")?;
+            assert!(aggregate.primary_cause().is_some());
+            assert_eq!(
+                aggregate.cleanup_handle().status().phase,
+                CleanupPhase::Complete
+            );
+        }
+    }
+    Ok(())
+}
+
 // Break caught: dropping the last handle frees/aborts pending Core cleanup, or
 // a completed driver's ownership cycle keeps its actual Core alive forever.
 async fn dropped_handles_retain_resources_until_join_then_release() -> Result<()> {
@@ -889,6 +1327,129 @@ async fn owned_capture_survives_rollback_and_cancelled_wait() -> Result<()> {
     Ok(())
 }
 
+async fn actual_producer_then_legacy_export_then_owned_logging() -> Result<()> {
+    use axum::{routing::post, Json, Router};
+    let (bindings, logging) = bindings()?;
+    let cleanup = ServerCleanupHandle::new(bindings.clone())?;
+    cleanup.retain_logging(logging.clone())?;
+    let control = Control::new(true, false);
+    let core = Arc::new(
+        bindings
+            .apply_to(
+                controlled_core_builder("actual-shutdown-order", control.clone())?
+                    .with_query_factory(crate::query_test_support::factory())
+                    .with_query(
+                        drasi_lib::Query::cypher("items")
+                            .query("MATCH (n:Item) RETURN n")
+                            .from_input("input")
+                            .enable_bootstrap(false)
+                            .auto_start(true)
+                            .build()?,
+                    ),
+            )?
+            .build()
+            .await?,
+    );
+    cleanup.retain_core(core.clone())?;
+    core.start().await?;
+    timeout(WAIT, core.component_by_name("items")?.wait_started()).await??;
+    let registry = crate::instance_registry::InstanceRegistry::new();
+    registry
+        .add("actual-shutdown-order".into(), core)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let stalled = Arc::new(AtomicBool::new(true));
+    let release = Arc::new(Notify::new());
+    let entered = Arc::new(Semaphore::new(0));
+    let app = Router::new().route(
+        "/v1/metrics",
+        post({
+            let stalled = stalled.clone();
+            let release = release.clone();
+            let entered = entered.clone();
+            move || {
+                let stalled = stalled.clone();
+                let release = release.clone();
+                let entered = entered.clone();
+                async move {
+                    entered.add_permits(1);
+                    while stalled.load(Ordering::Acquire) {
+                        let notified = release.notified();
+                        if !stalled.load(Ordering::Acquire) {
+                            break;
+                        }
+                        notified.await;
+                    }
+                    Json(serde_json::json!({}))
+                }
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = format!("http://{}/v1/metrics", listener.local_addr()?);
+    let (stop_collector, stopping_collector) = oneshot::channel();
+    let collector = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = stopping_collector.await;
+            })
+            .await
+    });
+    let metrics = Arc::new(tokio::sync::Mutex::new(
+        crate::telemetry::MetricsRuntime::default(),
+    ));
+    cleanup.retain_metrics(metrics.clone())?;
+    metrics
+        .lock()
+        .await
+        .start(
+            crate::telemetry::MetricsConfig {
+                endpoint: crate::api::models::ConfigValue::Static(endpoint),
+                export_interval_ms: 100,
+                export_timeout_ms: 5_000,
+            },
+            &registry,
+        )
+        .await?;
+    timeout(WAIT, entered.acquire()).await??.forget();
+    cleanup.request_shutdown()?;
+    notified(&control.stop_entered).await?;
+    assert!(!logging.is_closed());
+    assert!(!metrics.lock().await.is_joined().await);
+    control.stop_release.add_permits(1);
+    timeout(WAIT, async {
+        while cleanup.status().phase != CleanupPhase::DrainingCollection {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    assert_eq!(control.disposals.load(Ordering::SeqCst), 1);
+    assert!(
+        !logging.is_closed(),
+        "logging must outlive the actual stalled export"
+    );
+    assert!(cleanup.status().pending_workers > 0);
+    stalled.store(false, Ordering::Release);
+    release.notify_waiters();
+    timeout(WAIT, cleanup.wait_for_completion()).await??;
+    assert!(metrics.lock().await.is_joined().await);
+    assert!(logging.is_closed(), "owned logging must close last");
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    stop_collector.send(()).expect("collector owner");
+    timeout(WAIT, collector).await???;
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn actual_shutdown_order_on_current_thread() -> Result<()> {
+    actual_producer_then_legacy_export_then_owned_logging().await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn actual_shutdown_order_on_multiple_threads() -> Result<()> {
+    actual_producer_then_legacy_export_then_owned_logging().await
+}
+
 macro_rules! both_flavors {
     ($current:ident, $multi:ident, $case:ident) => {
         #[tokio::test(flavor = "current_thread")]
@@ -902,6 +1463,27 @@ macro_rules! both_flavors {
         }
     };
 }
+
+async fn normal_source_log_sse_borrowed_and_owned_shutdown() -> Result<()> {
+    normal_source_log_sse_shutdown(false).await?;
+    normal_source_log_sse_shutdown(true).await
+}
+
+both_flavors!(
+    normal_source_log_sse_shutdown_current_thread,
+    normal_source_log_sse_shutdown_multi_thread,
+    normal_source_log_sse_borrowed_and_owned_shutdown
+);
+both_flavors!(
+    source_log_sse_shutdown_is_server_local_current_thread,
+    source_log_sse_shutdown_is_server_local_multi_thread,
+    source_log_sse_shutdown_is_server_local
+);
+both_flavors!(
+    unpublished_preparations_release_admission_current_thread,
+    unpublished_preparations_release_admission_multi_thread,
+    unpublished_preparations_release_admission
+);
 
 both_flavors!(
     cancelled_preparation_retains_created_core_current_thread,
@@ -942,6 +1524,128 @@ both_flavors!(
     owned_capture_survives_rollback_and_cancelled_wait_current_thread,
     owned_capture_survives_rollback_and_cancelled_wait_multi_thread,
     owned_capture_survives_rollback_and_cancelled_wait
+);
+
+async fn management_retention_tracks_concurrency_not_total_requests() -> Result<()> {
+    use super::lifecycle::test_support::{latest_preparation_finished, preparation_count};
+
+    let (bindings, logging) = bindings()?;
+    let cleanup = ServerCleanupHandle::new(bindings)?;
+    let release = Arc::new(Semaphore::new(0));
+    let mut pending = Vec::new();
+    for _ in 0..8 {
+        let release = release.clone();
+        pending.push(cleanup.start_management(move || async move {
+            release.acquire().await.expect("release").forget();
+        })?);
+    }
+    for index in 0..128 {
+        assert_eq!(
+            cleanup
+                .start_management(move || async move { index })?
+                .finish()
+                .await?,
+            index
+        );
+        timeout(WAIT, async {
+            while !latest_preparation_finished(&cleanup).await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        assert_eq!(
+            preparation_count(&cleanup),
+            9,
+            "eight unfinished owners plus the most recent joined-on-next-admission worker"
+        );
+    }
+    assert_eq!(cleanup.status().pending_workers, 8);
+    cleanup.request_shutdown()?;
+    release.add_permits(8);
+    for work in pending {
+        work.finish().await?;
+    }
+    cleanup.wait_until(Instant::now() + WAIT).await?;
+    assert_eq!(preparation_count(&cleanup), 0);
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert!(!logging.is_closed());
+    logging.shutdown(WAIT).await?;
+    Ok(())
+}
+
+async fn reaped_management_failures_retain_typed_join_history() -> Result<()> {
+    use super::lifecycle::test_support::{
+        abort_latest_preparation, latest_preparation_finished, preparation_count,
+    };
+
+    for cancelled in [false, true] {
+        let (bindings, logging) = bindings()?;
+        let cleanup = ServerCleanupHandle::new(bindings)?;
+        let work = cleanup.start_management(move || async move {
+            if cancelled {
+                std::future::pending::<()>().await;
+            } else {
+                panic!("injected management-worker panic");
+            }
+        })?;
+        if cancelled {
+            abort_latest_preparation(&cleanup).await;
+        }
+        assert!(work.finish().await.is_err());
+        timeout(WAIT, async {
+            while !latest_preparation_finished(&cleanup).await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        cleanup.start_management(|| async {})?.finish().await?;
+        assert_eq!(preparation_count(&cleanup), 1);
+
+        let error = cleanup
+            .wait_until(Instant::now() + WAIT)
+            .await
+            .expect_err("a reaped join failure remains historical");
+        let aggregate = error
+            .downcast_ref::<ServerCleanupError>()
+            .context("cleanup type")?;
+        assert_eq!(aggregate.cleanup_causes().len(), 1);
+        let join = aggregate
+            .cleanup_causes()
+            .iter()
+            .flat_map(anyhow::Error::chain)
+            .find_map(|cause| cause.downcast_ref::<tokio::task::JoinError>())
+            .context("reaping lost the actual JoinError")?;
+        assert_eq!(join.is_cancelled(), cancelled);
+        assert_eq!(join.is_panic(), !cancelled);
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert!(!cleanup.status().retry_required);
+        let cached = cleanup
+            .wait_until(Instant::now() + WAIT)
+            .await
+            .expect_err("joining again cannot erase failure history");
+        assert_eq!(
+            cached
+                .downcast_ref::<ServerCleanupError>()
+                .context("cached cleanup type")?
+                .cleanup_causes()
+                .len(),
+            1
+        );
+        assert!(!logging.is_closed());
+        logging.shutdown(WAIT).await?;
+    }
+    Ok(())
+}
+
+both_flavors!(
+    management_retention_tracks_concurrency_current_thread,
+    management_retention_tracks_concurrency_multi_thread,
+    management_retention_tracks_concurrency_not_total_requests
+);
+both_flavors!(
+    reaped_management_failures_keep_types_current_thread,
+    reaped_management_failures_keep_types_multi_thread,
+    reaped_management_failures_retain_typed_join_history
 );
 
 #[derive(Debug, thiserror::Error)]

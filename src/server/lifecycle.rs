@@ -5,9 +5,10 @@
 //!
 //! Accepted construction has an admission guard and an owned worker before any
 //! constructor is polled. Constructors must register each created Core before
-//! their next suspension. A successful result remains admitted until `finish`
-//! publishes it; abandoning that waiter requests rollback instead of aborting
-//! its worker. Admission and shutdown are serialized by the same short lock.
+//! their next suspension. Construction admission ends after result registration;
+//! unpublished results never hold cleanup hostage to their waiter. `finish`
+//! gates publication against shutdown under the same short lock. Abandoning
+//! that waiter requests rollback instead of aborting its worker.
 //!
 //! Cleanup retains actual Cores, construction joins and borrowed bindings.
 //! Neither a cancelled wait nor its deadline aborts that driver. An incomplete
@@ -16,6 +17,9 @@
 //! their task output, so finished task slots cannot form ownership cycles.
 //! Core retirement follows its authoritative shutdown completion independently
 //! of the typed result; a completed Core can still report a historical failure.
+//! Normal management admission also joins finished request workers and records
+//! their typed failures, so polling does not retain every historical task.
+//! Vacant submission slots and unfinished/locked joins remain owned.
 //!
 //! This module creates no collection providers. Borrowed bindings are kept
 //! usable through producer cleanup and are only dropped, never closed. An
@@ -36,7 +40,7 @@ use drasi_lib::{
         WorkerCleanupError, WorkerCompletion,
     },
     error::OperationFailures,
-    observability::ComponentLogRuntime,
+    observability::{ComponentLogRuntime, LoggingError},
     DrasiLib, ShutdownCompletion,
 };
 use tokio::{
@@ -46,6 +50,11 @@ use tokio::{
 };
 
 use crate::{config::telemetry::DEFAULT_SHUTDOWN_TIMEOUT_SECONDS, TelemetryBindings};
+use crate::{
+    instance_registry::InstanceRegistry, plugin_orchestrator::PluginOrchestrator,
+    plugin_registry::PluginRegistry,
+};
+use drasi_host_sdk::watcher::OwnedPollingWatcher;
 
 const ROLLBACK_WAIT: Duration = Duration::from_secs(30);
 const API_DRAIN_CAP: Duration = Duration::from_secs(5);
@@ -79,7 +88,10 @@ impl ManagementRequest {
     }
 
     pub(crate) fn publish<T>(&self, publication: impl FnOnce() -> Result<T>) -> Result<T> {
-        let abandoned = self.abandoned.lock().unwrap_or_else(|error| error.into_inner());
+        let abandoned = self
+            .abandoned
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if *abandoned {
             return Err(RequestAbandoned.into());
         }
@@ -104,7 +116,11 @@ impl<T> ManagementWork<T> {
 impl<T> Drop for ManagementWork<T> {
     fn drop(&mut self) {
         if !self.completed {
-            *self.request.abandoned.lock().unwrap_or_else(|error| error.into_inner()) = true;
+            *self
+                .request
+                .abandoned
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = true;
         }
     }
 }
@@ -124,7 +140,7 @@ pub enum CleanupPhase {
 
 /// Completion is independent of historical errors and missed wait deadlines.
 ///
-/// `pending_workers` includes accepted, unpublished construction. A failed
+/// `pending_workers` includes accepted construction still running. A failed
 /// phase can require an explicit retry even when no worker is currently running.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CleanupStatus {
@@ -181,6 +197,12 @@ struct State {
     bindings: Option<TelemetryBindings>,
     owned_logging: Option<ComponentLogRuntime>,
     logging_deadline: Option<Instant>,
+    budget: Option<ShutdownBudget>,
+    running_registry: Option<InstanceRegistry>,
+    plugin_dependencies: Option<(Arc<RwLock<PluginRegistry>>, Arc<PluginOrchestrator>)>,
+    watcher: Option<OwnedPollingWatcher>,
+    api: Option<Arc<ApiWorker>>,
+    metrics: Option<Arc<AsyncMutex<crate::telemetry::MetricsRuntime>>>,
     driver: Option<Arc<Worker>>,
     driver_active: bool,
     retry_required: bool,
@@ -206,6 +228,12 @@ struct Owner {
     retry: AsyncMutex<()>,
 }
 
+struct ApiWorker {
+    join: RwLock<Option<JoinHandle<std::io::Result<()>>>>,
+    stop: Mutex<Option<oneshot::Sender<()>>>,
+    completed: Arc<std::sync::atomic::AtomicBool>,
+}
+
 impl Owner {
     fn state(&self) -> MutexGuard<'_, State> {
         // No user constructor, async work or resource destructor runs under this
@@ -224,6 +252,31 @@ impl Owner {
         } else {
             state.history.cleanup.push(Arc::new(error));
         }
+    }
+
+    fn reap_preparations(&self) {
+        use futures_util::FutureExt;
+        let workers = self.state().preparations.clone();
+        let mut joined = Vec::new();
+        let mut failures = Vec::new();
+        for worker in workers {
+            if let Ok(mut slot) = worker.join.try_write() {
+                if let Some(task) = slot.as_mut().filter(|task| task.is_finished()) {
+                    if let Some(result) = task.now_or_never() {
+                        *slot = None;
+                        joined.push(worker.clone());
+                        if let Err(error) = result {
+                            failures.push(Arc::new(WorkerCleanupError::Join(error).into()));
+                        }
+                    }
+                }
+            }
+        }
+        let mut state = self.state();
+        state
+            .preparations
+            .retain(|worker| !joined.iter().any(|done| Arc::ptr_eq(worker, done)));
+        state.history.cleanup.extend(failures);
     }
 
     fn begin_driver(self: &Arc<Self>, state: &mut State) -> Result<()> {
@@ -257,7 +310,7 @@ impl Owner {
 
         let preparations = self.state().preparations.clone();
         for worker in preparations {
-            // The admitted count fences construction and publication. Keep the
+            // The admitted count fences construction and result registration. Keep the
             // slot until the actual child exit is observed, including on panic.
             let mut slot = worker.join.write().await;
             let result = if let Some(task) = slot.as_mut() {
@@ -278,6 +331,48 @@ impl Owner {
         }
         self.changed();
 
+        let api = self.state().api.clone();
+        if let Some(api) = &api {
+            let deadline = self
+                .state()
+                .budget
+                .as_ref()
+                .expect("shutdown budget")
+                .api_deadline();
+            let mut slot = api.join.write().await;
+            if let Some(join) = slot.as_mut() {
+                match timeout_at(deadline, join).await {
+                    Ok(result) => {
+                        *slot = None;
+                        self.record_api_result(result);
+                    }
+                    Err(_) => {
+                        log::error!("Web API did not drain within 5 seconds; accepted connections remain owned");
+                        self.state()
+                            .history
+                            .cleanup
+                            .push(Arc::new(ApiDrainExpired { deadline }.into()));
+                    }
+                }
+            }
+        }
+
+        let watcher = self.state().watcher.clone();
+        if let Some(watcher) = watcher {
+            // The admitted event consumer is already joined above. This is the
+            // actual polling backend, not an acknowledgement from that consumer.
+            watcher.request_stop();
+            if let Err(error) = watcher.wait_for_completion().await {
+                self.state()
+                    .history
+                    .cleanup
+                    .push(Arc::new(anyhow::Error::new(error)));
+            }
+            if watcher.is_joined() {
+                self.state().watcher.take();
+            }
+        }
+
         let count = self.state().cores.len();
         for index in 0..count {
             let core = self.state().cores[index].clone();
@@ -293,22 +388,106 @@ impl Owner {
             }
         }
 
+        // A graceful Serve future owns its connection tasks. A cap bounds the
+        // caller's wait, never drops/aborts Serve and calls its children joined.
+        // Log bodies observe this Server's admission closure independently of
+        // borrowed logging channels. Core shutdown also retires its own streams.
+        if let Some(api) = api {
+            let mut slot = api.join.write().await;
+            if let Some(join) = slot.as_mut() {
+                let result = join.await;
+                *slot = None;
+                self.record_api_result(result);
+            }
+            if api.completed.load(std::sync::atomic::Ordering::Acquire) {
+                self.state().api.take();
+            }
+        }
+
+        let producers_complete = {
+            let state = self.state();
+            !state.cores.iter().any(Option::is_some)
+                && state.watcher.is_none()
+                && state.api.is_none()
+        };
+        if producers_complete {
+            let metrics = self.state().metrics.clone();
+            if let Some(metrics) = metrics {
+                let deadline = {
+                    let mut state = self.state();
+                    state.phase = CleanupPhase::DrainingCollection;
+                    state
+                        .budget
+                        .as_mut()
+                        .expect("shutdown budget")
+                        .begin_collection()
+                };
+                self.changed();
+                let mut metrics = metrics.lock().await;
+                if let Err(error) = metrics.request_shutdown(deadline) {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if let Err(error) = metrics.wait_shutdown_until(deadline).await {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if !metrics.is_joined().await {
+                    // Only continued physical joining. The accepted worker's
+                    // collection/close deadline remains unchanged.
+                    if let Err(error) = metrics.wait_for_completion().await {
+                        self.state().history.cleanup.push(Arc::new(error));
+                    }
+                }
+                if metrics.is_joined().await {
+                    self.state().metrics.take();
+                }
+            }
+            let dependencies = {
+                let mut state = self.state();
+                (
+                    state.running_registry.take(),
+                    state.plugin_dependencies.take(),
+                )
+            };
+            let disposal = Worker::new();
+            self.state().preparations.push(disposal.clone());
+            if let Err(error) =
+                spawn_owned_blocking_worker(&disposal.join, move || drop(dependencies)).await
+            {
+                self.state().history.cleanup.push(Arc::new(error.into()));
+            } else {
+                let mut slot = disposal.join.write().await;
+                if let Some(join) = slot.as_mut() {
+                    let result = join.await;
+                    *slot = None;
+                    if let Err(error) = result {
+                        self.state()
+                            .history
+                            .cleanup
+                            .push(Arc::new(WorkerCleanupError::Join(error).into()));
+                    }
+                }
+            }
+            self.state()
+                .preparations
+                .retain(|worker| !Arc::ptr_eq(worker, &disposal));
+        }
+
         let logging = {
             let mut state = self.state();
-            if state.cores.iter().any(Option::is_some) {
+            if state.cores.iter().any(Option::is_some)
+                || state.watcher.is_some()
+                || state.api.is_some()
+                || state.metrics.is_some()
+            {
                 None
             } else if let Some(logging) = state.owned_logging.clone() {
                 state.phase = CleanupPhase::DrainingCollection;
-                let timeout = state.bindings.as_ref().map_or(
-                    Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
-                    TelemetryBindings::shutdown_timeout,
-                );
-                let overall = state
-                    .rollback_deadline
-                    .unwrap_or_else(|| Instant::now() + ROLLBACK_WAIT);
-                let deadline = *state
-                    .logging_deadline
-                    .get_or_insert_with(|| overall.min(Instant::now() + timeout));
+                let collection = state
+                    .budget
+                    .as_mut()
+                    .expect("shutdown budget")
+                    .begin_collection();
+                let deadline = *state.logging_deadline.get_or_insert(collection);
                 Some((logging, deadline))
             } else {
                 None
@@ -316,23 +495,56 @@ impl Owner {
         };
         if let Some((logging, deadline)) = logging {
             self.changed();
-            match logging
-                .shutdown(deadline.saturating_duration_since(Instant::now()))
-                .await
-            {
-                Ok(()) => {
-                    let released = self.state().owned_logging.take();
-                    drop(released);
+            if Instant::now() >= deadline {
+                self.state()
+                    .history
+                    .cleanup
+                    .push(Arc::new(LoggingDrainExpired.into()));
+            }
+            let mut wait = deadline.saturating_duration_since(Instant::now());
+            let mut pending_reported = false;
+            loop {
+                match logging.shutdown(wait).await {
+                    Ok(()) => {
+                        self.state().owned_logging.take();
+                        break;
+                    }
+                    Err(error) => {
+                        let pending = matches!(&error, LoggingError::TimedOut(_))
+                            || matches!(&error, LoggingError::Cleanup(error)
+                                if matches!(error.as_ref(), WorkerCleanupError::TimedOut { .. }));
+                        let joined_failure = matches!(&error, LoggingError::WorkerPanic)
+                            || matches!(&error, LoggingError::Cleanup(error)
+                                if matches!(error.as_ref(), WorkerCleanupError::Join(_)));
+                        if !pending || !pending_reported {
+                            self.state().history.cleanup.push(Arc::new(error.into()));
+                            pending_reported |= pending;
+                        }
+                        if joined_failure {
+                            self.state().owned_logging.take();
+                            break;
+                        }
+                        if !pending {
+                            break;
+                        }
+                        // Capture already closed admission and requested its
+                        // sole thread join. This is only continued physical
+                        // joining through the public API, never another flush
+                        // or a replenished collection/caller phase allowance.
+                        wait = ROLLBACK_WAIT;
+                    }
                 }
-                Err(error) => self.state().history.cleanup.push(Arc::new(error.into())),
             }
         }
 
         let (bindings, retained) = {
             let mut state = self.state();
             state.driver_active = false;
-            state.retry_required =
-                state.cores.iter().any(Option::is_some) || state.owned_logging.is_some();
+            state.retry_required = state.cores.iter().any(Option::is_some)
+                || state.owned_logging.is_some()
+                || state.metrics.is_some()
+                || state.watcher.is_some()
+                || state.api.is_some();
             if state.retry_required {
                 (None, None)
             } else {
@@ -346,6 +558,18 @@ impl Owner {
         drop(bindings);
         drop(retained);
         self.changed();
+    }
+
+    fn record_api_result(
+        &self,
+        result: std::result::Result<std::io::Result<()>, tokio::task::JoinError>,
+    ) {
+        let error = match result {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => ApiWorkerError::Serve(error),
+            Err(error) => ApiWorkerError::Join(error),
+        };
+        self.state().history.cleanup.push(Arc::new(error.into()));
     }
 }
 
@@ -391,6 +615,12 @@ impl ServerCleanupHandle {
                     bindings: None,
                     owned_logging: None,
                     logging_deadline: None,
+                    budget: None,
+                    running_registry: None,
+                    plugin_dependencies: None,
+                    watcher: None,
+                    api: None,
+                    metrics: None,
                     driver: None,
                     driver_active: false,
                     retry_required: false,
@@ -419,6 +649,144 @@ impl ServerCleanupHandle {
         self.wait_until(self.rollback_deadline()).await
     }
 
+    pub(crate) fn retain_runtime(
+        &self,
+        registry: InstanceRegistry,
+        plugins: Arc<RwLock<PluginRegistry>>,
+        orchestrator: Arc<PluginOrchestrator>,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Runtime must be registered before cleanup"
+        );
+        state.running_registry = Some(registry);
+        state.plugin_dependencies = Some((plugins, orchestrator));
+        Ok(())
+    }
+
+    pub(crate) fn retain_watcher(&self, watcher: OwnedPollingWatcher) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Watcher must be registered before cleanup"
+        );
+        ensure!(state.watcher.is_none(), "Watcher is already owned");
+        state.watcher = Some(watcher.clone());
+        let stopping = !state.admission_open;
+        drop(state);
+        if stopping {
+            watcher.request_stop();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn retain_metrics(
+        &self,
+        metrics: Arc<AsyncMutex<crate::telemetry::MetricsRuntime>>,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Metrics must be registered before cleanup"
+        );
+        ensure!(state.metrics.is_none(), "Metrics are already owned");
+        state.metrics = Some(metrics);
+        Ok(())
+    }
+
+    pub(crate) fn start_api<F>(&self, stop: oneshot::Sender<()>, serve: F) -> Result<()>
+    where
+        F: Future<Output = std::io::Result<()>> + Send + 'static,
+    {
+        let api = Arc::new(ApiWorker {
+            join: RwLock::new(None),
+            stop: Mutex::new(Some(stop)),
+            completed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        });
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "API must be registered before cleanup"
+        );
+        ensure!(state.api.is_none(), "API is already owned");
+        state.api = Some(api.clone());
+        let completed = api.completed.clone();
+        try_spawn_owned_worker(&api.join, async move {
+            let result = serve.await;
+            completed.store(true, std::sync::atomic::Ordering::Release);
+            result
+        })?;
+        if !state.admission_open {
+            if let Some(stop) = api.stop.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                let _ = stop.send(());
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn start_signal<F>(&self, signal: F) -> Result<()>
+    where
+        F: Future<Output = Result<()>> + Send + 'static,
+    {
+        let worker = Worker::new();
+        self.owner.state().preparations.push(worker.clone());
+        let cleanup = self.clone();
+        try_spawn_owned_worker(&worker.join, async move {
+            if let Err(error) = signal.await {
+                cleanup.record_failure(error);
+            }
+            if let Err(error) = cleanup.request_shutdown() {
+                cleanup.record_failure(error);
+            }
+        })?;
+        Ok(())
+    }
+
+    pub(crate) fn running(&self) -> Result<()> {
+        let mut state = self.owner.state();
+        if !state.admission_open {
+            return Err(ServerShuttingDown.into());
+        }
+        state.phase = CleanupPhase::Running;
+        Ok(())
+    }
+
+    pub(crate) fn record_failure(&self, error: anyhow::Error) {
+        self.owner.primary(error);
+    }
+
+    /// Join accepted cleanup without extending its phase allowances. Returns
+    /// promptly for terminal historical errors or an explicit-retry boundary.
+    /// This is for a CLI retaining its runtime after a bounded waiter expires.
+    pub async fn wait_for_completion(&self) -> Result<()> {
+        self.request_shutdown()?;
+        let worker = self.owner.state().driver.clone();
+        if let Some(worker) = worker {
+            let mut slot = worker.join.write().await;
+            if let Some(join) = slot.as_mut() {
+                let result = join.await;
+                *slot = None;
+                if let Err(error) = result {
+                    self.owner.primary(WorkerCleanupError::Join(error).into());
+                    let mut state = self.owner.state();
+                    state.driver_active = false;
+                    state.retry_required = true;
+                }
+            }
+        }
+        let state = self.owner.state();
+        let clean = state.phase == CleanupPhase::Complete
+            && state.history.primary.is_none()
+            && state.history.cleanup.is_empty()
+            && state.history.expired.is_none();
+        drop(state);
+        if clean {
+            Ok(())
+        } else {
+            Err(self.error())
+        }
+    }
     pub(crate) fn retain_bindings(&self, bindings: TelemetryBindings) -> Result<()> {
         bindings.validate()?;
         let mut state = self.owner.state();
@@ -471,6 +839,7 @@ impl ServerCleanupHandle {
         F: FnOnce() -> Fut + Send + 'static,
         Fut: Future<Output = T> + Send + 'static,
     {
+        self.owner.reap_preparations();
         let admission = self.admit()?;
         let worker = Worker::new();
         self.owner.state().preparations.push(worker.clone());
@@ -497,13 +866,17 @@ impl ServerCleanupHandle {
         if outcome.completion == ShutdownCompletion::Complete {
             let retired = {
                 let mut state = self.owner.state();
-                state.cores.iter_mut().filter_map(|slot| {
-                    if slot.as_ref().is_some_and(|owned| Arc::ptr_eq(owned, core)) {
-                        slot.take()
-                    } else {
-                        None
-                    }
-                }).collect::<Vec<_>>()
+                state
+                    .cores
+                    .iter_mut()
+                    .filter_map(|slot| {
+                        if slot.as_ref().is_some_and(|owned| Arc::ptr_eq(owned, core)) {
+                            slot.take()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
             };
             drop(retired);
         }
@@ -523,11 +896,7 @@ impl ServerCleanupHandle {
         }
     }
 
-    pub(crate) fn start_watcher<F>(
-        &self,
-        admission: AdmissionGuard,
-        operation: F,
-    ) -> Result<JoinHandle<()>>
+    pub(crate) fn start_watcher<F>(&self, admission: AdmissionGuard, operation: F) -> Result<()>
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -537,20 +906,7 @@ impl ServerCleanupHandle {
             operation.await;
             drop(admission);
         })?;
-        let cleanup = self.clone();
-        // Serving monitors this join; aborting its waiter never aborts the
-        // owned watcher. Cleanup can join the same retained slot independently.
-        Ok(tokio::spawn(async move {
-            let mut slot = worker.join.write().await;
-            if let Some(task) = slot.as_mut() {
-                let result = task.await;
-                *slot = None;
-                if let Err(error) = result {
-                    cleanup.owner.primary(error.into());
-                    log::error!("Plugin watcher failed; retained by Server cleanup");
-                }
-            }
-        }))
+        Ok(())
     }
 
     /// Take standalone capture ownership before its constructor suspends.
@@ -583,6 +939,22 @@ impl ServerCleanupHandle {
             state.admission_open = false;
             state.phase = CleanupPhase::Quiescing;
             state.rollback_deadline = Some(Instant::now() + ROLLBACK_WAIT);
+            let telemetry = state.bindings.as_ref().map_or(
+                Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
+                TelemetryBindings::shutdown_timeout,
+            );
+            state.budget = Some(ShutdownBudget::new(
+                state.rollback_deadline.expect("overall deadline"),
+                telemetry,
+            ));
+            if let Some(api) = &state.api {
+                if let Some(stop) = api.stop.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    let _ = stop.send(());
+                }
+            }
+            if let Some(watcher) = &state.watcher {
+                watcher.request_stop();
+            }
             state.retained = Some(self.owner.clone());
             if let Err(error) = self.owner.begin_driver(&mut state) {
                 state.driver_active = false;
@@ -787,6 +1159,10 @@ impl ServerCleanupHandle {
         .into()
     }
 
+    pub fn shutdown_deadline(&self) -> Option<Instant> {
+        self.owner.state().rollback_deadline
+    }
+
     fn rollback_deadline(&self) -> Instant {
         self.owner
             .state()
@@ -823,7 +1199,7 @@ impl Drop for AdmissionGuard {
 /// abort the construction worker, release created Cores, or close bindings.
 pub struct ServerPreparation<T> {
     cleanup: ServerCleanupHandle,
-    result: Option<oneshot::Receiver<std::result::Result<(T, AdmissionGuard), ()>>>,
+    result: Option<oneshot::Receiver<std::result::Result<T, ()>>>,
     published: bool,
 }
 
@@ -831,8 +1207,8 @@ impl<T: Send + 'static> ServerPreparation<T> {
     /// Submit synchronous construction without occupying an executor worker.
     ///
     /// Both submission and blocking joins belong to this owner before work can
-    /// start. Admission travels through the actual initializer and unpublished
-    /// result, exactly as with async construction.
+    /// start. Admission covers the actual initializer and result registration,
+    /// not the caller's publication wait, exactly as with async construction.
     pub(crate) fn start_blocking<F>(mut admission: AdmissionGuard, operation: F) -> Result<Self>
     where
         F: FnOnce(ServerCleanupHandle) -> Result<T> + Send + 'static,
@@ -854,7 +1230,9 @@ impl<T: Send + 'static> ServerPreparation<T> {
             if let Err(error) = spawn_owned_blocking_worker(&initializer.join, move || {
                 match operation(owner.clone()) {
                     Ok(value) => {
-                        let _ = result.send(Ok((value, admission)));
+                        let _ = result.send(Ok(value));
+                        admission.rollback = false;
+                        drop(admission);
                     }
                     Err(error) => {
                         owner.owner.primary(error);
@@ -891,9 +1269,11 @@ impl<T: Send + 'static> ServerPreparation<T> {
         try_spawn_owned_worker(&worker.join, async move {
             match operation(owner.clone()).await {
                 Ok(value) => {
-                    // The guard remains admitted in the channel until publication
-                    // or abandonment; the worker's output never retains its owner.
-                    let _ = result.send(Ok((value, admission)));
+                    // Resources and the worker join are already retained by
+                    // the owner; publication remains separately shutdown-gated.
+                    let _ = result.send(Ok(value));
+                    admission.rollback = false;
+                    drop(admission);
                 }
                 Err(error) => {
                     owner.owner.primary(error);
@@ -940,11 +1320,10 @@ impl<T> ServerPreparation<T> {
             .take()
             .expect("preparation has one result")
             .await;
-        if let Ok(Ok((value, mut admission))) = result {
+        if let Ok(Ok(value)) = result {
             let publish = {
                 let mut state = self.cleanup.owner.state();
                 if state.admission_open {
-                    admission.rollback = false;
                     state.phase = CleanupPhase::Prepared;
                     true
                 } else {
@@ -953,12 +1332,10 @@ impl<T> ServerPreparation<T> {
             };
             if publish {
                 self.published = true;
-                drop(admission);
                 return Ok(value);
             }
             self.cleanup.owner.primary(PreparationRolledBack.into());
             drop(value);
-            drop(admission);
         }
         self.cleanup.request_shutdown()?;
         let outcome = self
@@ -1053,6 +1430,56 @@ pub(crate) mod test_support {
         let owner = Arc::downgrade(&cleanup.owner);
         move || owner.strong_count() != 0
     }
+
+    pub(crate) fn preparation_count(cleanup: &ServerCleanupHandle) -> usize {
+        cleanup.owner.state().preparations.len()
+    }
+
+    pub(crate) async fn latest_preparation_finished(cleanup: &ServerCleanupHandle) -> bool {
+        let worker = cleanup.owner.state().preparations.last().cloned();
+        match worker {
+            Some(worker) => worker
+                .join
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(JoinHandle::is_finished),
+            None => false,
+        }
+    }
+
+    pub(crate) async fn abort_latest_preparation(cleanup: &ServerCleanupHandle) {
+        let worker = cleanup
+            .owner
+            .state()
+            .preparations
+            .last()
+            .cloned()
+            .expect("worker");
+        worker
+            .join
+            .read()
+            .await
+            .as_ref()
+            .expect("installed join")
+            .abort();
+    }
+
+    #[tokio::test]
+    async fn maintenance_keeps_a_submission_slot_before_its_join_is_installed() -> Result<()> {
+        let cleanup = ServerCleanupHandle::bootstrap();
+        let worker = Worker::new();
+        cleanup.owner.state().preparations.push(worker.clone());
+        cleanup.owner.reap_preparations();
+        assert_eq!(preparation_count(&cleanup), 1);
+        try_spawn_owned_worker(&worker.join, async {})?;
+        while !latest_preparation_finished(&cleanup).await {
+            tokio::task::yield_now().await;
+        }
+        cleanup.owner.reap_preparations();
+        assert_eq!(preparation_count(&cleanup), 0);
+        cleanup.shutdown().await
+    }
 }
 
 #[derive(Debug)]
@@ -1079,6 +1506,24 @@ struct WaitExpired {
 #[derive(Debug, thiserror::Error)]
 #[error("Server cleanup driver was cancelled before confirmed completion")]
 struct DriverCancelled;
+
+#[derive(Debug, thiserror::Error)]
+#[error("Web API did not drain within 5 seconds (deadline {deadline:?}); connections remain owned")]
+struct ApiDrainExpired {
+    deadline: Instant,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Owned logging drain exceeded the shared collection phase deadline")]
+struct LoggingDrainExpired;
+
+#[derive(Debug, thiserror::Error)]
+enum ApiWorkerError {
+    #[error("Web API serving failed")]
+    Serve(#[source] std::io::Error),
+    #[error("Web API worker failed")]
+    Join(#[source] tokio::task::JoinError),
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Server preparation was rolled back before publication")]

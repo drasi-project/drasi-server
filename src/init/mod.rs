@@ -59,16 +59,18 @@ pub async fn run_init(
     let cleanup = preparation.cleanup_handle();
     let runtime = preparation.finish().await?;
     let outcome = run_init_body(output_path, force, plugins_dir).await;
-    let stopped = cleanup.wait_until(
-        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
-    ).await;
+    let stopped = cleanup
+        .wait_until(tokio::time::Instant::now() + std::time::Duration::from_secs(30))
+        .await;
     drop(runtime);
     match (outcome, stopped) {
         (Ok(()), cleanup) => cleanup,
         (Err(error), Ok(())) => Err(error),
         (Err(error), Err(cleanup)) => Err(drasi_lib::error::OperationFailures::new(
-            "Initialization and cleanup failures", vec![error, cleanup],
-        ).into()),
+            "Initialization and cleanup failures",
+            vec![error, cleanup],
+        )
+        .into()),
     }
 }
 

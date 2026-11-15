@@ -6,6 +6,9 @@ exporters, change startup logging, install process-global providers, or add
 telemetry configuration/routes.
 
 OBS-02 now supplies [typed configuration and init support](telemetry-configuration.md).
+OBS-03 adds explicit construction/running ownership and borrowed integration;
+its focused local verification is recorded below. Earlier results
+below describe only the recorded OBS-01 baseline, not the new ownership batch.
 Production capabilities remain explicitly gated until their later runtime
 implementations land; this does not change the OBS-01 qualification claims.
 
@@ -41,7 +44,7 @@ instrumentation support. The real-plugin proofs require this capability.
 
 | Component | Selected version | Features/purpose |
 |---|---|---|
-| OpenTelemetry API / SDK | 0.33.1 | Existing production metrics; trace/testing for compatibility tests |
+| OpenTelemetry API / SDK | 0.33.1 | Existing metrics; experimental custom/ManualReader for owned legacy loop; trace/testing for compatibility tests |
 | OTLP exporter | 0.33.1 | Existing HTTP JSON metrics with blocking reqwest/rustls |
 | tracing adapter | 0.34.0 | Core's optional context/completed-span adapter and tests |
 | `metrics` facade | 0.24.6 | Core recorder and metric handles |
@@ -159,8 +162,9 @@ global installation conflicts or silently adopt an unknown provider.
 
 Prebuilt DrasiLib instances must already carry compatible capabilities. OBS-03
 must reject unsupported handoffs rather than retrofit live cached handles.
-The public Server builder API and complete shutdown wiring belong to OBS-03,
-not this compatibility proof.
+The explicit Server bindings/preparation/shutdown APIs are described in
+[OBS-03 runtime ownership](telemetry-configuration.md#obs-03-ownership-apis).
+They do not expand this earlier compatibility proof's qualification.
 
 The managed-instance tracing proof explicitly installs a process-wide subscriber
 composing component logging with the chosen OTel layer. Core's management
@@ -168,6 +172,53 @@ reconciliation task uses that process subscriber; a scoped subscriber around
 only the calling future does not cover it. OBS-03 must qualify the embedding
 subscriber strategy as well as provider ownership, rather than silently relying
 on an unrelated global subscriber.
+
+### OBS-03 local focused qualification
+
+Final local checks on 2026-11-13:
+
+- Selected Server library, CLI, init-output, compatibility, ownership and
+  signal suites after the final review fixes: **601 passed, 0 failed, 6 ignored**. Ignored subprocess
+  entry points are exercised by their parent tests; two real-plugin proofs
+  remain unqualified.
+- Host SDK watcher tests: **9 passed** with native watcher features disabled
+  and **9 passed** with them enabled.
+- Server type check and both repositories' whitespace checks passed.
+- Server lint passed with only the existing `result_large_err` and
+  `too_many_arguments` categories allowed; strict lint retains seven baseline
+  findings. Host SDK own-package lint passed with `--no-deps`.
+- Changed-code formatting passed; two existing query-handler/route formatting
+  hunks were left untouched.
+
+The full Server test command remains blocked by unchanged older integration
+fixtures and examples. Across the final runs, these included
+`api_integration_test`, `api_contract_test`, `dto_camelcase_test`,
+`enum_serialization_test`, `native_computation_test`, `server_integration_test`,
+`snapshot_endpoint_test`, `basic_setup`, `native-computation` and `native-mssql`.
+These are not a claim of full-suite, cross-platform or release qualification.
+
+`observability_runtime` adds an isolated caller-owned composed logger/subscriber,
+trace processor/provider, native collector and in-memory Prometheus
+recorder/context. Two public Servers drive real deferred application-source
+processors and Core lifecycle observations on both Tokio flavors. Stopping A
+must leave B processing/emitting; caller collection remains open, provider
+shutdown calls remain zero, and the caller closes once after B. This is not an
+exporter/cdylib parity claim or a replacement for query/source business semantics.
+
+The retained-owner regressions cover management reaping, Core Complete-with-error
+versus Incomplete, cancellation/overall/phase budgets, actual graceful HTTP/SSE
+connections, actual stalled legacy HTTP/JSON export, and delayed/repeated Unix
+signal cleanup. Host SDK owned polling tests cover size/mtime events and retained
+joins with native watcher features both enabled and disabled. Existing ignored
+plugin-dependent proofs remain ignored; no matched plugin bundle was rebuilt
+and requalified for this ownership batch.
+
+The application-owned ManualReader loop removes the inaccessible SDK periodic
+thread from Server ownership. Server's owned polling path similarly creates no
+notify/debouncer backend. Legacy native SDK entrypoints still exist, without any
+new claim of opaque native-thread completion. All borrowed providers/collectors
+stay caller-owned; production exporters remain OBS-04/05 and process/inspection
+remain OBS-06. The example is still configuration/logs only.
 
 ## Running the checks
 

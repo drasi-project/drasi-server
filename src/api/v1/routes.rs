@@ -18,7 +18,7 @@
 //! All routes are designed to be nested under `/api/v1/`.
 
 use axum::{
-    extract::{Extension, State, Request},
+    extract::{Extension, Request, State},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -70,7 +70,10 @@ pub fn build_v1_router(
         .layer(Extension(ApiPrefix(
             ApiVersion::V1.path_prefix().to_string(),
         )))
-        .layer(middleware::from_fn_with_state(registry.clone(), management_admission))
+        .layer(middleware::from_fn_with_state(
+            registry.clone(),
+            management_admission,
+        ))
 }
 
 pub(crate) async fn management_admission(
@@ -90,11 +93,13 @@ pub(crate) async fn management_admission(
         Err(error) => crate::api::shared::error::ErrorResponse::new(
             crate::api::shared::error::error_codes::INTERNAL_ERROR,
             "Accepted management work did not return a response",
-        ).with_details(crate::api::shared::error::ErrorDetail {
+        )
+        .with_details(crate::api::shared::error::ErrorDetail {
             component_type: None,
             component_id: None,
             technical_details: Some(error.to_string()),
-        }).into_response(),
+        })
+        .into_response(),
     }
 }
 

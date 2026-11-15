@@ -3,22 +3,24 @@
 
 use anyhow::{Context, Result};
 use drasi_lib::computation::v1::SourceProgressKey;
-use drasi_lib::context::workers::{
-    join_owned_worker_gracefully, spawn_owned_blocking_worker, WorkerCompletion,
-};
+use drasi_lib::context::workers::spawn_owned_blocking_worker;
 use opentelemetry::{metrics::MeterProvider, KeyValue};
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::{
     error::{OTelSdkError, OTelSdkResult},
     metrics::{
-        data::ResourceMetrics, exporter::PushMetricExporter, PeriodicReader, SdkMeterProvider,
-        Temporality,
+        data::ResourceMetrics, exporter::PushMetricExporter, reader::MetricReader, InstrumentKind,
+        ManualReader, Pipeline, SdkMeterProvider, Temporality,
     },
     Resource,
 };
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Weak},
+    time::Duration,
+};
 use tokio::sync::{oneshot, RwLock};
+use tokio::time::{timeout_at, Instant};
 
 use crate::{
     api::mappings::DtoMapper, api::models::ConfigValue, instance_registry::InstanceRegistry,
@@ -79,45 +81,55 @@ impl MetricsConfig {
     }
 }
 
-struct ReportingExporter {
-    inner: MetricExporter,
-    stopped: std::sync::mpsc::Sender<()>,
-}
+#[derive(Debug, Clone)]
+struct ApplicationReader(Arc<ManualReader>);
 
-impl PushMetricExporter for ReportingExporter {
-    async fn export(&self, metrics: &ResourceMetrics) -> OTelSdkResult {
-        let result = self.inner.export(metrics).await;
-        if let Err(error) = &result {
-            log::warn!("OpenTelemetry metrics export failed: {error}");
-        }
-        result
+impl MetricReader for ApplicationReader {
+    fn register_pipeline(&self, pipeline: Weak<Pipeline>) {
+        self.0.register_pipeline(pipeline);
     }
-
+    fn collect(&self, metrics: &mut ResourceMetrics) -> OTelSdkResult {
+        self.0.collect(metrics)
+    }
     fn force_flush(&self) -> OTelSdkResult {
-        self.inner.force_flush()
+        self.0.force_flush()
     }
-
     fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
-        let result = self.inner.shutdown_with_timeout(timeout);
-        let _ = self.stopped.send(());
-        result
+        self.0.shutdown_with_timeout(timeout)
     }
-
-    fn temporality(&self) -> Temporality {
-        self.inner.temporality()
+    fn temporality(&self, kind: InstrumentKind) -> Temporality {
+        self.0.temporality(kind)
     }
 }
 
-type ShutdownResult = std::result::Result<(), Arc<OTelSdkError>>;
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum MetricsCleanupError {
+    #[error("Metrics collection phase deadline elapsed; no fresh final export was started")]
+    PhaseExpired,
+    #[error("Metrics cleanup wait elapsed; the actual worker remains owned")]
+    WaitExpired,
+    #[error("Metrics SDK/exporter cleanup failed")]
+    Sdk(#[source] OTelSdkError),
+    #[error("Metrics worker failed")]
+    Join(#[source] tokio::task::JoinError),
+    #[error("Metrics worker is missing before confirmed cleanup")]
+    MissingWorker,
+    #[error("Metrics shutdown request channel closed unexpectedly")]
+    RequestClosed,
+}
+
+type ShutdownResult = std::result::Result<(), Arc<anyhow::Error>>;
 
 /// Owns SDK construction and shutdown off the application's Tokio executor.
 #[derive(Default)]
 pub(crate) struct MetricsRuntime {
     worker: RwLock<Option<tokio::task::JoinHandle<ShutdownResult>>>,
-    stop: Option<std::sync::mpsc::Sender<()>>,
+    stop: Option<std::sync::mpsc::Sender<Instant>>,
     terminal: Option<ShutdownResult>,
     started: bool,
-    join_timeout: Duration,
+    deadline: Option<Instant>,
+    #[cfg(test)]
+    shutdown_probe: Arc<tests::ShutdownProbe>,
 }
 
 impl MetricsRuntime {
@@ -131,15 +143,14 @@ impl MetricsRuntime {
         let endpoint: String = DtoMapper::new().resolve_typed(&config.endpoint)?;
         let timeout = Duration::from_millis(config.export_timeout_ms);
         let interval = Duration::from_millis(config.export_interval_ms);
-        let cleanup_timeout = timeout * 4 + Duration::from_secs(5);
-        self.join_timeout = cleanup_timeout + Duration::from_secs(10);
         let instances = registry.metrics_reader();
         let (stop, stopping) = std::sync::mpsc::channel();
         let (ready, initialized) = oneshot::channel();
         self.stop = Some(stop);
+        #[cfg(test)]
+        let shutdown_probe = self.shutdown_probe.clone();
         spawn_owned_blocking_worker(&self.worker, move || {
-            let (stopped, exporter_stopped) = std::sync::mpsc::channel();
-            let provider = (|| -> Result<SdkMeterProvider> {
+            let provider = (|| -> Result<(SdkMeterProvider, ApplicationReader, MetricExporter)> {
                 let client = reqwest_otel::blocking::Client::builder()
                     .timeout(timeout)
                     .redirect(reqwest_otel::redirect::Policy::none())
@@ -151,14 +162,11 @@ impl MetricsRuntime {
                     .with_endpoint(endpoint)
                     .with_timeout(timeout)
                     .build()?;
-                let reader = PeriodicReader::builder(ReportingExporter {
-                    inner: exporter,
-                    stopped,
-                })
-                    .with_interval(interval)
-                    .build();
+                let reader = ApplicationReader(Arc::new(
+                    ManualReader::builder().with_temporality(exporter.temporality()).build(),
+                ));
                 let provider = SdkMeterProvider::builder()
-                    .with_reader(reader)
+                    .with_reader(reader.clone())
                     .with_resource(
                         Resource::builder_empty()
                             .with_attributes([
@@ -239,30 +247,87 @@ impl MetricsRuntime {
                         }
                     })
                     .build();
-                Ok(provider)
+                Ok((provider, reader, exporter))
             })();
-            let provider = match provider {
+            let (provider, reader, exporter) = match provider {
                 Ok(provider) => provider,
                 Err(error) => {
                     let _ = ready.send(Err(error));
                     return Ok(());
                 }
             };
-            if ready.send(Ok(())).is_ok() {
-                // Disconnect is also a shutdown request, including cancellation.
-                let _ = stopping.recv();
+            let collect = || -> OTelSdkResult {
+                let mut metrics = ResourceMetrics::default();
+                reader.collect(&mut metrics)?;
+                if metrics.scope_metrics().next().is_some() {
+                    // The blocking HTTP client must not run inside Tokio's async context.
+                    futures::executor::block_on(exporter.export(&metrics))?;
+                }
+                Ok(())
+            };
+            let mut next_interval = interval;
+            let deadline = if ready.send(Ok(())).is_err() {
+                Instant::now()
+            } else {
+                loop {
+                    match stopping.recv_timeout(next_interval) {
+                        Ok(deadline) => break deadline,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Instant::now(),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            let start = std::time::Instant::now();
+                            if let Err(error) = collect() {
+                                log::warn!("OpenTelemetry metrics export failed: {error}");
+                            }
+                            // Match the legacy reader: export duration counts
+                            // against the interval, and slow exports never overlap.
+                            next_interval = interval.saturating_sub(start.elapsed());
+                        }
+                    }
+                }
+            };
+            let mut failures = Vec::new();
+            if Instant::now() < deadline {
+                if let Err(error) = collect() {
+                    failures.push(MetricsCleanupError::Sdk(error).into());
+                }
+            } else {
+                failures.push(MetricsCleanupError::PhaseExpired.into());
             }
-            let result = provider
-                .shutdown_with_timeout(cleanup_timeout)
-                .map_err(Arc::new);
-            // The SDK reader currently has its own fixed shutdown wait. Retain
-            // our owner until the serial exporter has actually finished too.
-            exporter_stopped.recv_timeout(cleanup_timeout).map_err(|error| {
-                Arc::new(OTelSdkError::InternalFailure(format!(
-                    "Metrics exporter shutdown was not confirmed: {error}"
-                )))
-            })?;
-            result
+            if Instant::now() < deadline {
+                if let Err(error) = exporter.force_flush() {
+                    failures.push(MetricsCleanupError::Sdk(error).into());
+                }
+            }
+            if Instant::now() >= deadline && !failures.iter().any(|failure: &anyhow::Error| {
+                failure.is::<MetricsCleanupError>()
+                    && matches!(failure.downcast_ref::<MetricsCleanupError>(), Some(MetricsCleanupError::PhaseExpired))
+            }) {
+                failures.push(MetricsCleanupError::PhaseExpired.into());
+            }
+            // ManualReader has no worker. All collection, transport, close and
+            // Drop work remain on this one retained application worker.
+            #[cfg(test)]
+            shutdown_probe.sdk.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Err(error) = provider.shutdown_with_timeout(
+                deadline.saturating_duration_since(Instant::now()),
+            ) {
+                failures.push(MetricsCleanupError::Sdk(error).into());
+            }
+            #[cfg(test)]
+            shutdown_probe.exporter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Err(error) = exporter.shutdown_with_timeout(
+                deadline.saturating_duration_since(Instant::now()),
+            ) {
+                failures.push(MetricsCleanupError::Sdk(error).into());
+            }
+            drop((provider, reader, exporter));
+            if failures.is_empty() {
+                Ok(())
+            } else {
+                Err(Arc::new(drasi_lib::error::OperationFailures::new(
+                    "Metrics cleanup failures", failures,
+                ).into()))
+            }
         })
         .await?;
         self.started = true;
@@ -272,22 +337,94 @@ impl MetricsRuntime {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) async fn shutdown(&mut self) -> Result<()> {
-        self.stop.take();
-        if let Some(result) = &self.terminal {
-            return result.clone().map_err(anyhow::Error::new);
-        }
-        match join_owned_worker_gracefully(&mut *self.worker.write().await, self.join_timeout)
-            .await?
-        {
-            WorkerCompletion::Completed(result) => {
-                self.terminal = Some(result.clone());
-                result.map_err(anyhow::Error::new)
-            }
-            WorkerCompletion::Absent if !self.started => Ok(()),
-            _ => anyhow::bail!("Metrics worker disappeared before confirmed shutdown"),
-        }
+        let deadline = *self.deadline.get_or_insert_with(|| {
+            Instant::now()
+                + Duration::from_secs(crate::config::telemetry::DEFAULT_SHUTDOWN_TIMEOUT_SECONDS)
+        });
+        self.request_shutdown(deadline)?;
+        self.wait_shutdown_until(deadline).await
     }
+
+    pub(crate) fn request_shutdown(&mut self, deadline: Instant) -> Result<()> {
+        let deadline = *self.deadline.get_or_insert(deadline);
+        if let Some(stop) = self.stop.take() {
+            stop.send(deadline)
+                .map_err(|_| MetricsCleanupError::RequestClosed)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn wait_shutdown_until(&mut self, deadline: Instant) -> Result<()> {
+        if let Some(result) = &self.terminal {
+            return metrics_terminal(result);
+        }
+        let result = {
+            let mut slot = timeout_at(deadline, self.worker.write())
+                .await
+                .map_err(|_| MetricsCleanupError::WaitExpired)?;
+            let result = match slot.as_mut() {
+                Some(join) => match timeout_at(deadline, join).await {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(error)) => Err(Arc::new(MetricsCleanupError::Join(error).into())),
+                    Err(_) => return Err(MetricsCleanupError::WaitExpired.into()),
+                },
+                None if !self.started => Ok(()),
+                None => Err(Arc::new(MetricsCleanupError::MissingWorker.into())),
+            };
+            *slot = None;
+            result
+        };
+        self.terminal = Some(result.clone());
+        metrics_terminal(&result)
+    }
+
+    pub(crate) async fn wait_for_completion(&mut self) -> Result<()> {
+        if let Some(result) = &self.terminal {
+            return metrics_terminal(result);
+        }
+        let result = {
+            let mut slot = self.worker.write().await;
+            let result = match slot.as_mut() {
+                Some(join) => match join.await {
+                    Ok(result) => result,
+                    Err(error) => Err(Arc::new(MetricsCleanupError::Join(error).into())),
+                },
+                None if !self.started => Ok(()),
+                None => Err(Arc::new(MetricsCleanupError::MissingWorker.into())),
+            };
+            *slot = None;
+            result
+        };
+        self.terminal = Some(result.clone());
+        metrics_terminal(&result)
+    }
+
+    pub(crate) async fn is_joined(&self) -> bool {
+        self.worker.read().await.is_none()
+    }
+}
+
+#[derive(Debug)]
+struct MetricsTerminal(Arc<anyhow::Error>);
+
+impl std::fmt::Display for MetricsTerminal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Metrics cleanup completed with a failed outcome")
+    }
+}
+
+impl std::error::Error for MetricsTerminal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref().as_ref())
+    }
+}
+
+fn metrics_terminal(result: &ShutdownResult) -> Result<()> {
+    result
+        .clone()
+        .map_err(|error| MetricsTerminal(error).into())
 }
 
 fn observe_sequence(

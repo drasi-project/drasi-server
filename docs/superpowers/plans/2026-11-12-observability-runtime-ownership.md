@@ -12,6 +12,11 @@
 
 ## Global Constraints
 
+- Execution update (2026-11-13): the user requested completing Tasks 5-7 before
+  running tests. Author the remaining focused tests with the implementation,
+  defer all further per-task RED/GREEN commands, and run combined verification
+  after the batch. Existing command steps below become final-phase selectors;
+  do not claim strict observed-RED TDD for the deferred batch.
 - Work in the existing `observability-item3` branch; do not create a worktree or switch the sibling Core branch.
 - Reviewed revisions: Server `7233182`; Core `otel-drasi-server-work` at `5fc20eec`. Recheck before execution; do not reset local changes.
 - Preserve the current standalone overall shutdown wait of **30 seconds**.
@@ -381,6 +386,18 @@ behavior for direct router users; actual Server startup always attaches context.
 **Files:** Modify `src/server.rs`, `src/server/lifecycle.rs`, `src/telemetry/runtime.rs`, `src/telemetry.rs`, `src/telemetry/tests.rs`, `src/main.rs`, `tests/shutdown_signal_test.rs`; extend lifecycle tests.
 
 **Consumes:** the preparation owner, runtime context and admission gate.
+
+**Batch prerequisite:** address Task 5 review's completed-management-worker
+retention and watcher-producer ownership findings first. The user approved an
+additive Host SDK watcher cleanup/join handoff in the existing sibling Core
+branch. Cover notify and polling producers plus actual backend cleanup, retaining
+pending owners and typed errors; preserve start/stop signatures, ABI and persisted
+formats. Do not substitute event-consumer completion for producer completion.
+Dependency investigation found hidden notify/debouncer and SDK periodic-reader
+threads. The user approved an owned polling watcher and an application-owned
+legacy metrics reader using the SDK's existing experimental custom/manual-reader
+feature. Reuse existing event/polling semantics and the same provider/exporter/
+gauge contract; no new backend or persisted-format change.
 
 **Interfaces produced:** Keep `DrasiServer::run(self) -> anyhow::Result<()>`;
 add `DrasiServer::shutdown(&self) -> anyhow::Result<()>` to request/wait via its

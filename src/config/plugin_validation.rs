@@ -433,7 +433,9 @@ pub fn validate_with_plugins_with_logging(
 ) -> anyhow::Result<FullValidationResult> {
     bindings.validate()?;
     Ok(validate_with_plugin_context(
-        config, plugins_dir, Some(bindings.plugin_callback_context()?),
+        config,
+        plugins_dir,
+        Some(bindings.plugin_callback_context()?),
     ))
 }
 

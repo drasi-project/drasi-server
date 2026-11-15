@@ -347,10 +347,8 @@ pub async fn load_plugin(
 
     match orchestrator.load_plugin_locked(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
-        Err(e) => {
-            plugin_work_error(error_codes::PLUGIN_LOAD_FAILED, "Plugin loading failed", e)
-                .into_json_response()
-        }
+        Err(e) => plugin_work_error(error_codes::PLUGIN_LOAD_FAILED, "Plugin loading failed", e)
+            .into_json_response(),
     }
 }
 

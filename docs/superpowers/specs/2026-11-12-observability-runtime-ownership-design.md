@@ -311,6 +311,37 @@ extend the overall wait or discard the worker after a timeout.
 
 ## Verification required
 
+### Approved prerequisite amendment: watcher ownership
+
+Task 5 review found that Host SDK's plugin watcher discards its producer task
+handles and exposes only a stop signal. The user approved a narrow additive
+ownership/completion handoff in the existing Core branch, covering the actual
+producer and filesystem backend cleanup. Preserve existing start/stop API
+signatures, plugin ABI and persisted formats. Joining only Server's event
+consumer cannot certify watcher completion.
+
+Normal management-request cleanup must also reap completed workers during
+operation: memory must track concurrent work, not cumulative request count.
+Preserve typed join failures and retain unfinished workers across cancellation.
+
+The selected notify/debouncer dependencies do not expose complete worker joins.
+The user approved an application-owned polling implementation for Server's
+watcher, retaining the existing polling/debounce event behavior. Keep legacy SDK
+start/stop entry points available; Server's owned handoff must not silently
+claim native backend completion.
+
+### Approved amendment: application-owned legacy metrics reader
+
+The selected SDK periodic reader hides its internal thread handle. The user
+approved replacing that reader with an application-owned loop using the SDK's
+existing custom/manual-reader support (`experimental_metrics_custom_reader`).
+Server owns and joins this loop and its shutdown work. Keep one provider, the
+existing OTLP/HTTP JSON exporter, endpoint/authentication behavior, millisecond
+interval/timeout values, resource identity and query-progress gauge contract.
+This does not enable a new telemetry backend or change persisted formats.
+Qualify reader timing, failure/cancellation and wire compatibility in the final
+combined test phase, not additional per-task runs.
+
 ### Approved prerequisite amendment: Core shutdown outcome
 
 During Task 2 review, Core's management driver was found to retain a completed
