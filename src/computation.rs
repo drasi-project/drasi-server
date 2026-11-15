@@ -342,7 +342,11 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
                 ) else {
                     continue;
                 };
-                if query.implementation != query_factory.descriptor().implementation
+                // Native query plugins bind result catalogs through their `/ordinary` factory.
+                let catalog_query = query.implementation
+                    == query_factory.descriptor().implementation
+                    || query.implementation.name.ends_with("/ordinary");
+                if !catalog_query
                     || outlet.implementation != outlet_factory.descriptor().implementation
                 {
                     continue;

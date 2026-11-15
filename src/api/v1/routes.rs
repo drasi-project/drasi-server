@@ -135,6 +135,7 @@ fn build_dynamic_instance_router() -> Router {
         // Query routes
         .route("/queries", get(handlers::list_queries))
         .route("/queries", post(handlers::create_query))
+        .route("/queries/:id", put(handlers::upsert_query_handler))
         .route("/queries/:id", get(handlers::get_query))
         .route("/queries/:id/events", get(handlers::get_query_events))
         .route(

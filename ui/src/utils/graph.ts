@@ -66,6 +66,12 @@ export function canvasComponentType(component: ComputationComponent, data: Pipel
   return "computation";
 }
 
+/** A source's reported kind, else its managed implementation name, else "unknown". */
+export function sourceKind(source: SourceInfo | undefined, component: ComputationComponent): string {
+  if (source?.kind && source.kind !== "unknown") return source.kind;
+  return component.implementation?.name ?? "unknown";
+}
+
 export function buildFlowGraph(data: PipelineData, showInternal = false): {
   nodes: Node[];
   edges: Edge[];
@@ -79,6 +85,7 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       : componentType === "reaction" ? data.reactions.find((r) => r.id === component.id)
       : undefined;
     const internal = isInternalComponent(component);
+    const kind = componentType === "source" ? sourceKind(details as SourceInfo, component) : undefined;
     return {
       id: `component-${component.id}`,
       type: componentType === "computation" ? "computationNode" : `${componentType}Node`,
@@ -86,6 +93,7 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       hidden: internal && !showInternal,
       data: {
         ...details,
+        ...(kind ? { kind } : {}),
         id: component.id,
         role: component.role,
         componentType,

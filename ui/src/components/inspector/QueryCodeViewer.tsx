@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import Editor, { type OnMount, loader } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
+import { Maximize2, X } from "lucide-react";
 import {
   cypherLanguageId,
   gqlLanguageId,
@@ -113,6 +114,44 @@ function formatQuery(query: string): string {
     .join("\n");
 }
 
+const EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions = {
+  readOnly: true,
+  domReadOnly: true,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  lineNumbers: "off",
+  glyphMargin: false,
+  folding: false,
+  lineDecorationsWidth: 0,
+  lineNumbersMinChars: 0,
+  renderLineHighlight: "none",
+  overviewRulerLanes: 0,
+  overviewRulerBorder: false,
+  hideCursorInOverviewRuler: true,
+  scrollbar: {
+    vertical: "auto",
+    horizontal: "auto",
+    verticalScrollbarSize: 6,
+    horizontalScrollbarSize: 6,
+  },
+  wordWrap: "off",
+  contextmenu: false,
+  fontSize: 13,
+  fontFamily:
+    "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace",
+  padding: { top: 12, bottom: 12 },
+  matchBrackets: "never",
+  selectionHighlight: false,
+  occurrencesHighlight: "off",
+  renderValidationDecorations: "off",
+  cursorStyle: "line-thin",
+  cursorBlinking: "solid",
+  guides: {
+    indentation: false,
+    bracketPairs: false,
+  },
+};
+
 interface QueryCodeViewerProps {
   query: string;
   queryLanguage: string;
@@ -124,6 +163,7 @@ export default function QueryCodeViewer({
 }: QueryCodeViewerProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [isDark, setIsDark] = useState(
     document.documentElement.classList.contains("dark")
   );
@@ -139,6 +179,15 @@ export default function QueryCodeViewer({
     });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [expanded]);
 
   // Register custom languages + themes once
   useEffect(() => {
@@ -167,7 +216,19 @@ export default function QueryCodeViewer({
     ed.onDidContentSizeChange(() => updateHeight(ed));
   };
 
+  const theme = isDark ? "drasi-dark" : "drasi-light";
+
   return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="absolute top-2 right-2 z-10 p-1 rounded-md bg-drasi-surface/80 border border-drasi-border text-drasi-text-secondary hover:text-drasi-text-primary"
+        title="Expand query"
+        aria-label="Expand query"
+      >
+        <Maximize2 className="w-3.5 h-3.5" />
+      </button>
     <div
       ref={containerRef}
       className="bg-drasi-bg rounded-xl border border-drasi-border overflow-hidden"
@@ -176,46 +237,48 @@ export default function QueryCodeViewer({
         height="100%"
         language={monacoLanguage}
         value={formattedQuery}
-        theme={isDark ? "drasi-dark" : "drasi-light"}
+        theme={theme}
         onMount={handleMount}
-        options={{
-          readOnly: true,
-          domReadOnly: true,
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          lineNumbers: "off",
-          glyphMargin: false,
-          folding: false,
-          lineDecorationsWidth: 0,
-          lineNumbersMinChars: 0,
-          renderLineHighlight: "none",
-          overviewRulerLanes: 0,
-          overviewRulerBorder: false,
-          hideCursorInOverviewRuler: true,
-          scrollbar: {
-            vertical: "auto",
-            horizontal: "auto",
-            verticalScrollbarSize: 6,
-            horizontalScrollbarSize: 6,
-          },
-          wordWrap: "off",
-          contextmenu: false,
-          fontSize: 13,
-          fontFamily:
-            "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace",
-          padding: { top: 12, bottom: 12 },
-          matchBrackets: "never",
-          selectionHighlight: false,
-          occurrencesHighlight: "off",
-          renderValidationDecorations: "off",
-          cursorStyle: "line-thin",
-          cursorBlinking: "solid",
-          guides: {
-            indentation: false,
-            bracketPairs: false,
-          },
-        }}
+        options={EDITOR_OPTIONS}
       />
+    </div>
+      {expanded && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Query"
+            className="bg-drasi-surface border border-drasi-border rounded-2xl shadow-2xl w-[90vw] h-[85vh] flex flex-col"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-drasi-border">
+              <h2 className="text-sm font-semibold text-drasi-text-primary">Query</h2>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setExpanded(false)}
+                className="p-1 rounded-md text-drasi-text-secondary hover:text-drasi-text-primary"
+                title="Close query"
+                aria-label="Close query"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 bg-drasi-bg rounded-b-2xl overflow-hidden">
+              <Editor
+                height="100%"
+                language={monacoLanguage}
+                value={formattedQuery}
+                theme={theme}
+                options={{ ...EDITOR_OPTIONS, fontSize: 14, wordWrap: "on" }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

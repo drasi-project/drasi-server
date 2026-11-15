@@ -77,6 +77,7 @@ use utoipa::openapi::RefOr;
         super::handlers::stop_source,
         super::handlers::list_queries,
         super::handlers::create_query,
+        super::handlers::upsert_query_handler,
         super::handlers::get_query,
         super::handlers::get_query_events,
         super::handlers::stream_query_events,

@@ -77,7 +77,23 @@ fn desired(name: &str, specification: ComponentSpecification) -> DesiredComponen
     }
 }
 
+fn in_process_query() -> ImplementationIdentity {
+    ContinuousQueryFactory::default()
+        .descriptor()
+        .implementation
+        .clone()
+}
+
+/// The native query plugin's catalog-binding factory (`.../ordinary`).
+fn native_ordinary_query() -> ImplementationIdentity {
+    query_plugin::factory().descriptor().implementation.clone()
+}
+
 fn configuration() -> Result<ComputationConfig> {
+    configuration_with(in_process_query())
+}
+
+fn configuration_with(query_implementation: ImplementationIdentity) -> Result<ComputationConfig> {
     let graph_id = drasi_lib::management::DesiredInstance::default()
         .topology
         .graph_id;
@@ -107,13 +123,17 @@ fn configuration() -> Result<ComputationConfig> {
         components.push(desired(
             name,
             ComponentSpecification {
-                descriptor: query.descriptor(),
+                descriptor: if query_implementation == in_process_query() {
+                    query.descriptor()
+                } else {
+                    query_plugin::factory()
+                        .query_authoring()
+                        .context("native query authoring")?
+                        .query_descriptor(id(name))?
+                },
                 role: ComponentRole::Transformer,
                 completion: None,
-                implementation: ContinuousQueryFactory::default()
-                    .descriptor()
-                    .implementation
-                    .clone(),
+                implementation: query_implementation.clone(),
                 configuration_version: 1,
                 configuration: BTreeMap::from([
                     (
@@ -257,6 +277,18 @@ fn progress_recipes_reject_wrong_roles_and_cannot_restore_live_state() -> Result
 
 #[test]
 fn rejects_missing_wrong_or_distinct_catalog_dependencies() -> Result<()> {
+    rejects_invalid_catalog_dependencies(in_process_query())
+}
+
+#[test]
+fn native_ordinary_queries_validate_their_result_catalog() -> Result<()> {
+    assert!(native_ordinary_query().name.ends_with("/ordinary"));
+    validate_definition(&configuration_with(native_ordinary_query())?)?;
+    rejects_invalid_catalog_dependencies(native_ordinary_query())
+}
+
+fn rejects_invalid_catalog_dependencies(implementation: ImplementationIdentity) -> Result<()> {
+    let configuration = || configuration_with(implementation.clone());
     for component in ["one", "outlet"] {
         for dependencies in [
             None,
@@ -426,6 +458,7 @@ impl ComponentFactory for InputFactory {
 
 async fn instance(
     name: &str,
+    query_implementation: ImplementationIdentity,
 ) -> Result<(
     DrasiLib,
     mpsc::Sender<OutputEnvelope>,
@@ -447,6 +480,7 @@ async fn instance(
     let (sender, input) = mpsc::channel(16);
     let mut plugins = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugins);
+    plugins.register_computation_plugin(query_plugin::plugin())?;
     let mut factories = plugins.computation_factory_registry()?;
     factories.register(Arc::new(InputFactory {
         descriptor: FactoryDescriptor {
@@ -458,7 +492,7 @@ async fn instance(
         },
         input: Mutex::new(Some(input)),
     }))?;
-    let config = configuration()?;
+    let config = configuration_with(query_implementation)?;
     let batch = build_components(
         &config,
         &core,
@@ -560,8 +594,19 @@ fn change(sequence: u64, value: Option<i64>) -> Result<OutputEnvelope> {
 
 #[tokio::test]
 async fn server_catalog_feeds_existing_reactions_and_keeps_instances_isolated() -> Result<()> {
-    let (first, sender, mut output) = instance("first").await?;
-    let (second, _other_sender, _other_output) = instance("second").await?;
+    catalog_feeds_reactions_and_isolates_instances(in_process_query()).await
+}
+
+#[tokio::test]
+async fn native_ordinary_query_catalog_feeds_existing_reactions() -> Result<()> {
+    catalog_feeds_reactions_and_isolates_instances(native_ordinary_query()).await
+}
+
+async fn catalog_feeds_reactions_and_isolates_instances(
+    query_implementation: ImplementationIdentity,
+) -> Result<()> {
+    let (first, sender, mut output) = instance("first", query_implementation.clone()).await?;
+    let (second, _other_sender, _other_output) = instance("second", query_implementation).await?;
     for (sequence, value) in [(1, Some(7)), (2, Some(11)), (3, None)] {
         sender.send(change(sequence, value)?).await?;
         let mut queries = std::collections::BTreeSet::new();
@@ -610,3 +655,113 @@ async fn server_catalog_feeds_existing_reactions_and_keeps_instances_isolated() 
 
 #[path = "query_plugin/mod.rs"]
 mod query_plugin;
+
+#[tokio::test]
+async fn graph_managed_query_routes_resolve_by_name() -> Result<()> {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use drasi_server::{api::v1::routes::build_v1_router, instance_registry::InstanceRegistry};
+    use tower::ServiceExt;
+
+    let (core, _sender, _output) = instance("routes", native_ordinary_query()).await?;
+    let core = Arc::new(core);
+    let instances = InstanceRegistry::new();
+    instances
+        .add("routes".into(), core.clone())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let app = build_v1_router(
+        instances,
+        Arc::new(false),
+        None,
+        Arc::new(tokio::sync::RwLock::new(PluginRegistry::new())),
+        None,
+    );
+    let call = |method: &str, path: &str, body: Option<Value>| {
+        let app = app.clone();
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("/instances/routes/queries/{path}"))
+            .header("content-type", "application/json")
+            .body(body.map_or_else(Body::empty, |body| Body::from(body.to_string())))
+            .unwrap();
+        async move {
+            let response = app.oneshot(request).await?;
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            anyhow::Ok((status, bytes))
+        }
+    };
+    let json_of = |bytes: &[u8]| serde_json::from_slice::<Value>(bytes);
+
+    let (status, body) = call("GET", "one?view=full", None).await?;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let detail = json_of(&body)?;
+    let mut config = detail["data"]["config"].clone();
+    assert_eq!(config["name"], "one");
+    for path in ["one/events", "one/logs", "one/results"] {
+        let (status, body) = call("GET", path, None).await?;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{path}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+
+    let updated = "MATCH (n:Item) WHERE n.value > 0 RETURN n.id AS id, n.value AS value";
+    config["query"] = json!(updated);
+    let (status, body) = call("PUT", "one", Some(config.clone())).await?;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "graph-wired queries update through the desired state"
+    );
+    let message = json_of(&body)?["message"].to_string();
+    assert!(message.contains("computation desired state"), "{message}");
+
+    let (status, _) = call("PUT", "two", Some(config)).await?;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "path and body names must match"
+    );
+
+    let mut created = json!({
+        "name": "three",
+        "query": "MATCH (n:Item) RETURN n.id AS id",
+        "inputs": ["input"],
+        "autoStart": false
+    });
+    let (status, body) = call("PUT", "three", Some(created.clone())).await?;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (_, body) = call("GET", "three", None).await?;
+    let uuid = json_of(&body)?["data"]["id"].clone();
+    created["query"] = json!(updated);
+    let (status, body) = call("PUT", "three", Some(created)).await?;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (_, body) = call("GET", "three?view=full", None).await?;
+    let detail = json_of(&body)?;
+    assert_eq!(detail["data"]["id"], uuid, "update keeps the query UUID");
+    assert_eq!(detail["data"]["config"]["query"], updated);
+
+    for action in ["stop", "start"] {
+        let (status, body) = call("POST", &format!("one/{action}"), None).await?;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{action}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let (_, body) = call("DELETE", "two", None).await?;
+    let message = json_of(&body)?["message"].to_string();
+    assert!(message.contains("Depended on by"), "{message}");
+    let (status, body) = call("DELETE", "three", None).await?;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, _) = call("GET", "three", None).await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    Ok(())
+}

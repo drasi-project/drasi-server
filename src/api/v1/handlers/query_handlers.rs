@@ -99,6 +99,50 @@ pub async fn create_query(
     .await
 }
 
+/// Create or update a query by name
+///
+/// Creates the query if it doesn't exist. Otherwise its factory assesses and
+/// applies the new configuration, keeping the query's UUID. This works for
+/// queries created through the API and queries declared in a managed
+/// computation graph.
+#[utoipa::path(
+    put,
+    path = "/api/v1/instances/{instanceId}/queries/{id}",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query name")
+    ),
+    request_body = QueryConfigDto,
+    responses(
+        (status = 200, description = "Query created or updated successfully", body = ApiResponse),
+        (status = 400, description = "Invalid query configuration or unsupported change"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "Queries"
+)]
+pub async fn upsert_query_handler(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+    ConfigBody(config): ConfigBody<QueryConfigDto>,
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or_else(|| ErrorResponse::new(error_codes::INTERNAL_ERROR, "Instance not found"))?;
+    shared::upsert_query_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(plugins),
+        Path(id),
+        ConfigBody(config),
+    )
+    .await
+}
+
 /// Get query by ID
 #[utoipa::path(
     get,

@@ -191,6 +191,92 @@ pub async fn create_query(
     }
 }
 
+/// Create a query, or update the query with the path's name.
+///
+/// Updates keep the query's UUID and are assessed by its factory; this covers
+/// both API-created queries and queries declared in a managed computation graph.
+pub async fn upsert_query_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugins): Extension<Arc<tokio::sync::RwLock<crate::plugin_registry::PluginRegistry>>>,
+    Path(id): Path<String>,
+    ConfigBody(config_dto): ConfigBody<QueryConfigDto>,
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
+    if *read_only {
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create or update queries.",
+        ));
+    }
+    let name = parse_component_name(&id, "query")?;
+    if config_dto.name.to_string() != id {
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!(
+                "Path id '{id}' does not match body name '{}'",
+                config_dto.name
+            ),
+        ));
+    }
+    if core.get_query_config_by_name(&name).await.is_err() && !core.configuration_is_persistent() {
+        return create_query(
+            Extension(core),
+            Extension(read_only),
+            Extension(config_persistence),
+            Extension(String::new()),
+            Extension(plugins),
+            ConfigBody(config_dto),
+        )
+        .await;
+    }
+    let config = DtoMapper::default()
+        .map_with(&config_dto, &QueryConfigMapper)
+        .map_err(|e| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Invalid query configuration: {e}"),
+            )
+        })?;
+    if core.configuration_is_persistent() {
+        crate::query_plugin::ensure_registered(&core, &plugins)
+            .await
+            .map_err(|error| {
+                ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{error:#}"))
+            })?;
+        let definition = drasi_lib::management::OrdinaryComponentDefinition::query(config)
+            .map_err(|e| {
+                ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    format!("Invalid query configuration: {e:#}"),
+                )
+            })?;
+        return managed::write_component(
+            &core,
+            &config_persistence,
+            ComponentRole::Query,
+            WriteMode::Upsert,
+            definition,
+        )
+        .await
+        .map(|status| Json(ApiResponse::success(status)));
+    }
+    if let Err(e) = core.update_query_by_name(&name, config).await {
+        log::error!("Failed to update query '{id}': {e:#}");
+        let response = ErrorResponse::from(e);
+        return Err(ErrorResponse::new(
+            response.code,
+            format!("Failed to update query: {}", response.message),
+        ));
+    }
+    log::info!("Query '{id}' updated successfully");
+    persist_after_operation(&config_persistence, "updating query").await?;
+    Ok(Json(ApiResponse::success(StatusResponse {
+        message: format!("Query '{id}' updated successfully"),
+        configuration: None,
+    })))
+}
+
 /// Get query by ID
 pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,

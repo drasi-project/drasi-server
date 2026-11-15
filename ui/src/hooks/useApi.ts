@@ -3,6 +3,7 @@ import axios from "axios";
 import * as api from "@/api/client";
 import { instancePath, requireInstanceId } from "@/api/paths";
 import { removeNodeFromPersistedState } from "@/hooks/useCanvasPersistence";
+import { UNKNOWN_SOURCE_KIND } from "@/api/types";
 import type {
   SourceStatusResponse,
   QueryConfigResponse,
@@ -243,7 +244,7 @@ export function useSources(instanceId?: string) {
             if (prev.some((s) => s.id === event.componentId)) return prev;
             return [...prev, {
               id: event.componentId,
-              kind: "mock",
+              kind: UNKNOWN_SOURCE_KIND,
               status: "Stopped" as ComponentStatus,
               autoStart: false,
             }];

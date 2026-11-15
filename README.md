@@ -880,6 +880,7 @@ rather than represented as invented components.
 - **Drag** nodes to rearrange the layout
 - **Scroll** to zoom in/out
 - **Click empty space** to close the inspector
+- **Expand query** (top-right of a query's code view) opens the full query in a large read-only viewer; press **Escape** or **Close query** to return
 
 ### Adding Components
 
@@ -2420,6 +2421,17 @@ curl -X POST http://localhost:8080/api/v1/instances/{instanceId}/queries \
     "queryLanguage": "Cypher",
     "inputs": ["test-source"],
     "autoStart": true
+  }'
+
+# Create or update a query by name (the query keeps its UUID).
+# Queries declared in a computation graph are updated through
+# PUT /api/v1/instances/{instanceId}/computation/desired instead.
+curl -X PUT http://localhost:8080/api/v1/instances/{instanceId}/queries/high-values \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "high-values",
+    "query": "MATCH (n:Item) WHERE n.value > 200 RETURN n",
+    "inputs": ["test-source"]
   }'
 
 # Get query details

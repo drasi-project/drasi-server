@@ -28,6 +28,7 @@
 //! - `POST /api/v1/instances/{instanceId}/sources/{id}/stop` - Stop a source
 //! - `GET /api/v1/instances/{instanceId}/queries` - List queries
 //! - `POST /api/v1/instances/{instanceId}/queries` - Create a query
+//! - `PUT /api/v1/instances/{instanceId}/queries/{id}` - Create or update a query
 //! - `GET /api/v1/instances/{instanceId}/queries/{id}` - Get query config
 //! - `DELETE /api/v1/instances/{instanceId}/queries/{id}` - Delete a query
 //! - `POST /api/v1/instances/{instanceId}/queries/{id}/start` - Start a query

@@ -21,6 +21,9 @@ export type ComponentLogType =
 
 export type SourceKind = "mock" | "http" | "grpc" | "postgres" | "platform";
 
+/** Shown when the server has not reported a source's kind or implementation. */
+export const UNKNOWN_SOURCE_KIND = "unknown";
+
 export interface ComputationPort {
   id: string;
   direction: "Input" | "Output";
@@ -88,7 +91,7 @@ interface RawComponentSummary {
 
 interface RawSourceFull extends RawComponentSummary {
   config: {
-    kind: SourceKind;
+    kind?: string;
     id: string;
     autoStart?: boolean;
     [key: string]: unknown;
@@ -121,7 +124,8 @@ interface RawReactionFull extends RawComponentSummary {
 // Normalized types used by UI components
 export interface SourceStatusResponse {
   id: string;
-  kind: SourceKind;
+  /** Source kind or managed implementation name; "unknown" when not reported. */
+  kind: string;
   status: ComponentStatus;
   autoStart: boolean;
   properties?: Record<string, unknown>;
@@ -250,7 +254,7 @@ export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
   const { kind: _kind, id: _id, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
   return {
     id: raw.id,
-    kind: raw.config?.kind ?? "mock",
+    kind: raw.config?.kind || UNKNOWN_SOURCE_KIND,
     status: raw.status,
     autoStart: raw.config?.autoStart ?? false,
     properties: Object.keys(rest).length > 0 ? rest : undefined,
@@ -261,7 +265,7 @@ export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
 export function normalizeSourceSummary(raw: RawComponentSummary): SourceStatusResponse {
   return {
     id: raw.id,
-    kind: "mock", // Unknown from summary, will be refined on detail fetch
+    kind: UNKNOWN_SOURCE_KIND, // Summaries do not report a kind; refined on detail fetch
     status: raw.status,
     autoStart: false,
     error: raw.errorMessage,

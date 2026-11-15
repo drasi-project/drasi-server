@@ -181,3 +181,20 @@ test("expanded dimensions survive layout and hidden nodes keep their own positio
   assert.ok(positioned[1].position.y >= positioned[0].position.y + 280);
   assert.deepEqual(positioned[2].position, { x: 777, y: 888 });
 });
+
+test("sources without a reported kind show their implementation, never a mock label", () => {
+  const data = pipeline([
+    component("source", "Source"),
+    component("managed", "Source", { implementation: implementation("drasi.experimental/postgres") }),
+    component("bare", "Source"),
+  ]);
+  data.sources = [
+    { id: "source", kind: "mock", status: "Running", autoStart: true },
+    { id: "managed", kind: "unknown", status: "Running", autoStart: true },
+    { id: "bare", status: "Running", autoStart: true },
+  ];
+  const kinds = Object.fromEntries(buildFlowGraph(data).nodes.map((n) => [n.data.id, n.data.kind]));
+  assert.equal(kinds.source, "mock", "an explicitly mock source stays mock");
+  assert.equal(kinds.managed, "drasi.experimental/postgres");
+  assert.equal(kinds.bare, "unknown");
+});
