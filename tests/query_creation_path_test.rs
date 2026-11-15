@@ -400,13 +400,15 @@ impl ComputationComponent for NativeLifecycleComponent {
         anyhow::ensure!(!self.opaque, "fixture configuration is deliberately opaque");
         Ok(json!({"marker":"native-component"}))
     }
-    async fn start(&mut self) -> Result<()> {
-        Ok(())
-    }
-    async fn stop(&mut self) -> Result<()> {
-        Ok(())
-    }
-    async fn delete_owned_resources(&mut self) -> Result<()> {
+    drasi_lib::passive_component_lifecycle!(@hook initialize, InitializeContext);
+    drasi_lib::passive_component_lifecycle!(@hook start, StartContext);
+    drasi_lib::passive_component_lifecycle!(@hook pause, PauseContext);
+    drasi_lib::passive_component_lifecycle!(@hook resume, ResumeContext);
+    drasi_lib::passive_component_lifecycle!(@hook stop, StopContext);
+    async fn dispose(
+        &mut self,
+        _context: &drasi_lib::computation::v1::DisposeContext,
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -771,11 +773,13 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
                 .add("failed-native".into(), core.clone())
                 .await
                 .map_err(anyhow::Error::msg)?;
+            let mut plugins = PluginRegistry::new();
+            plugins.register_source(Arc::new(SourceFactory(Arc::new(Mutex::new(Vec::new())))));
             let app = build_v1_router(
                 registry,
                 Arc::new(false),
                 None,
-                Arc::new(RwLock::new(PluginRegistry::new())),
+                Arc::new(RwLock::new(plugins)),
                 None,
             );
             let (status, body) = request(
@@ -811,6 +815,37 @@ async fn failed_native_source_and_reaction_declarations_remain_manageable() -> R
             )
             .await?;
             anyhow::ensure!(status == StatusCode::OK, "{body}");
+            let (status, body) = request(
+                &app,
+                "GET",
+                &format!("/instances/failed-native/{route}"),
+                Value::Null,
+            )
+            .await?;
+            anyhow::ensure!(status == StatusCode::OK, "{body}");
+            assert!(body["data"]
+                .as_array()
+                .context("post-removal list")?
+                .is_empty());
+            let (status, body) = request(
+                &app,
+                "POST",
+                "/instances/failed-native/sources",
+                json!({"kind":"application","id":"healthy","autoStart":true}),
+            )
+            .await?;
+            anyhow::ensure!(status == StatusCode::OK, "{body}");
+            core.component_by_name(&ComponentName::try_new("healthy")?)?
+                .wait_created()
+                .await?;
+            let (status, body) =
+                request(&app, "GET", "/instances/failed-native/sources", Value::Null).await?;
+            anyhow::ensure!(status == StatusCode::OK, "{body}");
+            assert!(body["data"]
+                .as_array()
+                .context("healthy source list")?
+                .iter()
+                .any(|source| source["name"] == "healthy"));
             core.shutdown().await?;
         }
         Ok::<_, anyhow::Error>(())

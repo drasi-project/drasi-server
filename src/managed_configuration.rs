@@ -208,6 +208,20 @@ struct LiveResources {
 
 #[async_trait]
 impl ManagementResourceResolver for LiveResources {
+    fn plan_update(
+        &self,
+        resource: &drasi_lib::computation::v1::ResourceId,
+        previous: &drasi_lib::computation::v1::DesiredTopology,
+        desired: &drasi_lib::computation::v1::DesiredTopology,
+    ) -> Result<drasi_lib::computation::v1::ComponentUpdatePlan> {
+        let plugins = self
+            .plugins
+            .try_read()
+            .context("plugin registry is being updated; retry configuration acceptance")?;
+        ServerManagementResources::new(&plugins, self.secrets.clone())?
+            .plan_update(resource, previous, desired)
+    }
+
     fn validate_transition(
         &self,
         previous: &drasi_lib::computation::v1::DesiredTopology,

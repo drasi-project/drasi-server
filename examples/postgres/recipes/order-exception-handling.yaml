@@ -111,7 +111,7 @@ instances:
 
     queries:
   # Exception 1: High-value orders requiring approval
-      - id: high-value-orders
+      - name: high-value-orders
         autoStart: true
         query: |
           MATCH (o:orders)
@@ -126,7 +126,7 @@ instances:
           - orders-db
 
   # Exception 2: Orders stuck in pending
-      - id: stuck-orders
+      - name: stuck-orders
         autoStart: true
         query: |
           MATCH (o:orders)
@@ -140,7 +140,7 @@ instances:
           - orders-db
 
   # Exception 3: Payment failures
-      - id: payment-failures
+      - name: payment-failures
         autoStart: true
         query: |
           MATCH (p:payments)
@@ -156,7 +156,7 @@ instances:
           - orders-db
 
   # Exception 4: Inventory shortages
-      - id: inventory-shortage
+      - name: inventory-shortage
         autoStart: true
         query: |
           MATCH (i:order_items), (inv:inventory)
@@ -171,7 +171,7 @@ instances:
           - orders-db
 
   # Dashboard: All pending orders
-      - id: pending-orders
+      - name: pending-orders
         autoStart: true
         query: |
           MATCH (o:orders)
@@ -185,7 +185,7 @@ instances:
           - orders-db
 
   # Dashboard: Order statistics
-      - id: order-stats
+      - name: order-stats
         autoStart: true
         query: |
           MATCH (o:orders)

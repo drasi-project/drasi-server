@@ -22,7 +22,7 @@ use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use drasi_server::api::models::{QueryConfigDto, QueryInputConfigDto, QueryInputObjectDto};
 
 const CHAINED_YAML: &str = r#"
-id: floor-comfort
+name: floor-comfort
 query: "MATCH (r:RoomComfort) RETURN r.FloorId AS FloorId, avg(r.ComfortLevel) AS ComfortLevel"
 queryLanguage: Cypher
 inputs:
@@ -105,13 +105,13 @@ fn mapping_preserves_ports_label_selectors_pipelines_and_result_label() {
 #[test]
 fn removed_and_unknown_fields_are_rejected() {
     for yaml in [
-        "id: q\nquery: MATCH (n) RETURN n\nsources:\n  - sourceId: s\n",
-        "id: q\nquery: MATCH (n) RETURN n\nsources: [s]\n",
-        "id: q\nquery: MATCH (n) RETURN n\ninputs:\n  - sourceId: s\n",
-        "id: q\nquery: MATCH (n) RETURN n\ninputs:\n  - component: s\n    extra: true\n",
-        "id: q\nquery: MATCH (n) RETURN n\ninputs:\n  - port: out\n",
-        "id: q\nquery: MATCH (n) RETURN n\ninputs: [1]\n",
-        "id: q\nquery: MATCH (n) RETURN n\nresult:\n  label: A\n  colour: red\n",
+        "name: q\nquery: MATCH (n) RETURN n\nsources:\n  - sourceId: s\n",
+        "name: q\nquery: MATCH (n) RETURN n\nsources: [s]\n",
+        "name: q\nquery: MATCH (n) RETURN n\ninputs:\n  - sourceId: s\n",
+        "name: q\nquery: MATCH (n) RETURN n\ninputs:\n  - component: s\n    extra: true\n",
+        "name: q\nquery: MATCH (n) RETURN n\ninputs:\n  - port: out\n",
+        "name: q\nquery: MATCH (n) RETURN n\ninputs: [1]\n",
+        "name: q\nquery: MATCH (n) RETURN n\nresult:\n  label: A\n  colour: red\n",
     ] {
         assert!(
             serde_yaml::from_str::<QueryConfigDto>(yaml).is_err(),
@@ -122,13 +122,14 @@ fn removed_and_unknown_fields_are_rejected() {
 
 #[test]
 fn malformed_declarations_fail_before_creation() {
-    let base = "id: q\nquery: MATCH (n) RETURN n\n";
+    let base = "name: q\nquery: MATCH (n) RETURN n\n";
+    for tail in [
+        "inputs: ['']\n",
+        "inputs:\n  - component: a\n    port: two words\n",
+    ] {
+        assert!(serde_yaml::from_str::<QueryConfigDto>(&format!("{base}{tail}")).is_err());
+    }
     for (tail, reason) in [
-        ("inputs: ['']\n", "empty component"),
-        (
-            "inputs:\n  - component: a\n    port: two words\n",
-            "malformed port",
-        ),
         ("inputs: [a, a]\n", "duplicate input"),
         ("inputs: [q]\n", "self input"),
         ("inputs: [a]\nresult:\n  label: ''\n", "empty result label"),
@@ -140,7 +141,7 @@ fn malformed_declarations_fail_before_creation() {
 
 #[test]
 fn omitted_inputs_and_result_use_defaults() {
-    let dto: QueryConfigDto = serde_yaml::from_str("id: q\nquery: MATCH (n) RETURN n\n").unwrap();
+    let dto: QueryConfigDto = serde_yaml::from_str("name: q\nquery: MATCH (n) RETURN n\n").unwrap();
     assert!(dto.inputs.is_empty());
     assert_eq!(dto.result, Default::default());
     let config = map(&dto).unwrap();

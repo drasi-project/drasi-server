@@ -234,7 +234,7 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::json!({
-                        "id": "late-api-query",
+                        "name": "late-api-query",
                         "query": "MATCH (n) RETURN n",
                         "queryLanguage": "Cypher",
                         "inputs": ["late-api-source"],
@@ -270,7 +270,7 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|node| node["id"] == "late-api-query")
+        .find(|node| node["name"] == "late-api-query")
         .unwrap();
     assert_eq!(query["realization"], "Blocked");
     assert_eq!(query["failurePhase"], serde_json::Value::Null);
@@ -278,7 +278,7 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
         .as_array()
         .unwrap()
         .contains(&serde_json::json!({
-            "kind": "component", "id": "late-api-source"
+            "kind": "componentName", "name": "late-api-source"
         })));
     assert!(query["waitingReason"]
         .as_str()
@@ -306,7 +306,7 @@ async fn query_api_accepts_missing_sources_and_inspection_explains_the_wait() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|node| node["id"] == "late-api-query")
+        .find(|node| node["name"] == "late-api-query")
         .unwrap();
     assert_eq!(query["lifecycle"], "Running");
     assert_eq!(query["waitingFor"], serde_json::json!([]));
@@ -361,7 +361,7 @@ async fn test_instances_endpoint() {
     let test_instance = instances.iter().find(|i| i["id"] == "test-server").unwrap();
 
     // Verify richer InstanceDto fields
-    assert_eq!(test_instance["source_count"], 6); // Five fixtures plus graph observability.
+    assert_eq!(test_instance["source_count"], 5);
     assert_eq!(test_instance["query_count"], 2);
     assert_eq!(test_instance["reaction_count"], 2);
     assert!(test_instance["links"]["self"].is_string());
@@ -426,7 +426,8 @@ async fn test_source_lifecycle_via_api() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
-    assert_eq!(json["data"]["id"], "test-source");
+    drasi_lib::ComponentId::try_new(json["data"]["id"].as_str().unwrap()).unwrap();
+    assert_eq!(json["data"]["name"], "test-source");
     assert!(json["data"]["links"]["self"].is_string());
     assert!(json["data"]["links"]["full"].is_string());
 
@@ -631,7 +632,8 @@ async fn test_reaction_lifecycle_via_api() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
-    assert_eq!(json["data"]["id"], "test-reaction");
+    drasi_lib::ComponentId::try_new(json["data"]["id"].as_str().unwrap()).unwrap();
+    assert_eq!(json["data"]["name"], "test-reaction");
     assert!(json["data"]["links"]["self"].is_string());
     assert!(json["data"]["links"]["full"].is_string());
 }

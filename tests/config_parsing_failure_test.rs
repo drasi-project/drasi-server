@@ -306,7 +306,7 @@ instances:
   - id: test-server
     sources: []
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         auto_start: true
         inputs:
@@ -323,7 +323,7 @@ instances:
   - id: test-server
     sources: []
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         query_language: Cypher
         inputs:
@@ -340,7 +340,7 @@ instances:
   - id: test-server
     sources: []
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         enable_bootstrap: true
         inputs:
@@ -357,7 +357,7 @@ instances:
   - id: test-server
     sources: []
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         bootstrap_buffer_size: 10000
         inputs:
@@ -550,7 +550,7 @@ instances:
   - id: test-server
     sources: []
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         unknownQueryField: value
         inputs:
@@ -720,7 +720,7 @@ instances:
           type: sensorReading
         intervalMs: 1000
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (n) RETURN n"
         queryLanguage: Cypher
         autoStart: true
@@ -842,7 +842,7 @@ instances:
         id: mock-1
         autoStart: true
     queries:
-      - id: query-1
+      - name: query-1
         query: "MATCH (n) RETURN n"
         inputs:
           - mock-1

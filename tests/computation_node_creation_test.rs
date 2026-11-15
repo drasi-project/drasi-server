@@ -27,8 +27,8 @@ use axum::{
 use drasi_lib::{
     channels::{ComponentStatus, QueryResult, SubscriptionResponse},
     computation::v1::{
-        ComponentId, ComponentName, FailureDisposition, GraphEntity, GraphEntityId, GraphError,
-        PluginIdentity, RealizationState,
+        ComponentId, ComponentName, FailureDisposition, GraphEntity, GraphEntityId, PluginIdentity,
+        RealizationState,
     },
     context::{ReactionRuntimeContext, SourceRuntimeContext},
     DrasiLib, Query, Reaction, Source,
@@ -166,7 +166,7 @@ impl SourcePluginDescriptor for SourceDescriptor {
         }
         Ok(Box::new(ProbedSource {
             id: id.clone(),
-            inner: MockSource::new(id.as_str()),
+            inner: MockSource::with_id(id.clone()),
             auto_start,
             properties: serde_json::from_value(config.clone())?,
             probe: self.0.clone(),
@@ -270,7 +270,7 @@ impl ReactionPluginDescriptor for ReactionDescriptor {
         Ok(Box::new(ProbedReaction {
             id: id.clone(),
             query_inputs,
-            inner: MockReaction::new(id.as_str(), Vec::new()),
+            inner: MockReaction::with_id(id.clone(), Vec::new()),
             auto_start,
             properties: serde_json::from_value(config.clone())?,
             probe: self.0.clone(),
@@ -516,7 +516,7 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
     let harness = Harness::new(true).await;
     let config = json!({
         "name": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
-        "inputs": ["missing-source"], "autoStart": true,
+        "inputs": [], "autoStart": true,
     });
     let (status, body) = request(
         &harness.app,
@@ -883,10 +883,7 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
     assert_eq!(errors[0]["componentId"], "deferred");
     let message = errors[0]["message"].as_str().unwrap();
     assert!(message.contains("Node was added"), "{message}");
-    assert!(
-        message.contains("component construction exceeded 5s"),
-        "{message}"
-    );
+    assert!(message.contains("initialization timeout"), "{message}");
     let saved = harness.saved();
     assert_eq!(saved.instances[0].sources.len(), 1);
     assert_eq!(saved.instances[0].sources[0].id, "deferred");
@@ -898,12 +895,21 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
 
     let observed = handle.observed().unwrap();
     assert_eq!(observed.realization, RealizationState::CreationFailed);
-    assert!(matches!(
-        observed.failure.unwrap().cause.as_ref(),
-        GraphError::Creation { component, disposition: FailureDisposition::Retryable, source }
-            if component.as_str() == "deferred"
-                && source.downcast_ref::<tokio::time::error::Elapsed>().is_some()
-    ));
+    let failure = observed.failure.unwrap();
+    assert_eq!(failure.disposition, FailureDisposition::Terminal);
+    let mut cause: &(dyn std::error::Error + 'static) = failure.cause.as_ref();
+    let interrupted = loop {
+        if let Some(interrupted) =
+            cause.downcast_ref::<drasi_lib::computation::v1::ComponentInterrupted>()
+        {
+            break interrupted;
+        }
+        cause = cause
+            .source()
+            .unwrap_or_else(|| panic!("missing typed interruption: {failure:?}"));
+    };
+    assert_eq!(&interrupted.component, handle.id());
+    assert_eq!(interrupted.reason, "initialization timeout");
     assert_status(&harness, "sources", "deferred", "Error").await;
     assert_eq!(harness.source_probe.starts.load(Ordering::SeqCst), 0);
     harness.core.stop().await.unwrap();

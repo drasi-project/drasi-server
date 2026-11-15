@@ -68,6 +68,15 @@ struct ObservedResolver {
 
 #[async_trait]
 impl ManagementResourceResolver for ObservedResolver {
+    fn plan_update(
+        &self,
+        resource: &ResourceId,
+        previous: &DesiredTopology,
+        desired: &DesiredTopology,
+    ) -> Result<ComponentUpdatePlan> {
+        self.inner.plan_update(resource, previous, desired)
+    }
+
     fn validate_transition(
         &self,
         previous: &DesiredTopology,
@@ -221,12 +230,7 @@ impl ComputationComponent for Source {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
-    async fn start(&mut self) -> Result<()> {
-        Ok(())
-    }
-    async fn stop(&mut self) -> Result<()> {
-        Ok(())
-    }
+    drasi_lib::passive_component_lifecycle!();
 }
 #[async_trait]
 impl EnvelopeSource for Source {
@@ -251,12 +255,7 @@ impl ComputationComponent for Sink {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
-    async fn start(&mut self) -> Result<()> {
-        Ok(())
-    }
-    async fn stop(&mut self) -> Result<()> {
-        Ok(())
-    }
+    drasi_lib::passive_component_lifecycle!();
 }
 #[async_trait]
 impl EnvelopeSink for Sink {
@@ -1687,7 +1686,7 @@ async fn assert_unsafe_changes_rejected(core: &Arc<DrasiLib>, directory: &Path) 
         .topology
         .components
         .iter_mut()
-        .find(|node| node.descriptor.id().as_str() == "query")
+        .find(|node| node.descriptor.id() == &component("query"))
         .context("query")?;
     let ComponentConstruction::Factory(specification) = &mut query.construction else {
         anyhow::bail!("query factory");
@@ -1749,7 +1748,7 @@ async fn assert_unsafe_changes_rejected(core: &Arc<DrasiLib>, directory: &Path) 
             "application/json",
         )
         .await?;
-        assert_eq!(status, StatusCode::CONFLICT, "{response}");
+        assert_eq!(status, StatusCode::CONFLICT, "{name}: {response}");
         assert_eq!(
             response["code"], "CONFIGURATION_TRANSITION_REQUIRED",
             "{response}"

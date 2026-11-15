@@ -22,7 +22,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: device-location-join
+  - name: device-location-join
     query: |
       MATCH (d:Device)-[:LOCATED_AT]->(l:Location)
       RETURN d.device_id AS deviceId, d.status AS status, l.name AS locationName

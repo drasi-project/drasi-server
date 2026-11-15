@@ -92,6 +92,15 @@ fn require_managed(core: &drasi_lib::DrasiLib) -> Result<(), ErrorResponse> {
 
 fn management_error(error: drasi_lib::DrasiError) -> ErrorResponse {
     if error
+        .downcast_ref::<crate::computation::UnsupportedResourceUpdate>()
+        .is_some()
+    {
+        return ErrorResponse::new(
+            error_codes::CONFIGURATION_TRANSITION_REQUIRED,
+            "Configuration was not accepted: resource owner does not support the requested live recipe update",
+        );
+    }
+    if error
         .downcast_ref::<drasi_lib::management::RecoveryTransitionRequired>()
         .is_some()
     {
@@ -189,13 +198,12 @@ pub async fn apply_computation_desired(
     require_writable(*read_only)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
     require_managed(&core)?;
-    if request.desired.version != 1
-        || request.request_id.is_empty()
+    if request.request_id.is_empty()
         || request.request_id.len() > 1024
         || request.request_id.starts_with("drasi-server/")
     {
         return Err(ErrorResponse::new(error_codes::INVALID_REQUEST,
-            "Use desired version 1 and a nonempty request ID of at most 1024 bytes outside the reserved drasi-server/ prefix"));
+            "Use a nonempty request ID of at most 1024 bytes outside the reserved drasi-server/ prefix"));
     }
     validate_definition(&ComputationConfig {
         definition: request.desired.topology.clone(),
@@ -308,4 +316,28 @@ pub async fn get_computation_receipt(
             )
         })?;
     Ok((no_store(), Json(ApiResponse::success(receipt.into()))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn definite_owner_rejection_is_distinct_from_unknown_commit_outcome() {
+        let rejection = drasi_lib::DrasiError::Internal(
+            anyhow::Error::new(crate::computation::UnsupportedResourceUpdate)
+                .context("resource update assessment"),
+        );
+        let response = management_error(rejection);
+        assert_eq!(
+            response.code,
+            error_codes::CONFIGURATION_TRANSITION_REQUIRED
+        );
+        assert_eq!(response.with_status().0, StatusCode::CONFLICT);
+
+        let unknown = drasi_lib::DrasiError::Internal(anyhow::anyhow!("confirmation unavailable"));
+        let response = management_error(unknown);
+        assert_eq!(response.code, error_codes::CONFIGURATION_UNCONFIRMED);
+        assert_eq!(response.with_status().0, StatusCode::SERVICE_UNAVAILABLE);
+    }
 }

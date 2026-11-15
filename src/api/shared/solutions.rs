@@ -111,7 +111,11 @@ impl SolutionTemplateFile {
     fn query_ids(&self) -> Vec<String> {
         self.queries
             .iter()
-            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|name| name.as_str())
+                    .map(String::from)
+            })
             .collect()
     }
 
@@ -1229,7 +1233,7 @@ sources:
       host: "${HOST:-localhost}"
       port: "${PORT}"
 queries:
-  - id: my-query
+  - name: my-query
     query: "MATCH (n) WHERE n.value > ${THRESHOLD:-100} RETURN n"
 reactions: []
 "#,

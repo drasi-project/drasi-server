@@ -62,7 +62,7 @@ instances:
 
     queries:
   # Simple pass-through query
-      - id: simple-query
+      - name: simple-query
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -72,7 +72,7 @@ instances:
           - high-volume
 
   # Filtered query (positive values only)
-      - id: filtered-query
+      - name: filtered-query
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -83,7 +83,7 @@ instances:
           - high-volume
 
   # Aggregation query (more compute intensive)
-      - id: aggregation-query
+      - name: aggregation-query
         autoStart: true
         query: |
           MATCH (g:Generic)

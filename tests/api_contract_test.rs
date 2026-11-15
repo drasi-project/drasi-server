@@ -96,7 +96,8 @@ fn test_query_config_serialization() {
         .unwrap();
 
     let json = serde_json::to_value(&config).unwrap();
-    assert_eq!(json["id"], "test-query");
+    assert!(json["id"].is_null());
+    assert_eq!(json["name"], "test-query");
     assert_eq!(json["query"], "MATCH (n:Node) RETURN n");
     assert_eq!(json["inputs"].as_array().unwrap().len(), 2);
     assert_eq!(json["inputs"][0], "source1");
@@ -289,7 +290,7 @@ fn test_empty_strings() {
 #[test]
 fn test_type_mismatch_rejection() {
     let invalid_query = json!({
-        "id": "test",
+        "name": "test",
         "query": "MATCH (n) RETURN n",
         "inputs": "should-be-array", // Wrong type - should be array
         "auto_start": false

@@ -23,7 +23,7 @@ instances:
         intervalMs: 3000
 
     queries:
-      - id: all-sensors
+      - name: all-sensors
         autoStart: true
         query: |
           MATCH (s:SensorReading)

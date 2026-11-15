@@ -24,7 +24,7 @@
 
 mod test_support;
 
-use test_support::{create_mock_reaction, create_mock_source};
+use test_support::create_mock_reaction;
 
 use async_trait::async_trait;
 use axum::{
@@ -70,7 +70,7 @@ impl SourcePluginDescriptor for MockSourceDescriptor {
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::sources::Source>> {
         Ok(Box::new(
-            create_mock_source(id.as_str()).with_auto_start(auto_start),
+            test_support::MockSource::with_id(id.clone()).with_auto_start(auto_start),
         ))
     }
 }

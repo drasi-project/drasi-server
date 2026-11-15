@@ -63,7 +63,7 @@ instances:
 
 # Continuous queries
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: |
           MATCH (o:Order)
           WHERE o.total > 1000

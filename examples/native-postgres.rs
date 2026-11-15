@@ -247,7 +247,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 implementation: metadata.implementation.clone(),
                 configuration_version: metadata.configuration_version,
                 configuration: BTreeMap::from([
-                    ("source".into(), literal(source)?),
+                    ("source".into(), literal(&source_ids[source])?),
                     ("stream".into(), literal(stream(source)?)?),
                     ("settings".into(), settings_reference(kind, source)?),
                 ]),

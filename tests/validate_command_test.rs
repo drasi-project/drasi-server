@@ -135,7 +135,7 @@ instances:
         id: test-source
         autoStart: true
     queries:
-      - id: my-query
+      - name: my-query
         query: "MATCH (n) RETURN n"
         queryLanguage: Cypher
         autoStart: true
@@ -519,15 +519,15 @@ instances:
         id: source2
         autoStart: true
     queries:
-      - id: query1
+      - name: query1
         query: "MATCH (n) RETURN n"
         inputs:
           - source1
-      - id: query2
+      - name: query2
         query: "MATCH (m) RETURN m"
         inputs:
           - source2
-      - id: query3
+      - name: query3
         query: "MATCH (x) RETURN x"
         inputs:
           - source1

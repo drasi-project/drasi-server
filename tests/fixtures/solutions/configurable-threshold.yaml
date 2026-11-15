@@ -16,7 +16,7 @@ sources:
     intervalMs: ${POLL_INTERVAL_MS:-1000}  # Sensor polling interval in milliseconds
 
 queries:
-  - id: high-temp-alert
+  - name: high-temp-alert
     query: |
       MATCH (s:SensorReading)
       WHERE s.temperature > ${TEMP_THRESHOLD:-25}

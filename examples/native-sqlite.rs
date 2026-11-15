@@ -158,16 +158,16 @@ pub fn definition_with_mode(
                 builder,
                 &progress,
                 ResourceRole::Checkpoint,
-                json!({"kind":"sourceProgress","component":name}),
+                json!({"kind":"sourceProgress","component":id(name)?}),
             )?;
-            consumers.insert(*name, progress);
+            consumers.insert(id(name)?, progress);
         }
         let progress = if mode == Mode::Shared {
             builder = declare(
                 builder,
                 "consumers",
                 ResourceRole::Checkpoint,
-                json!({"kind":"consumerProgress","producer":"source","consumers":consumers}),
+                json!({"kind":"consumerProgress","producer":id("source")?,"consumers":consumers}),
             )?;
             for progress in consumers.values() {
                 builder = builder.resource_dependency(
@@ -231,7 +231,7 @@ pub fn definition_with_mode(
         let mut configuration = BTreeMap::from([
             (
                 "source".into(),
-                ConfigurationValue::Literal(json!("source")),
+                ConfigurationValue::Literal(json!(id("source")?)),
             ),
             (
                 "stream".into(),

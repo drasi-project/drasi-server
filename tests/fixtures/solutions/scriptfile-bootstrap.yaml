@@ -19,7 +19,7 @@ sources:
         - ${DATA_FILE_PATH:-./test-data/bootstrap.jsonl}
 
 queries:
-  - id: bootstrapped-query
+  - name: bootstrapped-query
     query: |
       MATCH (n:BootstrapNode)
       RETURN n.id AS nodeId, n.name AS nodeName, n.value AS nodeValue

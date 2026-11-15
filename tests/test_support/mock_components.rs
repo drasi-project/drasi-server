@@ -45,9 +45,13 @@ struct MockSourceInner {
 
 impl MockSource {
     pub fn new(_id: &str) -> Self {
+        Self::with_id(drasi_lib::ComponentId::generate())
+    }
+
+    pub fn with_id(id: drasi_lib::ComponentId) -> Self {
         Self {
             inner: Arc::new(MockSourceInner {
-                id: drasi_lib::ComponentId::generate(),
+                id,
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
@@ -122,6 +126,11 @@ impl SourceTrait for MockSource {
         Ok(())
     }
 
+    async fn delete_owned_resources(&self) -> anyhow::Result<()> {
+        self.inner.dispatchers.write().await.clear();
+        Ok(())
+    }
+
     async fn status(&self) -> ComponentStatus {
         *self.inner.status.read().await
     }
@@ -171,9 +180,13 @@ struct MockReactionInner {
 
 impl MockReaction {
     pub fn new(_id: &str, queries: Vec<String>) -> Self {
+        Self::with_id(drasi_lib::ComponentId::generate(), queries)
+    }
+
+    pub fn with_id(id: drasi_lib::ComponentId, queries: Vec<String>) -> Self {
         Self {
             inner: Arc::new(MockReactionInner {
-                id: drasi_lib::ComponentId::generate(),
+                id,
                 queries: queries
                     .into_iter()
                     .map(|name| {
@@ -261,6 +274,10 @@ impl ReactionTrait for MockReaction {
     async fn stop(&self) -> anyhow::Result<()> {
         *self.inner.status.write().await = ComponentStatus::Stopped;
         self.report_status(ComponentStatus::Stopped).await;
+        Ok(())
+    }
+
+    async fn delete_owned_resources(&self) -> anyhow::Result<()> {
         Ok(())
     }
 

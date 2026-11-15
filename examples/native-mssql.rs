@@ -120,14 +120,17 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
             builder,
             &progress,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":name}),
+            json!({"kind":"sourceProgress","component":id(name)}),
         )?;
         let bootstrap_config = NativeBootstrapConfig {
             component: id(name),
             implementation: bootstrap.implementation.clone(),
             configuration_version: bootstrap.configuration_version,
             configuration: BTreeMap::from([
-                ("source".into(), ConfigurationValue::Literal(json!("items"))),
+                (
+                    "source".into(),
+                    ConfigurationValue::Literal(json!(id("items"))),
+                ),
                 (
                     "stream".into(),
                     ConfigurationValue::Literal(json!(stream("items"))),
@@ -173,7 +176,7 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
             );
     }
     builder = declare(builder,"consumers",ResourceRole::Checkpoint,json!({
-        "kind":"consumerProgress","producer":"items","consumers":{"all":"all-progress","high":"high-progress"},
+        "kind":"consumerProgress","producer":id("items"),"consumers":{id("all").as_str():"all-progress",id("high").as_str():"high-progress"},
     }))?.resource_dependency(resource("consumers"),resource("all-progress"),ResourceRole::Checkpoint)?
         .resource_dependency(resource("consumers"),resource("high-progress"),ResourceRole::Checkpoint)?;
     let mut source = source_factory

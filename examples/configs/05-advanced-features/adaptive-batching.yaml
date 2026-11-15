@@ -60,7 +60,7 @@ instances:
         intervalMs: 100
 
     queries:
-      - id: all-events
+      - name: all-events
         autoStart: true
         query: |
           MATCH (e:Event)
@@ -69,7 +69,7 @@ instances:
         inputs:
           - high-volume-stream
 
-      - id: event-stats
+      - name: event-stats
         autoStart: true
         query: |
           MATCH (e:Event)

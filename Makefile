@@ -66,7 +66,7 @@ help:
 	@echo "  make clean-dev-build    - Clean, format, lint, and test"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test               - Run unit and integration tests (skips plugin-dependent tests)"
+	@echo "  make test               - Run non-ignored tests (plugin/database prerequisites still apply)"
 	@echo "  make test-all           - Build test plugins and run ALL tests (including ignored/E2E)"
 	@echo "  make test-smoke         - Plugin smoke test"
 	@echo "  make vscode-test        - Run VSCode extension tests"
@@ -188,10 +188,13 @@ test: prepare-build
 test-tooling:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 
-# Run ALL tests: build/download test plugins, run cargo tests (including #[ignore]),
-# plugin smoke tests, and VSCode extension tests.
+# Run the full Rust gate (including ignored integration parents), docs and smoke.
 # Build local plugins only when Cargo resolves matching local SDK/host/FFI code.
 # Registry mode uses the reviewed released graph and signed plugins.
+test-all: export DRASI_SERVER_TEST_PLUGINS_DIR ?= $(CURDIR)/target/debug/plugins
+test-all: export DRASI_NATIVE_PLUGIN_DIR ?= $(CURDIR)/target/debug/plugins
+test-all: export DRASI_NATIVE_TEST_PLUGINS ?= $(CURDIR)/target/debug/plugins
+test-all: export DRASI_NATIVE_RECOVERY_PLUGIN ?= $(CURDIR)/target/debug/plugins/examples/$(PLUGIN_LIB_PREFIX)native_recovery.$(PLUGIN_LIB_EXT)
 test-all: prepare-build
 	@mode="$$(python3 scripts/plugin_origin.py mode)" && \
 	case "$$mode" in \
@@ -257,8 +260,22 @@ build-local-plugins-debug:
 	@set -eu; \
 	core_root="$$(python3 scripts/plugin_origin.py local-workspace)"; \
 	$(MAKE) -C "$$core_root" build-plugins; \
-	mkdir -p target/debug/plugins; \
+	cargo build --locked --manifest-path "$$core_root/Cargo.toml" --target-dir "$$core_root/target" \
+		-p drasi-host-sdk --example native_recovery; \
+	cargo build --locked --manifest-path "$$core_root/Cargo.toml" --target-dir "$$core_root/target" \
+		--lib -p drasi-reaction-snapshot-test; \
+	cp "$$core_root/target/debug/$(PLUGIN_LIB_PREFIX)drasi_reaction_snapshot_test.$(PLUGIN_LIB_EXT)" \
+		"$$core_root/target/debug/plugins/"; \
+	cargo build --locked --manifest-path "$$core_root/Cargo.toml" --target-dir "$$core_root/target" \
+		--lib -p drasi-computation-transformer-query \
+		--features drasi-computation-transformer-query/dynamic-plugin,drasi-computation-transformer-query/middleware-jq; \
+	cp "$$core_root/target/debug/$(PLUGIN_LIB_PREFIX)drasi_computation_transformer_query.$(PLUGIN_LIB_EXT)" \
+		"$$core_root/target/debug/plugins/"; \
+	mkdir -p target/debug/plugins/examples; \
 	cp "$$core_root"/target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/
+	@core_root="$$(python3 scripts/plugin_origin.py local-workspace)" && \
+	cp "$$core_root/target/debug/examples/$(PLUGIN_LIB_PREFIX)native_recovery.$(PLUGIN_LIB_EXT)" \
+		target/debug/plugins/examples/
 	@echo "=== Local plugins ready in target/debug/plugins/ ==="
 
 dev-run: prepare-build

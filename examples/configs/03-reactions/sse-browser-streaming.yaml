@@ -63,7 +63,7 @@ instances:
         intervalMs: 1000
 
     queries:
-      - id: sensor-readings
+      - name: sensor-readings
         autoStart: true
         query: |
           MATCH (s:SensorReading)
@@ -72,7 +72,7 @@ instances:
         inputs:
           - live-data
 
-      - id: sensor-alerts
+      - name: sensor-alerts
         autoStart: true
         query: |
           MATCH (s:SensorReading)
@@ -82,7 +82,7 @@ instances:
         inputs:
           - live-data
 
-      - id: sensor-summary
+      - name: sensor-summary
         autoStart: true
         query: |
           MATCH (s:SensorReading)

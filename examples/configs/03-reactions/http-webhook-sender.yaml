@@ -61,7 +61,7 @@ instances:
         intervalMs: 3000
 
     queries:
-      - id: new-orders
+      - name: new-orders
         autoStart: true
         query: |
           MATCH (o:Order)
@@ -70,7 +70,7 @@ instances:
         inputs:
           - orders
 
-      - id: high-value-orders
+      - name: high-value-orders
         autoStart: true
         query: |
           MATCH (o:Order)

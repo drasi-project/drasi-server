@@ -29,7 +29,7 @@ fn test_default_query_language_is_gql() {
     // Test YAML without queryLanguage field deserializes with GQL default
     // This tests the Serde default mechanism
     let yaml = r#"
-id: test-query
+name: test-query
 query: "MATCH (n) RETURN n"
 inputs:
   - test-source
@@ -134,7 +134,7 @@ fn test_invalid_query_language_rejected() {
     // With QueryLanguage as a typed enum, invalid values are rejected at deserialization time.
     // Test that deserializing an invalid query language from YAML fails.
     let yaml = r#"
-id: test-query
+name: test-query
 query: "MATCH (n) RETURN n"
 queryLanguage: SQL
 inputs:
@@ -151,7 +151,7 @@ inputs:
 fn test_yaml_deserialization_explicit_cypher() {
     // Test that YAML with queryLanguage: Cypher works correctly
     let yaml = r#"
-id: test-query
+name: test-query
 query: "MATCH (n) RETURN n"
 queryLanguage: Cypher
 inputs:

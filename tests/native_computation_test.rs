@@ -1,7 +1,7 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Requires separately built ABI 1.0 native components and ABI 0.16/0.17 mock/log/bootstrap libraries.
+//! Requires separately built plugins matching the current native and legacy SDK ABIs.
 //! See tests/README.md. Missing binaries are a failed prerequisite, never a skip.
 
 #![allow(clippy::unwrap_used)]
@@ -74,13 +74,13 @@ fn expected_legacy_abi() -> String {
 fn artifact(name: &str) -> PathBuf {
     let directory = std::env::var_os("DRASI_SERVER_TEST_PLUGINS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/plugins"));
     let path = directory.join(format!(
         "{}{name}{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
     ));
-    assert!(path.is_file(), "Missing fixture {}. Build the four native standard component crates, drasi-source-mock, drasi-reaction-log and drasi-bootstrap-scriptfile with --features dynamic-plugin --offline --target-dir ../drasi-server/target, or set DRASI_SERVER_TEST_PLUGINS_DIR. This test does not skip missing native binaries.", path.display());
+    assert!(path.is_file(), "Missing fixture {}. Run make build-local-plugins-debug for matched plugins, or set DRASI_SERVER_TEST_PLUGINS_DIR. This test does not skip missing native binaries.", path.display());
     path
 }
 
@@ -172,6 +172,10 @@ fn id(name: &str) -> ComponentId {
         "shared-recovery" => 20,
         "source" => 21,
         "standalone-query" => 22,
+        "q" => 23,
+        "left" => 24,
+        "right" => 25,
+        "client" => 26,
         other => panic!("missing explicit component ID for {other}"),
     };
     ComponentId::from_uuid(uuid::Uuid::from_u128(value))
@@ -313,35 +317,22 @@ fn selected_removal(config: &ComputationConfig) -> Value {
 }
 
 async fn remove_components(core: &DrasiLib, config: &ComputationConfig) -> Result<()> {
-    let control = core.computation_control()?;
-    let mut changes = vec![DesiredMutation::RemoveComponents {
-        selection: GraphSelection::Exact(
-            config
-                .definition
-                .components
-                .iter()
-                .map(|node| node.descriptor.id().clone())
-                .collect(),
-        ),
-        policy: RemovalPolicy::Reject,
-    }];
-    changes.extend(config.definition.resources.iter().map(|resource| {
-        DesiredMutation::RemoveResource {
-            resource: resource.id.clone(),
-            policy: RemovalPolicy::Reject,
-        }
-    }));
-    let preview = control
-        .preview(control.desired_snapshot().revision, changes)
-        .await?;
-    let report = control
-        .reconcile(preview, TopologyBindings::default())
-        .await?;
-    anyhow::ensure!(
-        report.committed && report.summary == OperationSummary::Completed,
-        "{report:?}"
-    );
-    Ok(())
+    drasi_server::computation::remove_components(
+        core,
+        config
+            .definition
+            .components
+            .iter()
+            .map(|node| node.descriptor.id().clone())
+            .collect(),
+        config
+            .definition
+            .resources
+            .iter()
+            .map(|resource| resource.id.clone())
+            .collect(),
+    )
+    .await
 }
 
 async fn core(name: &str) -> Result<Arc<DrasiLib>> {
@@ -355,6 +346,51 @@ async fn core(name: &str) -> Result<Arc<DrasiLib>> {
             .build()
             .await?,
     ))
+}
+
+#[tokio::test]
+async fn native_removal_preserves_ordinary_declarations_and_rejects_non_native_selections(
+) -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let config = definition(&directory.path().join("capture.jsonl"))?;
+    let core = core("mixed-removal").await?;
+    register_components(&config, &core, &factories()).await?;
+    core.add_query(
+        drasi_lib::Query::cypher(ComponentName::try_new("ordinary")?)
+            .query("MATCH (n) RETURN n")
+            .auto_start(false)
+            .build()?,
+    )
+    .await?;
+    let before = core.desired_configuration()?;
+    assert_eq!(before.desired.ordinary.len(), 1);
+    for (components, resources) in [
+        (vec![], vec![]),
+        (vec![before.desired.ordinary[0].id.clone()], vec![]),
+        (vec![ComponentId::generate()], vec![]),
+        (vec![], vec![resource("absent")]),
+    ] {
+        assert!(
+            drasi_server::computation::remove_components(&core, components, resources)
+                .await
+                .is_err()
+        );
+        assert_eq!(core.desired_configuration()?, before);
+    }
+    remove_components(&core, &config).await?;
+    let after = core.desired_configuration()?;
+    assert!(after.desired.topology.components.is_empty());
+    assert!(after.desired.topology.resources.is_empty());
+    assert_eq!(after.desired.ordinary, before.desired.ordinary);
+    assert_eq!(
+        core.get_query_config_by_name(&ComponentName::try_new("ordinary")?)
+            .await?
+            .name
+            .as_str(),
+        "ordinary"
+    );
+    core.shutdown().await?;
+    Ok(())
 }
 
 async fn assert_clone_and_save_rejected(
@@ -546,11 +582,11 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     assert!(registry.get_bootstrapper("scriptfile").is_some());
     assert_eq!(
         registry.computation_plugin_metadata()[0].abi_version,
-        "1.0.0"
+        drasi_host_sdk::computation::ABI_VERSION
     );
     for record in &stats.loaded_plugins {
         if record.plugin_id.starts_with("computation:") {
-            assert_eq!(record.sdk_version, "1.0.0");
+            assert_eq!(record.sdk_version, drasi_host_sdk::computation::ABI_VERSION);
         } else {
             assert_eq!(record.sdk_version, expected_legacy_abi());
         }
@@ -845,7 +881,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         inspection["data"]["components"].as_array().unwrap().len(),
-        5
+        4
     );
     for specification in &config.definition.components {
         let inspected = inspection["data"]["components"]
@@ -867,8 +903,8 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         .unwrap()
         .contains(&json!({
             "representation": "ControlConnection",
-            "from": "counter",
-            "to": "capture"
+            "from": id("counter"),
+            "to": id("capture")
         })));
     let public = serde_json::to_string(&inspection)?;
     assert!(!public.contains("private-capture-path"));
@@ -883,9 +919,10 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(full["data"]["version"], 1);
+    assert_eq!(full["data"]["version"], 2);
     assert_eq!(
-        full["data"]["native_components"]["configurations"]["counter"]["values"]["count"],
+        full["data"]["native_components"]["configurations"][id("counter").as_str()]["values"]
+            ["count"],
         4
     );
     assert_eq!(
@@ -902,7 +939,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
             file_path: artifact("drasi_computation_source_counter"),
             kinds: Vec::new(),
             plugin_version: plugin().metadata().plugin.version.to_string(),
-            sdk_version: "1.0.0".into(),
+            sdk_version: drasi_host_sdk::computation::ABI_VERSION.into(),
         }])
         .await;
     let plugin_app = build_plugin_router(orchestrator, instances.clone(), Arc::new(false));
@@ -937,7 +974,12 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
             .iter()
             .map(String::as_str)
             .collect::<HashSet<_>>(),
-        HashSet::from(["counter", "middleware", "arithmetic", "capture"])
+        config
+            .definition
+            .components
+            .iter()
+            .map(|component| component.descriptor.id().as_str())
+            .collect::<HashSet<_>>()
     );
     for component in &config.definition.components {
         assert!(
@@ -1145,8 +1187,10 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     let mut config = definition(&directory.path().join("capture.jsonl"))?;
     if let ComponentConstruction::Factory(spec) = &mut config.definition.components[0].construction
     {
-        spec.configuration
-            .insert("count".into(), ConfigurationValue::Literal(json!(-1)));
+        spec.configuration.insert(
+            "count".into(),
+            ConfigurationValue::Literal(json!("invalid")),
+        );
     }
     let core = core("failed-native").await?;
     let instances = InstanceRegistry::new();
@@ -1221,7 +1265,7 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
         .as_array()
         .unwrap()
         .iter()
-        .find(|component| component["id"] == "counter")
+        .find(|component| component["id"] == id("counter").as_str())
         .unwrap();
     assert_eq!(counter["realization"], "CreationFailed");
     let (status, body) = request(
@@ -1238,12 +1282,14 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
 }
 
 #[tokio::test]
-async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()> {
+async fn owned_graph_rejects_direct_resource_rebind_without_changing_persisted_recipe() -> Result<()>
+{
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("rebind").await?;
     let plugins = factories();
     register_components(&config, &core, &plugins).await?;
+    let original = core.desired_configuration()?;
     let control = core.computation_control()?;
     let preview = control
         .preview(
@@ -1251,7 +1297,7 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
             vec![DesiredMutation::RebindResource(resource("configuration"))],
         )
         .await?;
-    let rebound = control
+    let error = control
         .reconcile(
             preview,
             TopologyBindings {
@@ -1269,31 +1315,23 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
                 ..Default::default()
             },
         )
-        .await?;
-    assert_eq!(rebound.summary, OperationSummary::Completed);
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains(
+            "managed configuration must be changed through DrasiLib::apply_desired_state"
+        ),
+        "{error:#}"
+    );
+    assert_eq!(core.desired_configuration()?, original);
     let snapshot = core.snapshot_computation_configuration().await?;
-    assert!(!snapshot
-        .native_components
-        .as_ref()
-        .unwrap()
-        .topology
-        .resource_configurations
-        .contains_key(&resource("configuration")));
-    assert!(configuration_from_snapshot(&snapshot).is_err());
-    let original = DrasiServerConfig {
-        instances: vec![drasi_server::config::DrasiLibInstanceConfig {
-            computation: Some(config.into()),
-            ..Default::default()
-        }],
-        ..Default::default()
-    };
-    assert_clone_and_save_rejected(
-        core,
-        &original,
-        directory.path(),
-        "has no construction recipe",
-    )
-    .await
+    assert_eq!(
+        configuration_from_snapshot(&snapshot)?.unwrap().definition,
+        config.definition,
+        "a rejected external rebind must preserve the reconstructible owned recipe"
+    );
+    core.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -1355,7 +1393,11 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
         }
         let error = configuration_from_snapshot(&incomplete).unwrap_err();
         assert!(
-            format!("{error:#}").contains("has no declaration or construction recipe"),
+            format!("{error:#}").contains(match kind {
+                "component" => "desired topology references undeclared nodes or resources",
+                "retained" | "ranked" => "edge 0 requires an undeclared or incompatible resource",
+                _ => "has no declaration or construction recipe",
+            }),
             "{kind}: {error:#}"
         );
     }
@@ -1694,8 +1736,14 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
     assert_eq!(resolved.len(), 2);
     assert_eq!(resolved[0].filename, native_filename);
     assert_eq!(resolved[0].abi_family.as_deref(), Some("computation"));
-    assert_eq!(resolved[0].abi_version.as_deref(), Some("1.0.0"));
-    assert_eq!(resolved[0].sdk_version, "1.0.0");
+    assert_eq!(
+        resolved[0].abi_version.as_deref(),
+        Some(drasi_host_sdk::computation::ABI_VERSION)
+    );
+    assert_eq!(
+        resolved[0].sdk_version,
+        drasi_host_sdk::computation::ABI_VERSION
+    );
     assert_eq!(resolved[1].filename, legacy_filename);
     assert_eq!(resolved[1].abi_family, None);
     assert_eq!(resolved[1].abi_version, None);
@@ -1721,7 +1769,7 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
     );
     let mut events = orchestrator.subscribe();
     let info = orchestrator.load_plugin_locked(&path, None).await?;
-    assert_eq!(info.sdk_version, "1.0.0");
+    assert_eq!(info.sdk_version, drasi_host_sdk::computation::ABI_VERSION);
     assert!(matches!(events.try_recv()?, PluginEvent::Loaded { .. }));
     assert_eq!(registry.read().await.computation_plugin_metadata().len(), 1);
     let hash = drasi_server::plugin_lockfile::compute_file_hash(&path)?;
@@ -1771,7 +1819,10 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
     let installed = installer
         .install_and_load("computation/source-counter", None, None)
         .await?;
-    assert_eq!(installed.sdk_version, "1.0.0");
+    assert_eq!(
+        installed.sdk_version,
+        drasi_host_sdk::computation::ABI_VERSION
+    );
     assert_eq!(
         installed_registry
             .read()
@@ -1785,7 +1836,7 @@ async fn runtime_loading_verification_events_and_replacement_policy() -> Result<
     let entry = lock
         .get("computation/source-counter")
         .context("native lock entry")?;
-    assert_eq!(entry.sdk_version, "1.0.0");
+    assert_eq!(entry.sdk_version, drasi_host_sdk::computation::ABI_VERSION);
     assert!(entry.core_version.is_empty());
     assert!(entry.lib_version.is_empty());
     Ok(())
@@ -1826,7 +1877,7 @@ async fn watcher_native_candidate_uses_the_same_verified_family_loader() -> Resu
     })
     .await??;
     let info = orchestrator.load_plugin_locked(&candidate, None).await?;
-    assert_eq!(info.sdk_version, "1.0.0");
+    assert_eq!(info.sdk_version, drasi_host_sdk::computation::ABI_VERSION);
     assert_eq!(registry.read().await.computation_plugin_metadata().len(), 1);
     Ok(())
 }

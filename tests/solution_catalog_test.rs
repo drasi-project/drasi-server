@@ -377,7 +377,7 @@ sources:
       type: generic
 
 queries:
-  - id: meta-query
+  - name: meta-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
     inputs:

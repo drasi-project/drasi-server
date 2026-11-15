@@ -23,7 +23,7 @@ use std::{
 fn libraries() -> PathBuf {
     std::env::var_os("DRASI_NATIVE_PLUGIN_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/plugins"))
 }
 
 #[test]

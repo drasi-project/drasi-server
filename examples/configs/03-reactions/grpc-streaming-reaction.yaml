@@ -57,7 +57,7 @@ instances:
         intervalMs: 500
 
     queries:
-      - id: all-events
+      - name: all-events
         autoStart: true
         query: |
           MATCH (e:Event)
@@ -66,7 +66,7 @@ instances:
         inputs:
           - events
 
-      - id: critical-events
+      - name: critical-events
         autoStart: true
         query: |
           MATCH (e:Event)

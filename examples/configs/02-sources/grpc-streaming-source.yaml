@@ -57,7 +57,7 @@ instances:
 
     queries:
   # Track all streaming data
-      - id: stream-data
+      - name: stream-data
         autoStart: true
         query: |
           MATCH (m:Message)
@@ -67,7 +67,7 @@ instances:
           - grpc-stream
 
   # Aggregate message statistics
-      - id: stream-stats
+      - name: stream-stats
         autoStart: true
         query: |
           MATCH (m:Message)

@@ -35,7 +35,7 @@ instances:
             keyColumns:
               - MessageId
     queries:
-      - id: all-messages
+      - name: all-messages
         autoStart: true
         query: |
           MATCH (m:Message)

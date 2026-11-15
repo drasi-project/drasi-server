@@ -42,7 +42,7 @@ use test_support::solution_helpers::{
     create_test_jsonl_file, create_test_router_with_solutions, create_test_solution_template,
 };
 use tower::ServiceExt;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // =============================================================================
@@ -70,6 +70,21 @@ fn http_result_after<'a>(payload: &'a serde_json::Value, query_id: &str) -> &'a 
         "Expected an object in the HTTP result's 'after' field: {payload:?}"
     );
     after
+}
+
+async fn assert_delivery_identity(
+    core: &drasi_lib::DrasiLib,
+    request: &wiremock::Request,
+    name: &str,
+) {
+    let query = core
+        .get_query_info_by_name(&drasi_lib::ComponentName::try_new(name).unwrap())
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(request.url.path(), format!("/changes/{}", query.id));
+    assert_eq!(payload["queryId"], query.id.as_str());
+    assert_eq!(payload["inputAlias"], name);
 }
 
 #[test]
@@ -201,7 +216,7 @@ sources:
         - {data_file}
 
 queries:
-  - id: high-temp-query
+  - name: high-temp-query
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
@@ -242,7 +257,7 @@ sources:
         - {data_file}
 
 queries:
-  - id: all-sensors
+  - name: all-sensors
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
@@ -280,7 +295,7 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
 
     // HTTP reaction sends to /changes/{query_id}
     Mock::given(method("POST"))
-        .and(path("/changes/high-temp-query"))
+        .and(path_regex(r"^/changes/[0-9a-f-]{36}$"))
         .respond_with(ResponseTemplate::new(200))
         .expect(1..) // Expect at least 1 request
         .mount(&mock_server)
@@ -364,7 +379,8 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
     // Query returns: s.sensor_id AS sensorId, s.temperature AS temp
     // The source starts before the reaction subscribes, so its first received
     // live event can already be an update of an existing sensor.
-    let row = changed_row(&payload, "high-temp-query");
+    assert_delivery_identity(&_core, &received[0], "high-temp-query").await;
+    let row = changed_row(&payload, payload["queryId"].as_str().unwrap());
     let has_sensor_id = row.get("sensorId").is_some();
     let has_temp = row.get("temp").is_some();
 
@@ -411,7 +427,7 @@ async fn test_e2e_all_bootstrap_data_reaches_reaction() {
 
     // Match the query ID from all_sensors_template: "all-sensors"
     Mock::given(method("POST"))
-        .and(path("/changes/all-sensors"))
+        .and(path_regex(r"^/changes/[0-9a-f-]{36}$"))
         .respond_with(ResponseTemplate::new(200))
         .expect(1..)
         .mount(&mock_server)
@@ -479,6 +495,7 @@ async fn test_e2e_all_bootstrap_data_reaches_reaction() {
         "All sensors payload: {}",
         serde_json::to_string_pretty(&payload).unwrap()
     );
+    assert_delivery_identity(&_core, &received[0], "all-sensors").await;
 }
 
 /// Test: Validates specific field values in reaction output
@@ -491,7 +508,7 @@ async fn test_e2e_validates_output_field_values() {
 
     // Match the query ID: "counter-query"
     Mock::given(method("POST"))
-        .and(path("/changes/counter-query"))
+        .and(path_regex(r"^/changes/[0-9a-f-]{36}$"))
         .respond_with(ResponseTemplate::new(200))
         .expect(1..)
         .mount(&mock_server)
@@ -525,7 +542,7 @@ sources:
         - {}
 
 queries:
-  - id: counter-query
+  - name: counter-query
     query: |
       MATCH (c:Counter)
       RETURN c.value AS counterValue
@@ -594,7 +611,9 @@ reactions:
     // Validate the counter value field is present and is a number
     assert!(payload.is_object(), "Expected JSON object from reaction");
 
-    let counter_value = added_row(&payload, "counter-query").get("counterValue");
+    assert_delivery_identity(&_core, &received[0], "counter-query").await;
+    let counter_value =
+        added_row(&payload, payload["queryId"].as_str().unwrap()).get("counterValue");
     assert!(
         counter_value.is_some(),
         "Expected 'counterValue' field in payload. Got: {payload:?}"
@@ -690,7 +709,7 @@ async fn test_e2e_handles_multiple_bootstrap_nodes() {
 
     // Match the query ID: "multi-sensor-query"
     Mock::given(method("POST"))
-        .and(path("/changes/multi-sensor-query"))
+        .and(path_regex(r"^/changes/[0-9a-f-]{36}$"))
         .respond_with(ResponseTemplate::new(200))
         .expect(1..)
         .mount(&mock_server)
@@ -725,7 +744,7 @@ sources:
         - {}
 
 queries:
-  - id: multi-sensor-query
+  - name: multi-sensor-query
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp
@@ -795,6 +814,9 @@ reactions:
     }
 
     println!("Total HTTP requests received: {total_payloads}");
+    for request in &received {
+        assert_delivery_identity(&_core, request, "multi-sensor-query").await;
+    }
 
     // Should receive multiple requests from the fast-generating MockSource
     assert!(

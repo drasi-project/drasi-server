@@ -54,7 +54,7 @@ instances:
 
     queries:
   # Working example: Numeric comparison with mock data
-      - id: positive-values
+      - name: positive-values
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -65,7 +65,7 @@ instances:
           - data-source
 
   # Working example: Negative value filter
-      - id: negative-values
+      - name: negative-values
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -76,7 +76,7 @@ instances:
           - data-source
 
   # Working example: String pattern matching
-      - id: message-pattern
+      - name: message-pattern
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -87,7 +87,7 @@ instances:
           - data-source
 
   # Working example: All values (no filter)
-      - id: all-values
+      - name: all-values
         autoStart: true
         query: |
           MATCH (g:Generic)

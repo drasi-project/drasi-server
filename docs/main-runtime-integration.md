@@ -1,8 +1,41 @@
 # Main runtime integration for the engine prerequisite
 
-## Current released runtime
+## Current local ComputationGraph workspace
 
-Default builds now use the published September 25 release from
+This branch uses the existing sibling `../drasi-core` checkout for its Core,
+library, SDK, host and component dependencies. `cargo metadata --locked` and
+`python3 scripts/plugin_origin.py mode` establish the selected sources; an
+installed registry plugin is not evidence that it matches those sources.
+Keep the current checkouts and build the separately loaded libraries through
+`make build-local-plugins-debug`. `make test-all` stages the matching recovery
+fixture and query plugin (`dynamic-plugin,middleware-jq`) and wires their paths
+into the Rust gate before doctests and smoke.
+
+ComputationGraph is the only runtime. Component IDs are UUIDs; ordinary query
+authoring uses `name` and an optional UUID `id`. Desired instance version 2 and
+topology version 3 are validated by Core, not a separate Server version gate.
+Preconstructed Rust source/reaction objects require explicit
+`DrasiServerBuilder::with_allow_external_component_ids(true)`; the default
+remains false, and no removed YAML setting is restored.
+
+Configuration changes go through the instance's configuration owner. Native
+DELETE preserves ordinary declarations and commits its projected native removal
+with revision checking before reconciliation. Incomplete cleanup is an error,
+not successful deletion. Resource ownership and binding changes cannot be used
+to bypass reconstruction or recovery policy. Server supports a
+Recreate/Preserve plan only for native consumer maxStreams increases with
+unchanged receipt, recovery, retry and provider settings; Core still enforces
+the required lifecycle and recovery boundaries.
+
+The local source/reaction/bootstrap SDK ABI is 0.19.0; the independently
+versioned native computation ABI is 4.0.0. Rebuild matched plugins rather than
+reusing historical binaries. Missing external prerequisites or a failing Rust
+target do not make a partial workflow pass; retain separate results for stages
+that did not execute.
+
+## Historical released runtime (not this branch's source selection)
+
+The September 25 released configuration used the published release from
 [`22125bf1d66062533b832a166fe4a51079a23d6e`](https://github.com/drasi-project/drasi-core/commit/22125bf1d66062533b832a166fe4a51079a23d6e).
 The temporary engine/AST/Cypher path overrides, revision file and mandatory
 source fetching are removed. A clean server checkout builds without any sibling

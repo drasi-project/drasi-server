@@ -20,8 +20,8 @@ use axum::{
     Json,
 };
 use drasi_lib::computation::v1::{
-    ComponentId, ComputationInfo, DesiredMutation, GraphEntity, GraphSelection,
-    InstanceConfigurationSnapshot, OperationSummary, RemovalPolicy, ResourceId, TopologyBindings,
+    ComponentId, ComputationInfo, GraphEntity, GraphSelection, InstanceConfigurationSnapshot,
+    OperationSummary, ResourceId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -412,6 +412,7 @@ pub async fn delete_computation_components(
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     require_writable(*read_only)?;
     let core = get_instance_or_error(&registry, &instance_id).await?;
+    crate::api::shared::handlers::require_imperative_configuration(&core)?;
     let selected = if removal.components.is_empty() && !removal.resources.is_empty() {
         Vec::new()
     } else {
@@ -424,13 +425,7 @@ pub async fn delete_computation_components(
             "No native components are configured",
         )
     })?;
-    let mut changes = Vec::new();
-    if !selected.is_empty() {
-        changes.push(DesiredMutation::RemoveComponents {
-            selection: GraphSelection::Exact(selected),
-            policy: RemovalPolicy::Reject,
-        });
-    }
+    let mut resources = Vec::new();
     for id in removal.resources {
         let resource = ResourceId::try_new(id)
             .map_err(|error| operation_error(&instance_id, "remove resource", error))?;
@@ -444,27 +439,11 @@ pub async fn delete_computation_components(
                 format!("Resource '{resource}' is not a declared native resource recipe"),
             ));
         }
-        changes.push(DesiredMutation::RemoveResource {
-            resource,
-            policy: RemovalPolicy::Reject,
-        });
+        resources.push(resource);
     }
-    let control = core.computation_control()?;
-    let preview = control
-        .preview(control.desired_snapshot().revision, changes)
+    crate::computation::remove_components(&core, selected, resources)
         .await
         .map_err(|error| operation_error(&instance_id, "remove components", error))?;
-    let report = control
-        .reconcile(preview, TopologyBindings::default())
-        .await
-        .map_err(|error| operation_error(&instance_id, "remove components", error))?;
-    if !report.committed || report.summary != OperationSummary::Completed {
-        return Err(operation_error(
-            &instance_id,
-            "remove components",
-            "component or resource cleanup is incomplete",
-        ));
-    }
     persist_after_operation(&persistence, "deleting computation components").await?;
     Ok(Json(ApiResponse::success(StatusResponse {
         message: "Computation components removed".into(),

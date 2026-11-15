@@ -59,7 +59,7 @@ instances:
 # A query that matches all data from the source
 # Note: The mock source with type: sensorReading generates SensorReading nodes
     queries:
-      - id: all-sensors
+      - name: all-sensors
         autoStart: true
         query: |
           MATCH (s:SensorReading)

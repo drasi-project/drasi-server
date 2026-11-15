@@ -16,7 +16,7 @@ sources:
     intervalMs: 1000  # Event generation interval in milliseconds
 
 queries:
-  - id: all-events
+  - name: all-events
     query: "MATCH (g) RETURN elementId(g)"
     queryLanguage: Cypher
     inputs:

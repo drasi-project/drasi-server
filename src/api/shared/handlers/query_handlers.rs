@@ -159,20 +159,14 @@ pub async fn create_query(
             })))
         }
         Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") || error_msg.contains("duplicate") {
+            let response = ErrorResponse::from(e);
+            if response.code == error_codes::DUPLICATE_RESOURCE {
                 log::info!("Query '{query_id}' already exists");
-                return Err(ErrorResponse::new(
-                    error_codes::DUPLICATE_RESOURCE,
-                    "Resource already exists",
-                ));
+                return Err(response);
             }
 
-            log::error!("Failed to create query: {e}");
-            Err(ErrorResponse::new(
-                error_codes::INTERNAL_ERROR,
-                "Internal server error",
-            ))
+            log::error!("Failed to create query '{query_id}': {}", response.message);
+            Err(response)
         }
     }
 }

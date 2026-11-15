@@ -61,7 +61,7 @@ fn desired(name: &str, specification: ComponentSpecification) -> DesiredComponen
         .map(|port| {
             (
                 port.id().clone(),
-                StreamId::try_new(format!("{}/out", specification.descriptor.id())).unwrap(),
+                StreamId::try_new(format!("{name}/{}", port.id())).unwrap(),
             )
         })
         .collect();
@@ -350,7 +350,7 @@ async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
     config.definition.relationships.clear();
     config.definition.resource_configurations.insert(
         resource("one-progress"),
-        json!({"kind":"sourceProgress","component":"two"}),
+        json!({"kind":"sourceProgress","component":id("two")}),
     );
     let core = crate::query_plugin::builder()
         .with_id("invalid-progress-owner")
@@ -358,17 +358,22 @@ async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
         .await?;
     let mut plugins = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugins);
-    let result = build_components(
+    let batch = build_components(
         &config,
         &core,
         plugins.computation_factory_registry()?,
         plugins.transactional_transformer_registry(core.middleware_registry())?,
     )
-    .await;
-    core.shutdown().await?;
-    let error = result
+    .await?;
+    core.add_components(batch.auto_start(false)).await?;
+    let handle = core
+        .computation_control()?
+        .component_handle_by_id(&id("one"))?;
+    let error = tokio::time::timeout(DEADLINE, handle.wait_created())
+        .await?
         .err()
-        .context("foreign progress owner was accepted")?;
+        .context("foreign progress owner was accepted during construction")?;
+    core.shutdown().await?;
     assert!(
         format!("{error:#}").contains("source progress belongs to another graph/query"),
         "{error:#}"
@@ -385,12 +390,7 @@ impl ComputationComponent for InputSource {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
-    async fn start(&mut self) -> Result<()> {
-        Ok(())
-    }
-    async fn stop(&mut self) -> Result<()> {
-        Ok(())
-    }
+    drasi_lib::passive_component_lifecycle!();
 }
 #[async_trait]
 impl EnvelopeSource for InputSource {
@@ -434,8 +434,8 @@ async fn instance(
     let (reaction, handle) = ApplicationReaction::new(
         ComponentId::generate(),
         vec![
-            drasi_lib::config::ComponentReference::by_name(ComponentName::try_new("one")?),
-            drasi_lib::config::ComponentReference::by_name(ComponentName::try_new("two")?),
+            drasi_lib::config::ComponentReference::by_id(id("one")),
+            drasi_lib::config::ComponentReference::by_id(id("two")),
         ],
     );
     let core = crate::query_plugin::builder()
@@ -487,7 +487,7 @@ async fn instance(
     for query in ["one", "two"] {
         assert_eq!(
             restored.definition.resource_configurations[&resource(&format!("{query}-progress"))],
-            json!({"kind":"sourceProgress","component":query})
+            json!({"kind":"sourceProgress","component":id(query)})
         );
     }
     let control = core.computation_control()?;

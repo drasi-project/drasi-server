@@ -23,7 +23,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Check compilation: `cargo check`
 
 ### Plugin Loading
-Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Legacy Source/Reaction/Bootstrap ABI 0.17 (also accepting 0.16 fast-mode plugins) and independent native ComputationGraph ABI 1.0 coexist in the same host. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
+Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Source/Reaction/Bootstrap SDK ABI 0.19.0 and independent native ComputationGraph ABI 4.0.0 coexist in the same host. Rebuild plugins against the selected local SDK; do not infer compatibility from an older crate version. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
 
 **Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. `scripts/plugin_origin.py` checks the locked Cargo graph: this branch's sibling SDK, host and FFI path dependencies select local mode, so use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 
@@ -53,7 +53,7 @@ implicit default or falling back to the linked reference constructor.
 - Run all tests including plugin-dependent: `make test-all`
 - Run unit tests only: `cargo test --lib`
 - Run specific test: `cargo test test_name`
-- Run integration tests: `./tests/run_working_tests.sh`
+- Run integration tests: `cargo test --locked --tests`
 - Run plugin smoke tests: `make test-smoke`
 - Run with logging: `RUST_LOG=debug cargo test -- --nocapture`
 - Run host-sdk integration tests: `cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test`
@@ -109,8 +109,8 @@ ComputationGraph owns dataflow and readiness. Existing source/reaction plugin
 interfaces remain adapters, including their channel and subscription contracts.
 The server must use DrasiLib's public graph-backed APIs, not construct a shadow
 runtime graph or call removed managers.
-The built-in `__component_graph__` source remains a graph-backed observability
-adapter, not a legacy runtime. Preserve its public inspection behavior.
+Use the runtime and computation inspection APIs for graph observability. A graph
+does not synthesize a `__component_graph__` entry in the ordinary source catalog.
 
 ## Configuration
 

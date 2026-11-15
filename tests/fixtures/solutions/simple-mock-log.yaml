@@ -16,7 +16,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: all-sensor-data
+  - name: all-sensor-data
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity

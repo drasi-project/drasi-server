@@ -15,14 +15,14 @@
 
 # Plugin Smoke Test
 #
-# Builds the Drasi Server in both static and dynamic modes, starts it,
-# creates every registered source, reaction, and bootstrapper plugin via
+# Builds the Drasi Server and loads separately prepared plugins, starts it,
+# creates representative supported source and reaction configurations via
 # the REST API, and verifies that none of them causes a process crash.
+# This checks construction, not external connectivity, bootstrap or delivery.
 #
 # Usage:
-#   ./tests/plugin_smoke_test.sh              # Test both modes
-#   ./tests/plugin_smoke_test.sh --static     # Test only static build
-#   ./tests/plugin_smoke_test.sh --dynamic    # Test only dynamic build
+#   ./tests/plugin_smoke_test.sh              # Test the supported dynamic host
+#   ./tests/plugin_smoke_test.sh --dynamic    # Same supported host
 #   ./tests/plugin_smoke_test.sh --skip-build # Skip build, use existing binaries
 
 set -euo pipefail
@@ -44,8 +44,6 @@ FAILED=0
 SKIPPED=0
 
 # Options
-RUN_STATIC=true
-RUN_DYNAMIC=true
 SKIP_BUILD=false
 SERVER_PID=""
 TEMP_CONFIG=""
@@ -54,8 +52,7 @@ usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --static      Test only static build"
-    echo "  --dynamic     Test only dynamic build"
+    echo "  --dynamic     Test the supported dynamically loaded plugins"
     echo "  --skip-build  Skip build, use existing binaries"
     echo "  --help        Show this help"
 }
@@ -63,8 +60,8 @@ usage() {
 # Parse args
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --static)  RUN_STATIC=true; RUN_DYNAMIC=false; shift ;;
-        --dynamic) RUN_STATIC=false; RUN_DYNAMIC=true; shift ;;
+        --static) echo "Static plugins are no longer supported; use --dynamic." >&2; exit 2 ;;
+        --dynamic) shift ;;
         --skip-build) SKIP_BUILD=true; shift ;;
         --help) usage; exit 0 ;;
         *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -86,8 +83,7 @@ trap cleanup EXIT
 
 # Find an available port
 find_free_port() {
-    python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()' 2>/dev/null \
-        || shuf -i 10000-60000 -n 1
+    python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()'
 }
 
 # Wait for server to be ready
@@ -138,7 +134,7 @@ test_create_source() {
 
     printf "  %-45s" "source/${kind} (${id})"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http_code=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" \
         -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body" 2>/dev/null) || http_code="000"
@@ -155,9 +151,10 @@ test_create_source() {
         echo -e "${RED}FAIL${NC} (connection refused / crash)"
         FAILED=$((FAILED + 1))
     else
-        # Non-2xx but server is still alive — config issue, not a crash
-        echo -e "${YELLOW}SKIP${NC} (HTTP ${http_code} — plugin needs external deps)"
-        SKIPPED=$((SKIPPED + 1))
+        echo -e "${RED}FAIL${NC} (HTTP ${http_code})"
+        cat "$RESPONSE_FILE"
+        echo ""
+        FAILED=$((FAILED + 1))
     fi
 }
 
@@ -180,7 +177,7 @@ test_create_reaction() {
 
     printf "  %-45s" "reaction/${kind} (${id})"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http_code=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" \
         -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body" 2>/dev/null) || http_code="000"
@@ -197,8 +194,10 @@ test_create_reaction() {
         echo -e "${RED}FAIL${NC} (connection refused / crash)"
         FAILED=$((FAILED + 1))
     else
-        echo -e "${YELLOW}SKIP${NC} (HTTP ${http_code} — plugin needs external deps)"
-        SKIPPED=$((SKIPPED + 1))
+        echo -e "${RED}FAIL${NC} (HTTP ${http_code})"
+        cat "$RESPONSE_FILE"
+        echo ""
+        FAILED=$((FAILED + 1))
     fi
 }
 
@@ -225,9 +224,6 @@ run_plugin_tests() {
     test_create_source "$port" "$instance_id" "mssql" "smoke-mssql-src" \
         "\"database\":\"testdb\",\"user\":\"testuser\""
 
-    test_create_source "$port" "$instance_id" "platform" "smoke-platform-src" \
-        "\"redisUrl\":\"redis://localhost:16379\",\"streamKey\":\"test-stream\""
-
     echo ""
     echo "--- Reactions ---"
 
@@ -237,14 +233,14 @@ run_plugin_tests() {
     test_create_reaction "$port" "$instance_id" "http" "smoke-http-react" \
         "\"baseUrl\":\"http://localhost:19999\""
 
-    test_create_reaction "$port" "$instance_id" "http-adaptive" "smoke-http-adaptive" \
-        "\"baseUrl\":\"http://localhost:19999\""
+    test_create_reaction "$port" "$instance_id" "http" "smoke-http-adaptive" \
+        "\"baseUrl\":\"http://localhost:19999\",\"adaptive\":{},\"batchEndpoint\":\"/batch\""
 
     test_create_reaction "$port" "$instance_id" "grpc" "smoke-grpc-react" \
         "\"endpoint\":\"localhost:19999\""
 
-    test_create_reaction "$port" "$instance_id" "grpc-adaptive" "smoke-grpc-adaptive" \
-        "\"endpoint\":\"localhost:19999\""
+    test_create_reaction "$port" "$instance_id" "grpc" "smoke-grpc-adaptive" \
+        "\"endpoint\":\"http://localhost:19999\",\"batching\":{\"mode\":\"adaptive\"}"
 
     test_create_reaction "$port" "$instance_id" "sse" "smoke-sse" \
         ""
@@ -253,16 +249,13 @@ run_plugin_tests() {
         "\"windowSize\":100,\"reportIntervalSecs\":10"
 
     test_create_reaction "$port" "$instance_id" "storedproc-postgres" "smoke-sp-pg" \
-        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\""
+        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\",\"defaultTemplate\":{\"added\":{\"template\":\"SELECT 1\"}}"
 
     test_create_reaction "$port" "$instance_id" "storedproc-mysql" "smoke-sp-mysql" \
-        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\""
+        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\",\"defaultTemplate\":{\"added\":{\"template\":\"SELECT 1\"}}"
 
     test_create_reaction "$port" "$instance_id" "storedproc-mssql" "smoke-sp-mssql" \
-        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\""
-
-    test_create_reaction "$port" "$instance_id" "platform" "smoke-platform-react" \
-        "\"redisUrl\":\"redis://localhost:16379\""
+        "\"user\":\"testuser\",\"password\":\"testpass\",\"database\":\"testdb\",\"defaultTemplate\":{\"added\":{\"template\":\"SELECT 1\"}}"
 
     echo ""
     echo "--- Final Health Check ---"
@@ -279,7 +272,7 @@ run_plugin_tests() {
 
 # Start server and run tests for a given build mode
 test_build_mode() {
-    local mode=$1        # "static" or "dynamic"
+    local mode=$1
     local binary=$2      # path to the binary
 
     echo -e "\n${CYAN}============================================${NC}"
@@ -299,25 +292,56 @@ test_build_mode() {
     local instance_id="smoke-test"
 
     # Create a minimal config
-    TEMP_CONFIG=$(mktemp /tmp/drasi-smoke-XXXXXX.yaml)
+    local temporary
+    temporary=$(mktemp -d "${TMPDIR:-/tmp}/drasi-smoke.XXXXXX")
+    TEMP_CONFIG="$temporary/server.yaml"
+    RESPONSE_FILE="$temporary/response.json"
+    local staged_plugins="${DRASI_SERVER_TEST_PLUGINS_DIR:-$PROJECT_DIR/target/debug/plugins}"
+    local library_prefix="lib"
+    local library_extension="so"
+    case "$(uname -s)" in
+        Darwin*) library_extension="dylib" ;;
+        MINGW*|MSYS*|CYGWIN*) library_prefix=""; library_extension="dll" ;;
+    esac
+    mkdir "$temporary/plugins"
+    # The smoke cases need this bundle, not every unrelated library in staging.
+    for package in source_mock source_http source_grpc source_postgres source_mssql \
+        reaction_log reaction_http reaction_grpc reaction_sse reaction_profiler \
+        reaction_storedproc_postgres reaction_storedproc_mysql reaction_storedproc_mssql \
+        computation_transformer_query; do
+        local library="${library_prefix}drasi_${package}.${library_extension}"
+        if [[ ! -f "$staged_plugins/$library" ]]; then
+            echo "Missing required matching smoke plugin: $staged_plugins/$library" >&2
+            TOTAL=$((TOTAL + 1))
+            FAILED=$((FAILED + 1))
+            return 1
+        fi
+        cp "$staged_plugins/$library" "$temporary/plugins/"
+    done
     cat > "$TEMP_CONFIG" <<EOF
 apiVersion: drasi.io/v1
-id: "${instance_id}"
-host: "0.0.0.0"
+host: "127.0.0.1"
 port: ${port}
 logLevel: "info"
 persistConfig: false
-sources: []
-queries: []
-reactions: []
+autoInstallPlugins: false
+enableUi: false
+instances:
+  - id: "${instance_id}"
+    sources: []
+    queries: []
+    reactions: []
 EOF
 
     echo "Starting server on port ${port}..."
 
     # Start the server in the background, redirect output to log file
     local server_log
-    server_log=$(mktemp /tmp/drasi-smoke-server-XXXXXX.log)
-    "$binary" --config "$TEMP_CONFIG" --port "$port" >"$server_log" 2>&1 &
+    server_log="$temporary/server.log"
+    echo "Smoke evidence: $temporary"
+    "$binary" --config "$TEMP_CONFIG" --port "$port" \
+        --plugins-dir "$temporary/plugins" \
+        --skip-verification >"$server_log" 2>&1 &
     SERVER_PID=$!
 
     # Wait for it to be ready
@@ -330,7 +354,6 @@ EOF
             wait "$SERVER_PID" 2>/dev/null || true
         fi
         SERVER_PID=""
-        rm -f "$server_log"
         TOTAL=$((TOTAL + 1))
         FAILED=$((FAILED + 1))
         return 1
@@ -344,13 +367,31 @@ EOF
     # Stop the server gracefully
     echo ""
     echo "Stopping server..."
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
+    TOTAL=$((TOTAL + 1))
+    local shutdown_status=0
+    kill -INT "$SERVER_PID" || shutdown_status=$?
+    local waited=0
+    while kill -0 "$SERVER_PID" 2>/dev/null && [[ $waited -lt 30 ]]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo -e "${RED}Server did not stop within 30s${NC}"
+        kill "$SERVER_PID"
+        shutdown_status=1
+    fi
+    wait "$SERVER_PID" || shutdown_status=$?
     SERVER_PID=""
-    rm -f "$TEMP_CONFIG" "$server_log"
+    rm -f "$TEMP_CONFIG"
     TEMP_CONFIG=""
 
-    echo -e "${GREEN}Server stopped cleanly${NC}"
+    if [[ $shutdown_status -eq 0 ]]; then
+        PASSED=$((PASSED + 1))
+        echo -e "${GREEN}Server stopped cleanly${NC}"
+    else
+        FAILED=$((FAILED + 1))
+        echo -e "${RED}Server shutdown failed (status $shutdown_status)${NC}"
+    fi
 }
 
 # ============================================================
@@ -367,31 +408,13 @@ echo -e "${CYAN}╔════════════════════�
 echo -e "${CYAN}║     Drasi Plugin Smoke Test Suite        ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
 
-# Static build
-if $RUN_STATIC; then
-    STATIC_BINARY="target/debug/drasi-server"
-
-    if ! $SKIP_BUILD; then
-        echo -e "\n${CYAN}Building static binary...${NC}"
-        cargo build --locked 2>&1 | tail -3
-        echo -e "${GREEN}Static build complete${NC}"
-    fi
-
-    test_build_mode "static" "$STATIC_BINARY"
+DYNAMIC_BINARY="target/debug/drasi-server"
+if ! $SKIP_BUILD; then
+    echo -e "\n${CYAN}Building dynamic binary + plugins...${NC}"
+    make build-local-plugins-debug && cargo build --locked
+    echo -e "${GREEN}Dynamic build complete${NC}"
 fi
-
-# Dynamic build
-if $RUN_DYNAMIC; then
-    DYNAMIC_BINARY="target/debug/drasi-server"
-
-    if ! $SKIP_BUILD; then
-        echo -e "\n${CYAN}Building dynamic binary + plugins...${NC}"
-        make build-dynamic 2>&1 | tail -10
-        echo -e "${GREEN}Dynamic build complete${NC}"
-    fi
-
-    test_build_mode "dynamic" "$DYNAMIC_BINARY"
-fi
+test_build_mode "dynamic" "$DYNAMIC_BINARY"
 
 # ============================================================
 # Summary

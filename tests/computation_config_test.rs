@@ -73,14 +73,17 @@ fn readable_graph_uses_actual_contracts_and_round_trips_as_an_expanded_definitio
     let config = resolve(input(), &factories)?;
     assert_eq!(config.definition.components.len(), 2);
     assert_eq!(config.definition.resources.len(), 2);
-    ComponentId::try_new(config.definition.graph_id.as_str())?;
+    assert_eq!(
+        config.definition.graph_id.as_str(),
+        ComponentBatch::GRAPH_ID
+    );
     let query = &config.definition.components[0];
     let ComponentConstruction::Factory(spec) = &query.construction else {
         panic!("factory recipe");
     };
     assert_eq!(
         spec.configuration["stream"],
-        ConfigurationValue::Literal(json!("query/out"))
+        ConfigurationValue::Literal(json!(format!("{}/out", component_id(1))))
     );
     assert_eq!(
         query.descriptor.ports()[1].schema(),
@@ -88,7 +91,7 @@ fn readable_graph_uses_actual_contracts_and_round_trips_as_an_expanded_definitio
     );
     assert_eq!(
         query.streams[&PortId::try_new("out")?].as_str(),
-        "query/out"
+        format!("{}/out", component_id(1))
     );
     assert!(!query.lifecycle.auto_start);
     assert!(matches!(

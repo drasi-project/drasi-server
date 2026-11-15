@@ -390,14 +390,7 @@ async fn clone_and_deployment_reject_selectors_before_creating_nodes() {
         }
     }
     let snapshot = core.snapshot_configuration().await.unwrap();
-    assert_eq!(
-        snapshot
-            .sources
-            .iter()
-            .map(|source| source.id.as_str())
-            .collect::<Vec<_>>(),
-        ["__component_graph__"]
-    );
+    assert!(snapshot.sources.is_empty());
     assert!(snapshot.queries.is_empty());
     assert!(snapshot.reactions.is_empty());
     core.shutdown().await.unwrap();
@@ -672,13 +665,27 @@ impl Drop for ServerProcess {
 }
 
 #[tokio::test]
-#[ignore = "requires matching HTTP source and log reaction cdylibs in DRASI_NATIVE_TEST_PLUGINS"]
+#[ignore = "requires matching HTTP source, log reaction and query cdylibs in DRASI_NATIVE_TEST_PLUGINS"]
 async fn native_binary_loads_plugins_and_processes_http_events() {
     let plugins = std::fs::canonicalize(
         std::env::var("DRASI_NATIVE_TEST_PLUGINS").expect("matching plugin directory"),
     )
     .unwrap();
     let directory = tempfile::tempdir().unwrap();
+    let required_plugins = directory.path().join("plugins");
+    std::fs::create_dir(&required_plugins).unwrap();
+    for package in [
+        "drasi_source_http",
+        "drasi_reaction_log",
+        "drasi_computation_transformer_query",
+    ] {
+        let filename = format!(
+            "{}{package}{}",
+            std::env::consts::DLL_PREFIX,
+            std::env::consts::DLL_SUFFIX
+        );
+        std::fs::copy(plugins.join(&filename), required_plugins.join(filename)).unwrap();
+    }
     let config = directory.path().join("server.json");
     let log_path = directory.path().join("server.log");
     let api_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -713,7 +720,7 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
             .arg("--config")
             .arg(&config)
             .arg("--plugins-dir")
-            .arg(plugins)
+            .arg(required_plugins)
             .args([
                 "--disable-ui",
                 // The caller supplies independently verified local build artifacts.
@@ -794,9 +801,21 @@ async fn native_binary_loads_plugins_and_processes_http_events() {
         );
     }
 
+    let source: Value = client
+        .get(format!("{base}/instances/native-plugin-test/sources/input"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let source_id = source["data"]["id"].as_str().unwrap();
+    drasi_lib::ComponentId::try_new(source_id).unwrap();
     client
         .post(format!(
-            "http://127.0.0.1:{source_port}/sources/input/events"
+            "http://127.0.0.1:{source_port}/sources/{source_id}/events"
         ))
         .json(&json!({
             "operation":"insert",

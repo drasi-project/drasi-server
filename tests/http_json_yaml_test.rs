@@ -137,7 +137,7 @@ async fn test_create_query_with_json_payload() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = r#"{"id":"json-query","query":"MATCH (n) RETURN n"}"#;
+    let body = r#"{"name":"json-query","query":"MATCH (n) RETURN n"}"#;
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/json")
@@ -170,7 +170,7 @@ async fn test_create_query_with_yaml_payload() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = "id: yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let body = "name: yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
@@ -203,7 +203,7 @@ async fn test_create_query_with_text_yaml_payload() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = "id: text-yaml-query\nquery: \"MATCH (n) RETURN n\"\nautoStart: false\n";
+    let body = "name: text-yaml-query\nquery: \"MATCH (n) RETURN n\"\nautoStart: false\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "text/yaml; charset=utf-8")
@@ -262,7 +262,7 @@ async fn test_instance_scoped_route_accepts_yaml() {
         .to_string();
     assert_eq!(instance_id, expected_instance_id);
 
-    let body = "id: instance-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let body = "name: instance-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
@@ -285,7 +285,7 @@ async fn test_create_query_with_application_x_yaml_payload() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = "id: x-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let body = "name: x-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/x-yaml")
@@ -308,7 +308,7 @@ async fn test_create_query_with_text_vnd_yaml_payload() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = "id: vnd-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let body = "name: vnd-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "text/vnd.yaml")
@@ -332,7 +332,7 @@ async fn test_missing_content_type_defaults_to_json() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = r#"{"id":"no-ct-query","query":"MATCH (n) RETURN n"}"#;
+    let body = r#"{"name":"no-ct-query","query":"MATCH (n) RETURN n"}"#;
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         // reqwest's `.body()` does not set a Content-Type on its own.
@@ -376,7 +376,7 @@ async fn test_yaml_anchor_alias_payload_rejected() {
     let (base_url, instance_id) = start_real_server().await;
     let client = reqwest::Client::new();
 
-    let body = "id: &a anchor-query\nquery: *a\n";
+    let body = "name: &a anchor-query\nquery: *a\n";
     let resp = client
         .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")

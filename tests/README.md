@@ -5,29 +5,47 @@ This directory contains the comprehensive test suite for Drasi Server, including
 ## Quick Start
 
 The native ABI integration suite requires real, separately built plugin libraries.
-Legacy mock/log/bootstrap fixtures may use ABI 0.16 or 0.17; rebuild ABI 0.15
-binaries before running. Native ComputationGraph ABI remains independently at 1.0.
-Run against separately preserved 0.16 binaries as well as freshly built 0.17
-binaries when qualifying compatibility; relabeling current binaries is not evidence.
-For an older-fixture run, also set `DRASI_SERVER_TEST_EXPECTED_LEGACY_ABI=0.16.0`;
-otherwise the metadata assertions require the current SDK version exactly.
-Build these once before the full suite (no `--all-features` or bundled jq):
+Source/reaction/bootstrap fixtures must match SDK ABI 0.19.0; native computation
+plugins independently use ABI 4.0.0. Metadata assertions require the selected
+SDK version, not a relabeled older binary. Build and stage the matched local
+plugins, recovery example and jq-enabled query factory through the supported gate:
 
 ```bash
 # From drasi-server/
-CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
-  --manifest-path ../drasi-core/Cargo.toml --target-dir ./target \
-  -p drasi-computation-source-counter -p drasi-computation-transformer-middleware \
-  -p drasi-computation-transformer-arithmetic -p drasi-computation-sink-capture \
-  -p drasi-computation-bootstrap-sqlite \
-  -p drasi-computation-transformer-query \
-  -p drasi-source-mock -p drasi-source-http -p drasi-reaction-http -p drasi-reaction-log \
-  -p drasi-bootstrap-scriptfile \
-  --features dynamic-plugin
-CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_computation_test
+make test-all
 ```
 
-The default fixture directory is `target/debug`; override it with
+The local debug preparation also rebuilds the Core snapshot-test reaction fixture;
+it must not silently reuse a previously staged binary after Core changes.
+
+Focused destructive-removal qualification uses the same matched preparation:
+
+```bash
+make build-local-plugins-debug
+cargo build --locked --bin drasi-server
+cargo test --locked --test query_creation_path_test --test reaction_removal_operational_test
+```
+
+The operational target copies the four workflow libraries from the matched
+staging directory into a private bundle and runs the stock binary on private
+loopback ports with a fresh redb state store. It checks actual source/query/SSE/log delivery,
+never-started and stopped deletion, deletion with an SSE client connected,
+checkpoint preservation on restart, owned checkpoint deletion, unrelated state
+preservation, and recreation under the same public names. The current target
+fails when restarting the query after a process restart: legacy YAML-backed
+source reconstruction generates a new component UUID while the saved query
+still references the old one. Live delivery, stop, deletion, recreation and
+shutdown succeed before that boundary, but complete restart qualification is
+not green. Durable `configurationStore` uses a separate revisioned desired-state
+API; enabling it is not a substitute for testing legacy CRUD and restart.
+Neither the complete Server suite nor cleanup-failure isolation is qualified.
+A genuine cleanup failure still retains its owner and may block subsequent
+unrelated mutations and inspection. Failed native construction is removable only
+when no component object was returned; declared resource cleanup still runs.
+An object disposed after failed initialization is not an unconstructed declaration
+and does not gain new destructive-cleanup authority.
+
+The canonical staged fixture directory is `target/debug/plugins`; override it with
 `DRASI_SERVER_TEST_PLUGINS_DIR`. That directory must contain the four native
 component libraries, the native SQLite file-bootstrap library and the legacy
 fixtures. Stock-binary and directory-loaded query cases also require the matching
@@ -36,13 +54,20 @@ supply that factory to the separate Server binary. Each processing library expos
 library exposes a bootstrap factory without a dummy processing component.
 
 ```bash
-DRASI_SERVER_TEST_PLUGINS_DIR=../drasi-core/target/debug \
-  CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 \
-  cargo test --offline --test native_computation_test
+make build-local-plugins-debug
+DRASI_SERVER_TEST_PLUGINS_DIR="$PWD/target/debug/plugins" \
+DRASI_NATIVE_RECOVERY_PLUGIN="$PWD/target/debug/plugins/examples/libnative_recovery.dylib" \
+  cargo test --locked --test native_computation_test
 ```
 
 Missing libraries fail with the build prerequisite,
 never a successful skip. The wrong-ABI fixture is built by `rustc` during the test.
+The full gate sets all native plugin-directory variables consistently. On macOS,
+an installed libjq may require `JQ_LIB_DIR` (for example `/opt/homebrew/lib`).
+Use `.so` or `.dll` instead of `.dylib` for the recovery fixture on other platforms.
+Live MSSQL cases require an explicit `DRASI_MSSQL_TEST_MODE` and that mode's
+credentials and isolated-database ownership prerequisites; missing prerequisites
+are failures, not successful skips.
 Coverage includes mixed ABI discovery, pre-`dlopen` verification, native factory
 metadata/events, exact output, resource recipes and transaction providers, privileged
 snapshots, persistence/restart/clone, empty native configuration, and read-only/error responses.
@@ -150,8 +175,10 @@ successful `validate` output alone is not data-delivery evidence.
 
 The same suite also checks declared native Source/Reaction roles, failed
 construction, opaque configuration, diagnostics, lifecycle and removal.
-Namespaced component IDs are exercised by following the returned percent-encoded
-links through the mounted router. A graph role does not imply support for the
+Component lookups are exercised through the mounted router. Component IDs are
+UUIDs; friendly query names
+belong in `name`, and query result envelopes retain the UUID identity.
+A graph role does not imply support for the
 legacy plugin interface; unsupported plugin operations must be explicit errors,
 not false resource-not-found responses or fabricated component instances.
 

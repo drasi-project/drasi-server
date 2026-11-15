@@ -40,7 +40,7 @@ instances:
           - Message
         user: drasi_user
     queries:
-      - id: all-messages
+      - name: all-messages
         autoStart: true
         query: |
           MATCH (m:Message)
@@ -57,7 +57,7 @@ instances:
         dispatchBufferCapacity: 1000
         outboxCapacity: 1000
         bootstrapTimeoutSecs: 300
-      - id: hello-world-senders
+      - name: hello-world-senders
         autoStart: true
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher

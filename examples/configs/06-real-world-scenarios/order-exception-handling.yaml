@@ -20,7 +20,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -49,7 +49,7 @@ instances:
               source_progress:
               - high-value-orders-progress
             descriptor:
-              id: high-value-orders
+              id: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -75,7 +75,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -91,6 +91,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -214,9 +224,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -237,7 +247,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -253,6 +263,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -376,9 +396,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -386,7 +406,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: high-value-orders
+          id: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -412,7 +432,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -428,6 +448,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -551,9 +581,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -574,7 +604,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -590,6 +620,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -713,13 +753,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: high-value-orders
         role: Transformer
         streams:
           out: high-value-orders/out
@@ -731,7 +772,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -759,7 +800,7 @@ instances:
               source_progress:
               - stuck-orders-progress
             descriptor:
-              id: stuck-orders
+              id: 9e69f256-3d36-4502-925e-16c8d0eb0593
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -785,7 +826,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -801,6 +842,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -924,9 +975,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -947,7 +998,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -963,6 +1014,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1086,9 +1147,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -1096,7 +1157,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: stuck-orders
+          id: 9e69f256-3d36-4502-925e-16c8d0eb0593
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1122,7 +1183,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1138,6 +1199,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1261,9 +1332,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -1284,7 +1355,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1300,6 +1371,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1423,13 +1504,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: stuck-orders
         role: Transformer
         streams:
           out: stuck-orders/out
@@ -1441,7 +1523,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -1471,7 +1553,7 @@ instances:
               source_progress:
               - payment-failures-progress
             descriptor:
-              id: payment-failures
+              id: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -1497,7 +1579,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -1513,6 +1595,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1636,9 +1728,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -1659,7 +1751,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -1675,6 +1767,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1798,9 +1900,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -1808,7 +1910,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: payment-failures
+          id: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1834,7 +1936,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1850,6 +1952,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1973,9 +2085,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -1996,7 +2108,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -2012,6 +2124,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2135,13 +2257,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: payment-failures
         role: Transformer
         streams:
           out: payment-failures/out
@@ -2153,7 +2276,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -2182,7 +2305,7 @@ instances:
               source_progress:
               - inventory-shortage-progress
             descriptor:
-              id: inventory-shortage
+              id: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -2208,7 +2331,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2224,6 +2347,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -2347,9 +2480,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -2370,7 +2503,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2386,6 +2519,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -2509,9 +2652,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -2519,7 +2662,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: inventory-shortage
+          id: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -2545,7 +2688,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -2561,6 +2704,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2684,9 +2837,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -2707,7 +2860,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -2723,6 +2876,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2846,13 +3009,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: inventory-shortage
         role: Transformer
         streams:
           out: inventory-shortage/out
@@ -2864,7 +3028,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -2892,7 +3056,7 @@ instances:
               source_progress:
               - pending-orders-progress
             descriptor:
-              id: pending-orders
+              id: fb12efb6-4ca0-4120-ad99-874377e6f042
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -2918,7 +3082,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2934,6 +3098,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3057,9 +3231,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -3080,7 +3254,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -3096,6 +3270,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3219,9 +3403,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -3229,7 +3413,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: pending-orders
+          id: fb12efb6-4ca0-4120-ad99-874377e6f042
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -3255,7 +3439,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -3271,6 +3455,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -3394,9 +3588,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -3417,7 +3611,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -3433,6 +3627,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -3556,13 +3760,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: pending-orders
         role: Transformer
         streams:
           out: pending-orders/out
@@ -3574,7 +3779,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - orders-db
+                  - component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
                   joins: []
                   middleware: []
               language:
@@ -3600,7 +3805,7 @@ instances:
               source_progress:
               - order-stats-progress
             descriptor:
-              id: order-stats
+              id: ee412d8d-4002-423c-952f-a129d3153f2c
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -3626,7 +3831,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -3642,6 +3847,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3765,9 +3980,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -3788,7 +4003,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -3804,6 +4019,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3927,9 +4152,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -3937,7 +4162,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: order-stats
+          id: ee412d8d-4002-423c-952f-a129d3153f2c
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -3963,7 +4188,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -3979,6 +4204,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -4102,9 +4337,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -4125,7 +4360,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -4141,6 +4376,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -4264,13 +4509,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: order-stats
         role: Transformer
         streams:
           out: order-stats/out
@@ -4297,7 +4543,7 @@ instances:
               consumer_progress:
               - orders-db-consumers
             descriptor:
-              id: orders-db
+              id: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
               plugin_identity:
                 id: drasi-computation-source-postgres
                 version: 0.11.3
@@ -4322,7 +4568,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -4338,6 +4584,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -4461,9 +4717,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
             implementation:
               name: drasi.postgres/shared-changes
               plugin:
@@ -4472,7 +4728,7 @@ instances:
               version: '1'
             role: Source
         descriptor:
-          id: orders-db
+          id: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
           plugin_identity:
             id: drasi-computation-source-postgres
             version: 0.11.3
@@ -4497,7 +4753,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -4513,6 +4769,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -4636,12 +4902,13 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: orders-db
         role: Source
         streams:
           out: orders-db/out
@@ -4655,7 +4922,7 @@ instances:
               catalog:
               - query-results
             descriptor:
-              id: postgres-query-results
+              id: 00000000-0000-0000-0000-00000000ff01
               ports:
               - direction: Input
                 id: in
@@ -4677,7 +4944,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -4693,6 +4960,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -4816,16 +5093,16 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
             implementation:
               name: drasi/query-results-outlet
               plugin: null
               version: '1'
             role: Sink
         descriptor:
-          id: postgres-query-results
+          id: 00000000-0000-0000-0000-00000000ff01
           ports:
           - direction: Input
             id: in
@@ -4847,7 +5124,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -4863,6 +5140,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -4986,22 +5273,23 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: postgres-query-results
         role: Sink
         streams: {}
       graph_id: __drasi_lib_runtime__
       relationships:
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: high-value-orders
+            component: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
             port: in
         pipe:
           Bounded:
@@ -5017,10 +5305,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: stuck-orders
+            component: 9e69f256-3d36-4502-925e-16c8d0eb0593
             port: in
         pipe:
           Bounded:
@@ -5036,10 +5324,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: payment-failures
+            component: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
             port: in
         pipe:
           Bounded:
@@ -5055,10 +5343,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: inventory-shortage
+            component: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
             port: in
         pipe:
           Bounded:
@@ -5074,10 +5362,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: pending-orders
+            component: fb12efb6-4ca0-4120-ad99-874377e6f042
             port: in
         pipe:
           Bounded:
@@ -5093,10 +5381,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: orders-db
+            component: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             port: out
           to:
-            component: order-stats
+            component: ee412d8d-4002-423c-952f-a129d3153f2c
             port: in
         pipe:
           Bounded:
@@ -5112,10 +5400,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: high-value-orders
+            component: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5131,10 +5419,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: stuck-orders
+            component: 9e69f256-3d36-4502-925e-16c8d0eb0593
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5150,10 +5438,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: payment-failures
+            component: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5169,10 +5457,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: inventory-shortage
+            component: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5188,10 +5476,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: pending-orders
+            component: fb12efb6-4ca0-4120-ad99-874377e6f042
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5207,10 +5495,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: order-stats
+            component: ee412d8d-4002-423c-952f-a129d3153f2c
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -5228,7 +5516,7 @@ instances:
         required: []
       resource_configurations:
         high-value-orders-postgres-bootstrap:
-          component: high-value-orders
+          component: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
           configuration:
             settings:
               Reference:
@@ -5236,7 +5524,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5249,10 +5537,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: high-value-orders-progress
         high-value-orders-progress:
-          component: high-value-orders
+          component: 9425cd63-90d1-46d2-85a5-4516ad0caa6f
           kind: sourceProgress
         inventory-shortage-postgres-bootstrap:
-          component: inventory-shortage
+          component: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
           configuration:
             settings:
               Reference:
@@ -5260,7 +5548,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5273,10 +5561,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: inventory-shortage-progress
         inventory-shortage-progress:
-          component: inventory-shortage
+          component: 64c949b9-3a03-4138-9fe9-31e0e5593d9b
           kind: sourceProgress
         order-stats-postgres-bootstrap:
-          component: order-stats
+          component: ee412d8d-4002-423c-952f-a129d3153f2c
           configuration:
             settings:
               Reference:
@@ -5284,7 +5572,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5297,20 +5585,20 @@ instances:
           kind: nativeBootstrap
           sourceProgress: order-stats-progress
         order-stats-progress:
-          component: order-stats
+          component: ee412d8d-4002-423c-952f-a129d3153f2c
           kind: sourceProgress
         orders-db-consumers:
           consumers:
-            high-value-orders: high-value-orders-progress
-            inventory-shortage: inventory-shortage-progress
-            order-stats: order-stats-progress
-            payment-failures: payment-failures-progress
-            pending-orders: pending-orders-progress
-            stuck-orders: stuck-orders-progress
+            64c949b9-3a03-4138-9fe9-31e0e5593d9b: inventory-shortage-progress
+            9425cd63-90d1-46d2-85a5-4516ad0caa6f: high-value-orders-progress
+            9e69f256-3d36-4502-925e-16c8d0eb0593: stuck-orders-progress
+            dcaa955f-b927-4b5f-858d-c77bddfe8bbe: payment-failures-progress
+            ee412d8d-4002-423c-952f-a129d3153f2c: order-stats-progress
+            fb12efb6-4ca0-4120-ad99-874377e6f042: pending-orders-progress
           kind: consumerProgress
-          producer: orders-db
+          producer: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
         payment-failures-postgres-bootstrap:
-          component: payment-failures
+          component: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
           configuration:
             settings:
               Reference:
@@ -5318,7 +5606,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5331,10 +5619,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: payment-failures-progress
         payment-failures-progress:
-          component: payment-failures
+          component: dcaa955f-b927-4b5f-858d-c77bddfe8bbe
           kind: sourceProgress
         pending-orders-postgres-bootstrap:
-          component: pending-orders
+          component: fb12efb6-4ca0-4120-ad99-874377e6f042
           configuration:
             settings:
               Reference:
@@ -5342,7 +5630,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5355,7 +5643,7 @@ instances:
           kind: nativeBootstrap
           sourceProgress: pending-orders-progress
         pending-orders-progress:
-          component: pending-orders
+          component: fb12efb6-4ca0-4120-ad99-874377e6f042
           kind: sourceProgress
         postgres-configuration:
           kind: configuration
@@ -5364,7 +5652,7 @@ instances:
         query-results:
           kind: queryCatalog
         stuck-orders-postgres-bootstrap:
-          component: stuck-orders
+          component: 9e69f256-3d36-4502-925e-16c8d0eb0593
           configuration:
             settings:
               Reference:
@@ -5372,7 +5660,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: orders-db
+              Literal: 652a0bb5-d7e2-4573-be3c-f22a61c7262d
             stream:
               Literal: orders-db/out
           configurationVersion: 1
@@ -5385,7 +5673,7 @@ instances:
           kind: nativeBootstrap
           sourceProgress: stuck-orders-progress
         stuck-orders-progress:
-          component: stuck-orders
+          component: 9e69f256-3d36-4502-925e-16c8d0eb0593
           kind: sourceProgress
       resource_dependencies:
         high-value-orders-postgres-bootstrap:
@@ -5479,7 +5767,7 @@ instances:
         ownership: Graph
         role: Checkpoint
       revision: 1
-      version: 1
+      version: 3
   enableArchive: false
   id: order-exception-system
   identityProviders: []

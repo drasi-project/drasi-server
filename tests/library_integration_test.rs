@@ -14,8 +14,7 @@
 
 //! Library Integration Tests
 //!
-//! Note: Sources and reactions must be provided as instances when building DrasiLib.
-//! Dynamic creation via config is not supported.
+//! Preconstructed fixtures explicitly opt in to externally assigned component UUIDs.
 
 mod test_support;
 
@@ -26,12 +25,31 @@ use test_support::mock_components::{create_mock_reaction, create_mock_source};
 use tokio::time::{timeout, Duration};
 
 #[tokio::test]
+async fn preconstructed_components_require_explicit_identity_opt_in() {
+    let error = DrasiServerBuilder::new()
+        .with_source(
+            ComponentName::try_new("external").unwrap(),
+            create_mock_source("external"),
+        )
+        .build_core()
+        .await
+        .err()
+        .expect("default identity policy must reject a preconstructed component");
+    assert!(format!("{error:#}").contains("externally assigned component UUID"));
+
+    let core = DrasiServerBuilder::new().build_core().await.unwrap();
+    assert!(!core.allow_external_component_ids());
+    core.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_basic_server_lifecycle() {
     // Create source instance
     let test_source = create_mock_source("test-source");
 
     // Create a basic server using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(ComponentName::try_new("test-source").unwrap(), test_source)
         .build_core()
@@ -67,6 +85,7 @@ async fn test_server_with_components() {
 
     // Create server with components using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(ComponentName::try_new("test_source").unwrap(), test_source)
         .with_reaction(
@@ -110,6 +129,7 @@ async fn test_source_lifecycle_operations() {
 
     // Start with server with source
     let server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(
             ComponentName::try_new("lifecycle_source").unwrap(),
@@ -168,6 +188,7 @@ async fn test_server_with_api() {
 
     // Create server with API
     let _server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(ComponentName::try_new("api_source").unwrap(), test_source)
         .with_port(0) // Use port 0 for random available port
@@ -191,6 +212,7 @@ async fn test_config_persistence() {
 
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(
             ComponentName::try_new("persist_source").unwrap(),
@@ -219,6 +241,7 @@ async fn test_concurrent_start_stop_operations() {
 
     // Start with server with all sources pre-registered
     let server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(
             ComponentName::try_new("concurrent_source_1").unwrap(),
@@ -330,6 +353,7 @@ async fn test_graceful_shutdown_timeout() {
 
     // Create server with a source
     let server = DrasiServerBuilder::new()
+        .with_allow_external_component_ids(true)
         .with_query_factory(crate::query_plugin::factory())
         .with_source(
             ComponentName::try_new("timeout_source").unwrap(),

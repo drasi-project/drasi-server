@@ -92,7 +92,7 @@ instances:
   # Query 1: hello-world-from
   # Filters for messages containing "Hello World" and returns the sender
   # Similar to the Platform tutorial's hello-world-from query
-      - id: hello-world-from
+      - name: hello-world-from
         autoStart: true
         query: |
           MATCH (m:message {message: 'Hello World'})
@@ -104,7 +104,7 @@ instances:
   # Query 2: message-count
   # Aggregates messages by content and counts frequency
   # Cypher equivalent of the Platform tutorial's GQL aggregation query
-      - id: message-count
+      - name: message-count
         autoStart: true
         query: |
           MATCH (m:message)
@@ -116,7 +116,7 @@ instances:
   # Query 3: inactive-people
   # Identifies users who haven't sent a message in 20+ seconds
   # Uses drasi.trueLater for time-based triggering
-      - id: inactive-people
+      - name: inactive-people
         autoStart: true
         query: |
           MATCH (m:message)

@@ -145,7 +145,7 @@ sources:
     intervalMs: 100  # Faster for testing
 
 queries:
-  - id: high-temp-alert
+  - name: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
     inputs:
@@ -240,7 +240,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: high-temp-alert
+  - name: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > 75 RETURN s"
     queryLanguage: Cypher
     inputs:
@@ -332,7 +332,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: high-temp-alert
+  - name: high-temp-alert
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
     inputs:
@@ -415,7 +415,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: all-sensors
+  - name: all-sensors
     query: "MATCH (s:SensorReading) RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity"
     queryLanguage: Cypher
     inputs:

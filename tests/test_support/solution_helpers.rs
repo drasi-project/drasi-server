@@ -106,7 +106,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: solution-query
+  - name: solution-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
     inputs:
@@ -138,7 +138,7 @@ sources:
     intervalMs: ${INTERVAL_MS:-1000}  # Sensor polling interval
 
 queries:
-  - id: threshold-query
+  - name: threshold-query
     query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
     inputs:
@@ -174,7 +174,7 @@ sources:
         - {data_file_path}
 
 queries:
-  - id: bootstrap-query
+  - name: bootstrap-query
     query: "MATCH (n:TestNode) RETURN n.id AS id, n.value AS value"
     queryLanguage: Cypher
     inputs:
@@ -213,7 +213,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: joined-query
+  - name: joined-query
     query: |
       MATCH (s:SensorReading)-[:LOCATED_AT]->(l:Location)
       RETURN s.sensor_id AS sensorId, l.name AS locationName

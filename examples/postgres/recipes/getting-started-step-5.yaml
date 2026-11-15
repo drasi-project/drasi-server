@@ -38,7 +38,7 @@ instances:
             keyColumns:
               - MessageId
     queries:
-      - id: all-messages
+      - name: all-messages
         autoStart: true
         query: |
           MATCH (m:Message)
@@ -51,7 +51,7 @@ instances:
             relations: []
             pipeline: []
         enableBootstrap: true
-      - id: hello-world-senders
+      - name: hello-world-senders
         autoStart: true
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher
@@ -62,7 +62,7 @@ instances:
             relations: []
             pipeline: []
         enableBootstrap: true
-      - id: message-counts
+      - name: message-counts
         autoStart: true
         query: MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count
         queryLanguage: Cypher

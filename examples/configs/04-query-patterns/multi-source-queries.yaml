@@ -67,7 +67,7 @@ instances:
 
     queries:
   # Query spanning customers and orders
-      - id: customer-orders
+      - name: customer-orders
         autoStart: true
         query: |
           MATCH (c:Customer), (o:Order)
@@ -81,7 +81,7 @@ instances:
           - order-service
 
   # Query spanning orders and inventory
-      - id: order-inventory
+      - name: order-inventory
         autoStart: true
         query: |
           MATCH (o:Order), (i:Inventory)
@@ -96,7 +96,7 @@ instances:
           - inventory-service
 
   # Alert: Order quantity exceeds inventory
-      - id: stock-shortage-alert
+      - name: stock-shortage-alert
         autoStart: true
         query: |
           MATCH (o:Order), (i:Inventory)
@@ -112,7 +112,7 @@ instances:
           - inventory-service
 
   # Full customer-order-inventory join
-      - id: full-order-view
+      - name: full-order-view
         autoStart: true
         query: |
           MATCH (c:Customer), (o:Order), (i:Inventory)

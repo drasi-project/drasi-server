@@ -65,6 +65,23 @@ async fn durable_router_receipts_native_execution_and_authoritative_restart() ->
             plugins.clone(),
             None,
         );
+        for version in [1, u32::MAX] {
+            let mut unsupported = desired.clone();
+            unsupported.version = version;
+            let request_id = format!("unsupported-version-{version}");
+            let (status, body) = request(
+                &app,
+                "PUT",
+                "/instances/managed-native/computation/desired",
+                &json!({"expectedRevision":0,"requestId":request_id,"desired":unsupported})
+                    .to_string(),
+                "application/json",
+            )
+            .await?;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert!(core.configuration_receipt(&request_id).await?.is_none());
+            assert_eq!(core.desired_configuration()?.revision, 0);
+        }
         let response = app
             .clone()
             .oneshot(

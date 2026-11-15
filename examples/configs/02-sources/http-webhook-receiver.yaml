@@ -59,7 +59,7 @@ instances:
 
     queries:
   # Process all incoming events
-      - id: all-events
+      - name: all-events
         autoStart: true
         query: |
           MATCH (e:Event)
@@ -69,7 +69,7 @@ instances:
           - webhook-receiver
 
   # Filter for high-value events
-      - id: high-value-events
+      - name: high-value-events
         autoStart: true
         query: |
           MATCH (e:Event)

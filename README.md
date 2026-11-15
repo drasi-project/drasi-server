@@ -158,7 +158,7 @@ instances:
           sensorCount: 5
         intervalMs: 3000
     queries:
-      - id: high-temp
+      - name: high-temp
         query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
         queryLanguage: Cypher
         inputs:
@@ -1062,7 +1062,7 @@ Templates can include variables using `${VAR_NAME:-default}` syntax:
 # Template with variables
 name: IoT Monitor
 queries:
-  - id: high-temp
+  - name: high-temp
     query: "MATCH (s:Sensor) WHERE s.temp > ${TEMP_THRESHOLD:-75} RETURN s"
 ```
 
@@ -1096,7 +1096,7 @@ sources:
     autoStart: true
 
 queries:
-  - id: my-query
+  - name: my-query
     query: "MATCH (n) WHERE n.value > ${THRESHOLD:-10} RETURN n"
     inputs:
       - data-source
@@ -1881,7 +1881,7 @@ Continuous queries process data changes and maintain materialized results.
 
 ```yaml
 queries:
-  - id: active-orders
+  - name: active-orders
     query: |
       MATCH (o:Order)
       WHERE o.status = 'active'
@@ -1916,7 +1916,7 @@ keep label selectors and a middleware `pipeline`:
 
 ```yaml
 queries:
-  - id: room-comfort
+  - name: room-comfort
     inputs: [facilities]
     result:
       label: RoomComfort          # node label of this query's published results
@@ -1924,7 +1924,7 @@ queries:
       MATCH (r:Room)
       RETURN r.id AS RoomId, r.floor AS FloorId, r.comfort AS ComfortLevel
 
-  - id: floor-comfort
+  - name: floor-comfort
     inputs:
       - room-comfort              # shorthand for { component: room-comfort }
     result:
@@ -1933,7 +1933,7 @@ queries:
       MATCH (r:RoomComfort)
       RETURN r.FloorId AS FloorId, avg(r.ComfortLevel) AS ComfortLevel
 
-  - id: filtered
+  - name: filtered
     inputs:
       - component: facilities
         port: out                 # explicit output port (otherwise primary/only output)
@@ -1959,12 +1959,12 @@ It accepts either a **named provider** (a string) or an **inline specification**
 queries:
   # Reference the instance's persistent provider by name.
   # Requires `persistIndex: true` so the `rocksdb` provider is registered.
-  - id: persistent-query
+  - name: persistent-query
     query: "MATCH (n) RETURN n"
     storageBackend: rocksdb
 
   # Force in-memory indexes for this query, even when persistIndex is true.
-  - id: volatile-query
+  - name: volatile-query
     query: "MATCH (n) RETURN n"
     storageBackend:
       kind: memory
@@ -2010,7 +2010,7 @@ Create virtual relationships between nodes from different sources:
 
 ```yaml
 queries:
-  - id: order-customer-join
+  - name: order-customer-join
     query: |
       MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
       RETURN o.id, c.name
@@ -2264,7 +2264,7 @@ instances:
         id: analytics-db
         # ... source config
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
         inputs:
           - analytics-db
@@ -2281,7 +2281,7 @@ instances:
         host: 0.0.0.0
         port: 9001
     queries:
-      - id: alert-threshold
+      - name: alert-threshold
         query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
         inputs:
           - metrics-api
@@ -2826,7 +2826,7 @@ docker compose down -v  # Also remove volumes
 
 ```yaml
 queries:
-  - id: low-stock-alert
+  - name: low-stock-alert
     query: |
       MATCH (p:Product)
       WHERE p.quantity <= p.reorder_point
@@ -2850,7 +2850,7 @@ reactions:
 
 ```yaml
 queries:
-  - id: suspicious-transactions
+  - name: suspicious-transactions
     query: |
       MATCH (t:Transaction)
       WHERE t.amount > 10000
@@ -2917,7 +2917,7 @@ instances:
           tables: [orders, customers, products]
 
     queries:
-      - id: high-value-orders
+      - name: high-value-orders
         query: |
           MATCH (o:orders)
           WHERE o.total > ${ORDER_THRESHOLD:-1000}
@@ -2928,7 +2928,7 @@ instances:
         autoStart: true
         enableBootstrap: true
 
-      - id: new-customers
+      - name: new-customers
         query: |
           MATCH (c:customers)
           WHERE c.created_at > datetime() - duration('P7D')
@@ -3001,7 +3001,7 @@ instances:
         bootstrapProvider:
           kind: postgres
     queries:
-      - id: active-users
+      - name: active-users
         query: "MATCH (u:users) WHERE u.last_active > datetime() - duration('PT1H') RETURN count(u) as active_count"
         inputs:
           - analytics-db
@@ -3026,7 +3026,7 @@ instances:
           sensorCount: 10
         intervalMs: 1000
     queries:
-      - id: test-query
+      - name: test-query
         query: "MATCH (s:SensorReading) WHERE s.temperature > 28 RETURN s"
         inputs:
           - test-data
@@ -3139,13 +3139,13 @@ instances:
                       status: "{{payload.data.object.status}}"
 
     queries:
-      - id: new-commits
+      - name: new-commits
         query: "MATCH (c:Commit) RETURN c ORDER BY c.timestamp DESC"
         inputs:
           - github-events
         autoStart: true
 
-      - id: large-payments
+      - name: large-payments
         query: "MATCH (p:Payment) WHERE p.amount > 10000 RETURN p"
         inputs:
           - stripe-events
@@ -3203,7 +3203,7 @@ instances:
           kind: postgres
 
     queries:
-      - id: monitored-changes
+      - name: monitored-changes
         query: "${MAIN_QUERY:-MATCH (n) RETURN n}"
         queryLanguage: Cypher
         inputs:
@@ -3318,7 +3318,7 @@ persistConfig: true  # Default - saves API changes to config file
 1. Ensure `enableBootstrap: true` on the query (default):
    ```yaml
    queries:
-     - id: my-query
+     - name: my-query
        enableBootstrap: true  # Default
    ```
 

@@ -32,8 +32,28 @@ async fn native_service_discovery_reports_negotiated_factories_without_configura
     let app = build_plugin_router(orchestrator, InstanceRegistry::new(), Arc::new(false));
     let (status, metadata) = request(&app, "GET", "/computation", "", "application/json").await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(metadata["bootstrapFactories"].as_array().unwrap().len(), 2);
-    assert_eq!(metadata["consumerFactories"].as_array().unwrap().len(), 2);
+    let names = |field: &str| {
+        let mut names = metadata[field]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|factory| factory["implementation"]["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        names
+    };
+    assert_eq!(
+        names("bootstrapFactories"),
+        ["fixture/bootstrap", "fixture/bootstrap-progress"]
+    );
+    assert_eq!(
+        names("consumerFactories"),
+        [
+            "fixture/consumer-external",
+            "fixture/consumer-transactional",
+            "fixture/input-binding-consumer"
+        ]
+    );
     assert!(metadata["bootstrapFactories"]
         .as_array()
         .unwrap()
@@ -53,7 +73,7 @@ fn recovery_plugin() -> Result<Arc<NativePlugin>> {
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../drasi-core/target/debug/examples")
+                .join("target/debug/plugins/examples")
                 .join(format!(
                     "{}native_recovery{}",
                     std::env::consts::DLL_PREFIX,
@@ -80,7 +100,16 @@ fn desired(name: &str, spec: ComponentSpecification) -> DesiredComponent {
             .map(|port| {
                 (
                     port.id().clone(),
-                    StreamId::try_new(format!("{}/out", spec.descriptor.id())).unwrap(),
+                    match spec
+                        .configuration
+                        .get("stream")
+                        .or_else(|| spec.configuration.get("output_stream"))
+                    {
+                        Some(ConfigurationValue::Literal(Value::String(stream))) => {
+                            StreamId::try_new(stream.as_str()).unwrap()
+                        }
+                        _ => StreamId::try_new(format!("{}/{}", name, port.id())).unwrap(),
+                    },
                 )
             })
             .collect(),
@@ -114,7 +143,7 @@ async fn native_output_snapshot_recipe_is_an_immutable_policy_and_roundtrips() -
         ResourceRole::OutputCatalogue,
         json!({
             "kind":"nativeOutputSnapshots",
-            "outputs":[{"component":"q","port":"out"},{"component":"source"}],
+            "outputs":[{"component":id("q"),"port":"out"},{"component":id("source")}],
             "timeoutMs":1000,
             "maxReaders":2
         }),
@@ -151,8 +180,8 @@ async fn native_output_snapshot_recipe_is_an_immutable_policy_and_roundtrips() -
     assert!(validate_definition(&with_dependency).is_err());
     for update in [
         json!({"outputs":[]}),
-        json!({"outputs":[{"component":"q"},{"component":"q"}]}),
-        json!({"outputs":[{"component":"q","port":"out","extra":true}]}),
+        json!({"outputs":[{"component":id("q")},{"component":id("q")}]}),
+        json!({"outputs":[{"component":id("q"),"port":"out","extra":true}]}),
         json!({"queries":["q"]}),
         json!({"timeoutMs":0}),
         json!({"maxReaders":0}),
@@ -180,7 +209,7 @@ async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Res
             &mut topology,
             consumer,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":consumer}),
+            json!({"kind":"sourceProgress","component":id(consumer)}),
         );
     }
     declare(
@@ -189,8 +218,8 @@ async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Res
         ResourceRole::Checkpoint,
         json!({
             "kind":"consumerProgress",
-            "producer":"source",
-            "consumers":{"left":"left","right":"right"}
+            "producer":id("source"),
+            "consumers":{id("left").as_str():"left",id("right").as_str():"right"}
         }),
     );
     topology.resource_dependencies.insert(
@@ -261,9 +290,9 @@ async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Res
         .is_err());
     for consumers in [
         json!({}),
-        json!({"source":"left"}),
-        json!({"left":"left","right":"left"}),
-        json!({"left":"feedback"}),
+        json!({id("source").as_str():"left"}),
+        json!({id("left").as_str():"left",id("right").as_str():"left"}),
+        json!({id("left").as_str():"feedback"}),
     ] {
         let mut invalid = config.clone();
         invalid
@@ -369,7 +398,7 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
         &mut topology,
         "progress",
         ResourceRole::Checkpoint,
-        json!({"kind":"sourceProgress","component":"query"}),
+        json!({"kind":"sourceProgress","component":id("query")}),
     );
     Ok(topology)
 }
@@ -411,7 +440,7 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
         &mut topology,
         "bootstrap",
         ResourceRole::Bootstrap,
-        json!({"kind":"nativeBootstrap","component":"query","implementation":metadata.implementation,
+        json!({"kind":"nativeBootstrap","component":id("query"),"implementation":metadata.implementation,
             "configurationVersion":metadata.configuration_version,"configuration":configuration,"sourceProgress":"progress"}),
     );
     topology.resource_dependencies.insert(
@@ -455,7 +484,10 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
         connection.execute("UPDATE Item SET value=?1", [value])?;
         let mut topology = bootstrap_topology(json!({"kind":"memoryIndexes"}))?;
         let configuration = BTreeMap::<Arc<str>, _>::from([
-            ("source".into(), ConfigurationValue::Literal(json!("input"))),
+            (
+                "source".into(),
+                ConfigurationValue::Literal(json!(id("input"))),
+            ),
             (
                 "stream".into(),
                 ConfigurationValue::Literal(json!("input/out")),
@@ -477,7 +509,7 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
             &mut topology,
             "bootstrap",
             ResourceRole::Bootstrap,
-            json!({"kind":"nativeBootstrap","component":"query",
+            json!({"kind":"nativeBootstrap","component":id("query"),
                 "implementation":metadata.implementation,
                 "configurationVersion":metadata.configuration_version,
                 "configuration":configuration}),
@@ -774,6 +806,15 @@ struct ObservedResources {
 }
 #[async_trait::async_trait]
 impl ManagementResourceResolver for ObservedResources {
+    fn plan_update(
+        &self,
+        resource: &ResourceId,
+        previous: &DesiredTopology,
+        desired: &DesiredTopology,
+    ) -> Result<ComponentUpdatePlan> {
+        self.inner.plan_update(resource, previous, desired)
+    }
+
     fn validate_transition(
         &self,
         previous: &DesiredTopology,
@@ -1125,19 +1166,18 @@ async fn retirement_holds_writers_through_commit_and_shutdown(
         } else {
             original.desired.clone()
         };
-        if !allow_loss {
+        if !allow_loss && native_consumer {
+            desired
+                .topology
+                .resource_configurations
+                .get_mut(&resource("delivery"))
+                .context("consumer delivery recipe")?["maxStreams"] = json!(3);
+        } else if !allow_loss {
             desired
                 .topology
                 .resources
                 .iter_mut()
-                .find(|spec| {
-                    spec.id
-                        == resource(if native_consumer {
-                            "delivery"
-                        } else {
-                            "journal"
-                        })
-                })
+                .find(|spec| spec.id == resource("journal"))
                 .context("retirement resource")?
                 .binding = "replacement-owner".into();
         }
@@ -1657,7 +1697,7 @@ fn input(graph: &str) -> Result<ChangeEnvelope> {
 
 fn input_sequence(graph: &str, sequence: u64) -> Result<ChangeEnvelope> {
     let producer: GraphProducerIdentity = serde_json::from_value(json!({
-        "construction_scope":INSTANCE, "graph_id":graph, "component_id":"input", "stream":"input/out",
+        "construction_scope":INSTANCE, "graph_id":graph, "component_id":id("input"), "stream":"input/out",
         "incarnation":"c218b0c6-8803-48df-aa4c-d5350f0e6453", "persistent":true
     }))?;
     let changes = (0..3)
@@ -1719,7 +1759,12 @@ async fn consumer_count(config: &ComputationConfig) -> Result<Option<ElementValu
             .create_indexes(graph, &id("consumer"))
             .await?,
     )?;
-    let reference = ElementReference::new("transaction-step/636f6e73756d6572/values", "count");
+    let prefix = id("consumer")
+        .as_str()
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let reference = ElementReference::new(&format!("transaction-step/{prefix}/values"), "count");
     let value = transaction
         .run(async {
             Ok(transaction

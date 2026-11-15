@@ -191,7 +191,7 @@ instances:
         autoStart: true
 
     queries:
-      - id: my-query
+      - name: my-query
         query: "MATCH (n:Node) RETURN n"
         inputs:
           - test-source

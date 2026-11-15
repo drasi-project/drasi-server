@@ -43,6 +43,14 @@ impl Default for DrasiServerBuilder {
 }
 
 impl DrasiServerBuilder {
+    /// Permit preconstructed components with externally assigned UUIDs.
+    /// Disabled by default, matching DrasiLib's immutable identity policy.
+    pub fn with_allow_external_component_ids(mut self, allow: bool) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_allow_external_component_ids(allow);
+        self
+    }
+
     /// Explicitly register the query plugin for the primary instance.
     pub fn with_query_factory(
         mut self,
@@ -71,7 +79,8 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add a pre-built source instance (ownership transferred)
+    /// Add a pre-built source instance (ownership transferred).
+    /// Requires `with_allow_external_component_ids(true)`.
     pub fn with_source(
         mut self,
         name: drasi_lib::ComponentName,
@@ -82,7 +91,8 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add a pre-built reaction instance (ownership transferred)
+    /// Add a pre-built reaction instance (ownership transferred).
+    /// Requires `with_allow_external_component_ids(true)`.
     pub fn with_reaction(
         mut self,
         name: drasi_lib::ComponentName,

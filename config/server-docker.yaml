@@ -28,7 +28,7 @@ instances:
         intervalMs: 3000
 
     queries:
-      - id: available-drivers-query
+      - name: available-drivers-query
         query: |
           MATCH (d:Driver {status: 'available'})
           WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
@@ -40,7 +40,7 @@ instances:
         inputs:
           - vehicle-location-source
 
-      - id: pending-orders-query
+      - name: pending-orders-query
         query: |
           MATCH (o:Order)
           WHERE o.status IN ['pending', 'preparing', 'ready']

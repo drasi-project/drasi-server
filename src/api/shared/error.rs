@@ -257,6 +257,15 @@ impl From<DrasiError> for ErrorResponse {
     fn from(err: DrasiError) -> Self {
         use DrasiError::*;
 
+        if matches!(
+            err.downcast_ref::<drasi_lib::computation::v1::GraphError>(),
+            Some(
+                drasi_lib::computation::v1::GraphError::DuplicateComponentId { .. }
+                    | drasi_lib::computation::v1::GraphError::DuplicateComponentName { .. }
+            )
+        ) {
+            return ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists");
+        }
         match err.classification() {
             ComponentNotFound {
                 component_type,
@@ -332,6 +341,41 @@ mod tests {
         assert_eq!(response.code, "TEST_CODE");
         assert_eq!(response.message, "Test message");
         assert!(response.details.is_none());
+    }
+
+    #[test]
+    fn typed_graph_conflicts_survive_public_operation_context() {
+        use drasi_lib::computation::v1::{
+            ComponentConflict, ComponentId, ComponentName, ComponentSemanticKind, GraphError,
+        };
+        let existing = ComponentConflict {
+            id: ComponentId::generate(),
+            name: ComponentName::try_new("existing").unwrap(),
+            kind: ComponentSemanticKind::Query,
+            implementation: None,
+            plugin: None,
+            realization: None,
+            lifecycle: None,
+        };
+        for conflict in [
+            GraphError::DuplicateComponentId {
+                existing: Box::new(existing.clone()),
+            },
+            GraphError::DuplicateComponentName {
+                existing: Box::new(existing.clone()),
+            },
+        ] {
+            let error = drasi_lib::DrasiError::operation_failed(
+                "query",
+                drasi_lib::error::OperationSubject::Name(existing.name.clone()),
+                "add",
+                "conflicting declaration",
+            )
+            .with_cause(anyhow::Error::new(conflict).context("query registration"));
+            let response = ErrorResponse::from(error);
+            assert_eq!(response.code, error_codes::DUPLICATE_RESOURCE);
+            assert_eq!(response.with_status().0, StatusCode::CONFLICT);
+        }
     }
 
     #[test]

@@ -54,7 +54,7 @@ instances:
 
     queries:
   # Query 1: Simple match-all query
-      - id: all-data
+      - name: all-data
         autoStart: true
         query: |
           MATCH (n)
@@ -65,7 +65,7 @@ instances:
         enableBootstrap: true
 
   # Query 2: Filtered query with projection
-      - id: high-values
+      - name: high-values
         autoStart: true
         query: |
           MATCH (s:SensorReading)
@@ -76,7 +76,7 @@ instances:
         enableBootstrap: true
 
   # Query 3: Aggregation query
-      - id: value-summary
+      - name: value-summary
         autoStart: true
         query: |
           MATCH (s:SensorReading)

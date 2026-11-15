@@ -24,7 +24,7 @@ use std::sync::{
     Arc,
 };
 use std::time::Duration;
-use test_support::{create_mock_reaction, create_mock_source};
+use test_support::create_mock_source;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 
@@ -51,7 +51,7 @@ impl SourcePluginDescriptor for CountingDescriptor {
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::Source>> {
         Ok(Box::new(
-            create_mock_source(id.as_str())
+            test_support::MockSource::with_id(id.clone())
                 .with_auto_start(auto_start)
                 .with_start_counter(self.0.clone()),
         ))
@@ -80,8 +80,8 @@ impl ReactionPluginDescriptor for CountingDescriptor {
         auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::Reaction>> {
         Ok(Box::new(
-            create_mock_reaction(
-                id.as_str(),
+            test_support::MockReaction::with_id(
+                id.clone(),
                 queries
                     .into_iter()
                     .map(|query| query.as_name().unwrap().as_str().to_owned())

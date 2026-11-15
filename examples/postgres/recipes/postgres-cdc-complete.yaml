@@ -115,7 +115,7 @@ instances:
 
     queries:
   # Track all user changes
-      - id: user-changes
+      - name: user-changes
         autoStart: true
         query: |
           MATCH (u:users)
@@ -125,7 +125,7 @@ instances:
           - app-database
 
   # Track orders with total > $100
-      - id: high-value-orders
+      - name: high-value-orders
         autoStart: true
         query: |
           MATCH (o:orders)
@@ -136,7 +136,7 @@ instances:
           - app-database
 
   # Product inventory alerts
-      - id: low-inventory
+      - name: low-inventory
         autoStart: true
         query: |
           MATCH (p:products)

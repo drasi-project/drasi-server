@@ -72,7 +72,7 @@ instances:
         intervalMs: 1000
 
     queries:
-      - id: event-count
+      - name: event-count
         autoStart: true
         query: |
           MATCH (e:Event)
@@ -81,7 +81,7 @@ instances:
         inputs:
           - analytics-events
 
-      - id: event-by-type
+      - name: event-by-type
         autoStart: true
         query: |
           MATCH (e:Event)
@@ -118,7 +118,7 @@ instances:
         intervalMs: 500
 
     queries:
-      - id: health-status
+      - name: health-status
         autoStart: true
         query: |
           MATCH (h:Health)
@@ -127,7 +127,7 @@ instances:
         inputs:
           - health-checks
 
-      - id: unhealthy-services
+      - name: unhealthy-services
         autoStart: true
         query: |
           MATCH (h:Health)
@@ -174,7 +174,7 @@ instances:
         intervalMs: 2000
 
     queries:
-      - id: all-audits
+      - name: all-audits
         autoStart: true
         query: |
           MATCH (a:Audit)

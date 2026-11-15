@@ -22,7 +22,7 @@ async fn server_qos_recovery_recipes_roundtrip_restore_and_refuse_implicit_disab
             binding: "channel".into(),
         };
         let recovery = if kind == "admission" {
-            json!({"kind":kind,"component":"source",
+            json!({"kind":kind,"component":id("source"),
                 "failureScope":drasi_core::interface::FailureMode::ProcessRestart,
                 "maxProducers":2,"receiptsPerProducer":4})
         } else {
@@ -47,11 +47,7 @@ async fn server_qos_recovery_recipes_roundtrip_restore_and_refuse_implicit_disab
         let channel = handle.get::<QosChannel>()?;
         let journal = channel.output_journal_identity();
         let session = if kind == "admission" {
-            Some(
-                channel
-                    .register_producer(ComponentId::try_new("client")?)
-                    .await?,
-            )
+            Some(channel.register_producer(id("client")).await?)
         } else {
             assert!(journal.is_some());
             None
@@ -61,12 +57,7 @@ async fn server_qos_recovery_recipes_roundtrip_restore_and_refuse_implicit_disab
         let reopened = handle.get::<QosChannel>()?;
         assert_eq!(reopened.output_journal_identity(), journal);
         if let Some(session) = &session {
-            assert_eq!(
-                &reopened
-                    .register_producer(ComponentId::try_new("client")?)
-                    .await?,
-                session
-            );
+            assert_eq!(&reopened.register_producer(id("client")).await?, session);
         }
         reopened.shutdown().await?;
         let mut disabled = recipe.clone();

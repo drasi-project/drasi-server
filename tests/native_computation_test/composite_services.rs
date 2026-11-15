@@ -42,7 +42,7 @@ async fn canonical_composite_recipe_roundtrips_and_resolves_real_child_resources
             child,
             ResourceRole::Bootstrap,
             json!({
-                "kind":"nativeBootstrap","component":"query",
+                "kind":"nativeBootstrap","component":id("query"),
                 "implementation":{"name":"fixture/bootstrap","version":"1"},
                 "configurationVersion":1,"configuration":{},
             }),
@@ -53,7 +53,7 @@ async fn canonical_composite_recipe_roundtrips_and_resolves_real_child_resources
         "bootstrap",
         ResourceRole::Bootstrap,
         json!({
-            "kind":"compositeBootstrap","component":"query","providers":["pg-bootstrap","http-bootstrap"],
+            "kind":"compositeBootstrap","component":id("query"),"providers":["pg-bootstrap","http-bootstrap"],
         }),
     );
     topology.resource_dependencies.insert(

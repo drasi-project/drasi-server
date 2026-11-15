@@ -495,7 +495,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: inline-query
+  - name: inline-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
     inputs:
@@ -948,7 +948,7 @@ sources:
     intervalMs: 100
 
 queries:
-  - id: order-details-query
+  - name: order-details-query
     query: |
       MATCH (u:User)-[:PLACED]->(o:Order)-[:CONTAINS]->(p:Product)
       RETURN u.name AS userName, o.order_id AS orderId, p.name AS productName
@@ -1056,7 +1056,7 @@ sources:
     intervalMs: 50
 
 queries:
-  - id: all-readings
+  - name: all-readings
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity
@@ -1065,7 +1065,7 @@ queries:
       - sensor-feed
     autoStart: true
 
-  - id: high-temp-alerts
+  - name: high-temp-alerts
     query: |
       MATCH (s:SensorReading)
       WHERE s.temperature > 80

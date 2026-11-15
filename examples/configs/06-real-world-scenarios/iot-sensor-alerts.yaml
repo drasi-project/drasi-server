@@ -61,7 +61,7 @@ instances:
 
     queries:
   # All sensor readings for dashboard
-      - id: all-readings
+      - name: all-readings
         autoStart: true
         query: |
           MATCH (s:Sensor)
@@ -75,7 +75,7 @@ instances:
           - sensor-ingest
 
   # High temperature alerts (> 80F)
-      - id: high-temp-alerts
+      - name: high-temp-alerts
         autoStart: true
         query: |
           MATCH (s:Sensor)
@@ -89,7 +89,7 @@ instances:
           - sensor-ingest
 
   # Low temperature alerts (< 32F - freezing)
-      - id: freeze-alerts
+      - name: freeze-alerts
         autoStart: true
         query: |
           MATCH (s:Sensor)
@@ -103,7 +103,7 @@ instances:
           - sensor-ingest
 
   # High humidity alerts (> 70%)
-      - id: humidity-alerts
+      - name: humidity-alerts
         autoStart: true
         query: |
           MATCH (s:Sensor)
@@ -117,7 +117,7 @@ instances:
           - sensor-ingest
 
   # Sensor statistics
-      - id: sensor-stats
+      - name: sensor-stats
         autoStart: true
         query: |
           MATCH (s:Sensor)

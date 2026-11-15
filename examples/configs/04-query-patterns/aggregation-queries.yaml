@@ -51,7 +51,7 @@ instances:
 
     queries:
   # Simple count
-      - id: total-count
+      - name: total-count
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -61,7 +61,7 @@ instances:
           - data-source
 
   # Sum and average
-      - id: value-stats
+      - name: value-stats
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -73,7 +73,7 @@ instances:
           - data-source
 
   # Min and Max
-      - id: value-extremes
+      - name: value-extremes
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -84,7 +84,7 @@ instances:
           - data-source
 
   # Filtered aggregation - positive values only
-      - id: positive-stats
+      - name: positive-stats
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -97,7 +97,7 @@ instances:
           - data-source
 
   # Filtered aggregation - negative values only
-      - id: negative-stats
+      - name: negative-stats
         autoStart: true
         query: |
           MATCH (g:Generic)

@@ -54,7 +54,7 @@ instances:
                 - messageid
 
     queries:
-      - id: hello-world-from
+      - name: hello-world-from
         autoStart: true
         query: |
           MATCH (m:message)
@@ -64,7 +64,7 @@ instances:
         inputs:
           - postgres-messages
 
-      - id: message-count
+      - name: message-count
         autoStart: true
         query: |
           MATCH (m:message)

@@ -73,7 +73,7 @@ instances:
 
     queries:
   # Query with default capacity (inherits server defaults)
-      - id: default-capacity
+      - name: default-capacity
         autoStart: true
         query: |
           MATCH (n)
@@ -83,7 +83,7 @@ instances:
           - high-throughput
 
   # Query with custom high capacity (for burst handling)
-      - id: high-capacity-query
+      - name: high-capacity-query
         autoStart: true
         query: |
           MATCH (n)
@@ -96,7 +96,7 @@ instances:
         dispatchBufferCapacity: 5000
 
   # Query with low capacity (memory constrained)
-      - id: low-capacity-query
+      - name: low-capacity-query
         autoStart: true
         query: |
           MATCH (n)

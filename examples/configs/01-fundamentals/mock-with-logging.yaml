@@ -51,7 +51,7 @@ instances:
         intervalMs: 3000
 
     queries:
-      - id: track-all-changes
+      - name: track-all-changes
         autoStart: true
         query: |
           MATCH (n:Generic)

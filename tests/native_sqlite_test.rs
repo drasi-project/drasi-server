@@ -126,7 +126,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
     )?;
     let libraries = std::env::var_os("DRASI_SERVER_TEST_PLUGINS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/plugins"));
     let source_port = std::net::TcpListener::bind(("127.0.0.1", 0))?
         .local_addr()?
         .port();
@@ -179,7 +179,10 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                     core.component_by_name(&ComponentName::try_new(component.clone())?)?
                         .wait_started(),
                 )
-                .await??;
+                .await
+                .with_context(|| {
+                    format!("SQLite {mode:?} round {round}: component {component} did not start")
+                })??;
             }
             Ok::<_, anyhow::Error>(())
         }

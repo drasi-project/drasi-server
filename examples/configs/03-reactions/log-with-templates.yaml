@@ -56,7 +56,7 @@ instances:
 
     queries:
   # Simulated "alerts" - negative values are alerts
-      - id: alerts
+      - name: alerts
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -67,7 +67,7 @@ instances:
           - events
 
   # Simulated "metrics" - positive values are metrics
-      - id: metrics
+      - name: metrics
         autoStart: true
         query: |
           MATCH (g:Generic)
@@ -78,7 +78,7 @@ instances:
           - events
 
   # All events with full data
-      - id: all-events
+      - name: all-events
         autoStart: true
         query: |
           MATCH (g:Generic)

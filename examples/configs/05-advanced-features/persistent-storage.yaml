@@ -67,7 +67,7 @@ instances:
 
     queries:
   # This query's index will be persisted in RocksDB
-      - id: persisted-query
+      - name: persisted-query
         autoStart: true
         query: |
           MATCH (n)
@@ -78,7 +78,7 @@ instances:
         enableBootstrap: true
 
   # Aggregation that maintains state
-      - id: running-totals
+      - name: running-totals
         autoStart: true
         query: |
           MATCH (n)

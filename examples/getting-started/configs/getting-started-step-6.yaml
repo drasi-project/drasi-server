@@ -19,7 +19,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - my-postgres
+                  - component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
                   joins: []
                   middleware: []
               language:
@@ -43,7 +43,7 @@ instances:
               source_progress:
               - all-messages-progress
             descriptor:
-              id: all-messages
+              id: 54fc9cb8-4381-47e3-95ba-4b594d504969
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -69,7 +69,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -85,6 +85,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -208,9 +218,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -231,7 +241,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -247,6 +257,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -370,9 +390,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -380,7 +400,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: all-messages
+          id: 54fc9cb8-4381-47e3-95ba-4b594d504969
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -406,7 +426,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -422,6 +442,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -545,9 +575,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -568,7 +598,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -584,6 +614,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -707,13 +747,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: all-messages
         role: Transformer
         streams:
           out: all-messages/out
@@ -725,7 +766,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - my-postgres
+                  - component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
                   joins: []
                   middleware: []
               language:
@@ -747,7 +788,7 @@ instances:
               source_progress:
               - hello-world-senders-progress
             descriptor:
-              id: hello-world-senders
+              id: 9f06e882-7765-4ead-8068-173c8f06191e
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -773,7 +814,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -789,6 +830,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -912,9 +963,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -935,7 +986,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -951,6 +1002,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1074,9 +1135,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -1084,7 +1145,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: hello-world-senders
+          id: 9f06e882-7765-4ead-8068-173c8f06191e
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1110,7 +1171,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1126,6 +1187,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1249,9 +1320,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -1272,7 +1343,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1288,6 +1359,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1411,13 +1492,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: hello-world-senders
         role: Transformer
         streams:
           out: hello-world-senders/out
@@ -1429,7 +1511,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - my-postgres
+                  - component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
                   joins: []
                   middleware: []
               language:
@@ -1451,7 +1533,7 @@ instances:
               source_progress:
               - message-counts-progress
             descriptor:
-              id: message-counts
+              id: af78ca53-b4e3-4011-b236-ff42e5ae1da4
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -1477,7 +1559,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -1493,6 +1575,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1616,9 +1708,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -1639,7 +1731,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -1655,6 +1747,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -1778,9 +1880,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -1788,7 +1890,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: message-counts
+          id: af78ca53-b4e3-4011-b236-ff42e5ae1da4
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1814,7 +1916,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1830,6 +1932,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -1953,9 +2065,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -1976,7 +2088,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -1992,6 +2104,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2115,13 +2237,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: message-counts
         role: Transformer
         streams:
           out: message-counts/out
@@ -2133,7 +2256,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - my-postgres
+                  - component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
                   joins: []
                   middleware: []
               language:
@@ -2155,7 +2278,7 @@ instances:
               source_progress:
               - inactive-senders-progress
             descriptor:
-              id: inactive-senders
+              id: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -2181,7 +2304,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2197,6 +2320,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -2320,9 +2453,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               - direction: Output
                 id: out
                 requirements:
@@ -2343,7 +2476,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2359,6 +2492,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -2482,9 +2625,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.experimental/indexed-query/ordinary
@@ -2492,7 +2635,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: inactive-senders
+          id: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -2518,7 +2661,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -2534,6 +2677,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2657,9 +2810,9 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           - direction: Output
             id: out
             requirements:
@@ -2680,7 +2833,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -2696,6 +2849,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -2819,13 +2982,14 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: inactive-senders
         role: Transformer
         streams:
           out: inactive-senders/out
@@ -2852,7 +3016,7 @@ instances:
               consumer_progress:
               - my-postgres-consumers
             descriptor:
-              id: my-postgres
+              id: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
               plugin_identity:
                 id: drasi-computation-source-postgres
                 version: 0.11.3
@@ -2877,7 +3041,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -2893,6 +3057,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3016,9 +3190,9 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
             implementation:
               name: drasi.postgres/shared-changes
               plugin:
@@ -3027,7 +3201,7 @@ instances:
               version: '1'
             role: Source
         descriptor:
-          id: my-postgres
+          id: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
           plugin_identity:
             id: drasi-computation-source-postgres
             version: 0.11.3
@@ -3052,7 +3226,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -3068,6 +3242,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -3191,12 +3375,13 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: my-postgres
         role: Source
         streams:
           out: my-postgres/out
@@ -3210,7 +3395,7 @@ instances:
               catalog:
               - query-results
             descriptor:
-              id: postgres-query-results
+              id: 00000000-0000-0000-0000-00000000ff01
               ports:
               - direction: Input
                 id: in
@@ -3232,7 +3417,7 @@ instances:
                   - 101
                   - 45
                   - 118
-                  - 49
+                  - 50
                   - 59
                   - 69
                   - 108
@@ -3248,6 +3433,16 @@ instances:
                   - 114
                   - 101
                   - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
                   - 99
                   - 101
                   - 45
@@ -3371,16 +3566,16 @@ instances:
                   - 45
                   - 118
                   - 49
-                  encoding: drasi-element-msgpack-v1
+                  encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
-                  version: 1
+                  version: 2
             implementation:
               name: drasi/query-results-outlet
               plugin: null
               version: '1'
             role: Sink
         descriptor:
-          id: postgres-query-results
+          id: 00000000-0000-0000-0000-00000000ff01
           ports:
           - direction: Input
             id: in
@@ -3402,7 +3597,7 @@ instances:
               - 101
               - 45
               - 118
-              - 49
+              - 50
               - 59
               - 69
               - 108
@@ -3418,6 +3613,16 @@ instances:
               - 114
               - 101
               - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
               - 99
               - 101
               - 45
@@ -3541,22 +3746,23 @@ instances:
               - 45
               - 118
               - 49
-              encoding: drasi-element-msgpack-v1
+              encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
-              version: 1
+              version: 2
         input_merge: Arrival
         lifecycle:
           auto_start: true
+        name: postgres-query-results
         role: Sink
         streams: {}
       graph_id: __drasi_lib_runtime__
       relationships:
       - definition:
           from:
-            component: my-postgres
+            component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             port: out
           to:
-            component: all-messages
+            component: 54fc9cb8-4381-47e3-95ba-4b594d504969
             port: in
         pipe:
           Bounded:
@@ -3572,10 +3778,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: my-postgres
+            component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             port: out
           to:
-            component: hello-world-senders
+            component: 9f06e882-7765-4ead-8068-173c8f06191e
             port: in
         pipe:
           Bounded:
@@ -3591,10 +3797,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: my-postgres
+            component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             port: out
           to:
-            component: message-counts
+            component: af78ca53-b4e3-4011-b236-ff42e5ae1da4
             port: in
         pipe:
           Bounded:
@@ -3610,10 +3816,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: my-postgres
+            component: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             port: out
           to:
-            component: inactive-senders
+            component: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
             port: in
         pipe:
           Bounded:
@@ -3629,10 +3835,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: all-messages
+            component: 54fc9cb8-4381-47e3-95ba-4b594d504969
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -3648,10 +3854,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: hello-world-senders
+            component: 9f06e882-7765-4ead-8068-173c8f06191e
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -3667,10 +3873,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: message-counts
+            component: af78ca53-b4e3-4011-b236-ff42e5ae1da4
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -3686,10 +3892,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: inactive-senders
+            component: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
             port: out
           to:
-            component: postgres-query-results
+            component: 00000000-0000-0000-0000-00000000ff01
             port: in
         pipe:
           Bounded:
@@ -3707,7 +3913,7 @@ instances:
         required: []
       resource_configurations:
         all-messages-postgres-bootstrap:
-          component: all-messages
+          component: 54fc9cb8-4381-47e3-95ba-4b594d504969
           configuration:
             settings:
               Reference:
@@ -3715,7 +3921,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: my-postgres
+              Literal: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             stream:
               Literal: my-postgres/out
           configurationVersion: 1
@@ -3728,10 +3934,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: all-messages-progress
         all-messages-progress:
-          component: all-messages
+          component: 54fc9cb8-4381-47e3-95ba-4b594d504969
           kind: sourceProgress
         hello-world-senders-postgres-bootstrap:
-          component: hello-world-senders
+          component: 9f06e882-7765-4ead-8068-173c8f06191e
           configuration:
             settings:
               Reference:
@@ -3739,7 +3945,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: my-postgres
+              Literal: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             stream:
               Literal: my-postgres/out
           configurationVersion: 1
@@ -3752,10 +3958,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: hello-world-senders-progress
         hello-world-senders-progress:
-          component: hello-world-senders
+          component: 9f06e882-7765-4ead-8068-173c8f06191e
           kind: sourceProgress
         inactive-senders-postgres-bootstrap:
-          component: inactive-senders
+          component: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
           configuration:
             settings:
               Reference:
@@ -3763,7 +3969,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: my-postgres
+              Literal: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             stream:
               Literal: my-postgres/out
           configurationVersion: 1
@@ -3776,10 +3982,10 @@ instances:
           kind: nativeBootstrap
           sourceProgress: inactive-senders-progress
         inactive-senders-progress:
-          component: inactive-senders
+          component: bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae
           kind: sourceProgress
         message-counts-postgres-bootstrap:
-          component: message-counts
+          component: af78ca53-b4e3-4011-b236-ff42e5ae1da4
           configuration:
             settings:
               Reference:
@@ -3787,7 +3993,7 @@ instances:
                 resource: postgres-configuration
                 secret: true
             source:
-              Literal: my-postgres
+              Literal: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
             stream:
               Literal: my-postgres/out
           configurationVersion: 1
@@ -3800,16 +4006,16 @@ instances:
           kind: nativeBootstrap
           sourceProgress: message-counts-progress
         message-counts-progress:
-          component: message-counts
+          component: af78ca53-b4e3-4011-b236-ff42e5ae1da4
           kind: sourceProgress
         my-postgres-consumers:
           consumers:
-            all-messages: all-messages-progress
-            hello-world-senders: hello-world-senders-progress
-            inactive-senders: inactive-senders-progress
-            message-counts: message-counts-progress
+            54fc9cb8-4381-47e3-95ba-4b594d504969: all-messages-progress
+            9f06e882-7765-4ead-8068-173c8f06191e: hello-world-senders-progress
+            af78ca53-b4e3-4011-b236-ff42e5ae1da4: message-counts-progress
+            bd6b1fd6-d958-4c4e-91ee-26d7c0f2c7ae: inactive-senders-progress
           kind: consumerProgress
-          producer: my-postgres
+          producer: 01e52bb3-29c3-4e1a-9420-32ee767f0c08
         postgres-configuration:
           kind: configuration
         query-indexes:
@@ -3884,7 +4090,7 @@ instances:
         ownership: Graph
         role: QueryCatalog
       revision: 1
-      version: 1
+      version: 3
   enableArchive: false
   id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
   identityProviders: []

@@ -69,6 +69,10 @@ pub struct ComputationConfig {
     pub definition: DesiredTopology,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("resource owner does not support the requested live recipe update")]
+pub(crate) struct UnsupportedResourceUpdate;
+
 /// Use the same native implementations for validation, construction and restoration.
 pub fn native_factory_registry(
     plugins: &crate::plugin_registry::PluginRegistry,
@@ -513,6 +517,18 @@ async fn build_components_with_resources(
     identity_providers: NativeIdentityProviders,
 ) -> Result<ComponentBatch> {
     validate_definition(config)?;
+    for component in &config.definition.components {
+        if let ComponentConstruction::Factory(specification) = &component.construction {
+            if let Some(factory) = factories.get(&specification.implementation) {
+                factory.validate(specification).with_context(|| {
+                    format!(
+                        "invalid configuration for component {}",
+                        component.descriptor.id()
+                    )
+                })?;
+            }
+        }
+    }
     let services = core.computation_plugin_services()?;
     let resolver = Arc::new(ServerManagementResources {
         factories: factories.clone(),
@@ -586,6 +602,66 @@ impl ServerManagementResources {
 
 #[async_trait]
 impl ManagementResourceResolver for ServerManagementResources {
+    fn plan_update(
+        &self,
+        resource: &ResourceId,
+        previous: &DesiredTopology,
+        desired: &DesiredTopology,
+    ) -> Result<ComponentUpdatePlan> {
+        let declaration = |topology: &DesiredTopology| {
+            topology
+                .resources
+                .iter()
+                .find(|spec| &spec.id == resource)
+                .cloned()
+        };
+        let current =
+            declaration(previous).context("resource update has no current declaration")?;
+        anyhow::ensure!(
+            current.ownership == ResourceOwnership::Graph
+                && Some(current.clone()) == declaration(desired)
+                && previous.resource_dependencies.get(resource)
+                    == desired.resource_dependencies.get(resource),
+            "resource updates must preserve ownership, binding and provider dependencies"
+        );
+        let recipe = |topology: &DesiredTopology| -> Result<ComputationResourceConfig> {
+            serde_json::from_value(
+                topology
+                    .resource_configurations
+                    .get(resource)
+                    .context("resource update has no construction recipe")?
+                    .clone(),
+            )
+            .map_err(Into::into)
+        };
+        let (
+            ComputationResourceConfig::NativeConsumer(old),
+            ComputationResourceConfig::NativeConsumer(new),
+        ) = (recipe(previous)?, recipe(desired)?)
+        else {
+            return Err(UnsupportedResourceUpdate.into());
+        };
+        old.validate(&current)?;
+        new.validate(&current)?;
+        let mut old_configuration = serde_json::to_value(&old)?;
+        let mut new_configuration = serde_json::to_value(&new)?;
+        old_configuration
+            .as_object_mut()
+            .context("consumer configuration must be an object")?
+            .remove("maxStreams");
+        new_configuration
+            .as_object_mut()
+            .context("consumer configuration must be an object")?
+            .remove("maxStreams");
+        if new.max_streams <= old.max_streams || old_configuration != new_configuration {
+            return Err(UnsupportedResourceUpdate.into());
+        }
+        Ok(ComponentUpdatePlan {
+            mode: ComponentUpdateMode::Recreate,
+            data: ComponentUpdateData::Preserve,
+        })
+    }
+
     fn validate_transition(
         &self,
         previous: &DesiredTopology,
@@ -963,6 +1039,113 @@ pub fn register_components<'a>(
     async move { Ok(core.add_components(components.await?).await?) }
 }
 
+/// Remove native declarations through the instance configuration owner.
+pub async fn remove_components(
+    core: &DrasiLib,
+    components: Vec<ComponentId>,
+    resources: Vec<ResourceId>,
+) -> Result<()> {
+    let mut committed = core.desired_configuration()?;
+    anyhow::ensure!(
+        !components.is_empty() || !resources.is_empty(),
+        "no native declarations selected"
+    );
+    anyhow::ensure!(
+        components.iter().all(|id| committed
+            .desired
+            .topology
+            .components
+            .iter()
+            .any(|node| node.descriptor.id() == id))
+            && resources.iter().all(|id| committed
+                .desired
+                .topology
+                .resources
+                .iter()
+                .any(|resource| &resource.id == id)),
+        "only declared native components and resources can be removed"
+    );
+    let control = core.computation_control()?;
+    let mut changes = Vec::new();
+    if !components.is_empty() {
+        changes.push(DesiredMutation::RemoveComponents {
+            selection: GraphSelection::Exact(components),
+            policy: RemovalPolicy::Reject,
+        });
+    }
+    changes.extend(
+        resources
+            .into_iter()
+            .map(|resource| DesiredMutation::RemoveResource {
+                resource,
+                policy: RemovalPolicy::Reject,
+            }),
+    );
+    let preview = control
+        .preview(control.desired_snapshot().revision, changes)
+        .await?;
+    let planned = preview.desired();
+    // Keep authored recipes only; the graph preview also contains generated
+    // ordinary-query infrastructure which the configuration owner reconstructs.
+    let topology = &mut committed.desired.topology;
+    topology.components.retain(|component| {
+        planned
+            .components
+            .iter()
+            .any(|node| node.descriptor.id() == component.descriptor.id())
+    });
+    topology
+        .relationships
+        .retain(|edge| planned.relationships.contains(edge));
+    topology
+        .boundary_relationships
+        .retain(|edge| planned.boundary_relationships.contains(edge));
+    topology
+        .resources
+        .retain(|resource| planned.resources.iter().any(|node| node.id == resource.id));
+    topology
+        .resource_configurations
+        .retain(|id, _| planned.resource_configurations.contains_key(id));
+    topology.resource_dependencies.retain(|id, dependencies| {
+        let Some(remaining) = planned.resource_dependencies.get(id) else {
+            return false;
+        };
+        dependencies.retain(|dependency, role| remaining.get(dependency) == Some(role));
+        true
+    });
+    topology
+        .recovery_requirements
+        .retain(|requirement| planned.recovery_requirements.contains(requirement));
+    topology
+        .control_connections
+        .retain(|edge| planned.control_connections.contains(edge));
+    topology
+        .subscriptions
+        .retain(|edge| planned.subscriptions.contains(edge));
+    topology
+        .readiness_required
+        .retain(|id| planned.readiness_required.contains(id));
+    topology.component_resources.retain(|id, resources| {
+        let Some(remaining) = planned.component_resources.get(id) else {
+            return false;
+        };
+        resources.retain(|resource| remaining.contains(resource));
+        true
+    });
+    topology
+        .component_plugins
+        .retain(|id, _| planned.component_plugins.contains_key(id));
+    let request_id = core.new_configuration_request_id().await?;
+    core.apply_desired_state(committed.revision, request_id, committed.desired)
+        .await?;
+    let status = core.reconcile_desired_state().await?;
+    anyhow::ensure!(
+        status.converged(),
+        "native component or resource cleanup is incomplete: {status:?}"
+    );
+    Ok(())
+}
+
 /// Retains instances if asynchronous rollback fails, so callers can retry cleanup.
 pub struct PreparationFailure {
     cause: anyhow::Error,
@@ -1056,6 +1239,67 @@ pub(crate) async fn cleanup_failed_preparation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consumer_update_plan_only_preserves_compatible_capacity_increases() -> Result<()> {
+        let resolver =
+            ServerManagementResources::new(&crate::plugin_registry::PluginRegistry::new(), None)?;
+        let id = ResourceId::try_new("delivery")?;
+        let mut previous = drasi_lib::management::DesiredInstance::default().topology;
+        previous.resources.push(ResourceSpecification {
+            id: id.clone(),
+            role: ResourceRole::IndexBackend,
+            ownership: ResourceOwnership::Graph,
+            binding: "delivery".into(),
+        });
+        previous.resource_configurations.insert(
+            id.clone(),
+            serde_json::json!({
+                "kind":"nativeConsumer",
+                "failureScope":drasi_core::interface::FailureMode::ProcessRestart,
+                "maxStreams":2, "receiptsPerStream":4
+            }),
+        );
+        let mut desired = previous.clone();
+        desired.resource_configurations.get_mut(&id).unwrap()["maxStreams"] = 3.into();
+        assert_eq!(
+            resolver.plan_update(&id, &previous, &desired)?,
+            ComponentUpdatePlan {
+                mode: ComponentUpdateMode::Recreate,
+                data: ComponentUpdateData::Preserve,
+            }
+        );
+        assert!(resolver.plan_update(&id, &previous, &previous).is_err());
+        for streams in [1, 0] {
+            let mut invalid = desired.clone();
+            invalid.resource_configurations.get_mut(&id).unwrap()["maxStreams"] = streams.into();
+            assert!(resolver.plan_update(&id, &previous, &invalid).is_err());
+        }
+        let mut incompatible = desired.clone();
+        incompatible.resource_configurations.get_mut(&id).unwrap()["receiptsPerStream"] = 8.into();
+        assert!(resolver.plan_update(&id, &previous, &incompatible).is_err());
+        for ownership in [ResourceOwnership::Graph, ResourceOwnership::Borrowed] {
+            let mut incompatible = desired.clone();
+            incompatible.resources[0].ownership = ownership;
+            incompatible.resources[0].binding = "replacement".into();
+            assert!(resolver.plan_update(&id, &previous, &incompatible).is_err());
+        }
+        let mut incompatible = desired.clone();
+        incompatible.resource_dependencies.insert(
+            id.clone(),
+            BTreeMap::from([(
+                ResourceId::try_new("other-provider")?,
+                ResourceRole::IndexBackend,
+            )]),
+        );
+        assert!(resolver.plan_update(&id, &previous, &incompatible).is_err());
+        let mut unsupported = desired;
+        unsupported
+            .resource_configurations
+            .insert(id.clone(), serde_json::json!({"kind":"memoryIndexes"}));
+        assert!(resolver.plan_update(&id, &previous, &unsupported).is_err());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn native_registration_does_not_retain_the_plugin_registry_guard() -> Result<()> {

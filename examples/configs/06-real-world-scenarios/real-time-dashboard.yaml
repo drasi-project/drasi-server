@@ -82,7 +82,7 @@ instances:
 
     queries:
   # KPI: Total sales
-      - id: kpi-total-sales
+      - name: kpi-total-sales
         autoStart: true
         query: |
           MATCH (s:Sale)
@@ -94,7 +94,7 @@ instances:
           - sales-data
 
   # KPI: Active users
-      - id: kpi-active-users
+      - name: kpi-active-users
         autoStart: true
         query: |
           MATCH (u:User)
@@ -105,7 +105,7 @@ instances:
           - user-activity
 
   # KPI: System health
-      - id: kpi-system-health
+      - name: kpi-system-health
         autoStart: true
         query: |
           MATCH (m:Metric)
@@ -117,7 +117,7 @@ instances:
           - system-metrics
 
   # Activity Feed: Recent sales
-      - id: recent-sales
+      - name: recent-sales
         autoStart: true
         query: |
           MATCH (s:Sale)
@@ -131,7 +131,7 @@ instances:
           - sales-data
 
   # Activity Feed: User events
-      - id: user-events
+      - name: user-events
         autoStart: true
         query: |
           MATCH (e:UserEvent)
@@ -143,7 +143,7 @@ instances:
           - user-activity
 
   # Alerts: High-value sales
-      - id: high-value-sales
+      - name: high-value-sales
         autoStart: true
         query: |
           MATCH (s:Sale)
@@ -157,7 +157,7 @@ instances:
           - sales-data
 
   # Alerts: System warnings
-      - id: system-warnings
+      - name: system-warnings
         autoStart: true
         query: |
           MATCH (m:Metric)
@@ -171,7 +171,7 @@ instances:
           - system-metrics
 
   # Charts: Sales by category
-      - id: sales-by-category
+      - name: sales-by-category
         autoStart: true
         query: |
           MATCH (s:Sale)
