@@ -886,6 +886,14 @@ pub async fn deploy_solution(
         .await;
     }
 
+    if !validated_queries.is_empty() {
+        crate::query_plugin::ensure_registered(&core, plugin_registry)
+            .await
+            .map_err(|error| {
+                ErrorResponse::new(error_codes::PLUGIN_NOT_FOUND, format!("{error:#}"))
+            })?;
+    }
+
     // ===== PHASE 2: CREATION =====
     // All configs validated successfully. Now create components in order:
     // Sources first, then Queries, then Reactions.
@@ -1439,5 +1447,51 @@ reactions: []
             Err(err) => assert_eq!(err.code, error_codes::INVALID_REQUEST),
             Ok(_) => panic!("expected ErrorResponse for missing template"),
         }
+    }
+
+    #[tokio::test]
+    async fn deploy_registers_query_factory_for_memory_instances() -> anyhow::Result<()> {
+        let core = Arc::new(drasi_lib::DrasiLib::builder().build().await?);
+        assert!(!core.configuration_is_persistent());
+        assert!(core.query_factory_implementation().is_none());
+        let registry = crate::instance_registry::InstanceRegistry::new();
+        registry
+            .add("memory".into(), core.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let plugin_registry =
+            tokio::sync::RwLock::new(crate::plugin_registry::PluginRegistry::new());
+        plugin_registry.write().await.register_computation_plugin(
+            drasi_host_sdk::computation::NativePlugin::from_definition(
+                drasi_computation_transformer_query::plugin()?,
+            )?,
+        )?;
+        let request = SolutionDeployRequest {
+            template_id: None,
+            yaml: Some(
+                r#"
+name: Query only
+queries:
+  - name: values
+    query: "MATCH (n:Node) RETURN n.id AS id"
+    queryLanguage: Cypher
+    inputs: []
+    autoStart: false
+"#
+                .into(),
+            ),
+            variables: std::collections::HashMap::new(),
+        };
+        let Ok(Json(response)) =
+            deploy_solution(registry, None, None, &plugin_registry, "memory", request).await
+        else {
+            panic!("solution deploy failed");
+        };
+        let data = response.data.expect("deploy response");
+        assert!(data.errors.is_empty(), "{:?}", data.errors);
+        assert_eq!(data.queries_created, vec!["values".to_string()]);
+        assert!(core.query_factory_implementation().is_some());
+        core.shutdown().await?;
+        Ok(())
     }
 }

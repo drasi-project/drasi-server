@@ -15,7 +15,7 @@ impact on Server deployments.
 |---|---|
 | Persisted instances | [Update data mode](#sw-01), [native graph write-back](#sw-02), [write-back status](#sw-03), [write coalescing](#sw-04), [idempotent replay](#sw-05), [identity provider validation](#sw-06), [store retention after instance delete](#sw-07), [untested paths](#sw-08) |
 | Runtime and restart | [Query start after restart](#sw-10), [baseline test failures](#sw-11) |
-| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [solution deploy](#sw-24), [ABI documentation](#sw-29), [secret references](#sw-30), [stored-procedure examples](#sw-31) |
+| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [ABI documentation](#sw-29), [secret references](#sw-30), [stored-procedure examples](#sw-31) |
 | Native workflows and clients | [Server, UI and client workflows](#sw-20), [required examples](#sw-25), [native plugin logs](#sw-32), [custom plugin deployment](#sw-33) |
 | Build and qualification | [Workspace clippy](#sw-17), [container suites](#sw-18), [workflow and recovery checks](#sw-21), [honest test runners](#sw-22), [example and tutorial acceptance](#sw-23), [CI selection](#sw-26), [repeated helper tests](#sw-27), [Trading dialog test](#sw-28) |
 
@@ -287,34 +287,6 @@ Server inherits Core
 The Bridge, MySQL and SQLite sources, and the profiler, keep their own workers
 running while paused; SQL Server finishes the query already in flight. The
 PostgreSQL, HTTP and gRPC sources and the SSE sink gate on Pause.
-
-<a id="sw-24"></a>
-
-### Solution deploy fails on non-persisted instances (SW-24)
-
-**Kind:** Issue. **Priority:** High for the UI. **Effort:** Small, plus
-investigation.
-
-Deploying a solution, for example "Simple Log Pipeline" from the UI, to a
-non-persisted instance creates the source and then fails:
-
-- **Query:** the path in `src/api/shared/solutions.rs` calls `core.add_query`
-  without first calling `crate::query_plugin::ensure_registered`. The
-  persisted path, the query handler and instance cloning all call it. At
-  startup the factory is registered only when the configuration declares
-  queries, so the query fails with "Query creation requires an explicitly
-  registered query factory".
-- **Reaction:** it fails with "reaction input was not bound to a UUID",
-  because the query it reads was never created.
-- **Knock-on:** after this failure, every later query create in the instance
-  fails with the same reaction-binding error, even through REST with a valid
-  source UUID, until the server restarts. The rejected reaction appears to
-  stay in Core's pending declaration and block reconciliation. Determine
-  whether Server should roll it back or Core should discard rejected pending
-  declarations.
-
-On a freshly started server, creating the same source, query and reaction
-through REST succeeds and all three run.
 
 <a id="sw-29"></a>
 
