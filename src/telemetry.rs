@@ -30,11 +30,17 @@ mod bindings;
 pub use bindings::TelemetryBindings;
 mod runtime;
 pub use runtime::StandaloneTelemetry;
+#[allow(dead_code)] // Prepared backend; public activation is a separate task.
+pub(crate) mod prometheus;
+#[allow(dead_code)]
+pub(crate) mod recorders;
 
 #[cfg(test)]
 mod runtime_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod metrics_tests;
 
 /// Optional, application-owned OTLP/HTTP JSON metrics export.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]

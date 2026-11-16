@@ -203,6 +203,7 @@ struct State {
     watcher: Option<OwnedPollingWatcher>,
     api: Option<Arc<ApiWorker>>,
     metrics: Option<Arc<AsyncMutex<crate::telemetry::MetricsRuntime>>>,
+    prometheus: Option<Arc<crate::telemetry::prometheus::PrometheusRuntime>>,
     driver: Option<Arc<Worker>>,
     driver_active: bool,
     retry_required: bool,
@@ -441,6 +442,29 @@ impl Owner {
                     self.state().metrics.take();
                 }
             }
+            let prometheus = self.state().prometheus.clone();
+            if let Some(prometheus) = prometheus {
+                let deadline = {
+                    let mut state = self.state();
+                    state.phase = CleanupPhase::DrainingCollection;
+                    state.budget.as_mut().expect("shutdown budget").begin_collection()
+                };
+                self.changed();
+                if let Err(error) = prometheus.request_shutdown(deadline) {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if let Err(error) = prometheus.wait_shutdown_until(deadline).await {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if !prometheus.is_joined().await {
+                    if let Err(error) = prometheus.wait_for_completion().await {
+                        self.state().history.cleanup.push(Arc::new(error));
+                    }
+                }
+                if prometheus.is_joined().await {
+                    self.state().prometheus.take();
+                }
+            }
             let dependencies = {
                 let mut state = self.state();
                 (
@@ -478,6 +502,7 @@ impl Owner {
                 || state.watcher.is_some()
                 || state.api.is_some()
                 || state.metrics.is_some()
+                || state.prometheus.is_some()
             {
                 None
             } else if let Some(logging) = state.owned_logging.clone() {
@@ -543,6 +568,7 @@ impl Owner {
             state.retry_required = state.cores.iter().any(Option::is_some)
                 || state.owned_logging.is_some()
                 || state.metrics.is_some()
+                || state.prometheus.is_some()
                 || state.watcher.is_some()
                 || state.api.is_some();
             if state.retry_required {
@@ -621,6 +647,7 @@ impl ServerCleanupHandle {
                     watcher: None,
                     api: None,
                     metrics: None,
+                    prometheus: None,
                     driver: None,
                     driver_active: false,
                     retry_required: false,
@@ -691,7 +718,23 @@ impl ServerCleanupHandle {
             "Metrics must be registered before cleanup"
         );
         ensure!(state.metrics.is_none(), "Metrics are already owned");
+        ensure!(state.prometheus.is_none(), "Prometheus metrics are already owned");
         state.metrics = Some(metrics);
+        Ok(())
+    }
+
+    pub(crate) fn retain_prometheus(
+        &self,
+        runtime: Arc<crate::telemetry::prometheus::PrometheusRuntime>,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Prometheus must be registered before cleanup"
+        );
+        ensure!(state.metrics.is_none(), "OTLP metrics are already owned");
+        ensure!(state.prometheus.is_none(), "Prometheus metrics are already owned");
+        state.prometheus = Some(runtime);
         Ok(())
     }
 
