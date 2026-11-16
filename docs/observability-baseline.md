@@ -279,9 +279,24 @@ across the actual callback before recorder calls, then accept it on the same
 context. It requires a freshly built fixture path supplied explicitly; ignored
 is not passed, and no ABI or Core fixture source was changed.
 The local-bundle helper has focused provenance/state-isolation tests in the
-existing Python runner. **Task 6 tests, shell checks, matching rebuild, actual
-Prometheus/OTLP observations and owned-process/port cleanup are pending
-controller execution. No new Task 6 pass is recorded here.**
+existing Python runner. Six helper/trust tests, shell checks, the matched
+local build and the focused TLS/auth boundary test passed locally.
+
+**Final sustained-processing verification is blocked.** A separate temporary
+HTTP-source pipeline received five sequential inserts. With Persistence metrics
+enabled, both Prometheus and OTLP runs processed one result and then failed on
+the second input with `native query observation is busy`. With telemetry Off,
+the same HTTP workload kept its query Running and printed all five results.
+This is not mock-specific. Both exporters delivered real observations, but
+working export does not establish sustained query processing. OTLP protobuf
+types, units, histogram bounds and shared resource were observed; counters
+correctly remained flat after the query failed. All owned processes exited and
+their ports closed.
+
+The user waived replacing the demo in this issue; the HTTP verification used
+temporary configurations, not a new committed demo. No Core fix or new GitHub
+issue was made. Native fixture proof, comprehensive/full-suite and release
+qualification remain unclaimed.
 
 Use the [same observability example](../examples/observability/README.md) for
 the final bounded walkthrough. `build-plugins` builds only Server plus the
