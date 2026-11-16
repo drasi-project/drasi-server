@@ -1244,7 +1244,6 @@ dependencies = [
  "drasi-core",
  "drasi-middleware",
  "drasi-query-common",
- "futures-util",
  "imbl",
  "log",
  "ordered-float",

@@ -1,6 +1,6 @@
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
 import type { ComputationComponent, ComputationInspection } from "../api/types";
-import { computationStatus, isInternalComponent, relationshipEndpoints, relationshipLabel } from "./computation.ts";
+import { computationStatus, isBootstrapRelationship, isInternalComponent, relationshipEndpoints, relationshipLabel } from "./computation.ts";
 
 export type CanvasComponentType = "source" | "query" | "reaction" | "computation";
 
@@ -117,6 +117,7 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
     }
     const active = relationship.representation === "NativeProvider"
       && relationship.binding === "Bound" && relationship.availability === "Available";
+    const bootstrap = isBootstrapRelationship(relationship);
     edges.push({
       id: JSON.stringify([relationship.representation, relationship.from, relationship.to]),
       source: source.id,
@@ -124,12 +125,13 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       hidden: source.hidden || target.hidden,
       type: "animatedEdge",
       label: relationshipLabel(relationship),
-      animated: active,
+      animated: active && !bootstrap,
+      data: { kind: bootstrap ? "bootstrap" : "data" },
       markerEnd: { type: MarkerType.ArrowClosed },
       style: {
-        stroke: active ? "#10b981" : "var(--drasi-edge)",
+        stroke: bootstrap ? "#14b8a6" : active ? "#10b981" : "var(--drasi-edge)",
         strokeWidth: 2,
-        strokeDasharray: relationship.representation === "ControlConnection" ? "5 5" : undefined,
+        strokeDasharray: relationship.representation === "ControlConnection" ? "5 5" : bootstrap ? "2 4" : undefined,
       },
     });
   }

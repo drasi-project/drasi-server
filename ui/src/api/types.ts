@@ -27,6 +27,7 @@ export const UNKNOWN_SOURCE_KIND = "unknown";
 export interface ComputationPort {
   id: string;
   direction: "Input" | "Output";
+  kind?: "Data" | "Bootstrap";
   schema: { id: string; version: number; encoding: string; definition: number[] };
   requirements: { required: string[] };
 }
@@ -55,6 +56,7 @@ export interface ComputationEndpoint {
 export type ComputationRelationship =
   | {
       representation: "NativeProvider";
+      kind?: "Data" | "Bootstrap";
       from: ComputationEndpoint;
       to: ComputationEndpoint;
       binding: string | null;

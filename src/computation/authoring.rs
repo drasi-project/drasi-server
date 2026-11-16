@@ -133,6 +133,51 @@ pub struct GraphComponentConfig {
     pub streams: BTreeMap<PortId, StreamId>,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
+    /// Whether the component bootstraps. When enabled (the default), each
+    /// data connection whose producer has a bootstrap output generates a
+    /// bootstrap connection to this component's bootstrap input, unless the
+    /// component declares a local `bootstrapProvider` or explicit bootstrap
+    /// connections.
+    #[serde(default = "default_enable_bootstrap")]
+    pub enable_bootstrap: bool,
+    /// The component's bootstrap provider: the ID of a provider component in
+    /// this graph, or an inline provider declaration that generates one. On a
+    /// source it serves the source's consumers; on a transformer or query it
+    /// is an exclusive local provider and the component never asks its inputs
+    /// for bootstrap data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_provider: Option<GraphBootstrapProvider>,
+}
+
+/// A component's bootstrap provider: a reference to a provider component in
+/// the graph, or an inline provider that generates a visible provider
+/// component and its bootstrap connection.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(untagged)]
+pub enum GraphBootstrapProvider {
+    Component(#[schema(value_type = String)] ComponentId),
+    Inline(Box<GraphBootstrapProviderConfig>),
+}
+
+/// An inline bootstrap provider. `kind` names a bootstrap provider factory,
+/// such as `drasi.postgres/snapshot`. Without `id` or `name` the generated
+/// component derives them from its owner.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GraphBootstrapProviderConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub id: Option<ComponentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub name: Option<ComponentName>,
+    pub kind: String,
+    pub version: Option<String>,
+    #[serde(default = "empty_configuration")]
+    pub config: serde_json::Value,
+    #[serde(default)]
+    #[schema(value_type = BTreeMap<String, GraphResourceBinding>)]
+    pub resources: BTreeMap<Arc<str>, GraphResourceBinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -158,6 +203,42 @@ pub struct GraphConnectionConfig {
     pub to: GraphEndpoint,
     #[schema(minimum = 1)]
     pub capacity: Option<usize>,
+    /// Data or bootstrap. Inferred from explicit ports, otherwise bootstrap
+    /// when the producer has no data output (a bootstrap provider).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<GraphConnectionKind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum GraphConnectionKind {
+    Data,
+    Bootstrap,
+}
+
+impl GraphConnectionKind {
+    fn port_kind(self) -> PortKind {
+        match self {
+            Self::Data => PortKind::Data,
+            Self::Bootstrap => PortKind::Bootstrap,
+        }
+    }
+
+    fn of(kind: PortKind) -> Self {
+        match kind {
+            PortKind::Data => Self::Data,
+            PortKind::Bootstrap => Self::Bootstrap,
+        }
+    }
+}
+
+impl fmt::Display for GraphConnectionKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Data => "data",
+            Self::Bootstrap => "bootstrap",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -179,37 +260,231 @@ impl GraphEndpoint {
         }
     }
 
+    fn explicit_port(&self) -> Option<&PortId> {
+        match self {
+            Self::Port { port, .. } => Some(port),
+            Self::Component(_) => None,
+        }
+    }
+
     fn resolve(
         &self,
         components: &BTreeMap<ComponentId, ComponentDescriptor>,
         primaries: &BTreeMap<ComponentId, PortPrimaries>,
         direction: PortDirection,
+        kind: GraphConnectionKind,
     ) -> Result<Endpoint> {
         let id = self.component();
         let descriptor = components
             .get(id)
             .with_context(|| format!("unknown component '{id}'"))?;
-        let explicit = match self {
-            Self::Port { port, .. } => Some(port),
-            Self::Component(_) => None,
+        let port = match (self.explicit_port(), kind) {
+            (Some(port), _) => {
+                let found = find_port(descriptor, direction, port)?;
+                anyhow::ensure!(
+                    found.kind() == kind.port_kind(),
+                    "{kind} connection uses {} port '{port}' on component '{id}'",
+                    GraphConnectionKind::of(found.kind())
+                );
+                port.clone()
+            }
+            (None, GraphConnectionKind::Data) if !has_data_port(descriptor, direction) => {
+                anyhow::bail!(
+                    "component '{id}' has no data {} port{}",
+                    direction_name(direction),
+                    if bootstrap_port(descriptor, direction)?.is_some() {
+                        "; it takes part only in bootstrap, so use a bootstrap connection"
+                    } else {
+                        ""
+                    }
+                )
+            }
+            (None, GraphConnectionKind::Data) => primaries
+                .get(id)
+                .cloned()
+                .unwrap_or_default()
+                .resolve(descriptor.ports(), direction, None)
+                .with_context(|| format!("resolve {direction:?} port on component '{id}'"))?,
+            (None, GraphConnectionKind::Bootstrap) => bootstrap_port(descriptor, direction)?
+                .with_context(|| {
+                    format!(
+                        "component '{id}' has no bootstrap {} port; its kind does not take part in bootstrap",
+                        direction_name(direction)
+                    )
+                })?,
         };
-        let primary = primaries.get(id).cloned().unwrap_or_default();
-        let port = primary
-            .resolve(descriptor.ports(), direction, explicit)
-            .with_context(|| format!("resolve {direction:?} port on component '{id}'"))?;
         Ok(Endpoint::new(id.clone(), port))
     }
 }
 
+fn direction_name(direction: PortDirection) -> &'static str {
+    match direction {
+        PortDirection::Input => "input",
+        PortDirection::Output => "output",
+    }
+}
+
+fn find_port<'a>(
+    descriptor: &'a ComponentDescriptor,
+    direction: PortDirection,
+    port: &PortId,
+) -> Result<&'a PortDescriptor> {
+    descriptor
+        .ports()
+        .iter()
+        .find(|candidate| candidate.id() == port && candidate.direction() == direction)
+        .with_context(|| {
+            format!(
+                "component '{}' has no {} port '{port}'",
+                descriptor.id(),
+                direction_name(direction)
+            )
+        })
+}
+
+/// The component's only bootstrap port of a direction, if it has one.
+fn bootstrap_port(
+    descriptor: &ComponentDescriptor,
+    direction: PortDirection,
+) -> Result<Option<PortId>> {
+    let mut ports = descriptor
+        .ports()
+        .iter()
+        .filter(|port| port.direction() == direction && port.kind() == PortKind::Bootstrap)
+        .map(PortDescriptor::id);
+    match (ports.next(), ports.next()) {
+        (None, _) => Ok(None),
+        (Some(port), None) => Ok(Some(port.clone())),
+        (Some(first), Some(second)) => anyhow::bail!(
+            "component '{}' has ambiguous bootstrap {} ports '{first}' and '{second}'; name the port",
+            descriptor.id(),
+            direction_name(direction)
+        ),
+    }
+}
+
+fn has_data_port(descriptor: &ComponentDescriptor, direction: PortDirection) -> bool {
+    descriptor
+        .ports()
+        .iter()
+        .any(|port| port.direction() == direction && port.kind() == PortKind::Data)
+}
+
+impl GraphConnectionConfig {
+    /// The declared kind, else the kind of an explicit port, else bootstrap
+    /// when the producer has only bootstrap outputs (a bootstrap provider).
+    fn resolve_kind(
+        &self,
+        components: &BTreeMap<ComponentId, ComponentDescriptor>,
+    ) -> Result<GraphConnectionKind> {
+        let mut implied = None;
+        for (endpoint, direction) in [
+            (&self.from, PortDirection::Output),
+            (&self.to, PortDirection::Input),
+        ] {
+            let Some(port) = endpoint.explicit_port() else {
+                continue;
+            };
+            let descriptor = components
+                .get(endpoint.component())
+                .with_context(|| format!("unknown component '{}'", endpoint.component()))?;
+            let kind = GraphConnectionKind::of(find_port(descriptor, direction, port)?.kind());
+            match implied {
+                Some(other) if other != kind => anyhow::bail!(
+                    "connection from '{}' to '{}' joins a {other} port to a {kind} port",
+                    self.from.component(),
+                    self.to.component()
+                ),
+                _ => implied = Some(kind),
+            }
+        }
+        match (self.kind, implied) {
+            (Some(kind), Some(implied)) if kind != implied => anyhow::bail!(
+                "connection from '{}' to '{}' is declared {kind} but names a {implied} port",
+                self.from.component(),
+                self.to.component()
+            ),
+            (Some(kind), _) | (None, Some(kind)) => Ok(kind),
+            (None, None) => {
+                let from = components
+                    .get(self.from.component())
+                    .with_context(|| format!("unknown component '{}'", self.from.component()))?;
+                Ok(
+                    if !has_data_port(from, PortDirection::Output)
+                        && bootstrap_port(from, PortDirection::Output)?.is_some()
+                    {
+                        GraphConnectionKind::Bootstrap
+                    } else {
+                        GraphConnectionKind::Data
+                    },
+                )
+            }
+        }
+    }
+}
+
+impl GraphComponentConfig {
+    fn local_provider(&self) -> Result<Option<GraphComponentConfig>> {
+        let Some(GraphBootstrapProvider::Inline(provider)) = &self.bootstrap_provider else {
+            return Ok(None);
+        };
+        Ok(Some(GraphComponentConfig {
+            id: match &provider.id {
+                Some(id) => id.clone(),
+                None => ComponentId::derive_owned(&self.id, "bootstrap-provider")?,
+            },
+            name: match &provider.name {
+                Some(name) => name.clone(),
+                None => ComponentName::try_new(format!("{}-bootstrap", self.name))?,
+            },
+            kind: provider.kind.clone(),
+            version: provider.version.clone(),
+            config: provider.config.clone(),
+            resources: provider.resources.clone(),
+            streams: BTreeMap::new(),
+            auto_start: self.auto_start,
+            enable_bootstrap: true,
+            bootstrap_provider: None,
+        }))
+    }
+
+    fn provider_id(&self) -> Result<Option<ComponentId>> {
+        Ok(match &self.bootstrap_provider {
+            None => None,
+            Some(GraphBootstrapProvider::Component(id)) => Some(id.clone()),
+            Some(GraphBootstrapProvider::Inline(_)) => self.local_provider()?.map(|node| node.id),
+        })
+    }
+}
+
 impl ComputationGraphConfig {
+    /// Declared components followed by the provider components that inline
+    /// `bootstrapProvider` declarations generate. Generated components are
+    /// ordinary graph components.
+    fn expanded_components(&self) -> Result<Vec<GraphComponentConfig>> {
+        let mut components = self.components.clone();
+        for component in &self.components {
+            if let Some(provider) = component.local_provider().with_context(|| {
+                format!(
+                    "generate bootstrap provider for component '{}'",
+                    component.id
+                )
+            })? {
+                components.push(provider);
+            }
+        }
+        Ok(components)
+    }
+
     fn validate(&self) -> Result<BTreeMap<ResourceId, ComputationResourceConfig>> {
         anyhow::ensure!(
             self.default_pipe_capacity > 0,
             "defaultPipeCapacity must be positive"
         );
+        let expanded = self.expanded_components()?;
         let mut components = BTreeSet::new();
         let mut names = BTreeSet::new();
-        for component in &self.components {
+        for component in &expanded {
             anyhow::ensure!(
                 components.insert(component.id.clone()),
                 "duplicate computation component '{}'",
@@ -240,6 +515,26 @@ impl ComputationGraphConfig {
                     component.id
                 );
             }
+        }
+        for component in &self.components {
+            let Some(provider) = component.provider_id()? else {
+                continue;
+            };
+            anyhow::ensure!(
+                component.enable_bootstrap,
+                "component '{}' declares a bootstrapProvider but disables bootstrap",
+                component.id
+            );
+            anyhow::ensure!(
+                provider != component.id,
+                "component '{}' cannot be its own bootstrapProvider",
+                component.id
+            );
+            anyhow::ensure!(
+                components.contains(&provider),
+                "component '{}' references unknown bootstrapProvider '{provider}'",
+                component.id
+            );
         }
         for connection in &self.connections {
             anyhow::ensure!(
@@ -283,6 +578,7 @@ impl ComputationGraphConfig {
 
     fn resolve(&self, factories: &FactoryRegistry) -> Result<ComputationConfig> {
         let resources = self.validate()?;
+        let expanded = self.expanded_components()?;
         let mut definition = drasi_lib::management::DesiredInstance::default().topology;
         for (id, recipe) in &resources {
             let ownership = match recipe {
@@ -317,7 +613,8 @@ impl ComputationGraphConfig {
             .collect();
         let mut descriptors = BTreeMap::new();
         let mut primaries = BTreeMap::new();
-        for component in &self.components {
+        let mut roles = BTreeMap::new();
+        for component in &expanded {
             let factory = factories
                 .get_by_name(&component.kind, component.version.as_deref())
                 .with_context(|| format!("resolve component '{}'", component.id))?;
@@ -355,13 +652,12 @@ impl ComputationGraphConfig {
             let primary = factory.primary_ports();
             primary.validate(specification.descriptor.ports())?;
             primaries.insert(component.id.clone(), primary);
+            roles.insert(component.id.clone(), specification.role);
+            // Bootstrap outputs carry addressed sessions, not published streams.
             let mut streams = BTreeMap::new();
-            for port in specification
-                .descriptor
-                .ports()
-                .iter()
-                .filter(|port| port.direction() == PortDirection::Output)
-            {
+            for port in specification.descriptor.ports().iter().filter(|port| {
+                port.direction() == PortDirection::Output && port.kind() == PortKind::Data
+            }) {
                 streams.insert(
                     port.id().clone(),
                     match component.streams.get(port.id()) {
@@ -375,7 +671,7 @@ impl ComputationGraphConfig {
                     .streams
                     .keys()
                     .all(|port| streams.contains_key(port)),
-                "component '{}' stream binding must name an output port",
+                "component '{}' stream binding must name a data output port",
                 component.id
             );
             descriptors.insert(component.id.clone(), specification.descriptor.clone());
@@ -392,21 +688,117 @@ impl ComputationGraphConfig {
                 construction: ComponentConstruction::Factory(specification),
             });
         }
+        let bootstrap_relationship = |definition: EdgeDefinition, capacity| DesiredRelationship {
+            policy: RelationshipPolicy::default(),
+            definition,
+            pipe: DesiredPipe::Bounded { capacity },
+        };
+        let mut local_providers = BTreeMap::new();
+        for component in &self.components {
+            let Some(provider) = component.provider_id()? else {
+                continue;
+            };
+            anyhow::ensure!(
+                roles[&provider] == ComponentRole::BootstrapProvider,
+                "bootstrapProvider '{provider}' of component '{}' is a {:?} component, not a bootstrap provider",
+                component.id,
+                roles[&provider]
+            );
+            anyhow::ensure!(
+                bootstrap_port(&descriptors[&component.id], PortDirection::Input)?.is_some(),
+                "component '{}' (kind '{}') has no bootstrap input, so it cannot declare a bootstrapProvider",
+                component.id,
+                component.kind
+            );
+            local_providers.insert(component.id.clone(), provider);
+        }
+        let enabled: BTreeMap<_, _> = expanded
+            .iter()
+            .map(|component| (component.id.clone(), component.enable_bootstrap))
+            .collect();
+        let mut bootstrap_edges = BTreeSet::new();
+        let mut explicit_bootstrap = BTreeSet::new();
+        let mut data_inputs = Vec::new();
         for connection in &self.connections {
-            definition.relationships.push(DesiredRelationship {
-                definition: EdgeDefinition::new(
-                    connection
-                        .from
-                        .resolve(&descriptors, &primaries, PortDirection::Output)?,
-                    connection
-                        .to
-                        .resolve(&descriptors, &primaries, PortDirection::Input)?,
+            let kind = connection.resolve_kind(&descriptors)?;
+            let edge = EdgeDefinition::new(
+                connection
+                    .from
+                    .resolve(&descriptors, &primaries, PortDirection::Output, kind)?,
+                connection
+                    .to
+                    .resolve(&descriptors, &primaries, PortDirection::Input, kind)?,
+            );
+            let capacity = connection.capacity.unwrap_or(self.default_pipe_capacity);
+            match kind {
+                GraphConnectionKind::Data => {
+                    data_inputs.push((edge.from.component.clone(), edge.to.component.clone()));
+                    definition.relationships.push(DesiredRelationship {
+                        definition: edge,
+                        policy: RelationshipPolicy::default(),
+                        pipe: DesiredPipe::Bounded { capacity },
+                    });
+                }
+                GraphConnectionKind::Bootstrap => {
+                    let (from, to) = (&edge.from.component, &edge.to.component);
+                    anyhow::ensure!(
+                        enabled[to],
+                        "component '{to}' disables bootstrap but has a bootstrap connection from '{from}'"
+                    );
+                    if let Some(provider) = local_providers.get(to) {
+                        anyhow::ensure!(
+                            provider == from,
+                            "component '{to}' has the exclusive local bootstrapProvider '{provider}'; remove its bootstrap connection from '{from}'"
+                        );
+                    }
+                    explicit_bootstrap.insert(to.clone());
+                    bootstrap_edges.insert(edge.clone());
+                    definition
+                        .relationships
+                        .push(bootstrap_relationship(edge, capacity));
+                }
+            }
+        }
+        let mut generated = Vec::new();
+        for (component, provider) in &local_providers {
+            generated.push(EdgeDefinition::new(
+                Endpoint::new(
+                    provider.clone(),
+                    bootstrap_port(&descriptors[provider], PortDirection::Output)?.with_context(
+                        || format!("bootstrap provider '{provider}' has no bootstrap output"),
+                    )?,
                 ),
-                policy: RelationshipPolicy::default(),
-                pipe: DesiredPipe::Bounded {
-                    capacity: connection.capacity.unwrap_or(self.default_pipe_capacity),
-                },
-            });
+                Endpoint::new(
+                    component.clone(),
+                    bootstrap_port(&descriptors[component], PortDirection::Input)?
+                        .context("bootstrap input")?,
+                ),
+            ));
+        }
+        for (from, to) in data_inputs {
+            if !enabled[&to]
+                || local_providers.contains_key(&to)
+                || explicit_bootstrap.contains(&to)
+            {
+                continue;
+            }
+            let (Some(output), Some(input)) = (
+                bootstrap_port(&descriptors[&from], PortDirection::Output)?,
+                bootstrap_port(&descriptors[&to], PortDirection::Input)?,
+            ) else {
+                continue;
+            };
+            generated.push(EdgeDefinition::new(
+                Endpoint::new(from, output),
+                Endpoint::new(to, input),
+            ));
+        }
+        for edge in generated {
+            if bootstrap_edges.insert(edge.clone()) {
+                definition
+                    .relationships
+                    .push(bootstrap_relationship(edge, self.default_pipe_capacity));
+            }
         }
         let config = ComputationConfig { definition };
         validate_definition(&config)?;
@@ -419,6 +811,10 @@ fn default_capacity() -> usize {
 }
 
 fn default_auto_start() -> bool {
+    true
+}
+
+fn default_enable_bootstrap() -> bool {
     true
 }
 

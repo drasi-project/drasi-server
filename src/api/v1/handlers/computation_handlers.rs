@@ -278,10 +278,25 @@ pub async fn inspect_computation_graph(
         .map_err(|error| operation_error(&instance_id, "inspect", error))?;
     let mut relationships = Vec::new();
     let mut resources = Vec::new();
+    let port_kind = |endpoint: &drasi_lib::computation::v1::Endpoint| {
+        snapshot
+            .desired
+            .nodes
+            .iter()
+            .find(|node| node.descriptor.id() == &endpoint.component)
+            .and_then(|node| {
+                node.descriptor
+                    .ports()
+                    .iter()
+                    .find(|port| port.id() == &endpoint.port)
+            })
+            .map_or("Data".to_string(), |port| format!("{:?}", port.kind()))
+    };
     for entity in topology.nodes.values() {
         match entity {
             GraphEntity::Pipe(pipe) => relationships.push(serde_json::json!({
                 "representation": "NativeProvider",
+                "kind": port_kind(&pipe.relationship.definition.from),
                 "from": pipe.relationship.definition.from,
                 "to": pipe.relationship.definition.to,
                 "binding": pipe.observed.as_ref().map(|value| format!("{:?}", value.binding)),

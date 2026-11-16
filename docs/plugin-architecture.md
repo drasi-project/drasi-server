@@ -116,16 +116,30 @@ matching names. Native sources must independently negotiate recovery-v1.
 This recipe does not turn a volatile source or an old ABI 1.0 plugin into a
 replayable source, and it does not provide a database bootstrap implementation.
 
-Native bootstrap-v1 factories use a graph-owned `Bootstrap` resource with a
-`nativeBootstrap` recipe. The fields are `component` (the owning query),
-`implementation`, `configurationVersion`, `configuration` (unresolved
-`ConfigurationValue` entries) and optional `sourceProgress`. The latter is
-required exactly when negotiated by the factory and must name the same actual
-checkpoint owner as the query's `source_progress` dependency. The bootstrap
-resource declares that `Checkpoint` dependency and every referenced `SecretStore`
-in `resource_dependencies`. The query binds it in its `bootstrap` slot.
-Providers cannot be shared across queries or instances. Cleanup joins work and
-revokes retired progress readers before releasing prerequisite resources.
+Native bootstrap-v1 factories are graph components, not resources. Each loaded
+bootstrap factory is also registered as a `BootstrapProvider` component kind
+(for example `drasi.postgres/shared-row-bootstrap`) with one bootstrap output
+port, `snapshot`. A provider node is connected with an ordinary bootstrap edge
+(`PortKind::Bootstrap`) to the bootstrap input of the component it serves, and
+bootstrap sessions travel over that pipe like any other component traffic.
+Bootstrap edges use `RequiresRunning` activation because sessions are addressed
+to their requester.
+
+- **Source provider**: connect the provider to a native source's `bootstrap`
+  input. The source coordinates bootstrap: downstream components connect the
+  source's `snapshot` output to their `bootstrap` input, and the source relays
+  each session to its provider using its own progress coordinator
+  (`source_progress` or `consumer_progress`).
+- **Local provider**: connect the provider directly to a query or transformer's
+  `bootstrap` input. That component then never asks its inputs for bootstrap
+  data.
+
+A provider whose factory negotiates source progress declares a
+`source_progress` dependency naming each bootstrapping query's actual
+`sourceProgress` owner. Provider configuration keeps unresolved
+`ConfigurationValue` entries, so secret references stay references. Queries no
+longer have a `bootstrap` resource slot. Cleanup joins work and revokes retired
+progress readers before releasing prerequisite resources.
 
 Native consumer-v1 factories bind a `consumer` dependency to a graph-owned
 `IndexBackend` resource with this recipe:

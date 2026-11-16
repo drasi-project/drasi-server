@@ -40,8 +40,12 @@ credentials checked into the graph.
 The source settings are the native `MySqlConfig`: explicitly selected `items`,
 ordinary `changes`, `replay: server`, and an opt-in coordinated
 `start: {mode: snapshot, lock_timeout_ms: 5000}`. Each query has its own
-`sourceProgress` and `nativeBootstrap` resource; the source has the corresponding
-fixed `consumerProgress` set. The sink settings bind the `all-items` and
+`sourceProgress` resource; the source has the corresponding fixed
+`consumerProgress` set. A visible `items-bootstrap` provider node
+(`drasi.mysql/shared-row-bootstrap`) is connected by a bootstrap edge to the
+source's `bootstrap` input, and each query has a bootstrap edge from the
+source's `snapshot` output. The source coordinates each query's bootstrap
+session and relays it to the provider. The sink settings bind the `all-items` and
 `selected-items` producers to their output streams and use parameter-only templates such as:
 
 ```text

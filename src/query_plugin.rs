@@ -51,10 +51,7 @@ mod tests {
         let selected = core
             .query_factory_implementation()
             .expect("registered query factory");
-        assert_eq!(
-            selected.name.as_ref(),
-            "drasi.experimental/indexed-query/ordinary"
-        );
+        assert_eq!(selected.name.as_ref(), "drasi.query/continuous");
         ensure_registered(&core, &registry).await?;
         assert_eq!(core.query_factory_implementation(), Some(selected));
         core.shutdown().await?;

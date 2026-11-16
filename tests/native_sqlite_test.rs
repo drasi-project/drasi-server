@@ -2,7 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 use anyhow::{Context, Result};
-use drasi_lib::computation::v1::{ComponentName, ConfigurationValue, ResourceId};
+use drasi_lib::computation::v1::{
+    ComponentConstruction, ComponentName, ComponentSpecification, Endpoint, PortId,
+};
 use drasi_server::{
     api::v1::routes::build_v1_router,
     computation::{configuration_from_snapshot, register_components, ComputationConfig},
@@ -20,43 +22,67 @@ mod recipe;
 const DEADLINE: Duration = Duration::from_secs(10);
 
 async fn reject_mismatched_pairings(
+    instance: &str,
     config: &ComputationConfig,
     plugins: &PluginRegistry,
     database: &std::path::Path,
 ) -> Result<()> {
-    let coordinator = ResourceId::try_new("source-bootstrap")?;
-    let bootstrap = ResourceId::try_new("first-snapshot")?;
-    let mut different_config = config.clone();
-    different_config
-        .definition
-        .resource_configurations
-        .get_mut(&coordinator)
-        .context("coordinator recipe")?["configuration"]["stream"] =
-        serde_json::to_value(ConfigurationValue::Literal(json!("different/out")))?;
-    let mut two_modes = config.clone();
-    two_modes
-        .definition
-        .resource_configurations
-        .get_mut(&coordinator)
-        .context("coordinator recipe")?["sourceProgress"] = json!("first-progress");
-    let mut different_owner = config.clone();
-    different_owner
-        .definition
-        .resource_configurations
-        .get_mut(&bootstrap)
-        .context("bootstrap recipe")?["sourceProgress"] = json!("second-progress");
-    let mut unpaired = config.clone();
-    unpaired
-        .definition
-        .resource_configurations
-        .get_mut(&bootstrap)
-        .context("bootstrap recipe")?
-        .as_object_mut()
-        .context("bootstrap object")?
-        .remove("sourceBootstrap");
-    for invalid in [different_config, two_modes, different_owner, unpaired] {
+    fn component<'a>(
+        config: &'a mut ComputationConfig,
+        name: &str,
+    ) -> Result<&'a mut ComponentSpecification> {
+        match &mut config
+            .definition
+            .components
+            .iter_mut()
+            .find(|component| component.name.as_str() == name)
+            .with_context(|| format!("component {name}"))?
+            .construction
+        {
+            ComponentConstruction::Factory(specification) => Ok(specification),
+            ComponentConstruction::External { .. } => anyhow::bail!("{name} is external"),
+        }
+    }
+    fn endpoint(config: &ComputationConfig, name: &str, port: &str) -> Result<Endpoint> {
+        let component = config
+            .definition
+            .components
+            .iter()
+            .find(|component| component.name.as_str() == name)
+            .with_context(|| format!("component {name}"))?;
+        Ok(Endpoint::new(
+            component.descriptor.id().clone(),
+            PortId::try_new(port)?,
+        ))
+    }
+    let provider_edge = |config: &ComputationConfig| -> Result<usize> {
+        let provider = endpoint(config, "source-bootstrap", "snapshot")?;
+        config
+            .definition
+            .relationships
+            .iter()
+            .position(|relationship| relationship.definition.from == provider)
+            .context("provider bootstrap edge")
+    };
+    let mut duplicate_provider = config.clone();
+    let mut extra = duplicate_provider.definition.relationships[provider_edge(config)?].clone();
+    extra.definition.to = endpoint(config, "first", "bootstrap")?;
+    duplicate_provider.definition.relationships.push(extra);
+    let mut detached = config.clone();
+    let index = provider_edge(config)?;
+    detached.definition.relationships[index].definition.to =
+        endpoint(config, "first", "bootstrap")?;
+    let mut missing_progress = config.clone();
+    component(&mut missing_progress, "source")?
+        .dependencies
+        .clear();
+    for (label, invalid) in [
+        ("duplicate provider", duplicate_provider),
+        ("detached provider", detached),
+        ("missing progress", missing_progress),
+    ] {
         let core = crate::query_plugin::builder()
-            .with_id(recipe::INSTANCE)
+            .with_id(instance)
             .build()
             .await?;
         let constructed =
@@ -65,7 +91,7 @@ async fn reject_mismatched_pairings(
         let cleanup = core.shutdown().await;
         anyhow::ensure!(
             constructed.is_err(),
-            "invalid paired Server definition was accepted"
+            "invalid paired Server definition was accepted: {label}"
         );
         cleanup?;
         let tables: u64 = rusqlite::Connection::open(database)?.query_row(
@@ -75,13 +101,14 @@ async fn reject_mismatched_pairings(
         )?;
         anyhow::ensure!(
             tables == 0,
-            "rejected configuration initialized the SQLite journal"
+            "rejected configuration initialized the SQLite journal: {label}"
         );
     }
     Ok(())
 }
 
 async fn results(
+    instance: &str,
     client: &reqwest::Client,
     base: &str,
     queries: &[&str],
@@ -94,7 +121,7 @@ async fn results(
                 let body: Value = client
                     .get(format!(
                         "{base}/instances/{}/queries/{query}/results",
-                        recipe::INSTANCE,
+                        instance,
                     ))
                     .send()
                     .await?
@@ -119,6 +146,14 @@ async fn results(
 }
 
 async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
+    // Native coordinators are registered in process-global state keyed by
+    // instance and graph; parallel tests share the graph ID.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let instance = format!(
+        "{}-{}",
+        recipe::INSTANCE,
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     let directory = tempfile::tempdir()?;
     let database = directory.path().join("source.db");
     rusqlite::Connection::open(&database)?.execute_batch(
@@ -152,14 +187,14 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         plugins.register_computation_plugin(recipe::load(&libraries, package)?)?;
     }
     if mode == recipe::Mode::Shared {
-        reject_mismatched_pairings(&config, &plugins, &database).await?;
+        reject_mismatched_pairings(&instance, &config, &plugins, &database).await?;
     }
     let plugins = Arc::new(RwLock::new(plugins));
     let mut current = roundtrip;
     for round in 0..2 {
         let core = Arc::new(
             crate::query_plugin::builder()
-                .with_id(recipe::INSTANCE)
+                .with_id(instance.as_str())
                 .build()
                 .await?,
         );
@@ -193,7 +228,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         }
         let instances = InstanceRegistry::new();
         instances
-            .add(recipe::INSTANCE.into(), core.clone())
+            .add(instance.clone(), core.clone())
             .await
             .map_err(anyhow::Error::msg)?;
         let router = build_v1_router(
@@ -238,6 +273,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
             );
             if round == 0 {
                 results(
+                    &instance,
                     &client,
                     &base,
                     mode.queries(),
@@ -251,6 +287,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                     .await?
                     .error_for_status()?;
                 results(
+                    &instance,
                     &client,
                     &base,
                     mode.queries(),
@@ -272,6 +309,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                     .await?
                     .error_for_status()?;
                 results(
+                    &instance,
                     &client,
                     &base,
                     mode.queries(),
@@ -301,6 +339,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                 );
             } else {
                 results(
+                    &instance,
                     &client,
                     &base,
                     mode.queries(),
@@ -314,6 +353,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
                     .await?
                     .error_for_status()?;
                 results(
+                    &instance,
                     &client,
                     &base,
                     mode.queries(),
@@ -338,7 +378,7 @@ async fn native_sqlite_server(mode: recipe::Mode) -> Result<()> {
         let _ = stop.send(());
         let http_cleanup = tokio::time::timeout(DEADLINE, server).await;
         let cleanup = core.shutdown().await;
-        instances.remove(recipe::INSTANCE).await;
+        instances.remove(&instance).await;
         current = result?;
         http_cleanup???;
         cleanup?;

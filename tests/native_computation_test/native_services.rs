@@ -4,7 +4,9 @@ use drasi_core::{
     interface::{FailureMode, StorageDurability},
     models::{ElementMetadata, ElementPropertyMap, ElementReference},
 };
-use drasi_host_sdk::computation::NativeConsumerResource;
+use drasi_host_sdk::computation::{
+    NativeBootstrapFactory, NativeBootstrapNodeFactory, NativeConsumerResource,
+};
 use drasi_lib::management::{
     DesiredInstance, ManagementResourceResolver, RecoveryRetirementAuthorization,
 };
@@ -15,9 +17,6 @@ use std::{
 };
 
 const INSTANCE: &str = "native-services";
-
-#[path = "composite_services.rs"]
-mod composite_services;
 
 #[tokio::test(flavor = "current_thread")]
 async fn native_service_discovery_reports_negotiated_factories_without_configuration() -> Result<()>
@@ -96,7 +95,9 @@ fn desired(name: &str, spec: ComponentSpecification) -> DesiredComponent {
             .descriptor
             .ports()
             .iter()
-            .filter(|port| port.direction() == PortDirection::Output)
+            .filter(|port| {
+                port.direction() == PortDirection::Output && port.kind() == PortKind::Data
+            })
             .map(|port| {
                 (
                     port.id().clone(),
@@ -347,7 +348,6 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
                 ]),
                 dependencies: BTreeMap::from([
                     ("indexes".into(), vec![indexes]),
-                    ("bootstrap".into(), vec![resource("bootstrap")]),
                     ("source_progress".into(), vec![resource("progress")]),
                     ("catalog".into(), vec![resource("catalog")]),
                 ]),
@@ -403,6 +403,67 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
     Ok(topology)
 }
 
+/// Adds the query's exclusive local bootstrap provider node, `bootstrap`, and
+/// its bootstrap edge to the query's bootstrap input.
+fn add_bootstrap_provider(
+    topology: &mut DesiredTopology,
+    factory: Arc<NativeBootstrapFactory>,
+    configuration: BTreeMap<Arc<str>, ConfigurationValue>,
+) -> Result<()> {
+    let node = NativeBootstrapNodeFactory::new(factory);
+    let specification = ComponentSpecification {
+        descriptor: NativeBootstrapNodeFactory::component_descriptor(id("bootstrap"))?,
+        role: ComponentRole::BootstrapProvider,
+        completion: None,
+        implementation: node.descriptor().implementation.clone(),
+        configuration_version: node.descriptor().configuration_version,
+        configuration,
+        dependencies: if node
+            .descriptor()
+            .dependencies
+            .contains_key("source_progress")
+        {
+            BTreeMap::from([("source_progress".into(), vec![resource("progress")])])
+        } else {
+            BTreeMap::new()
+        },
+    };
+    topology
+        .components
+        .push(desired("bootstrap", specification));
+    topology.relationships.push(DesiredRelationship {
+        definition: EdgeDefinition::new(
+            endpoint("bootstrap", "snapshot"),
+            endpoint("query", "bootstrap"),
+        ),
+        policy: RelationshipPolicy {
+            activation: ActivationCoupling::RequiresRunning,
+            ..Default::default()
+        },
+        pipe: DesiredPipe::Bounded { capacity: 8 },
+    });
+    Ok(())
+}
+
+fn by_name(components: &[DesiredComponent]) -> BTreeMap<String, &DesiredComponent> {
+    components
+        .iter()
+        .map(|component| (component.name.to_string(), component))
+        .collect()
+}
+
+fn provider_mut(topology: &mut DesiredTopology) -> &mut ComponentSpecification {
+    let component = topology
+        .components
+        .iter_mut()
+        .find(|component| component.descriptor.id() == &id("bootstrap"))
+        .expect("bootstrap provider node");
+    let ComponentConstruction::Factory(specification) = &mut component.construction else {
+        panic!("factory-constructed provider");
+    };
+    specification
+}
+
 fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
     let mut topology = bootstrap_topology(json!({"kind":"rocksdbIndexes","path":path}))?;
     declare(
@@ -411,9 +472,7 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
         ResourceRole::SecretStore,
         json!({"kind":"configuration"}),
     );
-    let metadata = recovery_plugin()?.bootstrap_factories()[1]
-        .metadata()
-        .clone();
+    let factory = recovery_plugin()?.bootstrap_factories()[1].clone();
     let configuration = BTreeMap::<Arc<str>, _>::from([
         (
             "durability".into(),
@@ -436,20 +495,7 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
             },
         ),
     ]);
-    declare(
-        &mut topology,
-        "bootstrap",
-        ResourceRole::Bootstrap,
-        json!({"kind":"nativeBootstrap","component":id("query"),"implementation":metadata.implementation,
-            "configurationVersion":metadata.configuration_version,"configuration":configuration,"sourceProgress":"progress"}),
-    );
-    topology.resource_dependencies.insert(
-        resource("bootstrap"),
-        BTreeMap::from([
-            (resource("progress"), ResourceRole::Checkpoint),
-            (resource("secrets"), ResourceRole::SecretStore),
-        ]),
-    );
+    add_bootstrap_provider(&mut topology, factory, configuration)?;
     Ok(ComputationConfig {
         definition: topology,
     })
@@ -459,15 +505,14 @@ fn bootstrap_config(path: &Path) -> Result<ComputationConfig> {
 async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() -> Result<()> {
     let plugin = drasi_host_sdk::computation::load(artifact("drasi_computation_bootstrap_sqlite"))?;
     assert!(plugin.factories().is_empty());
-    let metadata = plugin
+    let file_bootstrap = plugin
         .bootstrap_factories()
         .iter()
         .find(|factory| {
             factory.metadata().implementation.name.as_ref() == "drasi.sqlite/file-bootstrap"
         })
-        .context("SQLite file bootstrap factory")?
-        .metadata()
-        .clone();
+        .cloned()
+        .context("SQLite file bootstrap factory")?;
     let mut plugins = factories();
     plugins.register_computation_plugin(plugin)?;
     let directory = tempfile::tempdir()?;
@@ -505,17 +550,9 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
                 })),
             ),
         ]);
-        declare(
-            &mut topology,
-            "bootstrap",
-            ResourceRole::Bootstrap,
-            json!({"kind":"nativeBootstrap","component":id("query"),
-                "implementation":metadata.implementation,
-                "configurationVersion":metadata.configuration_version,
-                "configuration":configuration}),
-        );
+        add_bootstrap_provider(&mut topology, file_bootstrap.clone(), configuration)?;
         assert!(
-            topology.resource_dependencies.is_empty(),
+            provider_mut(&mut topology).dependencies.is_empty(),
             "file bootstrap needs no fabricated source-progress dependency"
         );
         let config = ComputationConfig {
@@ -546,8 +583,8 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
             let rebuilt = configuration_from_snapshot(&saved)?
                 .context("file bootstrap configuration snapshot")?;
             assert_eq!(
-                rebuilt.definition.resource_configurations,
-                config.definition.resource_configurations
+                by_name(&rebuilt.definition.components),
+                by_name(&config.definition.components)
             );
             Ok::<_, anyhow::Error>(())
         }
@@ -625,11 +662,12 @@ async fn native_bootstrap_server_recipes_restore_snapshot_and_preserve_secret_re
             config.definition.resource_configurations
         );
         assert!(!serde_json::to_string(&saved)?.contains("fixture-only"));
+        assert_eq!(
+            by_name(&rebuilt.definition.components),
+            by_name(&config.definition.components)
+        );
         let mut bad = core.desired_configuration()?.desired.clone();
-        bad.topology
-            .resource_configurations
-            .get_mut(&resource("bootstrap"))
-            .unwrap()["configurationVersion"] = json!(999);
+        provider_mut(&mut bad.topology).configuration_version = 999;
         assert!(core
             .apply_desired_state(
                 core.desired_configuration()?.revision,
@@ -645,7 +683,9 @@ async fn native_bootstrap_server_recipes_restore_snapshot_and_preserve_secret_re
         core.shutdown().await?;
     }
     let mut bad = config;
-    bad.definition.resource_dependencies.clear();
+    bad.definition
+        .resource_configurations
+        .remove(&resource("progress"));
     assert!(validate_definition(&bad).is_err());
     Ok(())
 }
@@ -703,7 +743,16 @@ async fn native_bootstrap_domain_retires_actual_progress_and_metadata_resources(
             .await?;
         }
         core.start().await?;
-        assert!(core.reconcile_desired_state().await?.converged());
+        // The provider and durable output start asynchronously; wait for convergence.
+        let mut report = core.reconcile_desired_state().await?;
+        for _ in 0..20 {
+            if report.converged() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            report = core.reconcile_desired_state().await?;
+        }
+        assert!(report.converged(), "{report:?}");
         assert_eq!(
             core.get_query_results_by_name(&ComponentName::try_new("query")?)
                 .await?
@@ -719,11 +768,12 @@ async fn native_bootstrap_domain_retires_actual_progress_and_metadata_resources(
             let mut desired = core.desired_configuration()?.desired.clone();
             desired
                 .topology
-                .resources
-                .iter_mut()
-                .find(|spec| spec.id == resource("bootstrap"))
-                .unwrap()
-                .binding = "replacement".into();
+                .components
+                .retain(|component| component.descriptor.id() != &id("bootstrap"));
+            desired
+                .topology
+                .relationships
+                .retain(|edge| edge.definition.from.component != id("bootstrap"));
             core.apply_desired_state(
                 core.desired_configuration()?.revision,
                 "retire",

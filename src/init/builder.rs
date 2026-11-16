@@ -59,6 +59,7 @@ pub fn build_config(
             storage_backend: None,
             outbox_capacity: 1000,
             bootstrap_timeout_secs: 300,
+            bootstrap_provider: None,
         }]
     } else {
         vec![]

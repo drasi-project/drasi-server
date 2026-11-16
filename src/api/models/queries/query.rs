@@ -59,6 +59,11 @@ pub struct QueryConfigDto {
     pub outbox_capacity: usize,
     #[serde(default = "default_bootstrap_timeout_secs")]
     pub bootstrap_timeout_secs: u64,
+    /// Local bootstrap provider component. When set, the query bootstraps only from
+    /// this provider and never asks its inputs. Requires `enableBootstrap: true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub bootstrap_provider: Option<ComponentReference>,
 }
 
 /// Query input binding: a bare upstream component name, or an object that can also
@@ -211,6 +216,7 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
             storage_backend,
             outbox_capacity: config.outbox_capacity,
             bootstrap_timeout_secs: config.bootstrap_timeout_secs,
+            bootstrap_provider: config.bootstrap_provider.clone(),
         })
     }
 }

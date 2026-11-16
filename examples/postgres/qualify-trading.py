@@ -150,7 +150,7 @@ class Trading(Qualification):
         query_nodes = [node for node in components
                        if node.get("implementation") is not None
                        and node["implementation"]["name"]
-                       == "drasi.experimental/indexed-query/ordinary"]
+                       == "drasi.query/continuous"]
         assert all(node["role"] == "Transformer" for node in query_nodes)
         queries = [node["id"] for node in query_nodes]
         assert len(queries) == 11, queries

@@ -10,10 +10,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use drasi_host_sdk::{
-    computation::{NativeFactory, NativePlugin},
-    management::NativeBootstrapConfig,
-};
+use drasi_host_sdk::computation::{NativeBootstrapNodeFactory, NativeFactory, NativePlugin};
+
+const SOURCE_PROGRESS: &str = "source_progress";
 use drasi_lib::computation::v1::*;
 use drasi_server::DrasiServerConfig;
 use serde::Deserialize;
@@ -81,6 +80,16 @@ fn factory(plugin: &NativePlugin, name: &str) -> Result<Arc<NativeFactory>> {
         .cloned()
         .with_context(|| format!("native MySQL factory {name}"))
 }
+fn bootstrap_edge(
+    builder: ComponentBatchBuilder,
+    from: Endpoint,
+    to: Endpoint,
+) -> ComponentBatchBuilder {
+    builder.connect(
+        EdgeDefinition::new(from, to),
+        Box::new(BoundedPipeConfig { capacity: 8 }),
+    )
+}
 fn declare(
     builder: ComponentBatchBuilder,
     name: &str,
@@ -119,8 +128,9 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         .find(|factory| {
             factory.metadata().implementation.name.as_ref() == "drasi.mysql/shared-row-bootstrap"
         })
-        .context("native MySQL row bootstrap factory")?
-        .metadata();
+        .cloned()
+        .context("native MySQL row bootstrap factory")?;
+    let bootstrap = Arc::new(NativeBootstrapNodeFactory::new(bootstrap));
     let query_plugin = load(directory, "drasi-computation-transformer-query")?;
     let query_factory = query_plugin.query_factory()?;
     let outlet_factory = Arc::new(QueryResultsOutletFactory::default());
@@ -147,7 +157,6 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
     let mut consumers = BTreeMap::new();
     for query in &recipe.queries {
         let progress = format!("{}-progress", query.name);
-        let bootstrap_id = format!("{}-bootstrap", query.name);
         anyhow::ensure!(
             consumers
                 .insert(query.id.clone(), progress.clone())
@@ -161,36 +170,6 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             ResourceRole::Checkpoint,
             json!({"kind":"sourceProgress","component":query.id}),
         )?;
-        let configuration = NativeBootstrapConfig {
-            component: query.id.clone(),
-            implementation: bootstrap.implementation.clone(),
-            configuration_version: bootstrap.configuration_version,
-            configuration: BTreeMap::from([
-                ("source".into(), literal(&recipe.source.id)?),
-                ("stream".into(), literal(stream(&recipe.source.name)?)?),
-                ("settings".into(), reference("DRASI_MYSQL_SOURCE_SETTINGS")?),
-            ]),
-            source_progress: Some(resource(&progress)?),
-            source_bootstrap: None,
-        };
-        let mut bootstrap_recipe = serde_json::to_value(configuration)?;
-        bootstrap_recipe["kind"] = json!("nativeBootstrap");
-        builder = declare(
-            builder,
-            &bootstrap_id,
-            ResourceRole::Bootstrap,
-            bootstrap_recipe,
-        )?
-        .resource_dependency(
-            resource(&bootstrap_id)?,
-            resource(&progress)?,
-            ResourceRole::Checkpoint,
-        )?
-        .resource_dependency(
-            resource(&bootstrap_id)?,
-            resource("mysql-configuration")?,
-            ResourceRole::SecretStore,
-        )?;
         let mut specification = query_factory.specification_from_config(
             query.id.clone(),
             json!({
@@ -202,7 +181,6 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             ("indexes".into(), vec![resource("mysql-indexes")?]),
             ("catalog".into(), vec![resource("mysql-results")?]),
             ("source_progress".into(), vec![resource(&progress)?]),
-            ("bootstrap".into(), vec![resource(&bootstrap_id)?]),
         ]);
         builder = builder
             .component(query.name.clone(), specification, query_factory.clone())
@@ -214,7 +192,53 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
                 ),
                 Box::new(BoundedPipeConfig { capacity: 8 }),
             );
+        builder = bootstrap_edge(
+            builder,
+            endpoint(&recipe.source.id, "snapshot")?,
+            endpoint(&query.id, "bootstrap")?,
+        );
     }
+    // One visible provider node serves the source, which relays its
+    // consumers' bootstrap sessions to it. Its progress dependency lists each
+    // bootstrapping query's progress owner.
+    let provider_id = fixed_id(0xff03);
+    let provider = ComponentSpecification {
+        descriptor: NativeBootstrapNodeFactory::component_descriptor(provider_id.clone())?,
+        role: ComponentRole::BootstrapProvider,
+        completion: None,
+        implementation: bootstrap.descriptor().implementation.clone(),
+        configuration_version: bootstrap.descriptor().configuration_version,
+        configuration: BTreeMap::from([
+            ("source".into(), literal(&recipe.source.id)?),
+            ("stream".into(), literal(stream(&recipe.source.name)?)?),
+            ("settings".into(), reference("DRASI_MYSQL_SOURCE_SETTINGS")?),
+        ]),
+        dependencies: if bootstrap
+            .descriptor()
+            .dependencies
+            .contains_key(SOURCE_PROGRESS)
+        {
+            BTreeMap::from([(
+                SOURCE_PROGRESS.into(),
+                consumers
+                    .values()
+                    .map(|progress| resource(progress))
+                    .collect::<Result<_>>()?,
+            )])
+        } else {
+            BTreeMap::new()
+        },
+    };
+    builder = builder.component(
+        ComponentName::try_new(format!("{}-bootstrap", recipe.source.name))?,
+        provider,
+        bootstrap,
+    );
+    builder = bootstrap_edge(
+        builder,
+        endpoint(&provider_id, "snapshot")?,
+        endpoint(&recipe.source.id, "bootstrap")?,
+    );
     builder = declare(
         builder,
         "mysql-consumers",

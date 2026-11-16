@@ -84,7 +84,7 @@ fn in_process_query() -> ImplementationIdentity {
         .clone()
 }
 
-/// The native query plugin's catalog-binding factory (`.../ordinary`).
+/// The native query plugin's catalog-binding factory (`.../continuous`).
 fn native_ordinary_query() -> ImplementationIdentity {
     query_plugin::factory().descriptor().implementation.clone()
 }
@@ -282,7 +282,7 @@ fn rejects_missing_wrong_or_distinct_catalog_dependencies() -> Result<()> {
 
 #[test]
 fn native_ordinary_queries_validate_their_result_catalog() -> Result<()> {
-    assert!(native_ordinary_query().name.ends_with("/ordinary"));
+    assert!(native_ordinary_query().name.ends_with("/continuous"));
     validate_definition(&configuration_with(native_ordinary_query())?)?;
     rejects_invalid_catalog_dependencies(native_ordinary_query())
 }

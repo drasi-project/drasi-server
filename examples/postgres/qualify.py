@@ -255,7 +255,7 @@ class Qualification:
         sources = [node for node in definition["components"] if node["role"] == "Source"]
         query_nodes = [node for node in definition["components"]
                        if node["construction"].get("Factory", {}).get("implementation", {}).get("name")
-                       == "drasi.experimental/indexed-query/ordinary"]
+                       == "drasi.query/continuous"]
         assert all(node["role"] == "Transformer" for node in query_nodes)
         queries = [node["descriptor"]["id"] for node in query_nodes]
         assert len(sources) == 1 and len(queries) >= 1

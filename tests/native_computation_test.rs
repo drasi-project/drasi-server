@@ -176,6 +176,7 @@ fn id(name: &str) -> ComponentId {
         "left" => 24,
         "right" => 25,
         "client" => 26,
+        "bootstrap" => 27,
         other => panic!("missing explicit component ID for {other}"),
     };
     ComponentId::from_uuid(uuid::Uuid::from_u128(value))

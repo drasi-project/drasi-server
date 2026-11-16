@@ -174,6 +174,7 @@ mod api_query_joins_tests {
                 .map(|s| serde_json::to_value(s).unwrap()),
             outbox_capacity: config.outbox_capacity,
             bootstrap_timeout_secs: config.bootstrap_timeout_secs,
+            bootstrap_provider: config.bootstrap_provider.clone(),
         }
     }
 

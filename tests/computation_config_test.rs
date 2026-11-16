@@ -444,6 +444,261 @@ fn readable_graph_uses_the_declared_primary_without_constructing_components() ->
     Ok(())
 }
 
+fn graph_port(name: &str, direction: PortDirection, kind: PortKind) -> Result<PortDescriptor> {
+    Ok(PortDescriptor::new(
+        PortId::try_new(name)?,
+        direction,
+        GraphChangeCodec::schema().descriptor().clone(),
+        PipeRequirements::default(),
+    )
+    .with_kind(kind))
+}
+
+/// A source with bootstrap ports and a bootstrap provider factory.
+fn bootstrap_factories() -> Result<FactoryRegistry> {
+    let creates = Arc::new(AtomicUsize::new(0));
+    let mut registry = factories()?;
+    let mut source = DescribingFactory::new("1", &[], creates.clone())?;
+    source.ports = vec![
+        graph_port("out", PortDirection::Output, PortKind::Data)?,
+        graph_port("bootstrap", PortDirection::Input, PortKind::Bootstrap)?,
+        graph_port("snapshot", PortDirection::Output, PortKind::Bootstrap)?,
+    ];
+    registry.register(Arc::new(source))?;
+    let mut provider = DescribingFactory::new("1", &[], creates)?;
+    provider.descriptor.implementation = ImplementationIdentity::try_new("test/provider", "1")?;
+    provider.descriptor.role = ComponentRole::BootstrapProvider;
+    provider.ports = vec![graph_port(
+        "snapshot",
+        PortDirection::Output,
+        PortKind::Bootstrap,
+    )?];
+    registry.register(Arc::new(provider))?;
+    Ok(registry)
+}
+
+/// `input()` plus a bootstrapping source feeding the query.
+fn bootstrap_input() -> Value {
+    let mut value = input();
+    value["graph"]["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id": component_id(10), "name": "sensor", "kind": "test/source", "version": "1",
+            "autoStart": false,
+            "bootstrapProvider": {"kind": "test/provider", "version": "1"}
+        }));
+    value["graph"]["connections"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"from": component_id(10), "to": component_id(1)}));
+    value
+}
+
+fn edges(config: &ComputationConfig) -> Vec<(ComponentId, String, ComponentId, String)> {
+    config
+        .definition
+        .relationships
+        .iter()
+        .map(|relationship| {
+            let edge = &relationship.definition;
+            (
+                edge.from.component.clone(),
+                edge.from.port.to_string(),
+                edge.to.component.clone(),
+                edge.to.port.to_string(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn source_bootstrap_providers_and_query_bootstrap_edges_are_graph_nodes_and_edges() -> Result<()> {
+    let factories = bootstrap_factories()?;
+    let config = resolve(bootstrap_input(), &factories)?;
+    let provider_id = ComponentId::derive_owned(&component_id(10), "bootstrap-provider")?;
+    let provider = config
+        .definition
+        .components
+        .iter()
+        .find(|component| component.descriptor.id() == &provider_id)
+        .context("generated provider node")?;
+    assert_eq!(provider.role, ComponentRole::BootstrapProvider);
+    assert_eq!(provider.name.as_str(), "sensor-bootstrap");
+    assert!(!provider.lifecycle.auto_start);
+    let found = edges(&config);
+    for expected in [
+        (
+            provider_id.clone(),
+            "snapshot",
+            component_id(10),
+            "bootstrap",
+        ),
+        (component_id(10), "snapshot", component_id(1), "bootstrap"),
+        (component_id(10), "out", component_id(1), "in"),
+    ] {
+        let expected = (
+            expected.0,
+            expected.1.to_owned(),
+            expected.2,
+            expected.3.to_owned(),
+        );
+        assert!(found.contains(&expected), "{expected:?} in {found:?}");
+    }
+    config.definition.build(TopologyBindings {
+        factories: factories.clone(),
+        ..Default::default()
+    })?;
+
+    // The expanded definition round-trips with the generated node and edges.
+    let yaml = serde_yaml::to_string(&ComputationConfigInput::from(config.clone()))?;
+    let restored: ComputationConfigInput = serde_yaml::from_str(&yaml)?;
+    assert_eq!(restored.resolve(&factories)?.definition, config.definition);
+
+    // Disabling bootstrap removes the inferred query edge.
+    let mut disabled = bootstrap_input();
+    disabled["graph"]["components"][0]["enableBootstrap"] = json!(false);
+    let config = resolve(disabled, &factories)?;
+    assert!(!edges(&config)
+        .iter()
+        .any(|edge| edge.2 == component_id(1) && edge.3 == "bootstrap"));
+    Ok(())
+}
+
+#[test]
+fn explicit_provider_components_and_bootstrap_connections_are_authored_like_other_nodes(
+) -> Result<()> {
+    let factories = bootstrap_factories()?;
+    let mut value = bootstrap_input();
+    value["graph"]["components"][2]
+        .as_object_mut()
+        .unwrap()
+        .remove("bootstrapProvider");
+    value["graph"]["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id": component_id(11), "name": "sensor-snapshot", "kind": "test/provider",
+            "version": "1", "autoStart": false
+        }));
+    // The provider has only a bootstrap output, so the connection kind is inferred.
+    value["graph"]["connections"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"from": component_id(11), "to": component_id(10)}));
+    let config = resolve(value.clone(), &factories)?;
+    assert!(edges(&config).contains(&(
+        component_id(11),
+        "snapshot".into(),
+        component_id(10),
+        "bootstrap".into()
+    )));
+
+    // A data connection cannot use bootstrap ports.
+    value["graph"]["connections"][2]["kind"] = json!("data");
+    let error = resolve(value.clone(), &factories)
+        .err()
+        .context("data connection from a provider")?;
+    assert!(
+        format!("{error:#}").contains("use a bootstrap connection"),
+        "{error:#}"
+    );
+
+    // A component referenced as a provider must be a bootstrap provider.
+    value["graph"]["connections"][2]["kind"] = json!("bootstrap");
+    value["graph"]["components"][0]["bootstrapProvider"] = json!(component_id(2));
+    let error = resolve(value, &factories)
+        .err()
+        .context("non-provider bootstrapProvider")?;
+    assert!(
+        format!("{error:#}").contains("not a bootstrap provider"),
+        "{error:#}"
+    );
+    Ok(())
+}
+
+#[test]
+fn local_query_bootstrap_provider_is_exclusive() -> Result<()> {
+    let factories = bootstrap_factories()?;
+    let mut value = bootstrap_input();
+    value["graph"]["components"][0]["bootstrapProvider"] =
+        json!({"id": component_id(12), "kind": "test/provider", "version": "1"});
+    let config = resolve(value.clone(), &factories)?;
+    let query_bootstrap: Vec<_> = edges(&config)
+        .into_iter()
+        .filter(|edge| edge.2 == component_id(1) && edge.3 == "bootstrap")
+        .collect();
+    assert_eq!(
+        query_bootstrap,
+        vec![(
+            component_id(12),
+            "snapshot".into(),
+            component_id(1),
+            "bootstrap".into()
+        )],
+        "the query never asks its inputs for bootstrap data"
+    );
+
+    value["graph"]["connections"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"from": component_id(10), "to": component_id(1), "kind": "bootstrap"}));
+    let error = resolve(value, &factories)
+        .err()
+        .context("input bootstrap with a local provider")?;
+    assert!(format!("{error:#}").contains("exclusive"), "{error:#}");
+    Ok(())
+}
+
+#[test]
+fn invalid_bootstrap_authoring_has_clear_errors() -> Result<()> {
+    let factories = bootstrap_factories()?;
+    let mut disabled = bootstrap_input();
+    disabled["graph"]["components"][2]["enableBootstrap"] = json!(false);
+    let error = resolve(disabled, &factories)
+        .err()
+        .context("provider with bootstrap disabled")?;
+    assert!(
+        format!("{error:#}").contains("disables bootstrap"),
+        "{error:#}"
+    );
+
+    let mut no_input = bootstrap_input();
+    no_input["graph"]["components"][1]["bootstrapProvider"] =
+        json!({"kind": "test/provider", "version": "1"});
+    let error = resolve(no_input, &factories)
+        .err()
+        .context("provider on a sink")?;
+    assert!(
+        format!("{error:#}").contains("has no bootstrap input"),
+        "{error:#}"
+    );
+
+    let mut unknown = bootstrap_input();
+    unknown["graph"]["components"][2]["bootstrapProvider"] = json!(component_id(99));
+    let error = resolve(unknown, &factories)
+        .err()
+        .context("unknown provider")?;
+    assert!(
+        format!("{error:#}").contains("unknown bootstrapProvider"),
+        "{error:#}"
+    );
+
+    let mut port = bootstrap_input();
+    port["graph"]["connections"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "from": {"component": component_id(10), "port": "out"},
+            "to": component_id(1), "kind": "bootstrap"
+        }));
+    let error = resolve(port, &factories)
+        .err()
+        .context("data port in a bootstrap connection")?;
+    assert!(format!("{error:#}").contains("bootstrap"), "{error:#}");
+    Ok(())
+}
+
 #[test]
 fn transaction_query_description_uses_the_transaction_input_schema() -> Result<()> {
     let factory = ContinuousQueryFactory::default();

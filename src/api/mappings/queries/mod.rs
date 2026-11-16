@@ -94,6 +94,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             recovery_policy: None,
             outbox_capacity: dto.outbox_capacity,
             bootstrap_timeout_secs: dto.bootstrap_timeout_secs,
+            bootstrap_provider: dto.bootstrap_provider.clone(),
             result: QueryResultConfig {
                 label: dto.result.label.clone(),
             },

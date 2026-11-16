@@ -512,7 +512,7 @@ solution. No configuration-generation program is needed.
 This particular scene example explicitly selects the retained
 `drasi/continuous-query` linked-reference recipe. It is not the ordinary
 `queries:` path's default. To use the native query authoring recipe, load the
-query library and select `drasi.experimental/indexed-query/ordinary`; its
+query library and select `drasi.query/continuous`; its
 configuration/resource authoring contract is shared, but its implementation
 identity remains distinct. Export that actual selection rather than rewriting
 the identity of existing processing state.
@@ -540,6 +540,51 @@ Component `resources` maps factory dependency names to a resource ID or list of
 IDs. Resource roles and ownership come from their recipes; optional
 `resourceDependencies` lists prerequisite resource IDs. `config` values are
 literal factory settings, not resolved environment/secret references.
+
+**Bootstrap** is part of the graph. A bootstrap provider is an ordinary
+component whose `kind` is a bootstrap provider factory (for example
+`drasi.postgres/shared-row-bootstrap`); it has one bootstrap output, `snapshot`.
+Native sources and bootstrap-capable transformers (including queries) have a
+`bootstrap` input and a `snapshot` output. Bootstrap data travels over bootstrap
+connections, which are pipes like data connections. A connection's `kind` is
+`data` or `bootstrap`; when omitted it follows explicit ports, and a connection
+from a component with only bootstrap outputs (a provider) is a bootstrap
+connection:
+
+```yaml
+components:
+  - id: orders-bootstrap
+    kind: drasi.postgres/shared-row-bootstrap
+    config: {...}
+  - id: orders
+    kind: drasi.postgres/shared-changes
+    config: {...}
+  - id: open-orders
+    kind: drasi.query/continuous
+    config: {...}
+connections:
+  - {from: orders-bootstrap, to: orders}          # provider -> source
+  - {from: orders, to: open-orders}               # data
+  - {from: orders, to: open-orders, kind: bootstrap}  # optional; see below
+```
+
+The source coordinates bootstrap: when a downstream component bootstraps, the
+source relays the session to its provider. Shorthands generate the same nodes
+and connections, which are stored and shown like any other:
+
+- `bootstrapProvider` on a component is either the ID of a provider component
+  or an inline provider `{kind, version?, config, resources, id?, name?}`. An
+  inline provider becomes a component named `<name>-bootstrap` (with a derived
+  ID unless given). The provider is connected to the component's `bootstrap`
+  input. On a query or transformer it is an exclusive local provider: that
+  component never asks its inputs for bootstrap data, and other bootstrap
+  connections to it are rejected.
+- `enableBootstrap` (default `true`): unless the component has a local
+  provider or explicit bootstrap connections, each data connection from a
+  producer with a bootstrap output also generates a bootstrap connection from
+  the producer's `snapshot` output to the consumer's `bootstrap` input.
+  `false` generates none and rejects `bootstrapProvider` and bootstrap
+  connections.
 
 **`computation.definition`** is the expanded Core version-1 `DesiredTopology`
 format, used for saved snapshots
@@ -1915,6 +1960,7 @@ queries:
 | `result` | object | `{}` | Result options. `result.label` sets the node label of published results; it never changes the output schema. |
 | `autoStart` | boolean | `false` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from inputs |
+| `bootstrapProvider` | string | (none) | Name or ID of an existing bootstrap provider component used as this query's exclusive local provider (connected to its `bootstrap` input); the query then never asks its inputs for bootstrap data. Requires `enableBootstrap: true`. |
 | `priorityQueueCapacity` | integer | (global) | Override input queue capacity, including live events queued during bootstrap |
 | `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
 | `storageBackend` | string or object | (instance default) | Index backend for this query. See [Per-Query Index Backend](#per-query-index-backend). |

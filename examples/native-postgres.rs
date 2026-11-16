@@ -11,10 +11,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use drasi_host_sdk::{
-    computation::{NativeFactory, NativePlugin},
-    management::NativeBootstrapConfig,
-};
+use drasi_host_sdk::computation::{NativeBootstrapNodeFactory, NativeFactory, NativePlugin};
 use drasi_lib::computation::v1::*;
 use drasi_lib::config::ComponentReference;
 use drasi_server::{api::mappings::DtoMapper, computation::ComputationConfig, DrasiServerConfig};
@@ -60,6 +57,45 @@ fn load(directory: &Path, package: &str) -> Result<Arc<NativePlugin>> {
         std::env::consts::DLL_SUFFIX,
     ));
     drasi_host_sdk::computation::load(&file).with_context(|| format!("load {}", file.display()))
+}
+
+fn bootstrap_edge(
+    builder: ComponentBatchBuilder,
+    from: Endpoint,
+    to: Endpoint,
+) -> ComponentBatchBuilder {
+    builder.connect(
+        EdgeDefinition::new(from, to),
+        Box::new(BoundedPipeConfig { capacity: 8 }),
+    )
+}
+
+/// A source's visible bootstrap provider node. The source relays its
+/// consumers' bootstrap sessions to it; a provider that reads progress lists
+/// each bootstrapping query's progress owner.
+fn provider_node(
+    factory: &NativeBootstrapNodeFactory,
+    id: ComponentId,
+    configuration: BTreeMap<Arc<str>, ConfigurationValue>,
+    progress: &[ResourceId],
+) -> Result<ComponentSpecification> {
+    Ok(ComponentSpecification {
+        descriptor: NativeBootstrapNodeFactory::component_descriptor(id)?,
+        role: ComponentRole::BootstrapProvider,
+        completion: None,
+        implementation: factory.descriptor().implementation.clone(),
+        configuration_version: factory.descriptor().configuration_version,
+        configuration,
+        dependencies: if factory
+            .descriptor()
+            .dependencies
+            .contains_key("source_progress")
+        {
+            BTreeMap::from([("source_progress".into(), progress.to_vec())])
+        } else {
+            BTreeMap::new()
+        },
+    })
 }
 
 fn declare(
@@ -139,8 +175,9 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         .bootstrap_factories()
         .iter()
         .find(|factory| factory.metadata().implementation.name.as_ref() == BOOTSTRAP)
-        .context("shared PostgreSQL bootstrap factory")?
-        .metadata();
+        .cloned()
+        .context("shared PostgreSQL bootstrap factory")?;
+    let bootstrap = Arc::new(NativeBootstrapNodeFactory::new(bootstrap));
     let http_source_plugin = sources
         .iter()
         .any(|source| source["kind"] == "http")
@@ -168,7 +205,8 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 .bootstrap_factories()
                 .iter()
                 .find(|factory| factory.metadata().implementation.name.as_ref() == HTTP_BOOTSTRAP)
-                .map(|factory| factory.metadata())
+                .cloned()
+                .map(|factory| Arc::new(NativeBootstrapNodeFactory::new(factory)))
                 .context("native HTTP bootstrap factory")
         })
         .transpose()?;
@@ -216,7 +254,6 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             ResourceRole::Checkpoint,
             json!({"kind":"sourceProgress","component":query_id}),
         )?;
-        let mut providers = Vec::new();
         for input in &query.inputs {
             let source = input
                 .component
@@ -227,76 +264,12 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 .iter()
                 .find(|candidate| candidate["id"] == source)
                 .with_context(|| format!("query {} has an unknown source {source}", query.name))?;
-            let kind = declaration["kind"].as_str().context("source kind")?;
-            let metadata = if kind == "postgres" {
-                &bootstrap
-            } else {
-                anyhow::ensure!(
-                    declaration["bootstrapProvider"]["kind"] == "http",
-                    "HTTP source {source} requires its real native HTTP initialization endpoint"
-                );
-                http_bootstrap.as_ref().context("HTTP bootstrap metadata")?
-            };
-            let bootstrap_id = if query.inputs.len() == 1 && kind == "postgres" {
-                format!("{}-postgres-bootstrap", query.name)
-            } else {
-                format!("{}-{source}-bootstrap", query.name)
-            };
-            let bootstrap_config = NativeBootstrapConfig {
-                component: query_id.clone(),
-                implementation: metadata.implementation.clone(),
-                configuration_version: metadata.configuration_version,
-                configuration: BTreeMap::from([
-                    ("source".into(), literal(&source_ids[source])?),
-                    ("stream".into(), literal(stream(source)?)?),
-                    ("settings".into(), settings_reference(kind, source)?),
-                ]),
-                source_progress: (kind == "postgres")
-                    .then(|| resource(&progress))
-                    .transpose()?,
-                source_bootstrap: None,
-            };
-            let mut bootstrap_recipe = serde_json::to_value(bootstrap_config)?;
-            bootstrap_recipe["kind"] = json!("nativeBootstrap");
-            builder = declare(
-                builder,
-                &bootstrap_id,
-                ResourceRole::Bootstrap,
-                bootstrap_recipe,
-            )?
-            .resource_dependency(
-                resource(&bootstrap_id)?,
-                resource("postgres-configuration")?,
-                ResourceRole::SecretStore,
-            )?;
-            if kind == "postgres" {
-                builder = builder.resource_dependency(
-                    resource(&bootstrap_id)?,
-                    resource(&progress)?,
-                    ResourceRole::Checkpoint,
-                )?;
-            }
-            providers.push(bootstrap_id);
+            anyhow::ensure!(
+                declaration["kind"] == "postgres"
+                    || declaration["bootstrapProvider"]["kind"] == "http",
+                "HTTP source {source} requires its real native HTTP initialization endpoint"
+            );
         }
-        let bootstrap_id = if providers.len() == 1 {
-            providers.remove(0)
-        } else {
-            let name = format!("{}-bootstrap", query.name);
-            builder = declare(
-                builder,
-                &name,
-                ResourceRole::Bootstrap,
-                json!({"kind":"compositeBootstrap","component":query_id,"providers":providers}),
-            )?;
-            for provider in providers {
-                builder = builder.resource_dependency(
-                    resource(&name)?,
-                    resource(&provider)?,
-                    ResourceRole::Bootstrap,
-                )?;
-            }
-            name
-        };
         let execution_inputs = query
             .inputs
             .iter()
@@ -330,7 +303,6 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             ("indexes".into(), vec![resource("query-indexes")?]),
             ("catalog".into(), vec![resource("query-results")?]),
             ("source_progress".into(), vec![resource(&progress)?]),
-            ("bootstrap".into(), vec![resource(&bootstrap_id)?]),
         ]);
         builder = builder
             .component(query.name.clone(), specification, query_factory.clone())
@@ -347,6 +319,13 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 EdgeDefinition::new(endpoint(source_id, "out")?, endpoint(query_id, "in")?),
                 Box::new(BoundedPipeConfig { capacity: 32 }),
             );
+            // The query bootstraps through its input, which relays to the
+            // source's provider node.
+            builder = bootstrap_edge(
+                builder,
+                endpoint(source_id, "snapshot")?,
+                endpoint(query_id, "bootstrap")?,
+            );
         }
     }
 
@@ -355,6 +334,54 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         let component_id = source_ids
             .get(source_id)
             .context("assigned source identity")?;
+        let consumers: BTreeMap<_, _> = instance
+            .queries
+            .iter()
+            .filter(|query| {
+                query.inputs.iter().any(|input| {
+                    input
+                        .component
+                        .as_name()
+                        .is_some_and(|name| name.as_str() == source_id)
+                })
+            })
+            .map(|query| {
+                (
+                    query_ids[&query.name].clone(),
+                    format!("{}-progress", query.name),
+                )
+            })
+            .collect();
+        let kind = source["kind"].as_str().context("source kind")?;
+        let provider_id = ComponentId::generate();
+        let provider_factory = if kind == "postgres" {
+            bootstrap.clone()
+        } else {
+            http_bootstrap.clone().context("HTTP bootstrap factory")?
+        };
+        let provider = provider_node(
+            &provider_factory,
+            provider_id.clone(),
+            BTreeMap::from([
+                ("source".into(), literal(component_id)?),
+                ("stream".into(), literal(stream(source_id)?)?),
+                ("settings".into(), settings_reference(kind, source_id)?),
+            ]),
+            &consumers
+                .values()
+                .map(|progress| resource(progress))
+                .collect::<Result<Vec<_>>>()?,
+        )?;
+        builder = builder.component(
+            ComponentName::try_new(format!("{source_id}-bootstrap"))?,
+            provider,
+            provider_factory,
+        );
+        builder = bootstrap_edge(
+            builder,
+            endpoint(&provider_id, "snapshot")?,
+            endpoint(component_id, "bootstrap")?,
+        );
         if source["kind"] == "http" {
             let factory = http_source_factory
                 .as_ref()
@@ -393,24 +420,6 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 .bind_stream(endpoint(component_id, "out")?, stream(source_id)?);
             continue;
         }
-        let consumers: BTreeMap<_, _> = instance
-            .queries
-            .iter()
-            .filter(|query| {
-                query.inputs.iter().any(|input| {
-                    input
-                        .component
-                        .as_name()
-                        .is_some_and(|name| name.as_str() == source_id)
-                })
-            })
-            .map(|query| {
-                (
-                    query_ids[&query.name].clone(),
-                    format!("{}-progress", query.name),
-                )
-            })
-            .collect();
         anyhow::ensure!(
             !consumers.is_empty(),
             "source {source_id} has no actual query owners"

@@ -327,6 +327,29 @@ fn test_openapi_spec_includes_plugin_schemas() {
 }
 
 #[test]
+fn test_openapi_spec_includes_graph_bootstrap_schemas() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let schemas = json["components"]["schemas"].as_object().unwrap();
+    for name in [
+        "GraphComponentConfig",
+        "GraphBootstrapProvider",
+        "GraphBootstrapProviderConfig",
+        "GraphConnectionConfig",
+        "GraphConnectionKind",
+    ] {
+        assert!(schemas.contains_key(name), "Should have {name} schema");
+    }
+    let kinds = json["components"]["schemas"]["GraphConnectionKind"].to_string();
+    assert!(kinds.contains("bootstrap") && kinds.contains("data"));
+    let component = json["components"]["schemas"]["GraphComponentConfig"]["properties"]
+        .as_object()
+        .unwrap();
+    assert!(component.contains_key("bootstrapProvider"));
+    assert!(component.contains_key("enableBootstrap"));
+}
+
+#[test]
 fn test_openapi_spec_includes_instance_event_stream() {
     let spec = ApiDocV1::openapi();
     let json = serde_json::to_value(&spec).unwrap();

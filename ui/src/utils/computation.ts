@@ -37,6 +37,7 @@ export function computationColor(role: string): string {
     case "Transformer": return "#f59e0b";
     case "Sink": return "#ec4899";
     case "Service": return "#06b6d4";
+    case "BootstrapProvider": return "#14b8a6";
     default: return "#94a3b8";
   }
 }
@@ -47,10 +48,15 @@ export function relationshipEndpoints(relationship: ComputationRelationship) {
     : { from: relationship.from, to: relationship.to };
 }
 
+/** Bootstrap edges carry addressed snapshot sessions, not the live data flow. */
+export function isBootstrapRelationship(relationship: ComputationRelationship): boolean {
+  return relationship.representation === "NativeProvider" && relationship.kind === "Bootstrap";
+}
+
 export function relationshipLabel(relationship: ComputationRelationship): string {
   switch (relationship.representation) {
     case "NativeProvider":
-      return `${relationship.from.port} -> ${relationship.to.port}; ${relationship.binding ?? "Unknown"}; ${relationship.availability ?? "Unknown"}`;
+      return `${isBootstrapRelationship(relationship) ? "Bootstrap: " : ""}${relationship.from.port} -> ${relationship.to.port}; ${relationship.binding ?? "Unknown"}; ${relationship.availability ?? "Unknown"}`;
     case "HostSubscription":
       return `Host subscription; producer ${relationship.producerStarted === null ? "unknown" : relationship.producerStarted ? "started" : "not started"}; consumer ${relationship.consumerStarted === null ? "unknown" : relationship.consumerStarted ? "started" : "not started"}`;
     case "ControlConnection":

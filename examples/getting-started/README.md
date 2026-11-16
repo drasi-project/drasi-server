@@ -227,7 +227,10 @@ The automated proof cleans only its own fresh resources.
 
 `drasi.postgres/shared-changes` reads the existing configured slot using logical
 replication. Its `consumerProgress` resource names all three query progress
-owners. Each query's `drasi.postgres/shared-row-bootstrap` provider uses a
+owners. The source's visible `postgres-messages-bootstrap` provider node
+(`drasi.postgres/shared-row-bootstrap`) is connected to its `bootstrap` input,
+and each query has a bootstrap edge from the source's `snapshot` output. The
+source relays each query's session to the provider, which uses a
 temporary exported snapshot and publishes its real boundary only after complete
 initialization. Feedback respects every required consumer; there is no aggregate
 checkpoint or separate source per query.

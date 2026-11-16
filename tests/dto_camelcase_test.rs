@@ -33,6 +33,7 @@ fn test_query_config_dto_serializes_camelcase() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 

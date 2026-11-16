@@ -6,10 +6,7 @@
 //! File mode requires quiescent writers during bootstrap; paired modes own that exclusion.
 
 use anyhow::{Context, Result};
-use drasi_host_sdk::{
-    computation::NativePlugin,
-    management::{NativeBootstrapConfig, NativeSourceBootstrapConfig},
-};
+use drasi_host_sdk::computation::{NativeBootstrapNodeFactory, NativePlugin};
 use drasi_lib::computation::v1::*;
 use drasi_server::{api::models::ConfigValue, computation::ComputationConfig, DrasiServerConfig};
 use serde_json::{json, Value};
@@ -20,6 +17,9 @@ use std::{
 };
 
 pub const INSTANCE: &str = "native-sqlite";
+/// Native sources and queries share these bootstrap port names.
+const BOOTSTRAP_INPUT_PORT: &str = "bootstrap";
+const BOOTSTRAP_OUTPUT_PORT: &str = "snapshot";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -53,6 +53,7 @@ fn id(value: &str) -> Result<ComponentId> {
         "second" => 3,
         "first-results" => 4,
         "second-results" => 5,
+        "source-bootstrap" => 6,
         other => anyhow::bail!("missing explicit component ID for {other}"),
     };
     Ok(ComponentId::from_uuid(uuid::Uuid::from_u128(value)))
@@ -62,6 +63,16 @@ fn resource(value: &str) -> Result<ResourceId> {
 }
 fn endpoint(component: &str, port: &str) -> Result<Endpoint> {
     Ok(Endpoint::new(id(component)?, PortId::try_new(port)?))
+}
+fn bootstrap_edge(
+    builder: ComponentBatchBuilder,
+    from: Endpoint,
+    to: Endpoint,
+) -> ComponentBatchBuilder {
+    builder.connect(
+        EdgeDefinition::new(from, to),
+        Box::new(BoundedPipeConfig { capacity: 8 }),
+    )
 }
 fn declare(
     builder: ComponentBatchBuilder,
@@ -121,9 +132,9 @@ pub fn definition_with_mode(
         .bootstrap_factories()
         .iter()
         .find(|factory| factory.metadata().implementation.name.as_ref() == bootstrap_name)
-        .context("native SQLite bootstrap factory")?
-        .metadata()
-        .clone();
+        .cloned()
+        .context("native SQLite bootstrap factory")?;
+    let bootstrap = Arc::new(NativeBootstrapNodeFactory::new(bootstrap));
     let transactions = json!({"max_changes":64,"max_bytes":1048576,"max_duration_ms":5000});
     let mut source_configuration = json!({
         "stream":"source/out",
@@ -180,44 +191,41 @@ pub fn definition_with_mode(
         } else {
             "first-progress"
         };
-        let coordinator = NativeSourceBootstrapConfig {
-            component: id("source")?,
-            implementation: source_spec.implementation.clone(),
-            configuration_version: source_spec.configuration_version,
-            configuration: source_spec.configuration.clone(),
-            source_progress: (mode == Mode::Single)
-                .then(|| resource(progress))
-                .transpose()?,
-            consumer_progress: (mode == Mode::Shared)
-                .then(|| resource(progress))
-                .transpose()?,
-        };
-        let mut recipe = serde_json::to_value(coordinator)?;
-        recipe["kind"] = json!("nativeSourceBootstrap");
-        builder = declare(builder, "source-bootstrap", ResourceRole::Bootstrap, recipe)?
-            .resource_dependency(
-                resource("source-bootstrap")?,
-                resource(progress)?,
-                ResourceRole::Checkpoint,
-            )?;
-        source_spec.dependencies = BTreeMap::from([
-            (
-                "source_bootstrap".into(),
-                vec![resource("source-bootstrap")?],
-            ),
-            (
-                if mode == Mode::Shared {
-                    "consumer_progress".into()
-                } else {
-                    "source_progress".into()
-                },
-                vec![resource(progress)?],
-            ),
-        ]);
+        // The source owns its library's bootstrap coordinator, created from
+        // these progress owners; the paired provider node shares it.
+        source_spec.dependencies = BTreeMap::from([(
+            if mode == Mode::Shared {
+                "consumer_progress".into()
+            } else {
+                "source_progress".into()
+            },
+            vec![resource(progress)?],
+        )]);
     }
     builder = builder
         .component(ComponentName::try_new("source")?, source_spec, source)
         .bind_stream(endpoint("source", "out")?, StreamId::try_new("source/out")?);
+    // One visible provider node serves the source; the source relays its
+    // consumers' bootstrap sessions to it over bootstrap edges.
+    let mut provider_configuration = json!({"source":id("source")?,"stream":"source/out"});
+    if !paired {
+        provider_configuration["settings"] = json!({
+            "path":database,"tables":["items"],"table_keys":[],"max_tables":8,"max_bytes":1048576,
+            "max_duration_ms":5000,"output_capacity":2,"shutdown_timeout_ms":5000
+        });
+    }
+    let provider =
+        bootstrap.specification_from_config(id("source-bootstrap")?, provider_configuration)?;
+    builder = builder.component(
+        ComponentName::try_new("source-bootstrap")?,
+        provider,
+        bootstrap.clone(),
+    );
+    builder = bootstrap_edge(
+        builder,
+        endpoint("source-bootstrap", BOOTSTRAP_PROVIDER_OUTPUT_PORT)?,
+        endpoint("source", BOOTSTRAP_INPUT_PORT)?,
+    );
     builder = declare(
         builder,
         "catalog",
@@ -227,49 +235,6 @@ pub fn definition_with_mode(
     let query_factory = Arc::new(ContinuousQueryFactory::default());
     let outlet_factory = Arc::new(QueryResultsOutletFactory::default());
     for name in mode.queries() {
-        let bootstrap_id = format!("{name}-snapshot");
-        let mut configuration = BTreeMap::from([
-            (
-                "source".into(),
-                ConfigurationValue::Literal(json!(id("source")?)),
-            ),
-            (
-                "stream".into(),
-                ConfigurationValue::Literal(json!("source/out")),
-            ),
-        ]);
-        if !paired {
-            configuration.insert("settings".into(), ConfigurationValue::Literal(json!({
-                "path":database,"tables":["items"],"table_keys":[],"max_tables":8,"max_bytes":1048576,
-                "max_duration_ms":5000,"output_capacity":2,"shutdown_timeout_ms":5000
-            })));
-        }
-        let snapshot = NativeBootstrapConfig {
-            component: id(name)?,
-            implementation: bootstrap.implementation.clone(),
-            configuration_version: bootstrap.configuration_version,
-            configuration,
-            source_progress: paired
-                .then(|| resource(&format!("{name}-progress")))
-                .transpose()?,
-            source_bootstrap: paired.then(|| resource("source-bootstrap")).transpose()?,
-        };
-        let mut recipe = serde_json::to_value(snapshot)?;
-        recipe["kind"] = json!("nativeBootstrap");
-        builder = declare(builder, &bootstrap_id, ResourceRole::Bootstrap, recipe)?;
-        if paired {
-            builder = builder
-                .resource_dependency(
-                    resource(&bootstrap_id)?,
-                    resource("source-bootstrap")?,
-                    ResourceRole::Bootstrap,
-                )?
-                .resource_dependency(
-                    resource(&bootstrap_id)?,
-                    resource(&format!("{name}-progress"))?,
-                    ResourceRole::Checkpoint,
-                )?;
-        }
         let mut query_config = json!({
             "query":"MATCH (n:items) RETURN n.id AS id,n.value AS value",
             "stream":format!("{name}/out"),"outbox_capacity":32,
@@ -284,7 +249,6 @@ pub fn definition_with_mode(
         query.dependencies = BTreeMap::from([
             ("indexes".into(), vec![resource("indexes")?]),
             ("catalog".into(), vec![resource("catalog")?]),
-            ("bootstrap".into(), vec![resource(&bootstrap_id)?]),
         ]);
         if paired {
             query.dependencies.insert(
@@ -307,6 +271,11 @@ pub fn definition_with_mode(
             configuration: BTreeMap::new(),
             dependencies: BTreeMap::from([("catalog".into(), vec![resource("catalog")?])]),
         };
+        builder = bootstrap_edge(
+            builder,
+            endpoint("source", BOOTSTRAP_OUTPUT_PORT)?,
+            endpoint(name, BOOTSTRAP_INPUT_PORT)?,
+        );
         builder = builder
             .component(ComponentName::try_new(*name)?, query, query_factory.clone())
             .component(

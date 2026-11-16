@@ -136,6 +136,7 @@ async fn test_persistence_saves_complete_configuration() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -382,6 +383,7 @@ fn test_multiple_queries_persist_correctly() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -403,6 +405,7 @@ fn test_multiple_queries_persist_correctly() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -480,6 +483,7 @@ fn test_adding_query_preserves_existing_queries() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -523,6 +527,7 @@ fn test_adding_query_preserves_existing_queries() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 

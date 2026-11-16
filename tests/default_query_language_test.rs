@@ -72,6 +72,7 @@ fn test_explicit_cypher_language() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -111,6 +112,7 @@ fn test_explicit_gql_language() {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 

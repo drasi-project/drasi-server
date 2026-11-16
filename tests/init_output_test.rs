@@ -1083,6 +1083,7 @@ fn test_query_generates_valid_yaml() {
                 storage_backend: None,
                 outbox_capacity: 1000,
                 bootstrap_timeout_secs: 300,
+                bootstrap_provider: None,
                 result: Default::default(),
             }],
             reactions: vec![],
@@ -1190,6 +1191,7 @@ fn test_full_config_roundtrip() {
                 storage_backend: None,
                 outbox_capacity: 1000,
                 bootstrap_timeout_secs: 300,
+                bootstrap_provider: None,
                 result: Default::default(),
             }],
             reactions: vec![ReactionConfig {

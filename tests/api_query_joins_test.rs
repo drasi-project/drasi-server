@@ -58,6 +58,7 @@ fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
             .map(|s| serde_json::to_value(s).unwrap()),
         outbox_capacity: config.outbox_capacity,
         bootstrap_timeout_secs: config.bootstrap_timeout_secs,
+        bootstrap_provider: config.bootstrap_provider.clone(),
     }
 }
 

@@ -118,37 +118,15 @@ its SSE output. It does not create one PostgreSQL source per query or silently
 repair a partial group. Existing definitions, references and consumer bindings
 must match; membership changes require an explicit group replacement.
 
-Queries with both PostgreSQL and HTTP inputs use this resource recipe:
-
-```json
-{
-  "kind": "compositeBootstrap",
-  "component": "portfolio-query",
-  "providers": [
-    "portfolio-query-postgres-stocks-bootstrap",
-    "portfolio-query-price-feed-bootstrap"
-  ]
-}
-```
-
-Declare **exactly** those ordered, distinct providers as Bootstrap resource
-dependencies. Bind the composite to the query's single `bootstrap` slot.
-Every child must belong to that query. Recovery-bearing children must share
-its exact actual progress reader, which the composite returns unchanged.
-
-Composition supports 1–32 children and at most 256 distinct watermarks. A bounded,
-version-1 handover record gives each resource ID its own opaque state namespace;
-the total serialized record remains within the query's 65,536-byte bound.
-Retained membership/order cannot be reinterpreted. Snapshots stream in declared
-order without collecting all rows. Child completion metadata and watermarks
-commit together through the existing query transaction. No persistence is
-fabricated for a memory query.
-
-`ResetRequired` dominates `RefreshVolatile`, which dominates `Ready`. A non-Ready
-aggregate stops/rearms all children, including already-Ready native siblings,
-before reset/reprepare. Cancellation or partial failure fences reuse until owned
-cleanup succeeds. Retirement holds the actual child lifecycles; rejected partial
-acquisitions resume them.
+Bootstrap providers are visible graph nodes. The generator adds one provider
+node per source (`drasi.postgres/shared-row-bootstrap` or
+`drasi.network/http-bootstrap`, named `<source>-bootstrap`) connected by a
+bootstrap edge to that source's `bootstrap` input. Each query gets a bootstrap
+edge from every input source's `snapshot` output to its own `bootstrap` input,
+so a query with both PostgreSQL and HTTP inputs bootstraps from both sources
+over its bootstrap pipes. The source coordinates each session and relays it to
+its provider; the PostgreSQL provider's `source_progress` dependency lists the
+actual progress owner of every query that bootstraps through it.
 
 Trading's real API exposes the original 50-price JSONL seed at
 `/api/initial-prices`. Native HTTP bootstrap reads it before live prices begin.

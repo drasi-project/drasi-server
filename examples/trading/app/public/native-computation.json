@@ -419,7 +419,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -1197,7 +1197,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -1962,7 +1962,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -2727,7 +2727,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -3492,7 +3492,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -4242,7 +4242,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -5007,7 +5007,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -5785,7 +5785,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -6550,7 +6550,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -7300,7 +7300,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },
@@ -8050,7 +8050,7 @@
               "semantic_kind": "Query"
             },
             "implementation": {
-              "name": "drasi.experimental/indexed-query/ordinary",
+              "name": "drasi.query/continuous",
               "plugin": null,
               "version": "1"
             },

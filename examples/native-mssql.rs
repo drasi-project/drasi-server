@@ -4,10 +4,7 @@
 //! Generate the canonical Server configuration from rebuilt native metadata.
 
 use anyhow::{Context, Result};
-use drasi_host_sdk::{
-    computation::{load, NativePlugin},
-    management::NativeBootstrapConfig,
-};
+use drasi_host_sdk::computation::{load, NativeBootstrapNodeFactory, NativePlugin};
 use drasi_lib::computation::v1::*;
 use drasi_server::{computation::ComputationConfig, DrasiServerConfig};
 use serde_json::{json, Value};
@@ -20,6 +17,7 @@ fn id(value: &str) -> ComponentId {
         "high" => 3,
         "effect" => 4,
         "query-results" => 5,
+        "items-bootstrap" => 6,
         other => panic!("missing explicit component ID for {other}"),
     };
     ComponentId::from_uuid(uuid::Uuid::from_u128(value))
@@ -39,6 +37,16 @@ fn settings(key: &str) -> ConfigurationValue {
         key: format!("env-json:{key}").into(),
         secret: true,
     }
+}
+fn bootstrap_edge(
+    builder: ComponentBatchBuilder,
+    from: Endpoint,
+    to: Endpoint,
+) -> ComponentBatchBuilder {
+    builder.connect(
+        EdgeDefinition::new(from, to),
+        Box::new(BoundedPipeConfig { capacity: 8 }),
+    )
 }
 fn declare(
     builder: ComponentBatchBuilder,
@@ -85,8 +93,9 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
         .bootstrap_factories()
         .iter()
         .find(|f| f.metadata().implementation.name.as_ref() == "drasi.mssql/bootstrap")
-        .context("SQL Server bootstrap")?
-        .metadata();
+        .cloned()
+        .context("SQL Server bootstrap")?;
+    let bootstrap = Arc::new(NativeBootstrapNodeFactory::new(bootstrap));
     let sink_factory = plugins[2]
         .factories()
         .iter()
@@ -115,48 +124,12 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
     )?;
     for name in ["all", "high"] {
         let progress = format!("{name}-progress");
-        let bootstrap_id = format!("{name}-bootstrap");
         builder = declare(
             builder,
             &progress,
             ResourceRole::Checkpoint,
             json!({"kind":"sourceProgress","component":id(name)}),
         )?;
-        let bootstrap_config = NativeBootstrapConfig {
-            component: id(name),
-            implementation: bootstrap.implementation.clone(),
-            configuration_version: bootstrap.configuration_version,
-            configuration: BTreeMap::from([
-                (
-                    "source".into(),
-                    ConfigurationValue::Literal(json!(id("items"))),
-                ),
-                (
-                    "stream".into(),
-                    ConfigurationValue::Literal(json!(stream("items"))),
-                ),
-                ("settings".into(), settings("DRASI_MSSQL_SETTINGS")),
-                (
-                    "labels".into(),
-                    ConfigurationValue::Literal(json!(["Items"])),
-                ),
-            ]),
-            source_progress: Some(resource(&progress)),
-            source_bootstrap: None,
-        };
-        let mut recipe = serde_json::to_value(bootstrap_config)?;
-        recipe["kind"] = json!("nativeBootstrap");
-        builder = declare(builder, &bootstrap_id, ResourceRole::Bootstrap, recipe)?
-            .resource_dependency(
-                resource(&bootstrap_id),
-                resource(&progress),
-                ResourceRole::Checkpoint,
-            )?
-            .resource_dependency(
-                resource(&bootstrap_id),
-                resource("mssql-settings"),
-                ResourceRole::SecretStore,
-            )?;
         let mut query = query_factory.specification_from_config(id(name),json!({
             "query":format!("MATCH (n:Items) {} RETURN n.id AS id,n.value AS value",if name=="high" {"WHERE n.value >= 20"} else {""}),
             "stream":stream(name),"language":"cypher","outbox_capacity":32,
@@ -165,7 +138,6 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
             ("indexes".into(), vec![resource("indexes")]),
             ("catalog".into(), vec![resource("results")]),
             ("source_progress".into(), vec![resource(&progress)]),
-            ("bootstrap".into(), vec![resource(&bootstrap_id)]),
         ]);
         builder = builder
             .component(ComponentName::try_new(name)?, query, query_factory.clone())
@@ -174,7 +146,58 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
                 EdgeDefinition::new(endpoint("items", "out"), endpoint(name, "in")),
                 Box::new(BoundedPipeConfig { capacity: 8 }),
             );
+        builder = bootstrap_edge(
+            builder,
+            endpoint("items", "snapshot"),
+            endpoint(name, "bootstrap"),
+        );
     }
+    // One visible provider node serves the source, which relays its queries'
+    // bootstrap sessions; it reads each query's progress owner.
+    let provider = ComponentSpecification {
+        descriptor: NativeBootstrapNodeFactory::component_descriptor(id("items-bootstrap"))?,
+        role: ComponentRole::BootstrapProvider,
+        completion: None,
+        implementation: bootstrap.descriptor().implementation.clone(),
+        configuration_version: bootstrap.descriptor().configuration_version,
+        configuration: BTreeMap::from([
+            (
+                "source".into(),
+                ConfigurationValue::Literal(json!(id("items"))),
+            ),
+            (
+                "stream".into(),
+                ConfigurationValue::Literal(json!(stream("items"))),
+            ),
+            ("settings".into(), settings("DRASI_MSSQL_SETTINGS")),
+            (
+                "labels".into(),
+                ConfigurationValue::Literal(json!(["Items"])),
+            ),
+        ]),
+        dependencies: if bootstrap
+            .descriptor()
+            .dependencies
+            .contains_key("source_progress")
+        {
+            BTreeMap::from([(
+                "source_progress".into(),
+                vec![resource("all-progress"), resource("high-progress")],
+            )])
+        } else {
+            BTreeMap::new()
+        },
+    };
+    builder = builder.component(
+        ComponentName::try_new("items-bootstrap")?,
+        provider,
+        bootstrap,
+    );
+    builder = bootstrap_edge(
+        builder,
+        endpoint("items-bootstrap", "snapshot"),
+        endpoint("items", "bootstrap"),
+    );
     builder = declare(builder,"consumers",ResourceRole::Checkpoint,json!({
         "kind":"consumerProgress","producer":id("items"),"consumers":{id("all").as_str():"all-progress",id("high").as_str():"high-progress"},
     }))?.resource_dependency(resource("consumers"),resource("all-progress"),ResourceRole::Checkpoint)?

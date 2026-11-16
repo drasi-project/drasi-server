@@ -13,11 +13,10 @@ use std::{
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use drasi_host_sdk::{management::SourceTimeMergeStorageConfig, PluginRegistry};
+use drasi_host_sdk::management::SourceTimeMergeStorageConfig;
 use drasi_lib::{computation::v1::*, management::DesiredInstance, DrasiLib};
 use drasi_server::computation::{
-    build_components, build_components_with_registry, configuration_from_snapshot,
-    ComputationConfig, ComputationConfigInput,
+    build_components, configuration_from_snapshot, ComputationConfig, ComputationConfigInput,
 };
 use serde_json::json;
 use tokio::sync::{watch, Notify};
@@ -161,67 +160,6 @@ async fn server_construction_versions_fail_on_retained_nodes_not_before_declarat
         .context("retained configuration")?;
     assert_eq!(exported.definition.components, config.definition.components);
     core.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn missing_bootstrap_factories_restore_as_retryable_resource_declarations() -> Result<()> {
-    let mut definition = DesiredInstance::default().topology;
-    let resource = ResourceId::try_new("bootstrap")?;
-    definition.resources.push(ResourceSpecification {
-        id: resource.clone(),
-        role: ResourceRole::Bootstrap,
-        ownership: ResourceOwnership::Graph,
-        binding: "bootstrap".into(),
-    });
-    definition.resource_configurations.insert(
-        resource.clone(),
-        json!({
-            "kind":"nativeBootstrap", "component":"00000000-0000-0000-0000-000000000009",
-            "implementation":ImplementationIdentity::try_new("unavailable/bootstrap", "1")?,
-            "configurationVersion":1, "configuration":{}
-        }),
-    );
-    let mut config = ComputationConfig {
-        definition: DesiredInstance::from(definition).normalized()?.topology,
-    };
-    for _ in 0..2 {
-        let core = DrasiLib::builder()
-            .with_id("same-scope")
-            .with_allow_external_component_ids(true)
-            .build()
-            .await?;
-        let prepared =
-            build_components_with_registry(&config, &core, &PluginRegistry::new()).await?;
-        assert!(
-            prepared.bindings.resources.is_empty(),
-            "all recipes are constructed by the graph"
-        );
-        assert!(prepared
-            .bindings
-            .resource_constructors
-            .contains_key(&resource));
-        let report = core.add_components(prepared).await?;
-        assert!(
-            !report.durable,
-            "the default in-memory configuration store is process-local"
-        );
-        let observed = core.computation_control()?.observed();
-        let state = observed
-            .resources
-            .get(&resource)
-            .context("retained resource")?;
-        assert!(state.failure.is_some(), "{state:?}");
-        let exported =
-            configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?
-                .context("retained recipe")?;
-        assert_eq!(
-            exported.definition.resource_configurations,
-            config.definition.resource_configurations
-        );
-        config = exported;
-        core.shutdown().await?;
-    }
     Ok(())
 }
 

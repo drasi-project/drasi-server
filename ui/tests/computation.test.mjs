@@ -47,6 +47,30 @@ test("all semantic kinds and unknown future kinds render, preserving legacy rend
   assert.equal(new Set(graph.nodes.map((n) => n.id)).size, 7);
 });
 
+test("bootstrap providers are graph nodes and bootstrap edges render distinctly", () => {
+  const bootstrap = { kind: "Bootstrap" };
+  const data = pipeline([
+    component("provider", "BootstrapProvider"), component("source", "Source"), component("query", "Query"),
+  ], [
+    native("provider", "source", "snapshot", bootstrap),
+    native("source", "query", "snapshot", bootstrap),
+    native("source", "query"),
+  ]);
+  const graph = buildFlowGraph(data);
+  const provider = graph.nodes.find((n) => n.data.id === "provider");
+  assert.equal(provider.type, "computationNode");
+  assert.equal(provider.hidden, false, "providers are not hidden inside their owners");
+  assert.ok(provider.position.x < graph.nodes.find((n) => n.data.id === "source").position.x);
+  const kinds = graph.edges.map((e) => e.data.kind);
+  assert.deepEqual(kinds, ["bootstrap", "bootstrap", "data"]);
+  const [providerEdge, , dataEdge] = graph.edges;
+  assert.match(providerEdge.label, /^Bootstrap: snapshot -> in/);
+  assert.equal(providerEdge.animated, false);
+  assert.ok(providerEdge.style.strokeDasharray);
+  assert.equal(dataEdge.animated, true);
+  assert.equal(dataEdge.style.strokeDasharray, undefined);
+});
+
 test("queries and transformers share a column across processing stages and renderer types", () => {
   const data = pipeline([
     component("source", "Source"), component("before", "Transformer"), component("query", "Query"),

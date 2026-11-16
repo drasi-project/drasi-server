@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 
@@ -79,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         storage_backend: None,
         outbox_capacity: 1000,
         bootstrap_timeout_secs: 300,
+        bootstrap_provider: None,
         result: Default::default(),
     };
 

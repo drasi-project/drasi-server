@@ -227,8 +227,9 @@ an empty instance, not unowned running PostgreSQL producers. The app installs:
 
 All three run in the same DrasiLib ComputationGraph. `consumerProgress` binds the
 actual PostgreSQL consumer owners; each query retains its own snapshot boundary.
-Mixed queries use `compositeBootstrap` to initialize both PG and HTTP, without a
-fake source/query or omission of initial prices.
+Each source has a visible bootstrap provider node connected to its `bootstrap`
+input; mixed queries have bootstrap edges from both their PG and HTTP sources, so
+they initialize from both without a fake source/query or omission of initial prices.
 
 The app's `public/native-computation.json` is generated from the actual loaded
 factory metadata and `src/services/queries.ts`. It uses canonical
