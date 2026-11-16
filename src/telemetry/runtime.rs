@@ -13,15 +13,57 @@
 
 use anyhow::Result;
 use drasi_lib::observability::{
-    ComponentLogRuntime, LogPolicy, LoggingError, TelemetryProfile, TelemetrySettings,
+    ComponentLogRuntime, LogPolicy, LoggingError, MetricRegistrationContext, TelemetryProfile,
+    TelemetrySettings,
 };
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
-    config::telemetry::EffectiveTelemetry,
+    config::telemetry::{EffectiveTelemetry, MetricsBackend},
+    instance_registry::InstanceRegistry,
     server::{ServerCleanupHandle, ServerPreparation},
     TelemetryBindings,
 };
+
+pub(crate) async fn prepare_metrics(
+    owner: &ServerCleanupHandle,
+    effective: &EffectiveTelemetry,
+    registry: &InstanceRegistry,
+) -> Result<Option<MetricRegistrationContext>> {
+    effective.ensure_runtime_available()?;
+    owner.retain_registry(registry.clone())?;
+    match effective.metrics_backend {
+        MetricsBackend::None => Ok(None),
+        MetricsBackend::Otlp => {
+            let runtime = std::sync::Arc::new(tokio::sync::Mutex::new(
+                super::MetricsRuntime::default(),
+            ));
+            owner.retain_metrics(runtime.clone())?;
+            let context = runtime
+                .lock()
+                .await
+                .prepare(
+                    super::MetricsMode::CoreOtlp {
+                        destination: effective.metrics_otlp.clone().ok_or_else(|| {
+                            anyhow::anyhow!("Configured OTLP metrics require a destination")
+                        })?,
+                        export_interval: effective.export_interval,
+                        export_timeout: effective.export_timeout,
+                        resource: super::recorders::metrics_resource(&effective.service_name),
+                        progress_enabled: effective
+                            .policy()
+                            .allows_metric("drasi.query.progress.sequence"),
+                    },
+                    registry,
+                )
+                .await?;
+            Ok(context)
+        }
+        MetricsBackend::Prometheus => {
+            anyhow::bail!("Prometheus metrics are not yet available")
+        }
+    }
+}
 
 /// Owns standalone component-log capture and its retained cleanup operation.
 ///
@@ -109,10 +151,16 @@ impl StandaloneTelemetry {
     pub(crate) fn initialize_configured(
         owner: &ServerCleanupHandle,
         effective: EffectiveTelemetry,
+        registry: &InstanceRegistry,
     ) -> Result<TelemetryBindings> {
-        Self::initialize(owner, "info".into(), Some(effective), |policy| {
-            ComponentLogRuntime::new(policy).map_err(Into::into)
-        })
+        effective.ensure_runtime_available()?;
+        owner.retain_registry(registry.clone())?;
+        let bindings = Self::initialize_logging(owner, "info".into())?;
+        let metrics = tokio::runtime::Handle::try_current()?
+            .block_on(prepare_metrics(owner, &effective, registry))?;
+        let bindings = bindings.with_configured_policy(effective, metrics)?;
+        owner.configure_logging_bindings(bindings.clone())?;
+        Ok(bindings)
     }
 
     pub(crate) fn initialize_logging(

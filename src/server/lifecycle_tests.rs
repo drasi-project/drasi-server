@@ -392,6 +392,9 @@ async fn source_log_sse_shutdown_is_server_local() -> Result<()> {
 #[path = "task5_tests.rs"]
 mod task5;
 
+#[path = "metrics_tests.rs"]
+mod metrics;
+
 #[derive(Debug, thiserror::Error)]
 #[error("injected preparation failure")]
 struct PreparationCause;
@@ -1037,6 +1040,12 @@ async fn unpublished_preparations_release_admission() -> Result<()> {
                     created
                         .send(Arc::downgrade(&core))
                         .expect("observer present");
+                    let registry = crate::instance_registry::InstanceRegistry::new()
+                        .with_runtime_context(bindings.clone(), owner.clone());
+                    owner.retain_registry(registry.clone())?;
+                    registry
+                        .publish_instance(core.get_config().id.clone(), core.clone())
+                        .await?;
                     let server = super::DrasiServer::from_prepared_cores(
                         vec![(core.as_ref().clone(), None)],
                         false,
@@ -1046,6 +1055,7 @@ async fn unpublished_preparations_release_admission() -> Result<()> {
                         None,
                         owner,
                         true,
+                        registry,
                     );
                     drop(core);
                     construction.await?;
@@ -1078,8 +1088,18 @@ async fn unpublished_preparations_release_admission() -> Result<()> {
                     logging.is_closed(),
                     "capture cleanup is independent of publication"
                 );
+                assert_eq!(control.stops.load(Ordering::SeqCst), 1);
                 assert_eq!(control.disposals.load(Ordering::SeqCst), 1);
-                released(&weak).await?;
+                assert_eq!(control.resource_closes.load(Ordering::SeqCst), 1);
+                // The unconsumed result owns the registry and its closed Core
+                // wrapper. Producer/resource cleanup must not await that drop.
+                let core = weak.upgrade().context("unconsumed result lost its Core")?;
+                let outcome = timeout(WAIT, core.shutdown_with_outcome()).await?;
+                assert_eq!(outcome.completion, ShutdownCompletion::Complete);
+                outcome.result?;
+                assert_eq!(control.stops.load(Ordering::SeqCst), 1);
+                assert_eq!(control.disposals.load(Ordering::SeqCst), 1);
+                assert_eq!(control.resource_closes.load(Ordering::SeqCst), 1);
                 Ok::<_, anyhow::Error>(())
             };
             let error = if suspended_finish {
@@ -1107,6 +1127,7 @@ async fn unpublished_preparations_release_admission() -> Result<()> {
                 aggregate.cleanup_handle().status().phase,
                 CleanupPhase::Complete
             );
+            released(&weak).await?;
         }
     }
     Ok(())

@@ -106,6 +106,9 @@ fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<Te
                     export_interval: reference(
                         prompts.text("Metrics export interval in seconds (1-3600):", "30")?,
                     )?,
+                    export_timeout: reference(
+                        prompts.text("Metrics export timeout in seconds (1-30):", "5")?,
+                    )?,
                     headers: Default::default(),
                 });
             }
@@ -217,6 +220,7 @@ mod tests {
                 Select("otlp"),
                 Text("http://localhost:4318/v1/metrics"),
                 Text("30"),
+                Text("5"),
                 Confirm(false),
             ],
         ] {
@@ -257,6 +261,7 @@ mod tests {
                 Select("otlp"),
                 Text("http://collector/v1/metrics"),
                 Text("0"),
+                Text("5"),
                 Confirm(false),
             ],
             vec![

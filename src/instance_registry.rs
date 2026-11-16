@@ -272,3 +272,46 @@ impl Default for InstanceRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TelemetryBindings;
+    use drasi_lib::observability::{
+        ComponentLogRuntime, LogPolicy, TelemetryProfile, TelemetrySettings,
+    };
+
+    // Break caught: progress collection waits for management's registry lock
+    // or stops observing the authoritative map after a busy sample.
+    #[tokio::test]
+    async fn metrics_reader_omits_busy_registry_and_resumes_actual_instances() -> anyhow::Result<()>
+    {
+        let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
+        let core = Arc::new(
+            TelemetryBindings::new(
+                TelemetrySettings::new(TelemetryProfile::Off),
+                logging.clone(),
+            )
+            .apply_to(DrasiLib::builder().with_id("metrics-reader"))?
+            .build()
+            .await?,
+        );
+        let registry = InstanceRegistry::new();
+        let reader = registry.metrics_reader();
+        let busy = registry.instances.write().await;
+        let error = reader().err().expect("busy metrics reader must not wait");
+        assert!(error.to_string().contains("busy"));
+        assert!(error.to_string().contains("omitted"));
+        drop(busy);
+        registry
+            .publish_instance("metrics-reader".into(), core.clone())
+            .await?;
+        let instances = reader()?;
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].0, "metrics-reader");
+        assert!(Arc::ptr_eq(&instances[0].1, &core));
+        core.shutdown().await?;
+        logging.shutdown(std::time::Duration::from_secs(5)).await?;
+        Ok(())
+    }
+}

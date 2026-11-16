@@ -144,9 +144,11 @@ impl TelemetryBindings {
     pub(crate) fn with_configured_policy(
         mut self,
         effective: crate::config::telemetry::EffectiveTelemetry,
+        metrics: Option<MetricRegistrationContext>,
     ) -> Result<Self> {
         effective.ensure_runtime_available()?;
         self.settings = effective.settings().clone();
+        self.metrics = metrics;
         self.shutdown_timeout_seconds = effective.shutdown_timeout.as_secs();
         self.validate()?;
         Ok(self)

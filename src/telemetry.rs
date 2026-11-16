@@ -2,9 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 use anyhow::{Context, Result};
-use drasi_lib::computation::v1::SourceProgressKey;
 use drasi_lib::context::workers::spawn_owned_blocking_worker;
-use opentelemetry::{metrics::MeterProvider, KeyValue};
+use drasi_lib::observability::{MetricRegistrationContext, RegistrationLimits};
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::{
     error::{OTelSdkError, OTelSdkResult},
@@ -28,9 +27,14 @@ use crate::{
 
 mod bindings;
 pub use bindings::TelemetryBindings;
-mod runtime;
+pub(crate) mod runtime;
 pub use runtime::StandaloneTelemetry;
+mod progress;
+pub(crate) mod prometheus;
+pub(crate) mod recorders;
 
+#[cfg(test)]
+mod metrics_tests;
 #[cfg(test)]
 mod runtime_tests;
 #[cfg(test)]
@@ -120,37 +124,32 @@ pub(crate) enum MetricsCleanupError {
 
 type ShutdownResult = std::result::Result<(), Arc<anyhow::Error>>;
 
-/// Owns SDK construction and shutdown off the application's Tokio executor.
-#[derive(Default)]
-pub(crate) struct MetricsRuntime {
-    worker: RwLock<Option<tokio::task::JoinHandle<ShutdownResult>>>,
-    stop: Option<std::sync::mpsc::Sender<Instant>>,
-    terminal: Option<ShutdownResult>,
-    started: bool,
-    deadline: Option<Instant>,
-    #[cfg(test)]
-    shutdown_probe: Arc<tests::ShutdownProbe>,
+enum MetricsCommand {
+    Activate,
+    Stop(Instant),
 }
 
-impl MetricsRuntime {
-    pub(crate) async fn start(
-        &mut self,
-        config: MetricsConfig,
-        registry: &InstanceRegistry,
-    ) -> Result<()> {
-        config.validate()?;
-        anyhow::ensure!(!self.started, "Metrics runtime has already started");
-        let endpoint: String = DtoMapper::new().resolve_typed(&config.endpoint)?;
-        let timeout = Duration::from_millis(config.export_timeout_ms);
-        let interval = Duration::from_millis(config.export_interval_ms);
-        let instances = registry.metrics_reader();
-        let (stop, stopping) = std::sync::mpsc::channel();
-        let (ready, initialized) = oneshot::channel();
-        self.stop = Some(stop);
-        #[cfg(test)]
-        let shutdown_probe = self.shutdown_probe.clone();
-        spawn_owned_blocking_worker(&self.worker, move || {
-            let provider = (|| -> Result<(SdkMeterProvider, ApplicationReader, MetricExporter)> {
+struct PreparedMetrics {
+    provider: SdkMeterProvider,
+    reader: ApplicationReader,
+    exporter: MetricExporter,
+    context: Option<MetricRegistrationContext>,
+    transport: Option<CoreHttpClient>,
+    interval: Duration,
+}
+
+impl PreparedMetrics {
+    fn build(mode: MetricsMode, registry: &InstanceRegistry) -> Result<Self> {
+        let core = matches!(&mode, MetricsMode::CoreOtlp { .. });
+        let view = if core {
+            Some(recorders::core_metric_view(RegistrationLimits::default())?)
+        } else {
+            None
+        };
+        let (exporter, resource, transport, interval, progress_enabled) = match mode {
+            MetricsMode::Legacy(config) => {
+                let endpoint: String = DtoMapper::new().resolve_typed(&config.endpoint)?;
+                let timeout = Duration::from_millis(config.export_timeout_ms);
                 let client = reqwest_otel::blocking::Client::builder()
                     .timeout(timeout)
                     .redirect(reqwest_otel::redirect::Policy::none())
@@ -162,147 +161,352 @@ impl MetricsRuntime {
                     .with_endpoint(endpoint)
                     .with_timeout(timeout)
                     .build()?;
-                let reader = ApplicationReader(Arc::new(
-                    ManualReader::builder().with_temporality(exporter.temporality()).build(),
-                ));
-                let provider = SdkMeterProvider::builder()
-                    .with_reader(reader.clone())
-                    .with_resource(
-                        Resource::builder_empty()
-                            .with_attributes([
-                                KeyValue::new("service.name", "drasi-server"),
-                                KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-                                KeyValue::new("service.instance.id", uuid::Uuid::new_v4().to_string()),
-                                KeyValue::new("process.pid", i64::from(std::process::id())),
-                            ])
-                            .build(),
-                    )
-                    .build();
-                provider
-                    .meter("drasi.progress")
-                    .u64_observable_gauge("drasi.query.progress.sequence")
-                    .with_description(
-                        "Committed logical input or produced output sequence of a ready query",
-                    )
-                    .with_callback(move |observer| {
-                        let instances = match instances() {
-                            Ok(instances) => instances,
-                            Err(error) => {
-                                log::warn!("Cannot collect query progress metrics: {error:#}");
-                                return;
-                            }
-                        };
-                        for (instance_id, instance) in instances {
-                            let snapshots = match instance.get_query_progress_metrics() {
-                                Ok(snapshots) => snapshots,
-                                Err(error) => {
-                                    log::warn!(
-                                        "Cannot collect query progress for instance '{instance_id}': {error}"
-                                    );
-                                    continue;
-                                }
-                            };
-                            for snapshot in snapshots {
-                                let attributes = [
-                                    KeyValue::new("drasi.instance.id", instance_id.clone()),
-                                    KeyValue::new("drasi.query.id", snapshot.query_id),
-                                    KeyValue::new(
-                                        "drasi.component.generation",
-                                        snapshot.component_generation.to_string(),
-                                    ),
-                                    KeyValue::new(
-                                        "drasi.component.operation",
-                                        snapshot.component_operation.to_string(),
-                                    ),
-                                    KeyValue::new(
-                                        "drasi.query.output.generation",
-                                        snapshot.output_generation.to_string(),
-                                    ),
-                                    KeyValue::new(
-                                        "drasi.query.config_hash",
-                                        snapshot.config_hash.to_string(),
-                                    ),
-                                    KeyValue::new("drasi.progress.persistent", snapshot.persistent),
-                                ];
-                                let mut output_attributes = attributes.to_vec();
-                                output_attributes.push(KeyValue::new(
-                                    "drasi.progress.stage",
-                                    "output.produced",
-                                ));
-                                observe_sequence(observer, snapshot.output_sequence, &output_attributes);
-                                for (key, sequence) in snapshot.input_sequences {
-                                    let (kind, id) = match key {
-                                        SourceProgressKey::Source(id) => ("source", id),
-                                        SourceProgressKey::Stream(id) => ("stream", id.to_string()),
-                                    };
-                                    let mut input_attributes = attributes.to_vec();
-                                    input_attributes.extend([
-                                        KeyValue::new("drasi.progress.stage", "input.committed"),
-                                        KeyValue::new("drasi.input.kind", kind),
-                                        KeyValue::new("drasi.input.id", id),
-                                    ]);
-                                    observe_sequence(observer, sequence, &input_attributes);
-                                }
-                            }
-                        }
-                    })
-                    .build();
-                Ok((provider, reader, exporter))
-            })();
-            let (provider, reader, exporter) = match provider {
-                Ok(provider) => provider,
+                (
+                    exporter,
+                    recorders::metrics_resource("drasi-server"),
+                    None,
+                    Duration::from_millis(config.export_interval_ms),
+                    true,
+                )
+            }
+            MetricsMode::CoreOtlp {
+                destination,
+                export_interval,
+                export_timeout,
+                resource,
+                progress_enabled,
+            } => {
+                anyhow::ensure!(
+                    !export_interval.is_zero(),
+                    "Metrics interval must be nonzero"
+                );
+                anyhow::ensure!(!export_timeout.is_zero(), "Metrics timeout must be nonzero");
+                let transport = CoreHttpClient::new(destination, export_timeout)?;
+                let exporter = tracing::subscriber::with_default(
+                    tracing::subscriber::NoSubscriber::default(),
+                    || {
+                        MetricExporter::builder()
+                            .with_http()
+                            .with_http_client(transport.clone())
+                            .with_protocol(Protocol::HttpBinary)
+                            .with_endpoint(transport.destination.endpoint().as_str())
+                            .with_timeout(export_timeout)
+                            .with_temporality(Temporality::Cumulative)
+                            .with_retry_policy(
+                                opentelemetry_otlp::RetryPolicy::default().with_max_retries(0),
+                            )
+                            .build()
+                    },
+                )
+                .map_err(|_| anyhow::anyhow!("Cannot initialize resolved OTLP metrics exporter"))?;
+                (
+                    exporter,
+                    resource,
+                    Some(transport),
+                    export_interval,
+                    progress_enabled,
+                )
+            }
+        };
+        let reader = ApplicationReader(Arc::new(
+            ManualReader::builder()
+                .with_temporality(exporter.temporality())
+                .build(),
+        ));
+        let mut builder = SdkMeterProvider::builder()
+            .with_reader(reader.clone())
+            .with_resource(resource);
+        if let Some(view) = view {
+            builder = builder.with_view(view);
+        }
+        let provider = builder.build();
+        if progress_enabled {
+            progress::register_progress(&provider, registry);
+        }
+        let context = if core {
+            Some(recorders::otlp_recorder(&provider)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            provider,
+            reader,
+            exporter,
+            context,
+            transport,
+            interval,
+        })
+    }
+}
+
+/// SDK 0.33.1 unconditionally merges OTEL header variables. Replace routing
+/// and headers at its HTTP seam, retaining its protobuf encoding unchanged.
+#[derive(Clone)]
+struct CoreHttpClient {
+    client: reqwest_otel::blocking::Client,
+    destination: crate::config::telemetry::OtlpDestination,
+    timeout: Duration,
+    deadline: Arc<std::sync::Mutex<Instant>>,
+}
+
+impl std::fmt::Debug for CoreHttpClient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CoreHttpClient { protocol: http/protobuf, .. }")
+    }
+}
+
+impl CoreHttpClient {
+    fn new(
+        destination: crate::config::telemetry::OtlpDestination,
+        timeout: Duration,
+    ) -> Result<Self> {
+        let client = reqwest_otel::blocking::Client::builder()
+            .timeout(timeout)
+            .redirect(reqwest_otel::redirect::Policy::none())
+            .build()
+            .map_err(|_| anyhow::anyhow!("Cannot initialize OTLP metrics HTTP client"))?;
+        Ok(Self {
+            client,
+            destination,
+            timeout,
+            deadline: Arc::new(std::sync::Mutex::new(Instant::now())),
+        })
+    }
+
+    fn allow_until(&self, phase_deadline: Option<Instant>) -> OTelSdkResult {
+        let request_deadline = Instant::now() + self.timeout;
+        *self.deadline.lock().map_err(|_| {
+            OTelSdkError::InternalFailure("Metrics request deadline lock failed".into())
+        })? = phase_deadline.map_or(request_deadline, |deadline| deadline.min(request_deadline));
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl opentelemetry_http::HttpClient for CoreHttpClient {
+    async fn send_bytes(
+        &self,
+        request: opentelemetry_http::Request<bytes::Bytes>,
+    ) -> std::result::Result<
+        opentelemetry_http::Response<bytes::Bytes>,
+        opentelemetry_http::HttpError,
+    > {
+        use std::io::Read;
+        let deadline = *self
+            .deadline
+            .lock()
+            .map_err(|_| std::io::Error::other("Metrics request deadline lock failed"))?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Metrics request allowance elapsed",
+            )
+            .into());
+        }
+        let response = self
+            .client
+            .post(self.destination.endpoint().clone())
+            .headers(self.destination.headers().clone())
+            .header(axum::http::header::CONTENT_TYPE, "application/x-protobuf")
+            .timeout(remaining)
+            .body(request.into_body())
+            .send()
+            .map_err(|_| std::io::Error::other("Metrics HTTP request failed"))?;
+        let status = response.status();
+        // Preserve the pinned HTTP adapter's existing four-MiB response bound.
+        let mut body = Vec::new();
+        response
+            .take(4 * 1024 * 1024 + 1)
+            .read_to_end(&mut body)
+            .map_err(|_| std::io::Error::other("Metrics HTTP response failed"))?;
+        if body.len() > 4 * 1024 * 1024 {
+            return Err(opentelemetry_http::ResponseBodyTooLarge::new().into());
+        }
+        Ok(opentelemetry_http::Response::builder()
+            .status(status)
+            .body(body.into())?)
+    }
+}
+
+#[derive(Default)]
+struct ExportWarnings {
+    last_warning: Option<Instant>,
+    suppressed: u64,
+    failing: bool,
+}
+
+impl ExportWarnings {
+    fn failed(&mut self, now: Instant) -> Option<u64> {
+        self.failing = true;
+        if self
+            .last_warning
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(30))
+        {
+            self.suppressed = self.suppressed.saturating_add(1);
+            return None;
+        }
+        self.last_warning = Some(now);
+        Some(std::mem::take(&mut self.suppressed))
+    }
+
+    fn recovered(&mut self) -> Option<u64> {
+        std::mem::take(&mut self.failing).then(|| std::mem::take(&mut self.suppressed))
+    }
+}
+
+pub(crate) enum MetricsMode {
+    Legacy(MetricsConfig),
+    CoreOtlp {
+        destination: crate::config::telemetry::OtlpDestination,
+        export_interval: Duration,
+        export_timeout: Duration,
+        resource: Resource,
+        progress_enabled: bool,
+    },
+}
+
+/// Owns SDK construction and shutdown off the application's Tokio executor.
+#[derive(Default)]
+pub(crate) struct MetricsRuntime {
+    worker: RwLock<Option<tokio::task::JoinHandle<ShutdownResult>>>,
+    stop: Option<std::sync::mpsc::Sender<MetricsCommand>>,
+    terminal: Option<ShutdownResult>,
+    started: bool,
+    activated: bool,
+    resource: Option<Resource>,
+    deadline: Option<Instant>,
+    #[cfg(test)]
+    shutdown_probe: Arc<tests::ShutdownProbe>,
+}
+
+impl MetricsRuntime {
+    pub(crate) async fn prepare(
+        &mut self,
+        mode: MetricsMode,
+        registry: &InstanceRegistry,
+    ) -> Result<Option<MetricRegistrationContext>> {
+        anyhow::ensure!(!self.started, "Metrics runtime has already started");
+        if let MetricsMode::Legacy(config) = &mode {
+            config.validate()?;
+        }
+        self.resource = match &mode {
+            MetricsMode::CoreOtlp { resource, .. } => Some(resource.clone()),
+            MetricsMode::Legacy(_) => None,
+        };
+        let registry = registry.clone();
+        let (stop, stopping) = std::sync::mpsc::channel();
+        let (ready, initialized) = oneshot::channel();
+        self.stop = Some(stop);
+        self.started = true;
+        #[cfg(test)]
+        let shutdown_probe = self.shutdown_probe.clone();
+        spawn_owned_blocking_worker(&self.worker, move || {
+            #[cfg(test)]
+            shutdown_probe.pause_preparation();
+            let prepared = match PreparedMetrics::build(mode, &registry) {
+                Ok(prepared) => prepared,
                 Err(error) => {
-                    let _ = ready.send(Err(error));
-                    return Ok(());
+                    let error = Arc::new(error);
+                    let _ = ready.send(Err(MetricsTerminal(error.clone()).into()));
+                    return Err(error);
                 }
             };
-            let collect = || -> OTelSdkResult {
+            drop(registry);
+            let PreparedMetrics { provider, reader, exporter, context, transport, interval } = prepared;
+            let collect = |deadline: Option<Instant>| -> OTelSdkResult {
                 let mut metrics = ResourceMetrics::default();
                 reader.collect(&mut metrics)?;
                 if metrics.scope_metrics().next().is_some() {
-                    // The blocking HTTP client must not run inside Tokio's async context.
-                    futures::executor::block_on(exporter.export(&metrics))?;
+                    if let Some(transport) = &transport {
+                        transport.allow_until(deadline)?;
+                        // Pinned SDK retry/response diagnostics are not policy-aware
+                        // and may echo collector data. Report sanitized, rate-limited
+                        // failures below instead, on this owned worker only.
+                        tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+                            futures::executor::block_on(exporter.export(&metrics))
+                        })?;
+                    } else {
+                        futures::executor::block_on(exporter.export(&metrics))?;
+                    }
                 }
                 Ok(())
             };
-            let mut next_interval = interval;
-            let deadline = if ready.send(Ok(())).is_err() {
-                Instant::now()
-            } else {
+            let mut active = false;
+            let mut warnings = ExportWarnings::default();
+            let deadline = if ready.send(Ok(context)).is_ok() {
+                // Preparation never exports, even if its caller is cancelled.
+                // Only an explicit activation command starts the periodic clock.
+                let mut next_tick: Option<Instant> = None;
                 loop {
-                    match stopping.recv_timeout(next_interval) {
-                        Ok(deadline) => break deadline,
+                    let command = match next_tick {
+                        Some(tick) => stopping.recv_timeout(
+                            tick.saturating_duration_since(Instant::now())
+                        ),
+                        None => stopping.recv().map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected),
+                    };
+                    match command {
+                        Ok(MetricsCommand::Stop(deadline)) => break deadline,
+                        Ok(MetricsCommand::Activate) => {
+                            active = true;
+                            next_tick = Some(Instant::now() + interval);
+                        }
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Instant::now(),
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                            let start = std::time::Instant::now();
-                            if let Err(error) = collect() {
-                                log::warn!("OpenTelemetry metrics export failed: {error}");
+                            let start = Instant::now();
+                            let outcome = collect(None);
+                            #[cfg(test)]
+                            shutdown_probe.periodic_exports.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            match outcome {
+                                Err(error) if transport.is_none() => {
+                                    log::warn!("OpenTelemetry metrics export failed: {error}");
+                                }
+                                Err(_) => {
+                                    if let Some(suppressed) = warnings.failed(Instant::now()) {
+                                        log::warn!("OpenTelemetry metrics export failed; {suppressed} repeated failures suppressed");
+                                    }
+                                }
+                                Ok(()) => {
+                                    if let Some(suppressed) = warnings.recovered() {
+                                        log::info!("OpenTelemetry metrics export recovered; {suppressed} repeated failures suppressed");
+                                    }
+                                }
                             }
-                            // Match the legacy reader: export duration counts
-                            // against the interval, and slow exports never overlap.
-                            next_interval = interval.saturating_sub(start.elapsed());
+                            next_tick = Some(if transport.is_none() {
+                                // Preserve legacy duration-counts-against-interval timing.
+                                Instant::now() + interval.saturating_sub(start.elapsed())
+                            } else {
+                                let mut tick = next_tick.expect("an active export has a periodic tick") + interval;
+                                while tick <= Instant::now() {
+                                    tick += interval;
+                                }
+                                tick
+                            });
                         }
                     }
                 }
+            } else {
+                Instant::now()
             };
             let mut failures = Vec::new();
-            if Instant::now() < deadline {
-                if let Err(error) = collect() {
-                    failures.push(MetricsCleanupError::Sdk(error).into());
+            if active {
+                if Instant::now() < deadline {
+                    if let Err(error) = collect(Some(deadline)) {
+                        failures.push(MetricsCleanupError::Sdk(error).into());
+                    }
+                } else {
+                    failures.push(MetricsCleanupError::PhaseExpired.into());
                 }
-            } else {
-                failures.push(MetricsCleanupError::PhaseExpired.into());
-            }
-            if Instant::now() < deadline {
-                if let Err(error) = exporter.force_flush() {
-                    failures.push(MetricsCleanupError::Sdk(error).into());
+                if Instant::now() < deadline {
+                    if let Err(error) = exporter.force_flush() {
+                        failures.push(MetricsCleanupError::Sdk(error).into());
+                    }
                 }
-            }
-            if Instant::now() >= deadline && !failures.iter().any(|failure: &anyhow::Error| {
-                failure.is::<MetricsCleanupError>()
-                    && matches!(failure.downcast_ref::<MetricsCleanupError>(), Some(MetricsCleanupError::PhaseExpired))
-            }) {
-                failures.push(MetricsCleanupError::PhaseExpired.into());
+                if Instant::now() >= deadline && !failures.iter().any(|failure: &anyhow::Error| {
+                    matches!(failure.downcast_ref::<MetricsCleanupError>(), Some(MetricsCleanupError::PhaseExpired))
+                }) {
+                    failures.push(MetricsCleanupError::PhaseExpired.into());
+                }
             }
             // ManualReader has no worker. All collection, transport, close and
             // Drop work remain on this one retained application worker.
@@ -330,11 +534,32 @@ impl MetricsRuntime {
             }
         })
         .await?;
-        self.started = true;
         initialized
             .await
-            .context("Metrics initialization worker exited")??;
+            .context("Metrics initialization worker exited")?
+    }
+
+    pub(crate) fn activate(&mut self) -> Result<()> {
+        anyhow::ensure!(
+            self.started && !self.activated,
+            "Metrics runtime is not prepared or is already active"
+        );
+        self.stop
+            .as_ref()
+            .context("Metrics runtime is stopping")?
+            .send(MetricsCommand::Activate)
+            .map_err(|_| MetricsCleanupError::RequestClosed)?;
+        self.activated = true;
         Ok(())
+    }
+
+    pub(crate) async fn start(
+        &mut self,
+        config: MetricsConfig,
+        registry: &InstanceRegistry,
+    ) -> Result<()> {
+        self.prepare(MetricsMode::Legacy(config), registry).await?;
+        self.activate()
     }
 
     #[cfg(test)]
@@ -350,7 +575,7 @@ impl MetricsRuntime {
     pub(crate) fn request_shutdown(&mut self, deadline: Instant) -> Result<()> {
         let deadline = *self.deadline.get_or_insert(deadline);
         if let Some(stop) = self.stop.take() {
-            stop.send(deadline)
+            stop.send(MetricsCommand::Stop(deadline))
                 .map_err(|_| MetricsCleanupError::RequestClosed)?;
         }
         Ok(())
@@ -425,20 +650,6 @@ fn metrics_terminal(result: &ShutdownResult) -> Result<()> {
     result
         .clone()
         .map_err(|error| MetricsTerminal(error).into())
-}
-
-fn observe_sequence(
-    observer: &dyn opentelemetry::metrics::AsyncInstrument<u64>,
-    sequence: u64,
-    attributes: &[KeyValue],
-) {
-    if sequence > i64::MAX as u64 {
-        log::error!(
-            "Query progress exceeds OTLP's signed integer range; not exporting a wrapped value"
-        );
-        return;
-    }
-    observer.observe(sequence, attributes);
 }
 
 impl Drop for MetricsRuntime {

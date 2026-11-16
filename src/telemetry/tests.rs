@@ -15,6 +15,28 @@ use tokio::sync::{mpsc, Notify};
 pub(super) struct ShutdownProbe {
     pub(super) sdk: AtomicUsize,
     pub(super) exporter: AtomicUsize,
+    pub(super) periodic_exports: AtomicUsize,
+    pub(super) preparation: std::sync::Mutex<Option<Arc<PreparationGate>>>,
+}
+
+#[derive(Default)]
+pub(super) struct PreparationGate {
+    pub(super) entered: AtomicBool,
+    pub(super) released: std::sync::Mutex<bool>,
+    pub(super) changed: std::sync::Condvar,
+}
+
+impl ShutdownProbe {
+    pub(super) fn pause_preparation(&self) {
+        let gate = self.preparation.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            let mut released = gate.released.lock().unwrap();
+            gate.entered.store(true, Ordering::SeqCst);
+            while !*released {
+                released = gate.changed.wait(released).unwrap();
+            }
+        }
+    }
 }
 
 struct CollectorState {
@@ -35,7 +57,7 @@ async fn collect(State(state): State<Arc<CollectorState>>, Json(body): Json<Valu
     Json(json!({}))
 }
 
-async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
+pub(super) async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
     let input = Arc::new(std::sync::OnceLock::new());
     let assigned_input = input.clone();
     let core = Arc::new(

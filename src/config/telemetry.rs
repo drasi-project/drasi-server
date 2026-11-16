@@ -163,6 +163,10 @@ pub struct OtlpMetricsConfig {
     #[serde(default = "default_export_interval")]
     #[schema(schema_with = integer_schema)]
     pub export_interval: ConfigValue<u64>,
+    /// End-to-end HTTP request allowance, in seconds.
+    #[serde(default = "default_export_timeout")]
+    #[schema(schema_with = integer_schema)]
+    pub export_timeout: ConfigValue<u64>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[schema(schema_with = headers_schema)]
     pub headers: BTreeMap<String, ConfigValue<String>>,
@@ -216,6 +220,7 @@ pub struct EffectiveTelemetry {
     pub prometheus: Option<EffectivePrometheus>,
     pub metrics_otlp: Option<OtlpDestination>,
     pub export_interval: Duration,
+    pub export_timeout: Duration,
     pub process_metrics: bool,
     pub shutdown_timeout: Duration,
 }
@@ -236,9 +241,8 @@ impl EffectiveTelemetry {
             unavailable.push("OTLP tracing (OBS-03/OBS-05)");
         }
         match self.metrics_backend {
-            MetricsBackend::None => {}
+            MetricsBackend::None | MetricsBackend::Otlp => {}
             MetricsBackend::Prometheus => unavailable.push("Prometheus metrics (OBS-03/OBS-04)"),
-            MetricsBackend::Otlp => unavailable.push("OTLP metrics (OBS-03/OBS-04)"),
         }
         if self.process_metrics {
             unavailable.push("process metrics (OBS-06)");
@@ -345,7 +349,8 @@ impl TelemetryConfig {
                 );
             }
         }
-        let (metrics_otlp, export_interval) = if let Some(otlp) = &self.metrics.otlp {
+        let (metrics_otlp, export_interval, export_timeout) = if let Some(otlp) = &self.metrics.otlp
+        {
             (
                 destination(
                     mapper,
@@ -360,9 +365,15 @@ impl TelemetryConfig {
                     "telemetry.metrics.otlp.exportInterval",
                     3600,
                 )?,
+                bounded_seconds(
+                    mapper,
+                    &otlp.export_timeout,
+                    "telemetry.metrics.otlp.exportTimeout",
+                    30,
+                )?,
             )
         } else {
-            (None, Duration::from_secs(30))
+            (None, Duration::from_secs(30), Duration::from_secs(5))
         };
         ensure!(
             !active || backend != MetricsBackend::Otlp || metrics_otlp.is_some(),
@@ -395,6 +406,7 @@ impl TelemetryConfig {
                 .then_some(EffectivePrometheus { path, port }),
             metrics_otlp: metrics_otlp.filter(|_| active && backend == MetricsBackend::Otlp),
             export_interval,
+            export_timeout,
             process_metrics,
             shutdown_timeout: shutdown,
         })
@@ -635,6 +647,9 @@ fn default_metrics_path() -> ConfigValue<String> {
 }
 fn default_export_interval() -> ConfigValue<u64> {
     ConfigValue::Static(30)
+}
+fn default_export_timeout() -> ConfigValue<u64> {
+    ConfigValue::Static(5)
 }
 fn default_shutdown_timeout() -> ConfigValue<u64> {
     ConfigValue::Static(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS)

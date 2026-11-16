@@ -64,6 +64,8 @@ pub mod error_codes {
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
     pub const SERVER_SHUTTING_DOWN: &str = "SERVER_SHUTTING_DOWN";
+    pub const TELEMETRY_RENDER_FAILED: &str = "TELEMETRY_RENDER_FAILED";
+    pub const TELEMETRY_SCRAPE_UNAVAILABLE: &str = "TELEMETRY_SCRAPE_UNAVAILABLE";
     /// Returned when an in-memory mutation succeeded but the configuration
     /// could not be persisted to disk. The runtime state has changed; the
     /// on-disk YAML has not. Operators should retry the operation or restart
@@ -266,6 +268,7 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::CONFIGURATION_TRANSITION_REQUIRED => StatusCode::CONFLICT,
         error_codes::CONFIGURATION_UNCONFIRMED => StatusCode::SERVICE_UNAVAILABLE,
         error_codes::SERVER_SHUTTING_DOWN => StatusCode::SERVICE_UNAVAILABLE,
+        error_codes::TELEMETRY_SCRAPE_UNAVAILABLE => StatusCode::SERVICE_UNAVAILABLE,
 
         error_codes::INVALID_REQUEST
         | error_codes::EXTERNAL_COMPONENT_ID_REJECTED

@@ -203,6 +203,7 @@ struct State {
     watcher: Option<OwnedPollingWatcher>,
     api: Option<Arc<ApiWorker>>,
     metrics: Option<Arc<AsyncMutex<crate::telemetry::MetricsRuntime>>>,
+    prometheus: Option<Arc<crate::telemetry::prometheus::PrometheusRuntime>>,
     driver: Option<Arc<Worker>>,
     driver_active: bool,
     retry_required: bool,
@@ -441,6 +442,33 @@ impl Owner {
                     self.state().metrics.take();
                 }
             }
+            let prometheus = self.state().prometheus.clone();
+            if let Some(prometheus) = prometheus {
+                let deadline = {
+                    let mut state = self.state();
+                    state.phase = CleanupPhase::DrainingCollection;
+                    state
+                        .budget
+                        .as_mut()
+                        .expect("shutdown budget")
+                        .begin_collection()
+                };
+                self.changed();
+                if let Err(error) = prometheus.request_shutdown(deadline) {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if let Err(error) = prometheus.wait_shutdown_until(deadline).await {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if !prometheus.is_joined().await {
+                    if let Err(error) = prometheus.wait_for_completion().await {
+                        self.state().history.cleanup.push(Arc::new(error));
+                    }
+                }
+                if prometheus.is_joined().await {
+                    self.state().prometheus.take();
+                }
+            }
             let dependencies = {
                 let mut state = self.state();
                 (
@@ -478,6 +506,7 @@ impl Owner {
                 || state.watcher.is_some()
                 || state.api.is_some()
                 || state.metrics.is_some()
+                || state.prometheus.is_some()
             {
                 None
             } else if let Some(logging) = state.owned_logging.clone() {
@@ -543,6 +572,7 @@ impl Owner {
             state.retry_required = state.cores.iter().any(Option::is_some)
                 || state.owned_logging.is_some()
                 || state.metrics.is_some()
+                || state.prometheus.is_some()
                 || state.watcher.is_some()
                 || state.api.is_some();
             if state.retry_required {
@@ -621,6 +651,7 @@ impl ServerCleanupHandle {
                     watcher: None,
                     api: None,
                     metrics: None,
+                    prometheus: None,
                     driver: None,
                     driver_active: false,
                     retry_required: false,
@@ -660,8 +691,41 @@ impl ServerCleanupHandle {
             state.admission_open || state.admitted > 0,
             "Runtime must be registered before cleanup"
         );
-        state.running_registry = Some(registry);
+        if let Some(retained) = &state.running_registry {
+            ensure!(
+                retained.same_instances(&registry),
+                "Runtime cannot replace the retained instance registry"
+            );
+        } else {
+            state.running_registry = Some(registry);
+        }
         state.plugin_dependencies = Some((plugins, orchestrator));
+        Ok(())
+    }
+
+    pub(crate) fn retain_registry(&self, registry: InstanceRegistry) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Registry must be registered before cleanup"
+        );
+        if let Some(retained) = &state.running_registry {
+            ensure!(
+                retained.same_instances(&registry),
+                "Cannot replace the retained instance registry"
+            );
+        } else {
+            state.running_registry = Some(registry);
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn activate_metrics(&self) -> Result<()> {
+        let metrics = self.owner.state().metrics.clone();
+        if let Some(metrics) = metrics {
+            let mut metrics = metrics.lock().await;
+            self.publish(|| metrics.activate())?;
+        }
         Ok(())
     }
 
@@ -691,7 +755,36 @@ impl ServerCleanupHandle {
             "Metrics must be registered before cleanup"
         );
         ensure!(state.metrics.is_none(), "Metrics are already owned");
+        ensure!(
+            state.prometheus.is_none(),
+            "A Prometheus backend is already owned"
+        );
         state.metrics = Some(metrics);
+        Ok(())
+    }
+
+    /// Retains the concrete controller before it may submit any blocking work.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn retain_prometheus(
+        &self,
+        runtime: Arc<crate::telemetry::prometheus::PrometheusRuntime>,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || (state.phase == CleanupPhase::Quiescing && state.admitted > 0),
+            "Prometheus must be registered before collection cleanup"
+        );
+        ensure!(
+            state.metrics.is_none(),
+            "A metrics exporter is already owned"
+        );
+        ensure!(state.prometheus.is_none(), "Prometheus is already owned");
+        state.prometheus = Some(runtime.clone());
+        let quiescing = !state.admission_open;
+        drop(state);
+        if quiescing {
+            runtime.close_scrape_admission();
+        }
         Ok(())
     }
 
@@ -955,6 +1048,9 @@ impl ServerCleanupHandle {
             if let Some(watcher) = &state.watcher {
                 watcher.request_stop();
             }
+            if let Some(prometheus) = &state.prometheus {
+                prometheus.close_scrape_admission();
+            }
             state.retained = Some(self.owner.clone());
             if let Err(error) = self.owner.begin_driver(&mut state) {
                 state.driver_active = false;
@@ -1201,6 +1297,7 @@ pub struct ServerPreparation<T> {
     cleanup: ServerCleanupHandle,
     result: Option<oneshot::Receiver<std::result::Result<T, ()>>>,
     published: bool,
+    activate_metrics_on_publish: bool,
 }
 
 impl<T: Send + 'static> ServerPreparation<T> {
@@ -1250,6 +1347,7 @@ impl<T: Send + 'static> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
+            activate_metrics_on_publish: false,
         })
     }
 
@@ -1286,6 +1384,7 @@ impl<T: Send + 'static> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
+            activate_metrics_on_publish: false,
         })
     }
 }
@@ -1302,7 +1401,13 @@ impl<T> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
+            activate_metrics_on_publish: false,
         }
+    }
+
+    pub(crate) fn activating_metrics(mut self) -> Self {
+        self.activate_metrics_on_publish = true;
+        self
     }
 
     pub fn cleanup_handle(&self) -> ServerCleanupHandle {
@@ -1331,10 +1436,21 @@ impl<T> ServerPreparation<T> {
                 }
             };
             if publish {
-                self.published = true;
-                return Ok(value);
+                let activation = if self.activate_metrics_on_publish {
+                    self.cleanup.activate_metrics().await
+                } else {
+                    Ok(())
+                };
+                match activation {
+                    Ok(()) => {
+                        self.published = true;
+                        return Ok(value);
+                    }
+                    Err(error) => self.cleanup.owner.primary(error),
+                }
+            } else {
+                self.cleanup.owner.primary(PreparationRolledBack.into());
             }
-            self.cleanup.owner.primary(PreparationRolledBack.into());
             drop(value);
         }
         self.cleanup.request_shutdown()?;

@@ -22,6 +22,7 @@ logs/
 
 # AI plan files
 .plans/
+/docs/superpowers/
 
 # OS generated files
 .DS_Store

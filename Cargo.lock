@@ -1650,10 +1650,13 @@ dependencies = [
  "oci-client",
  "openssl",
  "opentelemetry 0.33.1",
+ "opentelemetry-http",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk 0.33.1",
  "percent-encoding",
  "pretty_assertions",
+ "prost 0.14.4",
  "regex",
  "reqwest 0.12.28",
  "reqwest 0.13.4",
@@ -3160,8 +3163,6 @@ dependencies = [
 [[package]]
 name = "metrics-opentelemetry"
 version = "0.24033.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59b2d7d5b426258e1823259c27cfb69a1163ce2596f3a5aa38e17eee66ca2f15"
 dependencies = [
  "metrics",
  "opentelemetry 0.33.1",

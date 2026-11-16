@@ -176,7 +176,7 @@ async fn builder_case(case: &str) -> Result<()> {
     match case {
         "replace" | "profile" | "backend" | "repeat-backend" => {
             let retained = config(
-                "profile: basic\nfilters:\n  exclude: [keep-this-filter]\ntracing:\n  sampleRatio: 0.25",
+                "profile: basic\nfilters:\n  exclude: [keep-this-filter]\ntracing:\n  sampleRatio: 0.25\nmetrics:\n  otlp:\n    endpoint: http://localhost:4318/v1/metrics\n    protocol: http/protobuf\n    exportTimeout: 7",
             )?;
             let builder = match case {
                 "replace" => source_builder(calls.clone())
@@ -443,12 +443,11 @@ async fn builder_conveniences_preserve_invalid_unrelated_fields() -> Result<()> 
 }
 
 #[tokio::test]
-async fn builder_production_destinations_stay_gated_before_factories() -> Result<()> {
+async fn builder_unavailable_capabilities_stay_gated_before_factories() -> Result<()> {
     let calls = Arc::new(AtomicUsize::new(0));
     for yaml in [
         "profile: basic\ntracing:\n  endpoint: http://127.0.0.1:4318/v1/traces\n  protocol: http/protobuf",
         "profile: basic\nmetrics:\n  backend: prometheus",
-        "profile: basic\nmetrics:\n  backend: otlp\n  otlp:\n    endpoint: http://127.0.0.1:4318/v1/metrics\n    protocol: http/protobuf",
         "profile: basic\ninspection:\n  enabled: true",
         "profile: basic\nmetrics:\n  backend: prometheus\n  processMetrics: true",
     ] {

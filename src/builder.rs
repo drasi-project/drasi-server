@@ -26,6 +26,7 @@ use crate::{
     api::{mappings::DtoMapper, models::ConfigValue},
     builder_result::{DrasiServerWithHandles, DrasiServerWithOwnedHandles},
     config::telemetry::{MetricsBackend, TelemetryConfig},
+    instance_registry::InstanceRegistry,
     server::{DrasiServer, ServerCleanupHandle, ServerPreparation},
     telemetry::StandaloneTelemetry,
     TelemetryBindings,
@@ -393,7 +394,7 @@ impl DrasiServerBuilder {
             })
         })();
         match submitted {
-            Ok(preparation) => preparation,
+            Ok(preparation) => preparation.activating_metrics(),
             Err(error) => ServerPreparation::failed(cleanup, error),
         }
     }
@@ -453,13 +454,15 @@ impl DrasiServerBuilder {
             "This result cannot retain Server-owned telemetry; use build, prepare or build_with_owned_handles"
         );
         let new_telemetry = self.telemetry_config.is_some() || self.telemetry_bindings.is_some();
+        let registry = InstanceRegistry::new();
+        owner.retain_registry(registry.clone())?;
         let port = self.port.unwrap_or(8080);
         let (bindings, legacy_logging) = if let Some(config) = self.telemetry_config {
             let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
             effective.ensure_runtime_available()?;
             (
                 Some(StandaloneTelemetry::initialize_configured(
-                    owner, effective,
+                    owner, effective, &registry,
                 )?),
                 None,
             )
@@ -474,6 +477,10 @@ impl DrasiServerBuilder {
                 logging.clone(),
             ))?;
             (None, Some(logging))
+        };
+        let registry = match owner.bindings() {
+            Some(bindings) => registry.with_runtime_context(bindings, owner.clone()),
+            None => registry.with_cleanup_context(owner.clone()),
         };
         if only_primary {
             self.core_builders.truncate(1);
@@ -509,6 +516,7 @@ impl DrasiServerBuilder {
                 if start {
                     core.start().await.context("Core startup failed")?;
                 }
+                registry.publish_instance(id.clone(), core.clone()).await?;
                 servers.insert(id, core.clone());
                 cores.push(core);
             }
@@ -523,6 +531,7 @@ impl DrasiServerBuilder {
             port,
             config_file_path: self.config_file_path,
             new_telemetry,
+            registry,
         })
     }
 }
@@ -536,6 +545,7 @@ struct BuiltCores {
     port: u16,
     config_file_path: Option<String>,
     new_telemetry: bool,
+    registry: InstanceRegistry,
 }
 
 impl BuiltCores {
@@ -556,6 +566,7 @@ impl BuiltCores {
             self.config_file_path,
             cleanup,
             self.new_telemetry,
+            self.registry,
         )
     }
 }

@@ -1,4 +1,4 @@
-# Telemetry configuration and runtime ownership (OBS-02/03)
+# Telemetry configuration and runtime ownership
 
 Telemetry is a startup-only, Server-wide policy. There are no
 per-instance overrides or writable telemetry API. Change configuration and
@@ -10,10 +10,11 @@ logging independently of telemetry profiles.
 OBS-02 implements typed configuration, validation, reference-preserving
 persistence and the existing `drasi-server init --output ...` wizard. OBS-03
 adds standalone logging composition, explicit borrowed bindings and retained
-construction/running cleanup. It does
-**not** install new subscribers, providers, exporters, scrape routes, inspection
-routes or process collectors. Production tracing is OBS-04, production metrics
-are OBS-05, and process/inspection support is OBS-06.
+construction/running cleanup. Configured OTLP metrics now use one explicit
+recorder/context and retained HTTP/protobuf exporter. Server installs no global
+metrics recorder or provider. Prometheus activation/scrape routing, tracing
+export, process collectors and inspection remain unavailable. Native-plugin
+wire parity and the end-to-end observability demo require separate qualification.
 
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Successful validation does
@@ -63,6 +64,7 @@ The legacy `metrics` contract remains HTTP/JSON with a full metrics URL,
 | `metrics.otlp.endpoint` | absent | Required when OTLP metrics is active |
 | `metrics.otlp.protocol` | absent | Explicit `http/protobuf` |
 | `metrics.otlp.exportInterval` | `30` seconds | Integer 1..=3,600 seconds |
+| `metrics.otlp.exportTimeout` | `5` seconds | Integer 1..=30 seconds |
 | `shutdownTimeoutSeconds` | `5` seconds | Integer 1..=300 seconds |
 | `filters.exclude` | `[]` | At most 64 literal metric-name substrings, 256 bytes each |
 
@@ -80,7 +82,8 @@ literal, not a wildcard. An empty substring excludes every metric.
 
 ## Examples
 
-These are valid policies, **not working exporter configurations in OBS-02**.
+The following intended policy validates, but its tracing and Prometheus
+capabilities still reject at runtime:
 
 ```yaml
 telemetry:
@@ -100,7 +103,7 @@ telemetry:
   shutdownTimeoutSeconds: 5
 ```
 
-Metrics-only policy does not enable tracing:
+Configured OTLP metrics do not enable tracing:
 
 ```yaml
 telemetry:
@@ -111,6 +114,7 @@ telemetry:
       endpoint: https://collector.example/v1/metrics
       protocol: http/protobuf
       exportInterval: 30
+      exportTimeout: 5
       headers:
         authorization: "${DRASI_METRICS_AUTHORIZATION}"
 ```
@@ -118,6 +122,27 @@ telemetry:
 Provide `DRASI_METRICS_AUTHORIZATION` through the deployment's environment
 secret injection. Never put its resolved value or a plaintext fallback into
 the configuration.
+
+### Preparation, activation and ownership
+
+Configured file startup (including the CLI's already initialized standalone
+logger) and the programmatic full configuration prepare collection before
+constructing any Core. Primary, additional and API-created instances share
+that context through the actual instance registry, with their own instance
+and graph identities. No second metrics instance map is created.
+
+`build()`/`prepare().finish()` retain observations without exporting until
+`DrasiServer::run()` publishes startup. `build_with_owned_handles()` activates
+after Core startup/publication and before returning. Start still acknowledges
+construction/startup, not component readiness. Failed or never-run preparation
+closes its backend without an export request. Active shutdown has one bounded
+telemetry drain/final-export budget; cancellation never discards the worker.
+
+Configured telemetry and borrowed `TelemetryBindings` are mutually exclusive.
+Borrowed recorders/providers remain caller-owned and are never flushed or
+closed by Server. An unconsumed result or caller may retain a closed Core
+wrapper after cleanup: successful Core shutdown/resource disposal, not the
+last `Arc` disappearing, is the cleanup-completion boundary.
 
 ## Endpoints, credentials and access boundary
 

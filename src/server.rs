@@ -103,6 +103,7 @@ struct PreparedInstance {
     /// runtime-created sources can resolve `bootstrapProvider: <id>`
     /// references. Empty for programmatically built instances.
     bootstrap_providers: HashMap<String, BootstrapProviderConfig>,
+    published: bool,
 }
 
 enum FileTelemetry {
@@ -241,6 +242,8 @@ impl DrasiServer {
         if let Some(effective) = &effective {
             effective.ensure_runtime_available()?;
         }
+        let runtime_registry = InstanceRegistry::new();
+        cleanup.retain_registry(runtime_registry.clone())?;
         let bindings = match telemetry {
             FileTelemetry::Borrowed(bindings) => {
                 cleanup.retain_bindings(bindings.clone())?;
@@ -255,7 +258,13 @@ impl DrasiServer {
                     )?,
                 };
                 if let Some(effective) = effective {
-                    let bindings = bindings.with_configured_policy(effective)?;
+                    let metrics = crate::telemetry::runtime::prepare_metrics(
+                        &cleanup,
+                        &effective,
+                        &runtime_registry,
+                    )
+                    .await?;
+                    let bindings = bindings.with_configured_policy(effective, metrics)?;
                     cleanup.configure_logging_bindings(bindings.clone())?;
                     bindings
                 } else {
@@ -264,7 +273,7 @@ impl DrasiServer {
             }
         };
         let runtime_registry =
-            InstanceRegistry::new().with_runtime_context(bindings.clone(), cleanup.clone());
+            runtime_registry.with_runtime_context(bindings.clone(), cleanup.clone());
 
         // CLI --skip-verification flag overrides config (disables when set)
         if skip_verification {
@@ -905,11 +914,15 @@ impl DrasiServer {
                 }
                 let core = builder.build().await.context("Failed to create DrasiLib")?;
                 cleanup.retain_core(Arc::new(core.clone()))?;
+                runtime_registry
+                    .publish_instance(instance.id.clone(), Arc::new(core.clone()))
+                    .await?;
 
                 instances.push(PreparedInstance {
                     id_hint: Some(instance.id),
                     core: core.clone(),
                     bootstrap_providers,
+                    published: true,
                 });
                 if let Some(computation) = instance
                     .computation
@@ -994,6 +1007,7 @@ impl DrasiServer {
             config_file_path,
             cleanup,
             false,
+            None,
         )
     }
 
@@ -1007,6 +1021,7 @@ impl DrasiServer {
         config_file_path: Option<String>,
         cleanup: ServerCleanupHandle,
         new_telemetry: bool,
+        registry: InstanceRegistry,
     ) -> Self {
         let cores = cores
             .into_iter()
@@ -1024,6 +1039,7 @@ impl DrasiServer {
             config_file_path,
             cleanup,
             new_telemetry,
+            Some(registry),
         )
     }
 
@@ -1037,6 +1053,7 @@ impl DrasiServer {
         config_file_path: Option<String>,
         cleanup: ServerCleanupHandle,
         new_telemetry: bool,
+        registry: Option<InstanceRegistry>,
     ) -> Self {
         let instances = cores
             .into_iter()
@@ -1044,6 +1061,7 @@ impl DrasiServer {
                 id_hint,
                 core,
                 bootstrap_providers: HashMap::new(),
+                published: registry.is_some(),
             })
             .collect();
 
@@ -1052,12 +1070,12 @@ impl DrasiServer {
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
         let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
         let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
-        let instance_registry = match cleanup.bindings() {
+        let instance_registry = registry.unwrap_or_else(|| match cleanup.bindings() {
             Some(bindings) => {
                 InstanceRegistry::new().with_runtime_context(bindings, cleanup.clone())
             }
             None => InstanceRegistry::new().with_cleanup_context(cleanup.clone()),
-        };
+        });
         Self {
             instances,
             enable_api,
@@ -1145,6 +1163,9 @@ impl DrasiServer {
             let admission = cleanup.admit()?;
             ServerPreparation::start(admission, move |owner| async move {
                 owner.retain_bindings(bindings.clone())?;
+                let registry =
+                    InstanceRegistry::new().with_runtime_context(bindings.clone(), owner.clone());
+                owner.retain_registry(registry.clone())?;
                 let mut ids = std::collections::HashSet::new();
                 for (core, _) in &cores {
                     bindings.validate_prebuilt(core).await?;
@@ -1152,6 +1173,9 @@ impl DrasiServer {
                         ids.insert(core.get_config().id.clone()),
                         "Duplicate prebuilt Core instance ID"
                     );
+                    registry
+                        .publish_instance(core.get_config().id.clone(), Arc::new(core.clone()))
+                        .await?;
                 }
                 Ok(Self::from_prepared_cores(
                     cores,
@@ -1162,6 +1186,7 @@ impl DrasiServer {
                     config_file_path,
                     owner,
                     true,
+                    registry,
                 ))
             })
         })();
@@ -1295,7 +1320,11 @@ impl DrasiServer {
             println!("  Instance '{id}': ComputationGraph");
             crate::managed_configuration::start_instance(&core).await?;
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
-            registry.add(id, core).await.map_err(anyhow::Error::msg)?;
+            if !instance.published {
+                registry
+                    .publish_instance(id, core)
+                    .await?;
+            }
         }
 
         if let Some(config) = &self.metrics_config {
@@ -1374,6 +1403,9 @@ impl DrasiServer {
             );
         } else {
             info!("Drasi Server started successfully (API disabled)");
+        }
+        if self.metrics_config.is_none() {
+            self.cleanup.activate_metrics().await?;
         }
         if self.cleanup.admission_is_open() {
             self.cleanup.running()?;

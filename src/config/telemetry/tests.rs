@@ -105,6 +105,108 @@ fn omission_empty_section_and_legacy_migration_are_distinct() {
 }
 
 #[test]
+fn otlp_timeout_defaults_and_second_boundaries_survive_json_and_yaml() {
+    for timeout in [None, Some(1), Some(5), Some(30)] {
+        let mut otlp = json!({
+            "endpoint": "http://localhost:4318/custom/metrics",
+            "protocol": "http/protobuf"
+        });
+        if let Some(timeout) = timeout {
+            otlp["exportTimeout"] = json!(timeout);
+        }
+        let input = json!({"telemetry":{"metrics":{"backend":"otlp","otlp":otlp}}});
+        for encoded in [
+            serde_json::to_string(&input).unwrap(),
+            serde_yaml::to_string(&input).unwrap(),
+        ] {
+            let config: DrasiServerConfig = serde_yaml::from_str(&encoded).unwrap();
+            let effective = effective(&config).unwrap();
+            assert_eq!(effective.export_interval, Duration::from_secs(30));
+            assert_eq!(
+                effective.export_timeout,
+                Duration::from_secs(timeout.unwrap_or(5))
+            );
+            let saved = serde_json::to_value(&config).unwrap();
+            assert_eq!(
+                saved["telemetry"]["metrics"]["otlp"]["exportTimeout"],
+                json!(timeout.unwrap_or(5))
+            );
+        }
+    }
+}
+
+#[test]
+fn invalid_otlp_timeout_is_rejected_even_when_inactive() {
+    for profile in ["off", "basic"] {
+        for backend in ["none", "prometheus", "otlp"] {
+            for timeout in [
+                json!(0),
+                json!(31),
+                json!(u64::MAX),
+                json!("${OBS04_TIMEOUT:-bad}"),
+            ] {
+                let config = config(json!({
+                    "profile":profile,
+                    "metrics":{"backend":backend,"otlp":{
+                        "endpoint":"https://collector/v1/metrics",
+                        "protocol":"http/protobuf",
+                        "exportTimeout":timeout
+                    }}
+                }));
+                let error = config.validate().unwrap_err().to_string();
+                assert!(
+                    error.contains("telemetry.metrics.otlp.exportTimeout"),
+                    "{error}"
+                );
+                assert!(!error.contains(":-bad"));
+            }
+        }
+    }
+}
+
+#[test]
+fn otlp_timeout_references_are_resolved_without_rewriting_configuration() {
+    let input = json!({"telemetry":{"metrics":{"backend":"otlp","otlp":{
+        "endpoint":"https://collector/v1/metrics",
+        "protocol":"http/protobuf",
+        "exportTimeout":"${OBS04_TIMEOUT:-5}"
+    }}}});
+    let mapper = DtoMapper::with_overrides(std::collections::HashMap::from([(
+        "OBS04_TIMEOUT".into(),
+        "30".into(),
+    )]));
+    let original: DrasiServerConfig = serde_json::from_value(input).unwrap();
+    assert_eq!(
+        original
+            .resolved_telemetry(&mapper, 8080, true)
+            .unwrap()
+            .unwrap()
+            .export_timeout,
+        Duration::from_secs(30)
+    );
+    for encoded in [
+        serde_json::to_string(&original).unwrap(),
+        serde_yaml::to_string(&original).unwrap(),
+    ] {
+        let restored: DrasiServerConfig = serde_yaml::from_str(&encoded).unwrap();
+        assert_eq!(
+            serde_json::to_value(&restored.telemetry).unwrap(),
+            serde_json::to_value(&original.telemetry).unwrap()
+        );
+        assert!(encoded.contains("OBS04_TIMEOUT"));
+    }
+    let legacy: crate::telemetry::MetricsConfig = serde_json::from_value(json!({
+        "endpoint":"http://localhost:4318/v1/metrics", "exportTimeoutMs":1234
+    }))
+    .unwrap();
+    assert_eq!(legacy.export_timeout_ms, 1234);
+    assert_eq!(
+        serde_json::to_value(legacy).unwrap()["exportTimeoutMs"],
+        1234
+    );
+}
+
+#[test]
 fn invalid_policy_inputs_have_field_context() {
     for (value, field) in [
         (json!({"profile":"verbose"}), "telemetry.profile"),
@@ -369,6 +471,10 @@ fn openapi_telemetry_value_schemas_include_numbers_booleans_and_references() {
     );
     assert_eq!(
         schemas["OtlpMetricsConfig"]["properties"]["exportInterval"]["anyOf"][0]["type"],
+        "integer"
+    );
+    assert_eq!(
+        schemas["OtlpMetricsConfig"]["properties"]["exportTimeout"]["anyOf"][0]["type"],
         "integer"
     );
     assert_eq!(
