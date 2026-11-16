@@ -282,7 +282,10 @@ The local-bundle helper has focused provenance/state-isolation tests in the
 existing Python runner. Six helper/trust tests, shell checks, the matched
 local build and the focused TLS/auth boundary test passed locally.
 
-**Final sustained-processing verification is blocked.** A separate temporary
+**Implementation complete; Core validation blocker explicitly deferred.**
+The user accepted this completion boundary on 2026-11-16 and chose to move to
+OBS-05. This is not a claim that sustained-processing verification passed.
+A separate temporary
 HTTP-source pipeline received five sequential inserts. With Persistence metrics
 enabled, both Prometheus and OTLP runs processed one result and then failed on
 the second input with `native query observation is busy`. With telemetry Off,
@@ -296,7 +299,8 @@ their ports closed.
 The user waived replacing the demo in this issue; the HTTP verification used
 temporary configurations, not a new committed demo. No Core fix or new GitHub
 issue was made. Native fixture proof, comprehensive/full-suite and release
-qualification remain unclaimed.
+qualification remain unclaimed. The deferred failure must remain visible during
+OBS-05 work rather than being treated as a successful metrics-enabled run.
 
 Use the [same observability example](../examples/observability/README.md) for
 the final bounded walkthrough. `build-plugins` builds only Server plus the
