@@ -12,7 +12,8 @@ use drasi_lib::{
     DrasiLib, Query,
 };
 use drasi_server::{
-    config::telemetry::TelemetryConfig, server::CleanupPhase, DrasiServerBuilder, TelemetryBindings,
+    config::telemetry::TelemetryConfig, server::CleanupPhase, DrasiServer, DrasiServerBuilder,
+    TelemetryBindings,
 };
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::ExportMetricsServiceRequest, common::v1::any_value::Value,
@@ -32,6 +33,7 @@ mod query_plugin;
 const WAIT: Duration = Duration::from_secs(8);
 const CASE: &str = "DRASI_OBS04_METRICS_CASE";
 const FLAVOR: &str = "DRASI_OBS04_METRICS_FLAVOR";
+const SCRAPE_PATH: &str = "/observability/custom";
 
 fn child(case: &str) -> Result<()> {
     for flavor in ["current_thread", "multi_thread"] {
@@ -80,6 +82,57 @@ fn configured_failed_build_joins_without_exporting() -> Result<()> {
 #[test]
 fn configured_otlp_and_borrowed_bindings_reject_before_factories() -> Result<()> {
     child("exclusive")
+}
+
+#[test]
+fn prometheus_shared_custom_path_serves_real_metrics_concurrently() -> Result<()> {
+    child("prometheus-shared")
+}
+
+#[test]
+fn prometheus_separate_listener_exposes_only_scrapes() -> Result<()> {
+    child("prometheus-separate")
+}
+
+#[test]
+fn prometheus_off_and_none_create_no_route_or_separate_listener() -> Result<()> {
+    child("prometheus-off")?;
+    child("prometheus-none")
+}
+
+#[test]
+fn prometheus_empty_configuration_starts_healthy() -> Result<()> {
+    child("prometheus-empty")
+}
+
+#[test]
+fn prometheus_api_disabled_owned_result_serves_before_return_and_owns_shutdown() -> Result<()> {
+    child("prometheus-owned")
+}
+
+#[test]
+fn prometheus_shared_route_requires_enabled_api_before_factories() -> Result<()> {
+    child("prometheus-no-api")
+}
+
+#[test]
+fn prometheus_owned_result_requires_separate_listener_before_factories() -> Result<()> {
+    child("prometheus-owned-shared")
+}
+
+#[test]
+fn prometheus_management_bind_failure_rolls_back_both_listeners() -> Result<()> {
+    child("prometheus-management-busy")
+}
+
+#[test]
+fn prometheus_scrape_bind_failure_rolls_back_both_listeners() -> Result<()> {
+    child("prometheus-scrape-busy")
+}
+
+#[test]
+fn prometheus_owned_result_retains_cleanup_on_bind_failure() -> Result<()> {
+    child("prometheus-owned-busy")
 }
 
 #[test]
@@ -145,6 +198,8 @@ impl metrics::Recorder for GlobalRecorder {
 struct FirstFactory {
     inner: Arc<dyn ComponentFactory>,
     observed: Arc<Mutex<Vec<String>>>,
+    namespace: &'static str,
+    leaf: &'static str,
 }
 
 #[async_trait]
@@ -184,9 +239,9 @@ impl ComponentFactory for FirstFactory {
                 .plugin(
                     context.telemetry().policy(),
                     &scope,
-                    "task4",
+                    self.namespace,
                     PluginMetricDefinition {
-                        leaf: "created",
+                        leaf: self.leaf,
                         kind: MetricKind::Counter,
                         unit: MetricUnit::One,
                         description: "Factory constructions",
@@ -210,6 +265,11 @@ async fn scenario(case: &str) -> Result<()> {
     let globals = Arc::new(Mutex::new(Vec::new()));
     metrics::set_global_recorder(GlobalRecorder(globals.clone()))
         .map_err(|_| anyhow::anyhow!("global test recorder already installed"))?;
+    if case.starts_with("prometheus-") {
+        prometheus_scenario(case).await?;
+        assert_global_untouched(&globals);
+        return Ok(());
+    }
     let collector = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200))
@@ -227,6 +287,8 @@ async fn scenario(case: &str) -> Result<()> {
     let factory = Arc::new(FirstFactory {
         inner: query_plugin::factory(),
         observed: observed.clone(),
+        namespace: "task4",
+        leaf: "created",
     });
     let query = || Query::cypher("probe").query("MATCH (n) RETURN n").build();
     let builder = DrasiServerBuilder::new()
@@ -412,5 +474,370 @@ async fn capture(collector: &MockServer) -> Result<()> {
         }
     })
     .await?;
+    Ok(())
+}
+
+fn prometheus_config(profile: &str, backend: &str, port: Option<u16>) -> Result<TelemetryConfig> {
+    Ok(serde_json::from_value(serde_json::json!({
+        "profile": profile,
+        "metrics": {
+            "backend": backend,
+            "prometheus": { "path": SCRAPE_PATH, "port": port }
+        }
+    }))?)
+}
+
+fn prometheus_builder(observed: Arc<Mutex<Vec<String>>>) -> Result<DrasiServerBuilder> {
+    let factory = Arc::new(FirstFactory {
+        inner: query_plugin::factory(),
+        observed,
+        namespace: "test",
+        leaf: "count",
+    });
+    Ok(DrasiServerBuilder::new()
+        .with_id("first")
+        .with_query_factory(factory.clone())
+        .with_simple_query("probe", "MATCH (n) RETURN n", vec![])?
+        .add_instance_builder(
+            DrasiLib::builder()
+                .with_id("second")
+                .with_query_factory(factory)
+                .with_query(Query::cypher("probe").query("MATCH (n) RETURN n").build()?),
+        )
+        .disable_ui())
+}
+
+async fn reserved_port() -> Result<(tokio::net::TcpListener, u16)> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    Ok((listener, port))
+}
+
+fn client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()?)
+}
+
+async fn ready(client: &reqwest::Client, port: u16, path: &str) -> Result<reqwest::Response> {
+    timeout(WAIT, async {
+        loop {
+            if let Ok(response) = client
+                .get(format!("http://127.0.0.1:{port}{path}"))
+                .send()
+                .await
+            {
+                return response;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .context("listener did not become responsive")
+}
+
+async fn assert_scrape(
+    client: &reqwest::Client,
+    port: u16,
+    expected_instances: &[&str],
+) -> Result<()> {
+    let response = client
+        .get(format!("http://127.0.0.1:{port}{SCRAPE_PATH}"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "text/plain; version=0.0.4; charset=utf-8"
+    );
+    let text = response.text().await?;
+    assert!(
+        text.contains("# TYPE drasi_plugin_test_count counter"),
+        "{text}"
+    );
+    let samples = text
+        .lines()
+        .filter(|line| line.starts_with("drasi_plugin_test_count{"))
+        .collect::<Vec<_>>();
+    assert_eq!(samples.len(), expected_instances.len(), "{text}");
+    for instance in expected_instances {
+        let label = format!("instance_id=\"{instance}\"");
+        let sample = samples
+            .iter()
+            .find(|sample| sample.contains(&label))
+            .with_context(|| format!("missing {label}: {text}"))?;
+        assert!(sample.contains("graph_id=\""), "{sample}");
+        assert_eq!(sample.rsplit_once(' ').context("sample value")?.1, "1");
+    }
+    Ok(())
+}
+
+async fn assert_closed(port: u16) -> Result<()> {
+    assert!(
+        timeout(WAIT, tokio::net::TcpStream::connect(("127.0.0.1", port)))
+            .await?
+            .is_err(),
+        "listener {port} remained open"
+    );
+    let rebound = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+    drop(rebound);
+    Ok(())
+}
+
+async fn prometheus_scenario(case: &str) -> Result<()> {
+    let client = client()?;
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    if matches!(case, "prometheus-no-api" | "prometheus-owned-shared") {
+        let builder = prometheus_builder(observed.clone())?.with_telemetry(prometheus_config(
+            "basic",
+            "prometheus",
+            None,
+        )?);
+        let (cleanup, error) = if case == "prometheus-no-api" {
+            let preparation = builder.prepare();
+            let cleanup = preparation.cleanup_handle();
+            let error = preparation
+                .finish()
+                .await
+                .err()
+                .context("shared scrape accepted with API disabled")?;
+            (cleanup, error)
+        } else {
+            let preparation = builder.enable_api().prepare_with_owned_handles();
+            let cleanup = preparation.cleanup_handle();
+            let error = preparation
+                .finish()
+                .await
+                .err()
+                .context("owned result accepted an unservable shared route")?;
+            (cleanup, error)
+        };
+        let error = format!("{error:#}");
+        assert!(
+            if case == "prometheus-no-api" {
+                error.contains("management listener")
+            } else {
+                error.contains("separate listener")
+            },
+            "wrong compatibility error: {error}"
+        );
+        assert!(
+            observed.lock().unwrap().is_empty(),
+            "rejection ran factories"
+        );
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        return Ok(());
+    }
+
+    let (management_reservation, management_port) = reserved_port().await?;
+    let (scrape_reservation, scrape_port) = reserved_port().await?;
+    let disabled = matches!(case, "prometheus-off" | "prometheus-none");
+    let shared = case == "prometheus-shared";
+    let config = prometheus_config(
+        if case == "prometheus-off" {
+            "off"
+        } else {
+            "basic"
+        },
+        if case == "prometheus-none" {
+            "none"
+        } else {
+            "prometheus"
+        },
+        (!shared).then_some(scrape_port),
+    )?;
+
+    if matches!(case, "prometheus-owned" | "prometheus-owned-busy") {
+        let _scrape_reservation = if case == "prometheus-owned" {
+            drop(scrape_reservation);
+            None
+        } else {
+            Some(scrape_reservation)
+        };
+        let preparation = prometheus_builder(observed.clone())?
+            .with_telemetry(config)
+            .prepare_with_owned_handles();
+        let cleanup = preparation.cleanup_handle();
+        if case == "prometheus-owned-busy" {
+            let error = preparation
+                .finish()
+                .await
+                .err()
+                .context("owned result returned despite occupied scrape port")?;
+            assert!(
+                !format!("{error:#}").contains("cannot activate"),
+                "test stopped at the capability gate: {error:#}"
+            );
+            assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+            assert_eq!(cleanup.status().pending_workers, 0);
+        } else {
+            let built = preparation.finish().await?;
+            for core in built.servers.values() {
+                timeout(WAIT, core.component_by_name("probe")?.wait_created()).await??;
+            }
+            // No readiness polling: the owned result must already serve.
+            assert_scrape(&client, scrape_port, &["first", "second"]).await?;
+            assert_eq!(
+                client
+                    .get(format!("http://127.0.0.1:{scrape_port}/health"))
+                    .send()
+                    .await?
+                    .status(),
+                reqwest::StatusCode::NOT_FOUND
+            );
+            built.shutdown().await?;
+            assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+            assert_closed(scrape_port).await?;
+        }
+        return Ok(());
+    }
+
+    // Holding both reservations during construction catches premature serving
+    // by build(); only run() may bind a normal Server's sockets.
+    let directory = tempfile::Builder::new()
+        .prefix("obs04-task5-")
+        .tempdir_in(".")?;
+    let server = if case == "prometheus-empty" {
+        let path = directory.path().join("server.yaml");
+        std::fs::write(
+            &path,
+            serde_yaml::to_string(&serde_json::json!({
+                "host": "127.0.0.1",
+                "persistConfig": false,
+                "verifyPlugins": false,
+                "autoInstallPlugins": false,
+                "instances": [],
+                "telemetry": config
+            }))?,
+        )?;
+        DrasiServer::new(
+            path,
+            management_port,
+            directory.path().join("plugins"),
+            true,
+            false,
+        )
+        .await?
+    } else {
+        let builder = if disabled {
+            DrasiServerBuilder::new().with_id("disabled").disable_ui()
+        } else {
+            prometheus_builder(observed.clone())?
+        };
+        builder
+            .with_host_port("127.0.0.1", management_port)
+            .with_telemetry(config)
+            .build()
+            .await?
+    };
+    let cleanup = server.cleanup_handle();
+    if case == "prometheus-management-busy" {
+        drop(scrape_reservation);
+        let result = timeout(WAIT, server.run()).await?;
+        assert!(result.is_err(), "occupied management port was accepted");
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        assert!(!cleanup.status().retry_required);
+        assert_closed(scrape_port).await?;
+        drop(management_reservation);
+        assert_closed(management_port).await?;
+        return Ok(());
+    }
+    if case == "prometheus-scrape-busy" {
+        drop(management_reservation);
+        let result = timeout(WAIT, server.run()).await?;
+        assert!(result.is_err(), "occupied scrape port was accepted");
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        assert!(!cleanup.status().retry_required);
+        assert_closed(management_port).await?;
+        drop(scrape_reservation);
+        assert_closed(scrape_port).await?;
+        return Ok(());
+    }
+    drop(management_reservation);
+    drop(scrape_reservation);
+    assert_closed(management_port).await?;
+    assert_closed(scrape_port).await?;
+    let running = tokio::spawn(server.run());
+    let health = ready(&client, management_port, "/health").await?;
+    assert_eq!(health.status(), reqwest::StatusCode::OK);
+    if disabled {
+        assert_eq!(
+            client
+                .get(format!("http://127.0.0.1:{management_port}{SCRAPE_PATH}"))
+                .send()
+                .await?
+                .status(),
+            reqwest::StatusCode::NOT_FOUND
+        );
+        assert_closed(scrape_port).await?;
+    } else {
+        let port = if shared { management_port } else { scrape_port };
+        assert_eq!(
+            ready(&client, port, SCRAPE_PATH).await?.status(),
+            reqwest::StatusCode::OK
+        );
+        if case == "prometheus-empty" {
+            let instances: serde_json::Value = client
+                .get(format!(
+                    "http://127.0.0.1:{management_port}/api/v1/instances"
+                ))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            assert_eq!(instances["data"], serde_json::json!([]));
+        } else {
+            timeout(WAIT, async {
+                while observed.lock().unwrap().len() != 2 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await?;
+            assert_scrape(&client, port, &["first", "second"]).await?;
+            let expected = ["first", "second"];
+            let reads = (0..4).map(|_| assert_scrape(&client, port, &expected));
+            futures_util::future::try_join_all(reads).await?;
+        }
+        assert_eq!(
+            client
+                .get(format!("http://127.0.0.1:{port}/metrics"))
+                .send()
+                .await?
+                .status(),
+            reqwest::StatusCode::NOT_FOUND
+        );
+        if !shared {
+            for path in ["/health", "/api/versions", "/api/v1/instances", "/ui/"] {
+                assert_eq!(
+                    client
+                        .get(format!("http://127.0.0.1:{scrape_port}{path}"))
+                        .send()
+                        .await?
+                        .status(),
+                    reqwest::StatusCode::NOT_FOUND,
+                    "separate listener exposed {path}"
+                );
+            }
+            assert_eq!(
+                client
+                    .get(format!("http://127.0.0.1:{management_port}{SCRAPE_PATH}"))
+                    .send()
+                    .await?
+                    .status(),
+                reqwest::StatusCode::NOT_FOUND
+            );
+        }
+    }
+    cleanup.wait_until(Instant::now() + WAIT).await?;
+    timeout(WAIT, running).await???;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert_eq!(cleanup.status().pending_workers, 0);
+    assert_closed(management_port).await?;
+    assert_closed(scrape_port).await?;
     Ok(())
 }

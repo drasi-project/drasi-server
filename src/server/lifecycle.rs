@@ -202,6 +202,7 @@ struct State {
     plugin_dependencies: Option<(Arc<RwLock<PluginRegistry>>, Arc<PluginOrchestrator>)>,
     watcher: Option<OwnedPollingWatcher>,
     api: Option<Arc<ApiWorker>>,
+    prometheus_listener: Option<Arc<ApiWorker>>,
     metrics: Option<Arc<AsyncMutex<crate::telemetry::MetricsRuntime>>>,
     prometheus: Option<Arc<crate::telemetry::prometheus::PrometheusRuntime>>,
     driver: Option<Arc<Worker>>,
@@ -233,6 +234,12 @@ struct ApiWorker {
     join: RwLock<Option<JoinHandle<std::io::Result<()>>>>,
     stop: Mutex<Option<oneshot::Sender<()>>>,
     completed: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ApiListener {
+    Management,
+    Prometheus,
 }
 
 impl Owner {
@@ -332,14 +339,20 @@ impl Owner {
         }
         self.changed();
 
-        let api = self.state().api.clone();
-        if let Some(api) = &api {
-            let deadline = self
-                .state()
-                .budget
-                .as_ref()
-                .expect("shutdown budget")
-                .api_deadline();
+        let listeners = {
+            let state = self.state();
+            [state.api.clone(), state.prometheus_listener.clone()]
+        };
+        let deadline = self
+            .state()
+            .budget
+            .as_ref()
+            .expect("shutdown budget")
+            .api_deadline();
+        for (index, api) in listeners.iter().enumerate() {
+            let Some(api) = api else {
+                continue;
+            };
             let mut slot = api.join.write().await;
             if let Some(join) = slot.as_mut() {
                 match timeout_at(deadline, join).await {
@@ -348,7 +361,12 @@ impl Owner {
                         self.record_api_result(result);
                     }
                     Err(_) => {
-                        log::error!("Web API did not drain within 5 seconds; accepted connections remain owned");
+                        let name = if index == 0 {
+                            "Web API"
+                        } else {
+                            "Prometheus listener"
+                        };
+                        log::error!("{name} did not drain within 5 seconds; the listener deadline is shared and accepted connections remain owned");
                         self.state()
                             .history
                             .cleanup
@@ -393,15 +411,29 @@ impl Owner {
         // caller's wait, never drops/aborts Serve and calls its children joined.
         // Log bodies observe this Server's admission closure independently of
         // borrowed logging channels. Core shutdown also retires its own streams.
-        if let Some(api) = api {
+        for api in listeners.iter().flatten() {
             let mut slot = api.join.write().await;
             if let Some(join) = slot.as_mut() {
                 let result = join.await;
                 *slot = None;
                 self.record_api_result(result);
             }
-            if api.completed.load(std::sync::atomic::Ordering::Acquire) {
-                self.state().api.take();
+        }
+        {
+            let mut state = self.state();
+            if state
+                .api
+                .as_ref()
+                .is_some_and(|api| api.completed.load(std::sync::atomic::Ordering::Acquire))
+            {
+                state.api.take();
+            }
+            if state
+                .prometheus_listener
+                .as_ref()
+                .is_some_and(|api| api.completed.load(std::sync::atomic::Ordering::Acquire))
+            {
+                state.prometheus_listener.take();
             }
         }
 
@@ -410,6 +442,7 @@ impl Owner {
             !state.cores.iter().any(Option::is_some)
                 && state.watcher.is_none()
                 && state.api.is_none()
+                && state.prometheus_listener.is_none()
         };
         if producers_complete {
             let metrics = self.state().metrics.clone();
@@ -505,6 +538,7 @@ impl Owner {
             if state.cores.iter().any(Option::is_some)
                 || state.watcher.is_some()
                 || state.api.is_some()
+                || state.prometheus_listener.is_some()
                 || state.metrics.is_some()
                 || state.prometheus.is_some()
             {
@@ -574,7 +608,8 @@ impl Owner {
                 || state.metrics.is_some()
                 || state.prometheus.is_some()
                 || state.watcher.is_some()
-                || state.api.is_some();
+                || state.api.is_some()
+                || state.prometheus_listener.is_some();
             if state.retry_required {
                 (None, None)
             } else {
@@ -650,6 +685,7 @@ impl ServerCleanupHandle {
                     plugin_dependencies: None,
                     watcher: None,
                     api: None,
+                    prometheus_listener: None,
                     metrics: None,
                     prometheus: None,
                     driver: None,
@@ -764,7 +800,6 @@ impl ServerCleanupHandle {
     }
 
     /// Retains the concrete controller before it may submit any blocking work.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn retain_prometheus(
         &self,
         runtime: Arc<crate::telemetry::prometheus::PrometheusRuntime>,
@@ -788,7 +823,12 @@ impl ServerCleanupHandle {
         Ok(())
     }
 
-    pub(crate) fn start_api<F>(&self, stop: oneshot::Sender<()>, serve: F) -> Result<()>
+    pub(crate) fn start_listener<F>(
+        &self,
+        listener: ApiListener,
+        stop: oneshot::Sender<()>,
+        serve: F,
+    ) -> Result<()>
     where
         F: Future<Output = std::io::Result<()>> + Send + 'static,
     {
@@ -802,20 +842,64 @@ impl ServerCleanupHandle {
             state.admission_open || state.admitted > 0,
             "API must be registered before cleanup"
         );
-        ensure!(state.api.is_none(), "API is already owned");
-        state.api = Some(api.clone());
+        let slot = match listener {
+            ApiListener::Management => &mut state.api,
+            ApiListener::Prometheus => &mut state.prometheus_listener,
+        };
+        ensure!(slot.is_none(), "Listener is already owned");
+        *slot = Some(api.clone());
         let completed = api.completed.clone();
-        try_spawn_owned_worker(&api.join, async move {
+        let cleanup = self.clone();
+        if let Err(error) = try_spawn_owned_worker(&api.join, async move {
             let result = serve.await;
             completed.store(true, std::sync::atomic::Ordering::Release);
+            if let Err(error) = &result {
+                log::error!("Server listener failed: {error}");
+                // The actual Serve result remains in its owned join slot. The
+                // driver records that typed error, including after cancellation.
+                if let Err(error) = cleanup.request_shutdown() {
+                    cleanup.record_failure(error);
+                }
+            }
             result
-        })?;
+        }) {
+            api.completed
+                .store(true, std::sync::atomic::Ordering::Release);
+            return Err(error.into());
+        }
         if !state.admission_open {
             if let Some(stop) = api.stop.lock().unwrap_or_else(|e| e.into_inner()).take() {
                 let _ = stop.send(());
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn start_api<F>(&self, stop: oneshot::Sender<()>, serve: F) -> Result<()>
+    where
+        F: Future<Output = std::io::Result<()>> + Send + 'static,
+    {
+        self.start_listener(ApiListener::Management, stop, serve)
+    }
+
+    pub(crate) fn serve_listener(
+        &self,
+        listener: ApiListener,
+        socket: tokio::net::TcpListener,
+        app: axum::Router,
+    ) -> Result<()> {
+        let (stop, shutdown) = oneshot::channel();
+        let serve = async move {
+            axum::serve(socket, app)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown.await;
+                })
+                .await
+        };
+        match listener {
+            ApiListener::Management => self.start_api(stop, serve),
+            ApiListener::Prometheus => self.start_listener(listener, stop, serve),
+        }
     }
 
     pub(crate) fn start_signal<F>(&self, signal: F) -> Result<()>
@@ -1040,7 +1124,10 @@ impl ServerCleanupHandle {
                 state.rollback_deadline.expect("overall deadline"),
                 telemetry,
             ));
-            if let Some(api) = &state.api {
+            for api in [&state.api, &state.prometheus_listener]
+                .into_iter()
+                .flatten()
+            {
                 if let Some(stop) = api.stop.lock().unwrap_or_else(|e| e.into_inner()).take() {
                     let _ = stop.send(());
                 }
@@ -1624,7 +1711,7 @@ struct WaitExpired {
 struct DriverCancelled;
 
 #[derive(Debug, thiserror::Error)]
-#[error("Web API did not drain within 5 seconds (deadline {deadline:?}); connections remain owned")]
+#[error("Server listeners did not drain within the shared 5 seconds (deadline {deadline:?}); connections remain owned")]
 struct ApiDrainExpired {
     deadline: Instant,
 }
@@ -1635,9 +1722,9 @@ struct LoggingDrainExpired;
 
 #[derive(Debug, thiserror::Error)]
 enum ApiWorkerError {
-    #[error("Web API serving failed")]
+    #[error("Server listener serving failed")]
     Serve(#[source] std::io::Error),
-    #[error("Web API worker failed")]
+    #[error("Server listener worker failed")]
     Join(#[source] tokio::task::JoinError),
 }
 

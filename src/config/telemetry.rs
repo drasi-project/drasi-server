@@ -240,10 +240,6 @@ impl EffectiveTelemetry {
         if self.tracing.is_some() {
             unavailable.push("OTLP tracing (OBS-03/OBS-05)");
         }
-        match self.metrics_backend {
-            MetricsBackend::None | MetricsBackend::Otlp => {}
-            MetricsBackend::Prometheus => unavailable.push("Prometheus metrics (OBS-03/OBS-04)"),
-        }
         if self.process_metrics {
             unavailable.push("process metrics (OBS-06)");
         }
@@ -255,6 +251,28 @@ impl EffectiveTelemetry {
             "Telemetry configuration is valid, but this build cannot activate: {}. Disable these capabilities until their runtime support is available.",
             unavailable.join(", ")
         );
+        Ok(())
+    }
+
+    pub(crate) fn ensure_listener_compatible(
+        &self,
+        enable_api: bool,
+        handles_only: bool,
+    ) -> Result<()> {
+        if self
+            .prometheus
+            .as_ref()
+            .is_some_and(|config| config.port.is_none())
+        {
+            ensure!(
+                !handles_only,
+                "Prometheus metrics with an owned-handles result require a separate listener; configure telemetry.metrics.prometheus.port or use build() and run() with the management API"
+            );
+            ensure!(
+                enable_api,
+                "Prometheus shared scrape routing requires an enabled management listener; enable the API or configure telemetry.metrics.prometheus.port for a separate listener"
+            );
+        }
         Ok(())
     }
 }
@@ -535,7 +553,7 @@ fn destination(
     }))
 }
 
-fn validate_path(path: &str) -> Result<()> {
+pub(crate) fn validate_path(path: &str) -> Result<()> {
     ensure!(
         path.starts_with('/') && path != "/" && !path.ends_with('/')
             && !path.contains("//")

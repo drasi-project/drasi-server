@@ -1,12 +1,12 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-use super::prometheus::{fixtures, PrometheusRuntime};
+use super::prometheus::{fixtures, scrape_router, PrometheusRuntime};
 use super::recorders::prometheus_recorder;
 use crate::server::{CleanupPhase, ServerCleanupHandle};
 use axum::{
     http::{header::CONTENT_TYPE, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use drasi_lib::{
     computation::v1::{ComponentId, ComponentRole, ComponentSemanticKind},
@@ -18,6 +18,7 @@ use drasi_lib::{
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
 use tokio::time::{timeout, Instant};
+use tower::ServiceExt;
 
 mod otlp {
     use super::*;
@@ -1073,11 +1074,17 @@ async fn upkeep_eventually(
     assert!(condition(), "{stage}: {}", fixtures::upkeep_status(runtime));
 }
 
-async fn scrape(runtime: &PrometheusRuntime) -> Response {
-    runtime
-        .scrape()
+async fn scrape(runtime: &Arc<PrometheusRuntime>) -> Response {
+    scrape_router("/probe/metrics", runtime.clone())
+        .unwrap()
+        .oneshot(
+            axum::http::Request::builder()
+                .uri("/probe/metrics")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
         .await
-        .unwrap_or_else(IntoResponse::into_response)
+        .unwrap()
 }
 
 async fn close(owner: &ServerCleanupHandle) {

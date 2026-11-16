@@ -338,7 +338,7 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Build a DrasiServer instance with optional API
+    /// Build without binding listeners; `run()` starts the API and any scrape listener.
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         self.prepare().finish().await.map_err(DrasiError::from)
     }
@@ -363,6 +363,8 @@ impl DrasiServerBuilder {
 
     /// Construct and start Cores under an owner available before async work.
     /// Start acknowledges Core startup; node readiness is observed separately.
+    /// Prometheus requires an explicit separate port, served before publication
+    /// and closed by this result's cleanup owner, even when the API is disabled.
     ///
     /// ```no_run
     /// use drasi_server::{DrasiServerBuilder, TelemetryBindings};
@@ -457,18 +459,17 @@ impl DrasiServerBuilder {
         let registry = InstanceRegistry::new();
         owner.retain_registry(registry.clone())?;
         let port = self.port.unwrap_or(8080);
-        let (bindings, legacy_logging) = if let Some(config) = self.telemetry_config {
+        let host = self.host.unwrap_or_else(|| "127.0.0.1".into());
+        let (bindings, legacy_logging, prometheus) = if let Some(config) = self.telemetry_config {
             let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
             effective.ensure_runtime_available()?;
-            (
-                Some(StandaloneTelemetry::initialize_configured(
-                    owner, effective, &registry,
-                )?),
-                None,
-            )
+            effective.ensure_listener_compatible(self.enable_api, start)?;
+            let (bindings, prometheus) =
+                StandaloneTelemetry::initialize_configured(owner, effective, &registry)?;
+            (Some(bindings), None, prometheus)
         } else if let Some(bindings) = self.telemetry_bindings {
             owner.retain_bindings(bindings.clone())?;
-            (Some(bindings), None)
+            (Some(bindings), None, None)
         } else {
             let logging = init_default_subscriber()
                 .context("Cannot initialize or borrow Core's known default logging service")?;
@@ -476,7 +477,7 @@ impl DrasiServerBuilder {
                 TelemetrySettings::new(TelemetryProfile::Off),
                 logging.clone(),
             ))?;
-            (None, Some(logging))
+            (None, Some(logging), None)
         };
         let registry = match owner.bindings() {
             Some(bindings) => registry.with_runtime_context(bindings, owner.clone()),
@@ -520,6 +521,17 @@ impl DrasiServerBuilder {
                 servers.insert(id, core.clone());
                 cores.push(core);
             }
+            if start {
+                if let Some(prometheus) = &prometheus {
+                    if let Some((socket, app)) = prometheus.bind_separate(&host).await? {
+                        owner.serve_listener(
+                            crate::server::lifecycle::ApiListener::Prometheus,
+                            socket,
+                            app,
+                        )?;
+                    }
+                }
+            }
             Ok::<_, anyhow::Error>((cores, servers))
         })?;
         Ok(BuiltCores {
@@ -527,11 +539,12 @@ impl DrasiServerBuilder {
             servers,
             enable_api: self.enable_api,
             enable_ui: self.enable_ui,
-            host: self.host.unwrap_or_else(|| "127.0.0.1".into()),
+            host,
             port,
             config_file_path: self.config_file_path,
             new_telemetry,
             registry,
+            prometheus,
         })
     }
 }
@@ -546,6 +559,7 @@ struct BuiltCores {
     config_file_path: Option<String>,
     new_telemetry: bool,
     registry: InstanceRegistry,
+    prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
 }
 
 impl BuiltCores {
@@ -568,6 +582,7 @@ impl BuiltCores {
             self.new_telemetry,
             self.registry,
         )
+        .with_prepared_prometheus(self.prometheus)
     }
 }
 

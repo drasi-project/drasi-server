@@ -153,7 +153,6 @@ fn normalize(value: &str, metric: bool) -> String {
         .collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn prometheus_recorder() -> anyhow::Result<(MetricRegistrationContext, PrometheusHandle)>
 {
     let recorder = PrometheusBuilder::new()

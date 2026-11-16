@@ -11,9 +11,10 @@ OBS-02 implements typed configuration, validation, reference-preserving
 persistence and the existing `drasi-server init --output ...` wizard. OBS-03
 adds standalone logging composition, explicit borrowed bindings and retained
 construction/running cleanup. Configured OTLP metrics now use one explicit
-recorder/context and retained HTTP/protobuf exporter. Server installs no global
-metrics recorder or provider. Prometheus activation/scrape routing, tracing
-export, process collectors and inspection remain unavailable. Native-plugin
+recorder/context and retained HTTP/protobuf exporter. Prometheus uses one
+guarded recorder/context with controlled scrape routing and retained upkeep.
+Server installs no global metrics recorder or provider. Tracing export,
+process collectors and inspection remain unavailable. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification.
 
 `drasi-server validate --config ...` checks the intended configuration and
@@ -82,8 +83,8 @@ literal, not a wildcard. An empty substring excludes every metric.
 
 ## Examples
 
-The following intended policy validates, but its tracing and Prometheus
-capabilities still reject at runtime:
+This policy serves Prometheus on the management listener without enabling
+tracing:
 
 ```yaml
 telemetry:
@@ -91,10 +92,7 @@ telemetry:
   inspection:
     enabled: false
   tracing:
-    endpoint: "${DRASI_TRACE_ENDPOINT:-https://collector.example/v1/traces}"
-    protocol: http/protobuf
     serviceName: drasi-server
-    sampleRatio: 0.1
   metrics:
     backend: prometheus
     processMetrics: false
@@ -131,11 +129,18 @@ constructing any Core. Primary, additional and API-created instances share
 that context through the actual instance registry, with their own instance
 and graph identities. No second metrics instance map is created.
 
-`build()`/`prepare().finish()` retain observations without exporting until
-`DrasiServer::run()` publishes startup. `build_with_owned_handles()` activates
-after Core startup/publication and before returning. Start still acknowledges
-construction/startup, not component readiness. Failed or never-run preparation
-closes its backend without an export request. Active shutdown has one bounded
+`build()`/`prepare().finish()` retain observations without exporting or binding
+listeners until `DrasiServer::run()` starts serving. All required management
+and scrape sockets must bind before serving or metric export activation; a
+bind failure rolls back the same retained owner and releases partial bindings.
+`build_with_owned_handles()` activates after Core startup/publication and before
+returning. With Prometheus this result requires an explicit separate scrape
+port, which serves before publication even when the management API is disabled.
+It never starts a management API. Shared scraping requires an API-enabled
+`build()`/`run()` result; incompatible result/API combinations reject before
+factories. Start still acknowledges construction/startup, not component
+readiness. Failed or never-run preparation closes its backend without an export
+request. Active shutdown has one bounded
 telemetry drain/final-export budget; cancellation never discards the worker.
 
 Configured telemetry and borrowed `TelemetryBindings` are mutually exclusive.
@@ -188,7 +193,33 @@ namespace when UI is enabled are reserved. Separate-listener port collisions
 are checked against the final management port, including CLI overrides.
 Configuration validation does not probe occupied operating-system ports or
 instantiate opaque plugins to discover their listeners; actual binding must
-report failures when those capabilities are implemented.
+report failures at startup.
+
+### Prometheus HTTP contract
+
+Only the configured literal path is registered (default `/metrics`); a custom
+path does not also register `/metrics`. Omitted `port` merges that single route
+into the management router. An explicit port serves **only** the scrape router:
+no health, management API, UI or authentication routes are copied to it.
+Off/None creates no scrape route, separate listener or upkeep worker.
+
+A successful GET returns `200` with
+`Content-Type: text/plain; version=0.0.4; charset=utf-8`, including for an empty
+Server. Counter values and histogram observations retain their native units;
+unit suffixes are disabled and normalized metric names are unchanged.
+At most four renders are admitted with no waiting queue. Overload, quiescing,
+or expiration of the five-second response wait returns `503` with the standard
+JSON `ErrorResponse` code `TELEMETRY_SCRAPE_UNAVAILABLE`. Render failure returns
+`500` with `TELEMETRY_RENDER_FAILED`; internal errors are not exposed in the
+message. Cancellation or timeout does not free a render slot until its actual
+off-executor work is joined.
+
+Shutdown closes admission on both listeners and on scraping together. Both
+listeners share the original five-second API drain cap, not five seconds each;
+actual connections and accepted renders remain owned until joined. Upkeep
+continues while producers stop, then joins in the shared collection phase.
+A fatal serving error requests the same sticky cleanup operation and remains
+a failed Server outcome. No final scrape is required or promised.
 
 ## Init
 

@@ -126,7 +126,7 @@ fn assert_camel_case_fields(yaml: &str) {
 // =============================================================================
 
 #[test]
-fn telemetry_output_keeps_references_and_distinguishes_validity_from_readiness() {
+fn telemetry_output_keeps_references_and_reports_prometheus_readiness() {
     let config: DrasiServerConfig = serde_yaml::from_str(
         r#"
 telemetry:
@@ -138,7 +138,7 @@ telemetry:
 "#,
     )
     .unwrap();
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(".").unwrap();
     let path = directory.path().join("init.yaml");
     drasi_server::save_config_file(&config, &path).unwrap();
     let restored = drasi_server::load_config_file(&path).unwrap();
@@ -147,18 +147,14 @@ telemetry:
         .unwrap()
         .unwrap();
     assert!(policy.policy().metrics_enabled());
-    assert!(policy
-        .ensure_runtime_available()
-        .unwrap_err()
-        .to_string()
-        .contains("Prometheus"));
+    policy.ensure_runtime_available().unwrap();
     let saved = std::fs::read_to_string(path).unwrap();
     assert!(saved.contains("EnvironmentVariable") && saved.contains("OBS02_INIT_PROFILE"));
 }
 
 #[test]
 fn telemetry_cli_validation_preserves_env_precedence_and_startup_reports_readiness() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(".").unwrap();
     let path = directory.path().join("server.yaml");
     std::fs::write(directory.path().join(".env"), "OBS02_CLI_PROFILE=off\n").unwrap();
     std::fs::write(
@@ -166,6 +162,8 @@ fn telemetry_cli_validation_preserves_env_precedence_and_startup_reports_readine
         r#"
 telemetry:
   profile: "${OBS02_CLI_PROFILE}"
+  inspection:
+    enabled: "${OBS05_CLI_INSPECTION:-false}"
   metrics:
     backend: prometheus
 "#,
@@ -178,7 +176,8 @@ telemetry:
             .arg(&path)
             .arg("--plugins-dir")
             .arg(directory.path())
-            .env_remove("OBS02_CLI_PROFILE");
+            .env_remove("OBS02_CLI_PROFILE")
+            .env_remove("OBS05_CLI_INSPECTION");
         if let Some(profile) = profile {
             command.env("OBS02_CLI_PROFILE", profile);
         }
@@ -191,17 +190,19 @@ telemetry:
     let from_environment = validate(Some("basic"));
     assert!(from_environment.status.success());
     assert!(String::from_utf8_lossy(&from_environment.stdout)
-        .contains("Prometheus metrics (OBS-03/OBS-04)"));
+        .contains("No unavailable telemetry capabilities"));
     let startup = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"))
         .arg("--config")
         .arg(&path)
         .arg("--plugins-dir")
         .arg(directory.path())
         .env("OBS02_CLI_PROFILE", "basic")
+        .env("OBS05_CLI_INSPECTION", "true")
         .output()
         .unwrap();
     assert!(!startup.status.success());
     assert!(String::from_utf8_lossy(&startup.stderr).contains("this build cannot activate"));
+    assert!(String::from_utf8_lossy(&startup.stderr).contains("inspection API"));
 }
 
 #[test]

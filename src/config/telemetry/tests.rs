@@ -55,7 +55,7 @@ fn profile_backend_signal_matrix_preserves_independence() {
                     );
                     assert_eq!(
                         policy.ensure_runtime_available().is_ok(),
-                        !inspection && (profile == "off" || (!tracing && backend == "none"))
+                        !inspection && (profile == "off" || !tracing)
                     );
                 }
             }

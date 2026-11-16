@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -75,6 +75,7 @@ pub struct DrasiServer {
     metrics_config: Option<crate::telemetry::MetricsConfig>,
     cleanup: ServerCleanupHandle,
     new_telemetry: bool,
+    prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
 }
 
 impl Drop for DrasiServer {
@@ -244,6 +245,7 @@ impl DrasiServer {
         }
         let runtime_registry = InstanceRegistry::new();
         cleanup.retain_registry(runtime_registry.clone())?;
+        let mut prometheus = None;
         let bindings = match telemetry {
             FileTelemetry::Borrowed(bindings) => {
                 cleanup.retain_bindings(bindings.clone())?;
@@ -264,7 +266,8 @@ impl DrasiServer {
                         &runtime_registry,
                     )
                     .await?;
-                    let bindings = bindings.with_configured_policy(effective, metrics)?;
+                    prometheus = metrics.prometheus;
+                    let bindings = bindings.with_configured_policy(effective, metrics.context)?;
                     cleanup.configure_logging_bindings(bindings.clone())?;
                     bindings
                 } else {
@@ -961,6 +964,7 @@ impl DrasiServer {
             loaded_configuration: Some(config),
             cleanup,
             new_telemetry,
+            prometheus,
         })
     }
 
@@ -1093,7 +1097,16 @@ impl DrasiServer {
             metrics_config: None,
             cleanup,
             new_telemetry,
+            prometheus: None,
         }
+    }
+
+    pub(crate) fn with_prepared_prometheus(
+        mut self,
+        prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
+    ) -> Self {
+        self.prometheus = prometheus;
+        self
     }
 
     /// Address retained instance cleanup independently of Server serving.
@@ -1321,9 +1334,7 @@ impl DrasiServer {
             crate::managed_configuration::start_instance(&core).await?;
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
             if !instance.published {
-                registry
-                    .publish_instance(id, core)
-                    .await?;
+                registry.publish_instance(id, core).await?;
             }
         }
 
@@ -1393,22 +1404,42 @@ impl DrasiServer {
             (None, None)
         };
 
-        // Start web API if enabled
-        if self.enable_api {
-            self.start_api(registry.clone(), config_persistence.clone(), solutions_dir)
+        let management = if self.enable_api {
+            let app = self
+                .management_router(registry.clone(), config_persistence.clone(), solutions_dir)
                 .await?;
-            info!(
-                "Drasi Server started successfully with API on port {}",
-                self.port
-            );
+            let socket = tokio::net::TcpListener::bind((self.host.as_str(), self.port)).await?;
+            Some((socket, app))
         } else {
-            info!("Drasi Server started successfully (API disabled)");
+            None
+        };
+        let prometheus = match &self.prometheus {
+            Some(prometheus) => prometheus.bind_separate(&self.host).await?,
+            None => None,
+        };
+        // All required sockets are bound before either listener can serve or
+        // collection is activated. Failure above drops every partial binding.
+        if let Some((socket, app)) = management {
+            self.cleanup
+                .serve_listener(lifecycle::ApiListener::Management, socket, app)?;
+        }
+        if let Some((socket, app)) = prometheus {
+            self.cleanup
+                .serve_listener(lifecycle::ApiListener::Prometheus, socket, app)?;
         }
         if self.metrics_config.is_none() {
             self.cleanup.activate_metrics().await?;
         }
         if self.cleanup.admission_is_open() {
             self.cleanup.running()?;
+            if self.enable_api {
+                info!(
+                    "Drasi Server started successfully with API on port {}",
+                    self.port
+                );
+            } else {
+                info!("Drasi Server started successfully (API disabled)");
+            }
         }
         drop(startup);
 
@@ -1418,12 +1449,12 @@ impl DrasiServer {
         Ok(())
     }
 
-    async fn start_api(
+    async fn management_router(
         &self,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<Router> {
         // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
         let registry_version = {
@@ -1530,6 +1561,11 @@ impl DrasiServer {
                 .allow_headers(tower_http::cors::Any)
         };
 
+        if let Some(prometheus) = &self.prometheus {
+            if prometheus.config.port.is_none() {
+                app = app.merge(prometheus.router()?);
+            }
+        }
         let app = app.layer(cors_layer);
 
         let addr = format!("{}:{}", self.host, self.port);
@@ -1540,20 +1576,7 @@ impl DrasiServer {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 
-        let listener = tokio::net::TcpListener::bind(&addr).await?;
-
-        let (stop, shutdown) = tokio::sync::oneshot::channel();
-        self.cleanup.start_api(stop, async move {
-            let result = axum::serve(listener, app)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown.await;
-                })
-                .await;
-            if let Err(error) = &result {
-                error!("Web API server error: {error}");
-            }
-            result
-        })
+        Ok(app)
     }
 }
 

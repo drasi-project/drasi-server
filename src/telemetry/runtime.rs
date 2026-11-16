@@ -25,19 +25,26 @@ use crate::{
     TelemetryBindings,
 };
 
+pub(crate) struct PreparedMetrics {
+    pub(crate) context: Option<MetricRegistrationContext>,
+    pub(crate) prometheus: Option<super::prometheus::PreparedPrometheus>,
+}
+
 pub(crate) async fn prepare_metrics(
     owner: &ServerCleanupHandle,
     effective: &EffectiveTelemetry,
     registry: &InstanceRegistry,
-) -> Result<Option<MetricRegistrationContext>> {
+) -> Result<PreparedMetrics> {
     effective.ensure_runtime_available()?;
     owner.retain_registry(registry.clone())?;
     match effective.metrics_backend {
-        MetricsBackend::None => Ok(None),
+        MetricsBackend::None => Ok(PreparedMetrics {
+            context: None,
+            prometheus: None,
+        }),
         MetricsBackend::Otlp => {
-            let runtime = std::sync::Arc::new(tokio::sync::Mutex::new(
-                super::MetricsRuntime::default(),
-            ));
+            let runtime =
+                std::sync::Arc::new(tokio::sync::Mutex::new(super::MetricsRuntime::default()));
             owner.retain_metrics(runtime.clone())?;
             let context = runtime
                 .lock()
@@ -57,10 +64,21 @@ pub(crate) async fn prepare_metrics(
                     registry,
                 )
                 .await?;
-            Ok(context)
+            Ok(PreparedMetrics {
+                context,
+                prometheus: None,
+            })
         }
         MetricsBackend::Prometheus => {
-            anyhow::bail!("Prometheus metrics are not yet available")
+            let config = effective.prometheus.clone().ok_or_else(|| {
+                anyhow::anyhow!("Configured Prometheus metrics require a scrape configuration")
+            })?;
+            let (context, handle) = super::recorders::prometheus_recorder()?;
+            let runtime = super::prometheus::PrometheusRuntime::prepare(owner, handle).await?;
+            Ok(PreparedMetrics {
+                context: Some(context),
+                prometheus: Some(super::prometheus::PreparedPrometheus::new(config, runtime)),
+            })
         }
     }
 }
@@ -152,15 +170,18 @@ impl StandaloneTelemetry {
         owner: &ServerCleanupHandle,
         effective: EffectiveTelemetry,
         registry: &InstanceRegistry,
-    ) -> Result<TelemetryBindings> {
+    ) -> Result<(
+        TelemetryBindings,
+        Option<super::prometheus::PreparedPrometheus>,
+    )> {
         effective.ensure_runtime_available()?;
         owner.retain_registry(registry.clone())?;
         let bindings = Self::initialize_logging(owner, "info".into())?;
         let metrics = tokio::runtime::Handle::try_current()?
             .block_on(prepare_metrics(owner, &effective, registry))?;
-        let bindings = bindings.with_configured_policy(effective, metrics)?;
+        let bindings = bindings.with_configured_policy(effective, metrics.context)?;
         owner.configure_logging_bindings(bindings.clone())?;
-        Ok(bindings)
+        Ok((bindings, metrics.prometheus))
     }
 
     pub(crate) fn initialize_logging(

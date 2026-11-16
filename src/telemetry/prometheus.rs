@@ -12,12 +12,15 @@
 use super::{metrics_terminal, ShutdownResult};
 use crate::{
     api::shared::error::{error_codes, ErrorResponse},
+    config::telemetry::{validate_path, EffectivePrometheus},
     server::ServerCleanupHandle,
 };
 use anyhow::{ensure, Result};
 use axum::{
     http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
+    routing::get,
+    Router,
 };
 use drasi_lib::context::workers::{spawn_owned_blocking_worker, try_spawn_owned_worker};
 use futures_util::FutureExt;
@@ -118,7 +121,45 @@ struct UpkeepProbe {
     peak: std::sync::atomic::AtomicUsize,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+/// Routing metadata lending the backend already retained by the cleanup owner.
+pub(crate) struct PreparedPrometheus {
+    pub(crate) config: EffectivePrometheus,
+    runtime: Arc<PrometheusRuntime>,
+}
+
+impl PreparedPrometheus {
+    pub(crate) fn new(config: EffectivePrometheus, runtime: Arc<PrometheusRuntime>) -> Self {
+        Self { config, runtime }
+    }
+
+    pub(crate) fn router(&self) -> Result<Router> {
+        scrape_router(&self.config.path, self.runtime.clone())
+    }
+
+    pub(crate) async fn bind_separate(
+        &self,
+        host: &str,
+    ) -> Result<Option<(tokio::net::TcpListener, Router)>> {
+        let Some(port) = self.config.port else {
+            return Ok(None);
+        };
+        let app = self.router()?;
+        let socket = tokio::net::TcpListener::bind((host, port)).await?;
+        Ok(Some((socket, app)))
+    }
+}
+
+pub(crate) fn scrape_router(path: &str, runtime: Arc<PrometheusRuntime>) -> Result<Router> {
+    validate_path(path)?;
+    Ok(Router::new().route(
+        path,
+        get(move || {
+            let runtime = runtime.clone();
+            async move { runtime.scrape().await }
+        }),
+    ))
+}
+
 pub(crate) struct PrometheusRuntime {
     backend: Arc<RwLock<PrometheusHandle>>,
     state: Mutex<State>,
@@ -129,7 +170,6 @@ pub(crate) struct PrometheusRuntime {
     upkeep_probe: Arc<UpkeepProbe>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl PrometheusRuntime {
     pub(crate) async fn prepare(
         owner: &ServerCleanupHandle,

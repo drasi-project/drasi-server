@@ -4,8 +4,8 @@
 //! Regression contracts for the owner, not Server startup/API integration.
 
 use super::{
-    lifecycle::ShutdownBudget, CleanupPhase, ServerCleanupError, ServerCleanupHandle,
-    ServerPreparation,
+    lifecycle::{ApiListener, ShutdownBudget},
+    CleanupPhase, ServerCleanupError, ServerCleanupHandle, ServerPreparation,
 };
 use crate::{persistence::configuration_store::YamlConfigurationStore, TelemetryBindings};
 use anyhow::{Context, Result};
@@ -46,6 +46,225 @@ use tokio::{
 };
 
 const WAIT: Duration = Duration::from_secs(5);
+
+async fn held_listener(
+    cleanup: &ServerCleanupHandle,
+    listener: ApiListener,
+) -> Result<(reqwest::Response, Arc<Notify>, oneshot::Receiver<()>)> {
+    use axum::{
+        response::sse::{Event, Sse},
+        routing::get,
+        Router,
+    };
+    let gate = Arc::new(Notify::new());
+    let stream_gate = gate.clone();
+    let app = Router::new().route(
+        "/held",
+        get(move || {
+            let gate = stream_gate.clone();
+            async move {
+                Sse::new(async_stream::stream! {
+                    yield Ok::<_, std::convert::Infallible>(Event::default().data("accepted"));
+                    gate.notified().await;
+                })
+            }
+        }),
+    );
+    let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = socket.local_addr()?;
+    let (stop, stopping) = oneshot::channel();
+    let (exit, exited) = oneshot::channel();
+    cleanup.start_listener(listener, stop, async move {
+        let result = axum::serve(socket, app)
+            .with_graceful_shutdown(async move {
+                let _ = stopping.await;
+            })
+            .await;
+        let _ = exit.send(());
+        result
+    })?;
+    let mut response = reqwest::Client::builder()
+        .no_proxy()
+        .build()?
+        .get(format!("http://{address}/held"))
+        .send()
+        .await?
+        .error_for_status()?;
+    timeout(WAIT, response.chunk())
+        .await??
+        .context("held body closed")?;
+    Ok((response, gate, exited))
+}
+
+// Break caught: only the management listener is stopped/retained, or a
+// cancelled shutdown wait discards either listener's actual connection tasks.
+async fn dual_listener_slow_responses_remain_owned() -> Result<()> {
+    let cleanup = ServerCleanupHandle::bootstrap();
+    let (mut management, release_management, management_exit) =
+        held_listener(&cleanup, ApiListener::Management).await?;
+    let (mut scrape, release_scrape, mut scrape_exit) =
+        held_listener(&cleanup, ApiListener::Prometheus).await?;
+    assert!(timeout(Duration::from_millis(20), cleanup.shutdown())
+        .await
+        .is_err());
+    assert!(cleanup.status().pending_workers > 0);
+    release_management.notify_one();
+    timeout(WAIT, async {
+        while management.chunk().await?.is_some() {}
+        Ok::<_, reqwest::Error>(())
+    })
+    .await??;
+    timeout(WAIT, management_exit).await??;
+    assert!(matches!(
+        scrape_exit.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+    assert!(
+        timeout(Duration::from_millis(20), cleanup.wait_for_completion())
+            .await
+            .is_err()
+    );
+    release_scrape.notify_one();
+    timeout(WAIT, async {
+        while scrape.chunk().await?.is_some() {}
+        Ok::<_, reqwest::Error>(())
+    })
+    .await??;
+    timeout(WAIT, cleanup.wait_for_completion()).await??;
+    timeout(WAIT, scrape_exit).await??;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert_eq!(cleanup.status().pending_workers, 0);
+    assert!(!cleanup.status().retry_required);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn dual_listener_slow_responses_on_current_thread_join_both_workers() -> Result<()> {
+    dual_listener_slow_responses_remain_owned().await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dual_listener_slow_responses_on_multiple_threads_join_both_workers() -> Result<()> {
+    dual_listener_slow_responses_remain_owned().await
+}
+
+// Break caught: each listener receives a fresh five-second drain allowance,
+// hiding the scrape listener's six-second drain behind management's four.
+#[tokio::test(start_paused = true)]
+async fn dual_listeners_share_one_api_deadline_and_preserve_expiry_after_joins() -> Result<()> {
+    let cleanup = ServerCleanupHandle::bootstrap();
+    let (management_stop, management_stopping) = oneshot::channel();
+    let (management_release, management_released) = oneshot::channel();
+    let (management_enter, management_entered) = oneshot::channel();
+    let (management_exit, management_exited) = oneshot::channel();
+    cleanup.start_listener(ApiListener::Management, management_stop, async move {
+        let _ = management_stopping.await;
+        let _ = management_enter.send(());
+        let _ = management_released.await;
+        let _ = management_exit.send(());
+        Ok(())
+    })?;
+    let (scrape_stop, scrape_stopping) = oneshot::channel();
+    let (scrape_release, scrape_released) = oneshot::channel();
+    let (scrape_enter, scrape_entered) = oneshot::channel();
+    let (scrape_exit, scrape_exited) = oneshot::channel();
+    cleanup.start_listener(ApiListener::Prometheus, scrape_stop, async move {
+        let _ = scrape_stopping.await;
+        let _ = scrape_enter.send(());
+        let _ = scrape_released.await;
+        let _ = scrape_exit.send(());
+        Ok(())
+    })?;
+    let (duplicate_stop, _) = oneshot::channel();
+    assert!(cleanup
+        .start_listener(ApiListener::Management, duplicate_stop, async { Ok(()) })
+        .is_err());
+    let (duplicate_stop, _) = oneshot::channel();
+    assert!(cleanup
+        .start_listener(ApiListener::Prometheus, duplicate_stop, async { Ok(()) })
+        .is_err());
+    cleanup.request_shutdown()?;
+    management_entered.await?;
+    scrape_entered.await?;
+    tokio::time::advance(Duration::from_secs(4)).await;
+    management_release
+        .send(())
+        .expect("management drain remains owned");
+    management_exited.await?;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert!(cleanup.status().pending_workers > 0);
+    scrape_release
+        .send(())
+        .expect("scrape drain remains owned after API cap");
+    let error = cleanup
+        .wait_for_completion()
+        .await
+        .expect_err("six-second scrape drain escaped the original five-second API cap");
+    scrape_exited.await?;
+    assert!(!error
+        .downcast_ref::<ServerCleanupError>()
+        .context("missing typed Server cleanup error")?
+        .cleanup_causes()
+        .is_empty());
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert_eq!(cleanup.status().pending_workers, 0);
+    assert!(!cleanup.status().retry_required);
+    Ok(())
+}
+
+// Break caught: listener failure is noticed only by a later explicit shutdown,
+// leaving the other listener and Server running after a fatal serving error.
+#[tokio::test]
+async fn either_listener_failure_requests_shared_cleanup_and_retains_the_error() -> Result<()> {
+    for failed in [ApiListener::Management, ApiListener::Prometheus] {
+        let cleanup = ServerCleanupHandle::bootstrap();
+        let survivor = match failed {
+            ApiListener::Management => ApiListener::Prometheus,
+            ApiListener::Prometheus => ApiListener::Management,
+        };
+        let (stop, _stopping) = oneshot::channel();
+        let (fail, failed_now) = oneshot::channel();
+        cleanup.start_listener(failed, stop, async move {
+            let _ = failed_now.await;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "task5 listener failure",
+            ))
+        })?;
+        let (stop, stopping) = oneshot::channel();
+        let (exit, exited) = oneshot::channel();
+        cleanup.start_listener(survivor, stop, async move {
+            let _ = stopping.await;
+            let _ = exit.send(());
+            Ok(())
+        })?;
+        cleanup.running()?;
+        fail.send(()).expect("listener failure trigger");
+        let requested = timeout(WAIT, cleanup.admission_closed()).await;
+        if requested.is_err() {
+            cleanup.request_shutdown()?;
+        }
+        let error = timeout(WAIT, cleanup.wait_for_completion())
+            .await?
+            .expect_err("fatal listener error disappeared");
+        timeout(WAIT, exited).await??;
+        assert!(requested.is_ok(), "fatal listener did not request cleanup");
+        let error = error
+            .downcast_ref::<ServerCleanupError>()
+            .context("missing typed Server cleanup error")?;
+        assert!(error
+            .primary_cause()
+            .into_iter()
+            .chain(error.cleanup_causes().iter())
+            .flat_map(|cause| cause.chain())
+            .any(|cause| cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|cause| cause.kind() == std::io::ErrorKind::ConnectionAborted)));
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+    }
+    Ok(())
+}
 
 #[tokio::test(start_paused = true)]
 async fn running_api_deadline_retains_the_actual_serve_worker() -> Result<()> {

@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn prometheus_and_otlp_branches_generate_startup_valid_configurations() {
         use Answer::*;
-        for answers in [
+        for (answers, available) in [
             vec![
                 Confirm(true),
                 Select("basic"),
@@ -223,7 +223,10 @@ mod tests {
                 Text("5"),
                 Confirm(false),
             ],
-        ] {
+        ]
+        .into_iter()
+        .zip([false, false, true])
+        {
             let config = drasi_server::DrasiServerConfig {
                 telemetry: run(answers).unwrap(),
                 ..Default::default()
@@ -231,12 +234,15 @@ mod tests {
             let yaml = super::super::builder::generate_yaml(&config).unwrap();
             let restored: drasi_server::DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
             restored.validate().unwrap();
-            assert!(restored
-                .resolved_telemetry(&DtoMapper::new(), 8080, true)
-                .unwrap()
-                .unwrap()
-                .ensure_runtime_available()
-                .is_err());
+            assert_eq!(
+                restored
+                    .resolved_telemetry(&DtoMapper::new(), 8080, true)
+                    .unwrap()
+                    .unwrap()
+                    .ensure_runtime_available()
+                    .is_ok(),
+                available
+            );
         }
     }
 
