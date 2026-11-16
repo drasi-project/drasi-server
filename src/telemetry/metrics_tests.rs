@@ -486,6 +486,237 @@ mod otlp {
         }
     }
 
+    fn tls_certificate(
+        issuer: Option<(
+            &openssl::x509::X509,
+            &openssl::pkey::PKey<openssl::pkey::Private>,
+        )>,
+    ) -> anyhow::Result<(
+        openssl::x509::X509,
+        openssl::pkey::PKey<openssl::pkey::Private>,
+    )> {
+        use openssl::{
+            asn1::Asn1Time,
+            hash::MessageDigest,
+            pkey::PKey,
+            rsa::Rsa,
+            x509::{
+                extension::{BasicConstraints, KeyUsage, SubjectAlternativeName},
+                X509NameBuilder, X509,
+            },
+        };
+        let key = PKey::from_rsa(Rsa::generate(2048)?)?;
+        let mut name = X509NameBuilder::new()?;
+        name.append_entry_by_text(
+            "CN",
+            if issuer.is_some() {
+                "localhost"
+            } else {
+                "test CA"
+            },
+        )?;
+        let name = name.build();
+        let mut cert = X509::builder()?;
+        cert.set_version(2)?;
+        let serial = openssl::bn::BigNum::from_u32(if issuer.is_some() { 2 } else { 1 })?
+            .to_asn1_integer()?;
+        cert.set_serial_number(&serial)?;
+        cert.set_subject_name(&name)?;
+        cert.set_issuer_name(issuer.map_or(name.as_ref(), |(cert, _)| cert.subject_name()))?;
+        cert.set_pubkey(&key)?;
+        cert.set_not_before(Asn1Time::days_from_now(0)?.as_ref())?;
+        cert.set_not_after(Asn1Time::days_from_now(1)?.as_ref())?;
+        if issuer.is_none() {
+            cert.append_extension(BasicConstraints::new().critical().ca().build()?)?;
+            cert.append_extension(KeyUsage::new().key_cert_sign().crl_sign().build()?)?;
+        } else {
+            cert.append_extension(BasicConstraints::new().critical().build()?)?;
+            cert.append_extension(
+                KeyUsage::new()
+                    .digital_signature()
+                    .key_encipherment()
+                    .build()?,
+            )?;
+            let san = SubjectAlternativeName::new()
+                .ip("127.0.0.1")
+                .build(&cert.x509v3_context(issuer.map(|(cert, _)| cert.as_ref()), None))?;
+            cert.append_extension(san)?;
+        }
+        cert.sign(issuer.map_or(&key, |(_, key)| key), MessageDigest::sha256())?;
+        Ok((cert.build(), key))
+    }
+
+    #[tokio::test]
+    async fn core_tls_verifies_peer_and_delivers_only_configured_auth_without_leaks(
+    ) -> anyhow::Result<()> {
+        use openssl::ssl::{SslAcceptor, SslMethod};
+        use opentelemetry_http::HttpClient;
+        use std::io::{Read, Write};
+
+        #[derive(Clone)]
+        struct CapturedLogs(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl Write for CapturedLogs {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        const AUTH: &str = "Bearer test-only-sensitive-auth";
+        const PAYLOAD: &[u8] = b"test-only-sensitive-input";
+        let (root, root_key) = tls_certificate(None)?;
+        let (leaf, key) = tls_certificate(Some((&root, &root_key)))?;
+        for trusted in [false, true] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+            listener.set_nonblocking(true)?;
+            let endpoint = format!("https://{}/custom/metrics", listener.local_addr()?);
+            let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
+            acceptor.set_certificate(&leaf)?;
+            acceptor.set_private_key(&key)?;
+            let acceptor = acceptor.build();
+            let receiver =
+                tokio::task::spawn_blocking(move || -> anyhow::Result<Option<Vec<u8>>> {
+                    let until = std::time::Instant::now() + Duration::from_secs(5);
+                    let socket = loop {
+                        match listener.accept() {
+                            Ok((socket, _)) => break socket,
+                            Err(error)
+                                if error.kind() == std::io::ErrorKind::WouldBlock
+                                    && std::time::Instant::now() < until =>
+                            {
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(error) => return Err(error.into()),
+                        }
+                    };
+                    socket.set_nonblocking(false)?;
+                    socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+                    socket.set_write_timeout(Some(Duration::from_secs(3)))?;
+                    let mut stream = match acceptor.accept(socket) {
+                        Ok(stream) => stream,
+                        Err(error) => {
+                            anyhow::ensure!(
+                                !trusted,
+                                "Trusted fixture TLS handshake failed: {error}"
+                            );
+                            return Ok(None);
+                        }
+                    };
+                    let mut received = Vec::new();
+                    loop {
+                        let mut chunk = [0; 4096];
+                        let read = stream.read(&mut chunk)?;
+                        anyhow::ensure!(read != 0, "TLS request ended before its body");
+                        received.extend_from_slice(&chunk[..read]);
+                        anyhow::ensure!(received.len() < 65_536, "unexpectedly large test request");
+                        if let Some(end) =
+                            received.windows(4).position(|bytes| bytes == b"\r\n\r\n")
+                        {
+                            let headers =
+                                String::from_utf8_lossy(&received[..end]).to_ascii_lowercase();
+                            let length: usize = headers
+                                .lines()
+                                .find_map(|line| line.strip_prefix("content-length:"))
+                                .ok_or_else(|| anyhow::anyhow!("missing request length"))?
+                                .trim()
+                                .parse()?;
+                            if received.len() >= end + 4 + length {
+                                break;
+                            }
+                        }
+                    }
+                    stream.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )?;
+                    Ok(Some(received))
+                });
+            let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
+                "metrics": {"backend": "otlp", "otlp": {
+                    "endpoint": endpoint, "protocol": "http/protobuf",
+                    "headers": {"authorization": "${OBS04_TLS_TEST_AUTH}"}
+                }}
+            }))?;
+            let serialized = serde_yaml::to_string(&config)?;
+            assert!(serialized.contains("OBS04_TLS_TEST_AUTH"));
+            assert!(!serialized.contains(AUTH));
+            let mapper = DtoMapper::with_overrides(std::collections::HashMap::from([(
+                "OBS04_TLS_TEST_AUTH".into(),
+                AUTH.into(),
+            )]));
+            let destination = config.resolve(&mapper, 8080, true)?.metrics_otlp.unwrap();
+            let root_der = root.to_der()?;
+            let client_result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                let logs = CapturedLogs(Arc::new(std::sync::Mutex::new(Vec::new())));
+                let writer = logs.clone();
+                let subscriber = tracing_subscriber::fmt()
+                    .without_time()
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::TRACE)
+                    .with_writer(move || writer.clone())
+                    .finish();
+                let _scope = tracing::subscriber::set_default(subscriber);
+                let mut client =
+                    crate::telemetry::CoreHttpClient::new(destination, Duration::from_secs(2))?;
+                if trusted {
+                    // Test-only trust anchor: no custom-CA production configuration.
+                    client.client = reqwest_otel::blocking::Client::builder()
+                        .tls_certs_only([reqwest_otel::Certificate::from_der(&root_der)?])
+                        .redirect(reqwest_otel::redirect::Policy::none())
+                        .timeout(Duration::from_secs(2))
+                        .build()?;
+                }
+                client.allow_until(None)?;
+                let request = opentelemetry_http::Request::builder()
+                    .uri("http://unused.invalid/ignored")
+                    .header("x-unconfigured", "must-not-reach-receiver")
+                    .body(bytes::Bytes::from_static(PAYLOAD))?;
+                let result = futures::executor::block_on(client.send_bytes(request));
+                assert!(!format!("{client:?}").contains("/custom/metrics"));
+                let diagnostics = format!(
+                    "{client:?} {:?} {}",
+                    result.as_ref().err(),
+                    String::from_utf8_lossy(&logs.0.lock().unwrap())
+                );
+                assert!(!diagnostics.contains(AUTH));
+                assert!(!diagnostics.contains(std::str::from_utf8(PAYLOAD)?));
+                if trusted {
+                    assert_eq!(
+                        result.map_err(|error| anyhow::anyhow!("{error}"))?.status(),
+                        200
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "production client accepted an untrusted CA"
+                    );
+                }
+                Ok(())
+            })
+            .await?;
+            let received = receiver.await??;
+            client_result?;
+            if trusted {
+                let request = String::from_utf8(received.expect("trusted TLS request"))?;
+                assert!(request.starts_with("POST /custom/metrics HTTP/1.1\r\n"));
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("content-type: application/x-protobuf\r\n"));
+                assert!(request.contains(&format!("authorization: {AUTH}\r\n")));
+                assert!(request.ends_with(std::str::from_utf8(PAYLOAD)?));
+                assert!(!request.contains("x-unconfigured"));
+            } else {
+                assert!(
+                    received.is_none(),
+                    "untrusted TLS peer received credentials or body"
+                );
+            }
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn core_transport_never_follows_redirects() {
         let redirected = collector().await;

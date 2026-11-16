@@ -1325,7 +1325,47 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
 | `telemetry` | object | none | Startup-only telemetry policy and init support; unavailable runtime capabilities fail startup explicitly. See [telemetry configuration](docs/telemetry-configuration.md). |
 
-### OpenTelemetry progress metrics
+### Operational metrics (Prometheus or OTLP)
+
+The startup-only `telemetry` policy selects one metrics backend for all actual
+instances, including native queries. No global recorder/provider, tracing
+export, process collector or inspection service is installed implicitly:
+
+```yaml
+telemetry:
+  profile: persistence
+  metrics:
+    backend: prometheus
+    processMetrics: false
+    prometheus:
+      path: /metrics
+```
+
+This serves metrics on the management listener; protect it with a restricted
+network or trusted proxy (there is no new authentication system). Select
+`backend: otlp` with `metrics.otlp.endpoint`, explicit `protocol: http/protobuf`,
+`exportInterval: 30` and `exportTimeout: 5` for push export instead. New values
+are **seconds**. Use full signal URLs; environment-backed authentication headers
+require normally verified HTTPS. New policy does not inherit `OTEL_*` overrides.
+Off/None creates no new backend, scrape route/listener or upkeep worker.
+
+Counters, physical-queue gauges and actual evaluator/commit duration histograms
+preserve Core identities and native seconds/count units. Persistence includes
+supported commit/storage details; Debug is not a synonym for Persistence.
+New OTLP includes the existing `drasi.query.progress.sequence` gauge once on
+the **same provider**, not via an additional root `metrics` exporter. Prometheus
+does not export that progress instrument.
+
+See [telemetry configuration](docs/telemetry-configuration.md) for histogram
+bounds, limits, exclusions, overload, resource identity and retained ownership.
+The [existing observability example](examples/observability/README.md) keeps
+its Off/empty default and adds an explicit `live prometheus` / `live otlp`
+mock → native query → log reaction walkthrough using locally rebuilt,
+source/binary-fingerprinted plugins. Live/export/native qualification is
+separately recorded in the [baseline](docs/observability-baseline.md);
+instructions are not a full-suite or release claim.
+
+### Legacy OpenTelemetry progress metrics
 
 For the local Core/Server adapter versions, migration decisions and compatibility
 checks, see the [OBS-01 baseline](docs/observability-baseline.md). This baseline
@@ -1376,9 +1416,8 @@ The Server owns its meter provider; it does not replace the application's global
 provider. Collection reads existing graph-owned state without storage/network
 I/O. Network export and SDK shutdown run away from the Tokio executor, including
 on a current-thread runtime. Export errors are logged; shutdown errors are
-returned. Cancelled cleanup retains the worker for a later join. This first slice
-does not yet export every component's throughput, latency, queue, or delivery
-metrics.
+returned. Cancelled cleanup retains the worker for a later join. This legacy progress-only contract does not export the operational catalogue;
+use the new policy above for supported throughput, duration and queue metrics.
 The legacy provider uses the existing SDK custom/ManualReader feature and an
 application-owned serial collection/export loop, not an unjoinable SDK
 PeriodicReader thread. The HTTP/JSON exporter, rustls, resource, callback and

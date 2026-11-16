@@ -26,4 +26,5 @@ telemetry:
       endpoint: "${DRASI_DEMO_METRICS_ENDPOINT:-http://127.0.0.1:4318/v1/metrics}"
       protocol: http/protobuf
       exportInterval: "${DRASI_DEMO_EXPORT_INTERVAL:-30}"
+      exportTimeout: "${DRASI_DEMO_EXPORT_TIMEOUT:-5}"
   shutdownTimeoutSeconds: "${DRASI_DEMO_SHUTDOWN_TIMEOUT:-5}"

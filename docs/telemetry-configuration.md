@@ -15,7 +15,11 @@ recorder/context and retained HTTP/protobuf exporter. Prometheus uses one
 guarded recorder/context with controlled scrape routing and retained upkeep.
 Server installs no global metrics recorder or provider. Tracing export,
 process collectors and inspection remain unavailable. Native-plugin
-wire parity and the end-to-end observability demo require separate qualification.
+wire parity and the end-to-end observability demo require separate qualification;
+the [example](../examples/observability/README.md) now provides an explicit live
+mock/native-query/log mode alongside its unchanged Off/empty default.
+Recorded evidence and deferred gates are in the
+[baseline](observability-baseline.md#obs-04-delivery-status).
 
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Successful validation does
@@ -80,6 +84,70 @@ Persistence adds supported storage/recovery details to Basic, not all Debug
 details or every engine statistic. No profile enables handled-branch latency.
 Exclusions only suppress metrics: `drasi.plugin.` is a substring; `*` is
 literal, not a wildcard. An empty substring excludes every metric.
+
+## Metric data and bounds
+
+Core metrics use scope `drasi.core`. Counters are cumulative monotonic sums,
+gauges retain their value semantics, and histograms retain native units (`1`
+for counts, `s` for durations). Values are not multiplied into milliseconds.
+Both backends use these finite histogram boundaries (Prometheus also has `+Inf`):
+
+```text
+[0.000001, 0.000005, 0.00001, 0.00005, 0.0001, 0.0005, 0.001,
+ 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 100, 1000]
+```
+
+For example `drasi.query.events_processed` and `drasi.query.results_emitted`
+are counters; `drasi.queue.depth` is a gauge; `drasi.query.engine.duration`
+and Persistence's `drasi.query.commit.duration` are second-valued histograms.
+Prometheus normalizes dots to underscores without adding `_total` or unit
+suffixes; histograms generate `_bucket`, `_sum`, `_count`. OTLP preserves dotted
+names and units with non-cumulative explicit bucket counts within each cumulative
+histogram point. Commit counts include actual evaluation/publication and delivery
+acknowledgement commits, not a fabricated one-commit-per-input invariant.
+
+All actual instances/graphs/static/native producers share one recorder/context.
+Core attributes include actual `instance_id`, `graph_id`, `component_id`,
+`component_kind` and catalogue-specific labels such as `query_id` / `queue_id`.
+Names are not substituted for assigned component UUIDs. Physical queue identity
+is provider-owned; unsupported observations are omitted rather than synthesized.
+Generic component and specialized counters are different views, not additive
+totals. No metric exports query text, record payloads or credentials.
+
+The shared Core context limits definitions to **1,024** and series to **16,384**
+with its existing name/description/label/byte limits. New OTLP Core streams honor
+that limit rather than the SDK's smaller default. Prometheus rejects normalized
+family/generated-histogram-name or label-key collisions transactionally before
+recorder registration, through the same optional context guard used by native
+bindings. OTLP's unguarded names remain unchanged. These are admission limits,
+**not a hard RSS or throughput guarantee**.
+
+### Same-provider progress migration
+
+New OTLP registers the existing `drasi.query.progress.sequence` observable gauge
+once, under scope `drasi.progress`, on the same provider as Core metrics.
+Do not add legacy root `metrics` to get progress; the combination is rejected.
+Progress retains its existing labels, stages (`input.committed` versus
+`output.produced`), generation/operation/configuration-hash identity, signed-range
+protection and unsupported/unready-query omission. Input which changes no result
+can advance committed input without advancing produced output. A collector's old
+sample is not evidence that a stopped query was observed again. Prometheus has
+no progress callback. Exclude `drasi.query.progress.` to omit it from new OTLP.
+
+Both OTLP scopes share an explicit resource: configured service name (default
+`drasi-server`), Server version, PID, and one runtime/process-start-unique
+`service.instance.id`. All instances share that resource but retain their own
+graph/component attributes. A restart gets a new identity; no automatic
+`OTEL_RESOURCE_ATTRIBUTES`/`OTEL_SERVICE_NAME` merge occurs. Prometheus retains
+Core identity labels; it does not invent an OTLP progress or resource series.
+
+The facade adapter has an approved same-version local patch:
+[`metrics-opentelemetry` provenance](../patches/metrics-opentelemetry/README.md).
+It preserves full metric-key equality when cached hashes collide, for counters,
+gauges and histograms. Original upstream BSL-1.0 license/notices and commit
+`12be6ec64d25aa99992c750c488338c68e65b281` are retained; package version
+0.24033.1 and instrument/label semantics are unchanged. This is not a limit
+increase, second recorder or shared Cargo-cache edit.
 
 ## Examples
 
@@ -164,9 +232,12 @@ is allowed for development. Configured headers require HTTPS with normal
 certificate verification. Header values must be environment references without
 plaintext defaults; HTTP routing/payload header overrides and invalid names or
 values are rejected. Resolved destinations and credentials are omitted from
-policy Debug output and validation diagnostics. Later exporter implementation
-must preserve these transport/authentication rules and qualify the actual wire
-behavior; OBS-01's in-memory trace proof was not that qualification.
+policy Debug output and validation diagnostics. The new metrics HTTP seam sends
+the resolved URL/headers explicitly; it does not accept conflicting SDK header
+or endpoint environment overrides. Actual TLS/auth boundary proof is a focused
+test with a test-only trust anchor, not a production custom-CA feature or evidence
+of a qualified external collector. See the baseline for its execution status;
+OBS-01's in-memory trace proof was not transport qualification.
 
 Use the existing `${VAR}` / `${VAR:-default}` or structured `EnvironmentVariable`
 references. Explicit mapper overrides take precedence over environment values,
@@ -220,6 +291,29 @@ actual connections and accepted renders remain owned until joined. Upkeep
 continues while producers stop, then joins in the shared collection phase.
 A fatal serving error requests the same sticky cleanup operation and remains
 a failed Server outcome. No final scrape is required or promised.
+
+Upkeep drains histogram samples every five seconds even without a scraper.
+There is never overlapping upkeep or a pending upkeep backlog. Rendering and
+upkeep run in retained off-executor workers, not `block_in_place`. Aggregation
+and bounded registration do not establish a hard memory cap under sustained
+producer load.
+
+### OTLP scheduling and failure behavior
+
+New OTLP constructs one SDK provider/ManualReader and one retained blocking
+collection/export loop. Preparation sends nothing; activation follows actual
+startup publication and all required listener binds. A never-run or failed
+preparation closes without exporting. Interval/timeout are explicitly resolved
+seconds, not SDK environment defaults. One export runs at a time; missed
+interval ticks are skipped, with no pending snapshot backlog. Transport work
+does not run on the Tokio executor.
+
+Export failures are reported at most once per 30 seconds, with suppressed-count
+and recovery reporting; an unavailable receiver does not stop actual source/query
+processing. After activation, producer stop precedes one bounded final export/
+close. Cancellation or an expired wait retains actual workers, one physical
+close and historical deadline errors; it neither claims completion nor grants
+a new final-export budget. Borrowed providers remain caller-owned.
 
 ## Init
 

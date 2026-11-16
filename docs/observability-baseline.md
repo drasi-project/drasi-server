@@ -9,8 +9,10 @@ OBS-02 now supplies [typed configuration and init support](telemetry-configurati
 OBS-03 adds explicit construction/running ownership and borrowed integration;
 its focused local verification is recorded below. Earlier results
 below describe only the recorded OBS-01 baseline, not the new ownership batch.
-Production capabilities remain explicitly gated until their later runtime
-implementations land; this does not change the OBS-01 qualification claims.
+OBS-04 now implements the selected Prometheus/OTLP metrics paths; see
+[delivery status](#obs-04-delivery-status) for focused evidence and pending live
+qualification. Tracing/process/inspection remain gated. This does not change
+the historical OBS-01 qualification claims.
 
 ## Local source and plugin ownership
 
@@ -51,10 +53,20 @@ instrumentation support. The real-plugin proofs require this capability.
 | Prometheus recorder | 0.17.2 | No default HTTP server/exporter features |
 | `metrics-opentelemetry` | 0.24033.1 | Facade-to-OTel recorder, including absolute counters and mutable gauges |
 
-Server's new recorder/tracing qualification dependencies are test-only. Core
-keeps its OTel integration behind `otel-context`; ordinary logging remains
-independent. Unrelated older OTel versions used transitively by other libraries
-do not provide Server's telemetry types.
+The original OBS-01 recorder/tracing adapters were qualification dependencies.
+OBS-04 promotes the metrics adapters to production; tracing qualification remains
+test-only. Core keeps its OTel integration behind `otel-context`; ordinary
+logging remains independent. Unrelated older OTel versions used transitively by
+other libraries do not provide Server's telemetry types.
+
+The approved local `metrics-opentelemetry` 0.24033.1 override fixes cached-hash
+collisions using full `metrics::Key` equality across all three handle caches.
+It preserves the upstream BSL-1.0 license/notices and exact source commit
+`12be6ec64d25aa99992c750c488338c68e65b281`.
+See [patch provenance](../patches/metrics-opentelemetry/README.md).
+Version/dependencies and exported names/labels are unchanged; the shared Cargo
+cache was not modified. The focused real protobuf collision/2,001-series
+regressions passed during Task 3; that is not native-bundle requalification.
 
 Do not substitute `metrics-exporter-opentelemetry`: its documented unsupported
 operations include `Counter::absolute` and gauge increment/decrement. An SDK
@@ -217,8 +229,82 @@ The application-owned ManualReader loop removes the inaccessible SDK periodic
 thread from Server ownership. Server's owned polling path similarly creates no
 notify/debouncer backend. Legacy native SDK entrypoints still exist, without any
 new claim of opaque native-thread completion. All borrowed providers/collectors
-stay caller-owned; production exporters remain OBS-04/05 and process/inspection
-remain OBS-06. The example is still configuration/logs only.
+stay caller-owned. This is the historical OBS-03 qualification: production
+metrics belong to the separate OBS-04 record below, tracing remains OBS-05 and
+process/inspection remain OBS-06. The example now preserves its
+configuration/logs-only default and adds an explicit live metrics mode.
+
+## OBS-04 delivery status
+
+The uncommitted local implementation selects exactly one guarded Prometheus
+recorder or explicit HTTP/protobuf OTLP provider/context, shared across actual
+instances and native construction paths. The controlled scrape route/listener
+and no-scraper upkeep, same-provider OTLP progress, retained blocking workers,
+pre-activation rollback and owned-handle restrictions are described in
+[telemetry configuration](telemetry-configuration.md).
+
+Recorded focused results from Tasks 1–5 (not new Task 6 runs):
+
+- Core guard: 50 telemetry tests passed, with no-default-features/style checks.
+  The static/native-facing common registration boundary is covered; this is
+  not a new rebuilt native-callback proof.
+- Task 3 OTLP selector: **17 passed, 1 isolated child ignored**; its ordinary
+  hostile-environment parent exercised that child. Legacy telemetry **16
+  passed**; config **12**, init **3**, exact adapter retirement **1** passed.
+  Includes actual protobuf units/buckets, 2,001 distinct series without overflow,
+  hash-collision regressions, progress stages/exclusion, redirects, failures/
+  timing and retained shutdown. Lib/bin check and scoped style passed.
+- Task 4 actual file/initialized/API/store-continuity parents: **4 passed,
+  1 isolated child ignored**, both Tokio flavors; public metrics **5 passed,
+  1 isolated child ignored** at that checkpoint. The final unpublished-
+  preparation regression passed in both flavors.
+- Task 5 public metrics: **15 passed, 1 isolated child ignored**; lifecycle
+  **72 passed, 2 isolated child entry points ignored**. Signal suite **4
+  passed** initially; the changed diagnostic regression was restored and that
+  exact test passed again. Directly affected capability/router **31 passed,
+  1 ignored**, init **3 unit + 2 integration** passed; lib/bin check, scoped
+  formatting and whitespace passed.
+
+These are separate checkpoint counts, **not an aggregate suite total**.
+Ignored subprocess entry points were exercised by parents; genuinely
+plugin-dependent ignored tests are not counted as passed.
+
+Task 6 now adds the explicit live mock → native query → log example and a
+focused actual TLS client/auth boundary test with a test-only trust anchor.
+The test exercises the production resolved HTTP seam and the untrusted-peer
+failure path; it does not add custom-CA production configuration.
+The narrow ignored `native_guard_rejection_precedes_recorder_registration`
+proof uses the existing real SDK `telemetry_fixture` to reject a registration
+across the actual callback before recorder calls, then accept it on the same
+context. It requires a freshly built fixture path supplied explicitly; ignored
+is not passed, and no ABI or Core fixture source was changed.
+The local-bundle helper has focused provenance/state-isolation tests in the
+existing Python runner. **Task 6 tests, shell checks, matching rebuild, actual
+Prometheus/OTLP observations and owned-process/port cleanup are pending
+controller execution. No new Task 6 pass is recorded here.**
+
+Use the [same observability example](../examples/observability/README.md) for
+the final bounded walkthrough. `build-plugins` builds only Server plus the
+three matching local libraries, offline with separate target graphs. Live
+startup checks build receipts/source/binary fingerprints and copies only those
+libraries into a unique owned working/WAL directory. It does not trust old
+`target/debug/plugins` contents by filename or download registry packages.
+Component names reference Core-assigned UUIDs; there is no implicit instance,
+fixed external ID reuse, old-index recovery shortcut or user-state deletion.
+
+New production-format native parity is to be observed there, complemented by
+the existing exact-count real-native tests and the narrow callback proof above.
+No additional broad synthetic native matrix duplicates Tasks 1–5. The existing ignored native OTel proof
+still uses an in-memory adapter; its passing historical result alone cannot
+qualify the new HTTP/protobuf exporter. Actual demo request/scrape evidence
+must record profiles, counts/types/units, identities, exclusion and OTLP-only
+progress before claiming delivery qualification.
+
+Per the user's 2026-11-16 execution update, **do not run a full Server/Core/
+workspace suite or the full baseline target** for this handoff. Full native
+workspace, cross-platform, CI, release, overhead and hard-RSS qualification
+remain unclaimed. The historical baseline recipe below is retained for
+reference, not the current Task 6 command list.
 
 ## Running the checks
 
@@ -251,7 +337,7 @@ CARGO_TARGET_DIR="$PWD/target/observability-server" cargo test --locked --test o
 CARGO_TARGET_DIR="$PWD/target/observability-server" cargo test --locked --lib telemetry::tests
 ```
 
-### Current local validation
+### Historical OBS-01 local validation
 
 All **six Server adapter/plugin proofs** pass against freshly rebuilt libraries
 from the recorded Core revision, including the actual native-query handoff through
@@ -272,9 +358,9 @@ These are not full workspace or release qualification.
 
 ## Remaining completion gates
 
-The integrated source now has an immutable revision, with local qualification
-results above. CI setup remains deferred; these results are not full release
-qualification:
+The historical integrated Core revision has the local OBS-01 qualification
+results above; current path dependencies also compile subsequent local changes.
+CI setup remains deferred; these results are not full release qualification:
 
 - Complete broader Core workspace/recovery qualification as needed. The
   affected suites above pass, but the previously interrupted full Core unit run
@@ -303,6 +389,7 @@ qualification:
   adapter proof is formatted, and `git diff --check` passes. These existing
   differences are not reformatted as part of OBS-01.
 
-Later issues own production configuration/runtime/backend wiring, inspection,
-performance budgets and operational examples. No new per-instance telemetry
-policy, management HTTP tracing or external-backend query proxy is introduced.
+OBS-02/03/04 now provide configuration, ownership and production metrics wiring
+as separately recorded above. Later issues still own tracing export, process/
+inspection, and performance budgets. No new per-instance telemetry policy,
+management HTTP tracing or external-backend query proxy is introduced.

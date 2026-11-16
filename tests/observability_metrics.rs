@@ -195,6 +195,113 @@ impl metrics::Recorder for GlobalRecorder {
     }
 }
 
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires freshly built SDK telemetry_fixture; set DRASI_OBS04_NATIVE_FIXTURE"]
+async fn native_guard_rejection_precedes_recorder_registration() -> Result<()> {
+    use drasi_lib::observability::{
+        ExecutionScope, MetricRegistration, MetricRegistrationContext, MetricRegistrationGuard,
+        PluginTelemetry, TelemetryError, TelemetryOptions,
+    };
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    const METRIC: &str = "drasi.plugin.test-telemetry.frames_received";
+    #[derive(Debug)]
+    struct RejectFirst {
+        rejecting: AtomicBool,
+        rejected: AtomicUsize,
+    }
+    impl MetricRegistrationGuard for RejectFirst {
+        fn validate_and_commit(
+            &self,
+            registration: &MetricRegistration,
+        ) -> std::result::Result<(), TelemetryError> {
+            if registration.name() == METRIC && self.rejecting.load(Ordering::SeqCst) {
+                self.rejected.fetch_add(1, Ordering::SeqCst);
+                return Err(TelemetryError::Conflict(METRIC.into()));
+            }
+            Ok(())
+        }
+    }
+
+    let path = std::env::var_os("DRASI_OBS04_NATIVE_FIXTURE")
+        .context("build the current SDK telemetry_fixture and supply its exact path")?;
+    let plugin = drasi_host_sdk::computation::load(std::path::PathBuf::from(path))?;
+    let registered = Arc::new(Mutex::new(Vec::new()));
+    let guard = Arc::new(RejectFirst {
+        rejecting: AtomicBool::new(true),
+        rejected: AtomicUsize::new(0),
+    });
+    let context = MetricRegistrationContext::new_with_guard(
+        Arc::new(GlobalRecorder(registered.clone())),
+        Default::default(),
+        guard.clone(),
+    )?;
+    let logging = ComponentLogRuntime::new(LogPolicy::new("off")?)?;
+    let graph = ComputationGraph::builder("native-guard")
+        .with_component_logging(logging.clone())
+        .with_telemetry(
+            TelemetryOptions::new(
+                TelemetrySettings::new(TelemetryProfile::Basic)
+                    .with_tracing(false)
+                    .require_native_metrics(),
+            )
+            .with_instance_id("native-guard")
+            .with_metric_context(context),
+        )
+        .build()?;
+    let id = ComponentId::try_new("45b5d856-324e-4d9d-9e97-28db6168f7cf")?;
+    let scope = TelemetryScope::graph("native-guard", "native-guard")?.component(
+        id.clone(),
+        ComponentRole::Service,
+        ComponentSemanticKind::Service,
+    );
+    let binding = graph.telemetry().plugin_binding(
+        scope.clone(),
+        1,
+        "test-telemetry",
+        Some(logging.clone()),
+    )?;
+    let create = |binding: &PluginTelemetry| {
+        ExecutionScope::new(Default::default())
+            .with_component(binding.config().scope.clone(), binding.config().generation)
+            .with_plugin_telemetry(Some(binding.clone()))
+            .in_scope(|| plugin.factories()[0].create_component(id.clone(), serde_json::json!({})))
+    };
+    let rejected = create(&binding);
+    assert!(
+        rejected.is_err(),
+        "native constructor ignored host registration rejection"
+    );
+    assert_eq!(guard.rejected.load(Ordering::SeqCst), 1);
+    assert!(!registered.lock().unwrap().iter().any(|name| name == METRIC));
+    // The failed native callback must not poison/cache acceptance in this context.
+    guard.rejecting.store(false, Ordering::SeqCst);
+    let next =
+        graph
+            .telemetry()
+            .plugin_binding(scope, 2, "test-telemetry", Some(logging.clone()))?;
+    let mut accepted = create(&next)?;
+    assert_eq!(
+        registered
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|name| name.as_str() == METRIC)
+            .count(),
+        1,
+        "native repeated registration must reuse the accepted handle"
+    );
+    accepted.initialize().await?;
+    accepted.start().await?;
+    accepted.run().await?;
+    accepted.stop().await?;
+    accepted.dispose().await?;
+    drop(accepted);
+    drop(graph);
+    logging.shutdown(WAIT).await?;
+    Ok(())
+}
+
 struct FirstFactory {
     inner: Arc<dyn ComponentFactory>,
     observed: Arc<Mutex<Vec<String>>>,
