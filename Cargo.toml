@@ -120,13 +120,13 @@ opentelemetry = { version = "0.33.1", default-features = false, features = ["met
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["metrics", "experimental_metrics_custom_reader"] }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["metrics", "http-json", "reqwest-blocking-client", "reqwest-rustls"] }
 reqwest_otel = { version = "0.13.4", package = "reqwest", default-features = false, features = ["blocking", "rustls"] }
+metrics = "=0.24.6"
+metrics-exporter-prometheus = { version = "=0.17.2", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1.53.3", features = ["test-util"] }
 drasi-computation-transformer-query = { path = "../drasi-core/components/computation-plugins/transformers/query" }
 drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["otel-context"] }
-metrics = "=0.24.6"
-metrics-exporter-prometheus = { version = "=0.17.2", default-features = false }
 metrics-opentelemetry = "=0.24033.1"
 opentelemetry = { version = "=0.33.1", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["trace", "testing"] }
