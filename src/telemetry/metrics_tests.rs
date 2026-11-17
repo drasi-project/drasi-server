@@ -164,7 +164,9 @@ mod otlp {
         api::mappings::DtoMapper,
         config::telemetry::TelemetryConfig,
         instance_registry::InstanceRegistry,
-        telemetry::{recorders::telemetry_resource, MetricsMode, MetricsRuntime},
+        telemetry::{
+            process::SnapshotSource, recorders::telemetry_resource, MetricsMode, MetricsRuntime,
+        },
     };
     use opentelemetry_proto::tonic::{
         collector::metrics::v1::ExportMetricsServiceRequest,
@@ -178,6 +180,18 @@ mod otlp {
     };
 
     fn mode(endpoint: &str, progress_enabled: bool) -> MetricsMode {
+        configured_mode(endpoint, progress_enabled, None)
+    }
+
+    fn mode_with_process(endpoint: &str, source: SnapshotSource) -> MetricsMode {
+        configured_mode(endpoint, true, Some(source))
+    }
+
+    fn configured_mode(
+        endpoint: &str,
+        progress_enabled: bool,
+        process: Option<SnapshotSource>,
+    ) -> MetricsMode {
         let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
             "filters":{"exclude":if progress_enabled { Vec::<&str>::new() } else { vec!["drasi.query.progress."] }},
             "metrics":{"backend":"otlp","otlp":{
@@ -188,12 +202,14 @@ mod otlp {
         let progress_enabled = effective
             .policy()
             .allows_metric("drasi.query.progress.sequence");
+        let process = process.map(|source| ProcessMetrics::with_source(effective.policy(), source));
         MetricsMode::CoreOtlp {
             destination: effective.metrics_otlp.unwrap(),
             export_interval: Duration::from_secs(1),
             export_timeout: Duration::from_secs(1),
             resource: telemetry_resource("wire-test"),
             progress_enabled,
+            process,
         }
     }
 
@@ -242,6 +258,191 @@ mod otlp {
             .find(|attribute| attribute.key == key)
             .and_then(|attribute| attribute.value.as_ref())
             .and_then(|value| value.value.as_ref())
+    }
+
+    fn decode(request: &wiremock::Request) -> ExportMetricsServiceRequest {
+        ExportMetricsServiceRequest::decode(request.body.as_slice()).unwrap()
+    }
+
+    fn has_metric(body: &ExportMetricsServiceRequest, name: &str) -> bool {
+        body.resource_metrics
+            .iter()
+            .flat_map(|resource| &resource.scope_metrics)
+            .flat_map(|scope| &scope.metrics)
+            .any(|metric| metric.name == name)
+    }
+
+    fn process_cpu(body: &ExportMetricsServiceRequest) -> f64 {
+        let Data::Sum(sum) = metric(body, "drasi.server.process", "process_cpu_seconds_total")
+            .data
+            .as_ref()
+            .unwrap()
+        else {
+            panic!("process CPU must be a sum")
+        };
+        assert_eq!(sum.data_points.len(), 1);
+        match sum.data_points[0].value {
+            Some(Number::AsDouble(value)) => value,
+            ref other => panic!("process CPU must be a double, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn core_wire_exports_process_metrics_once_per_collection_with_shared_resource() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let collector = collector().await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let source: SnapshotSource = Arc::new(move || {
+            let call = counted.fetch_add(1, Ordering::SeqCst) + 1;
+            Metrics {
+                cpu_seconds_total: Some(0.5 * call as f64),
+                resident_memory_bytes: Some(4096),
+                open_fds: Some(7),
+                ..Default::default()
+            }
+        });
+        let mut runtime = MetricsRuntime::default();
+        let context = runtime
+            .prepare(
+                mode_with_process(&format!("{}/custom/metrics", collector.uri()), source),
+                &InstanceRegistry::new(),
+            )
+            .await
+            .unwrap()
+            .expect("Core registration context");
+        register(
+            &context,
+            "events",
+            MetricKind::Counter,
+            MetricUnit::One,
+            &[],
+        )
+        .unwrap()
+        .counter()
+        .unwrap()
+        .increment(1);
+        tokio::time::sleep(Duration::from_millis(1150)).await;
+        assert!(collector.received_requests().await.unwrap().is_empty());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "preparation must not sample"
+        );
+        runtime.activate().unwrap();
+        let body = capture(&collector).await;
+        let cpu = metric(&body, "drasi.server.process", "process_cpu_seconds_total");
+        assert_eq!(cpu.unit, "s");
+        let Data::Sum(sum) = cpu.data.as_ref().unwrap() else {
+            panic!("process CPU must be a sum")
+        };
+        assert!(sum.is_monotonic);
+        assert_eq!(sum.aggregation_temporality, 2);
+        assert_eq!(sum.data_points.len(), 1);
+        assert!(sum.data_points[0].attributes.is_empty());
+        assert_eq!(sum.data_points[0].value, Some(Number::AsDouble(0.5)));
+        for (name, unit, value) in [
+            ("process_resident_memory_bytes", "By", 4096.0),
+            ("process_open_fds", "1", 7.0),
+        ] {
+            let exported = metric(&body, "drasi.server.process", name);
+            assert_eq!(exported.unit, unit, "{name}");
+            let Data::Gauge(gauge) = exported.data.as_ref().unwrap() else {
+                panic!("{name} must be a gauge")
+            };
+            assert_eq!(gauge.data_points.len(), 1, "{name}");
+            assert!(gauge.data_points[0].attributes.is_empty(), "{name}");
+            assert_eq!(gauge.data_points[0].value, Some(Number::AsDouble(value)));
+        }
+        for absent in [
+            "process_virtual_memory_bytes",
+            "process_threads",
+            "process_max_fds",
+            "process_start_time_seconds",
+        ] {
+            assert!(
+                !has_metric(&body, absent),
+                "{absent} exported without a reading"
+            );
+        }
+        assert_eq!(
+            body.resource_metrics.len(),
+            1,
+            "process metrics must share the provider resource"
+        );
+        let scopes: Vec<_> = body.resource_metrics[0]
+            .scope_metrics
+            .iter()
+            .map(|scope| scope.scope.as_ref().unwrap().name.as_str())
+            .collect();
+        assert!(
+            scopes.contains(&"drasi.core") && scopes.contains(&"drasi.server.process"),
+            "{scopes:?}"
+        );
+        let resource = body.resource_metrics[0].resource.as_ref().unwrap();
+        assert_eq!(
+            attribute(&resource.attributes, "service.name"),
+            Some(&Value::StringValue("wire-test".into()))
+        );
+        runtime.shutdown().await.unwrap();
+        let requests = collector.received_requests().await.unwrap();
+        assert!(requests.len() >= 2, "the final collection must export");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            requests.len(),
+            "exactly one process snapshot per collection"
+        );
+        assert_eq!(
+            process_cpu(&decode(requests.last().unwrap())),
+            0.5 * requests.len() as f64
+        );
+    }
+
+    #[tokio::test]
+    async fn process_reading_missing_in_a_cycle_is_not_exported() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let collector = collector().await;
+        let first = Arc::new(AtomicBool::new(true));
+        let source: SnapshotSource = Arc::new(move || Metrics {
+            cpu_seconds_total: Some(1.0),
+            open_fds: first.swap(false, Ordering::SeqCst).then_some(7),
+            ..Default::default()
+        });
+        let mut runtime = MetricsRuntime::default();
+        runtime
+            .prepare(
+                mode_with_process(&format!("{}/custom/metrics", collector.uri()), source),
+                &InstanceRegistry::new(),
+            )
+            .await
+            .unwrap();
+        runtime.activate().unwrap();
+        let requests = timeout(Duration::from_secs(5), async {
+            loop {
+                let requests = collector.received_requests().await.unwrap();
+                if requests.len() >= 2 {
+                    return requests;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let (first, second) = (decode(&requests[0]), decode(&requests[1]));
+        let Data::Gauge(gauge) = metric(&first, "drasi.server.process", "process_open_fds")
+            .data
+            .as_ref()
+            .unwrap()
+        else {
+            panic!("open fds must be a gauge")
+        };
+        assert_eq!(gauge.data_points[0].value, Some(Number::AsDouble(7.0)));
+        assert_eq!(process_cpu(&second), 1.0);
+        assert!(
+            !has_metric(&second, "process_open_fds"),
+            "a missing reading must not re-export the previous value"
+        );
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

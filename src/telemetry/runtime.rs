@@ -61,6 +61,7 @@ pub(crate) async fn prepare_metrics(
                         progress_enabled: effective
                             .policy()
                             .allows_metric("drasi.query.progress.sequence"),
+                        process: None,
                     },
                     registry,
                 )

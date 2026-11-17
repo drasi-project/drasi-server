@@ -11,12 +11,16 @@
 
 use drasi_lib::observability::ResolvedTelemetry;
 use metrics_process::collector::{collect, Metrics};
+use opentelemetry::metrics::{AsyncInstrument, MeterProvider, ObservableCounter, ObservableGauge};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use std::{
     sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
 pub(crate) const MISSING_WARNING_INTERVAL: Duration = Duration::from_secs(300);
+
+pub(crate) const PROCESS_METER_SCOPE: &str = "drasi.server.process";
 
 /// Linux/FreeBSD report an unlimited soft limit as `0`, macOS as the raw
 /// `RLIM_INFINITY`.
@@ -220,6 +224,76 @@ impl ProcessMetrics {
                 "# HELP {name} {help}\n# TYPE {name} {kind}\n{name} {value}"
             );
         }
+    }
+
+    /// Registers one unlabeled observable instrument per enabled measurement.
+    /// Registration never samples; callbacks only read the latest refresh.
+    pub(crate) fn register_otlp(
+        self: &Arc<Self>,
+        provider: &SdkMeterProvider,
+    ) -> OtlpProcessInstruments {
+        let meter = provider.meter(PROCESS_METER_SCOPE);
+        let latest: Arc<Mutex<Vec<ProcessSample>>> = Arc::default();
+        let mut counters = Vec::new();
+        let mut gauges = Vec::new();
+        for &measurement in &self.enabled {
+            let snapshot = latest.clone();
+            // Observing nothing for an absent reading makes SDK 0.33.1 drop the
+            // point for this cycle instead of repeating a stale value.
+            let observe = move |observer: &dyn AsyncInstrument<f64>| {
+                let value = snapshot
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .iter()
+                    .find(|sample| sample.measurement == measurement)
+                    .map(|sample| sample.value);
+                if let Some(value) = value {
+                    observer.observe(value, &[]);
+                }
+            };
+            if measurement.is_counter() {
+                counters.push(
+                    meter
+                        .f64_observable_counter(measurement.name())
+                        .with_unit(measurement.otlp_unit())
+                        .with_description(measurement.help())
+                        .with_callback(observe)
+                        .build(),
+                );
+            } else {
+                gauges.push(
+                    meter
+                        .f64_observable_gauge(measurement.name())
+                        .with_unit(measurement.otlp_unit())
+                        .with_description(measurement.help())
+                        .with_callback(observe)
+                        .build(),
+                );
+            }
+        }
+        OtlpProcessInstruments {
+            metrics: self.clone(),
+            latest,
+            _counters: counters,
+            _gauges: gauges,
+        }
+    }
+}
+
+/// Process instruments on the Server-owned OTLP meter provider. The owned
+/// export worker refreshes exactly one snapshot before each collection.
+pub(crate) struct OtlpProcessInstruments {
+    metrics: Arc<ProcessMetrics>,
+    latest: Arc<Mutex<Vec<ProcessSample>>>,
+    _counters: Vec<ObservableCounter<f64>>,
+    _gauges: Vec<ObservableGauge<f64>>,
+}
+
+impl OtlpProcessInstruments {
+    /// Replaces the latest snapshot with one fresh sample.
+    pub(crate) fn refresh(&self) {
+        let samples = self.metrics.sample();
+        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = samples;
     }
 }
 

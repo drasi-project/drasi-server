@@ -142,6 +142,7 @@ struct PreparedMetrics {
     context: Option<MetricRegistrationContext>,
     transport: Option<CoreHttpClient>,
     interval: Duration,
+    process: Option<process::OtlpProcessInstruments>,
 }
 
 impl PreparedMetrics {
@@ -152,7 +153,7 @@ impl PreparedMetrics {
         } else {
             None
         };
-        let (exporter, resource, transport, interval, progress_enabled) = match mode {
+        let (exporter, resource, transport, interval, progress_enabled, process) = match mode {
             MetricsMode::Legacy(config) => {
                 let endpoint: String = DtoMapper::new().resolve_typed(&config.endpoint)?;
                 let timeout = Duration::from_millis(config.export_timeout_ms);
@@ -173,6 +174,7 @@ impl PreparedMetrics {
                     None,
                     Duration::from_millis(config.export_interval_ms),
                     true,
+                    None,
                 )
             }
             MetricsMode::CoreOtlp {
@@ -181,6 +183,7 @@ impl PreparedMetrics {
                 export_timeout,
                 resource,
                 progress_enabled,
+                process,
             } => {
                 anyhow::ensure!(
                     !export_interval.is_zero(),
@@ -212,6 +215,7 @@ impl PreparedMetrics {
                     Some(transport),
                     export_interval,
                     progress_enabled,
+                    process,
                 )
             }
         };
@@ -230,6 +234,7 @@ impl PreparedMetrics {
         if progress_enabled {
             progress::register_progress(&provider, registry);
         }
+        let process = process.map(|process| process.register_otlp(&provider));
         let context = if core {
             Some(recorders::otlp_recorder(&provider)?)
         } else {
@@ -242,6 +247,7 @@ impl PreparedMetrics {
             context,
             transport,
             interval,
+            process,
         })
     }
 }
@@ -280,6 +286,7 @@ pub(crate) enum MetricsMode {
         export_timeout: Duration,
         resource: Resource,
         progress_enabled: bool,
+        process: Option<Arc<process::ProcessMetrics>>,
     },
 }
 
@@ -330,8 +337,12 @@ impl MetricsRuntime {
                 }
             };
             drop(registry);
-            let PreparedMetrics { provider, reader, exporter, context, transport, interval } = prepared;
+            let PreparedMetrics { provider, reader, exporter, context, transport, interval, process } = prepared;
             let collect = |deadline: Option<Instant>| -> OTelSdkResult {
+                // Exactly one process snapshot per periodic or final collection.
+                if let Some(process) = &process {
+                    process.refresh();
+                }
                 let mut metrics = ResourceMetrics::default();
                 reader.collect(&mut metrics)?;
                 if metrics.scope_metrics().next().is_some() {
