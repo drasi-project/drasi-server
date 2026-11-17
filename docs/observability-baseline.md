@@ -341,24 +341,44 @@ the proxy now forwards to the source's assigned ID, which ordinary HTTP sources
 validate, and it resolves `host`/`port`/`endpoint` environment references
 instead of silently trying port 8081. Secret references are not resolved.
 
-Final focused results after the last edit (separate counts, not a suite total):
+A final code review ("with fixes") was answered test-first in
+`src/telemetry/traces.rs`. Trace shutdown now fails only for spans lost after
+it began (failed/rejected final exports, or spans discarded at an expired
+deadline, reported with a distinct message). Earlier rejections and
+warning-only collector responses remain counted and summarized but no longer
+fail shutdown. Admission losses (full/oversized/closed) now produce a
+rate-limited count-only warning. Cleanup takes the provider/collector handles
+before any fallible step, so an early error cannot leave the runtime
+permanently unjoined, and reservation release uses checked arithmetic.
+Documentation was corrected: a `tracestate` without a parent is dropped
+silently, matching Core ingress, and the live example exports `sink.handle`
+rather than `reaction.process` for the ordinary log reaction. Deferred: two
+concurrent first `wait_for_completion` callers could see a spurious "not
+requested" error; no current caller does this.
+
+Final focused results after the review fixes (separate counts, not a suite
+total):
 
 - Lib selectors `telemetry::`, `source_proxy`, `server::lifecycle_tests`:
-  **160 passed, 5 ignored** isolated child entry points.
+  **167 passed, 5 ignored** (88 + 7 + 72), including 7 new trace-worker tests.
 - Public tracing **6 passed**; its 6 ignored are the 5 opt-in native tests and
   one child entry point. With matched native fixtures (provenance recorded in
   the local ledger) the native tests **5 passed**. Core Host SDK
   `native_execution_context` 1, `native_metrics_telemetry` 2 and
-  `native_telemetry` 2 passed against the same fixtures.
-- `observability_metrics` **15 passed, 2 ignored**; `observability_runtime`
-  **23 passed, 1 ignored**; `openapi_test` **11 passed**; example helper
-  Python tests **9 passed**; `bash -n` and ShellCheck passed.
+  `native_telemetry` 2 passed against the same fixtures (before the review
+  fixes; Core was not changed).
+- `observability_runtime` **23 passed, 1 ignored**.
+- Not rerun after the review fixes, which changed only `src/telemetry/traces.rs`
+  and documentation: `observability_metrics` **15 passed, 2 ignored**;
+  `openapi_test` **11 passed**; example helper Python tests **9 passed**;
+  `bash -n` and ShellCheck passed.
 - Strict lib/bin Clippy reports only the 7 baseline findings in untouched files
   (6 `result_large_err`, 1 `too_many_arguments`). With those two categories
   allowed, lib/bin, lib unit tests and the touched integration tests pass. The
   unmodified OBS-04 `observability_metrics.rs` has 17 baseline `unwrap_used`
   findings; `--tests` across all targets still fails to compile in the untouched
-  fixtures listed under the remaining gates below.
+  fixtures listed under the remaining gates below. rustfmt on the changed file
+  and `git diff --check` are clean.
 
 Live walkthrough, 2026-11-16: ordinary HTTP source, native query and log
 reaction, Persistence profile, sample ratio 1.0, five sequential inputs.
@@ -372,7 +392,9 @@ reaction, Persistence profile, sample ratio 1.0, five sequential inputs.
   `project_solution` and four others) under Persistence; Server forwards these
   unchanged, and their selection is Core's.
   `drasi.reaction.results_processed` stayed 0 although the log reaction printed
-  the result; this was not investigated.
+  the result; this was not investigated. The same reaction exported no
+  `reaction.process` span; whether both stem from it not reporting through
+  Core's reaction worker is unverified.
 - **Telemetry Off control: passed.** All five results were processed and
   printed, nothing was exported, and shutdown was clean.
 - **Proxy propagation:** after the fixes a proxied push with `traceparent`

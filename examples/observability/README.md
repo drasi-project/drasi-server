@@ -253,9 +253,13 @@ DRASI_DEMO_SAMPLE_RATIO=1.0 DRASI_DEMO_PROFILE=debug \
 
 Send input as in section 2. Decode the receiver's request as
 `ExportTraceServiceRequest`. Expect actual graph operations such as
-`source.publish`, `query.process` and `reaction.process` (Debug adds
+`source.publish`, `query.process` and `sink.handle` (the graph's delivery to
+the reaction), plus lifecycle/control spans (Debug adds
 `query.evaluate`/`query.commit` phases), with `instance_id`, `graph_id` and
 `component_id` attributes, and the same resource identity as OTLP metrics.
+`reaction.process` appears only when a reaction reports its own work through
+Core's reaction worker; the ordinary log reaction here did not in the recorded
+walkthrough.
 Completed native plugin spans keep their original IDs, parents, events and
 timestamps; Server does not wrap them in new spans.
 

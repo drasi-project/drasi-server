@@ -18,10 +18,11 @@ one owned HTTP/protobuf exporter for host operations and Core's completed native
 spans, sharing the new OTLP metrics resource identity. Process collectors and
 inspection remain unavailable. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification;
-the [example](../examples/observability/README.md) now provides an explicit live
-mock/native-query/log mode alongside its unchanged Off/empty default.
+the [example](../examples/observability/README.md) provides explicit live
+pipelines (an ordinary HTTP source, a native query and a log reaction, plus a
+PostgreSQL CDC variant) alongside its unchanged Off/empty default.
 Recorded evidence and deferred gates are in the
-[baseline](observability-baseline.md#obs-04-delivery-status).
+[baseline](observability-baseline.md#obs-05-delivery-status).
 
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Successful validation does
@@ -43,7 +44,13 @@ including in-flight exports, after Core's separately bounded native handoff.
 Exports contain at most 256 spans, run every second or when a batch is ready,
 and use a five-second request timeout capped by the remaining shutdown deadline.
 Full/oversized records and failed batches are dropped with loss diagnostics;
-there is no automatic retry or durable trace storage. These bounds are not a
+there is no automatic retry or durable trace storage. Admission losses (full,
+oversized, closed) and export failures/rejections are each warned at most once
+per 30 seconds, with counts only, and appear in the shutdown summary. Trace
+shutdown reports failure only for spans lost after it began: a failed or
+rejected final export, or spans still pending when the shutdown deadline
+expires (reported separately). Earlier losses and warning-only collector
+responses remain in the counters and summary. These bounds are not a
 hard RSS guarantee. Trace sampling does not suppress metrics or ordinary logs.
 Prepared and failed/never-run Servers send no trace exports; activation follows
 the same serving/publication boundary as metrics. Shared collection remains
@@ -340,8 +347,9 @@ It forwards only a validated `traceparent` and `tracestate`, regardless of
 telemetry policy, and never baggage, credentials or other caller headers. It
 starts no Server span. `traceparent` is limited to 512 bytes; repeated
 `tracestate` fields are joined in wire order and limited to 512 bytes and 32
-members. A missing parent forwards no context. Duplicate, malformed, oversized
-or parentless state metadata is dropped with a rate-limited diagnostic, and
+members. A missing parent forwards no context; `tracestate` without a parent is
+dropped silently, matching Core source ingress. Duplicate, malformed or
+oversized metadata is dropped with a rate-limited diagnostic, and
 the data is still forwarded. The proxy does not follow redirects.
 
 The proxy forwards to the source's assigned ID. It reads the source's reported

@@ -24,7 +24,7 @@ use std::{
     mem::size_of,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Condvar, Mutex, MutexGuard,
+        Arc, Condvar, Mutex, MutexGuard, PoisonError,
     },
     time::Duration,
 };
@@ -45,6 +45,7 @@ const MAX_BYTES: usize = 16 * 1024 * 1024;
 const BATCH_SIZE: usize = 256;
 const EXPORT_DELAY: Duration = Duration::from_secs(1);
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(5);
+const LOSS_WARNING_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub(crate) struct TraceCollection {
@@ -84,6 +85,22 @@ struct Queue {
 struct Shared {
     queue: Mutex<Queue>,
     changed: Condvar,
+}
+
+impl Queue {
+    fn release_reserved(&mut self, records: usize, bytes: usize) -> Result<()> {
+        let remaining_records = self
+            .records
+            .checked_sub(records)
+            .context("Trace record reservation underflow")?;
+        let remaining_bytes = self
+            .bytes
+            .checked_sub(bytes)
+            .context("Trace byte reservation underflow")?;
+        self.records = remaining_records;
+        self.bytes = remaining_bytes;
+        Ok(())
+    }
 }
 
 impl Shared {
@@ -152,14 +169,7 @@ impl Shared {
     fn release(&self, batch: &[Pending]) -> Result<()> {
         let bytes: usize = batch.iter().map(|pending| pending.bytes).sum();
         let mut queue = self.lock()?;
-        queue.records = queue
-            .records
-            .checked_sub(batch.len())
-            .context("Trace record reservation underflow")?;
-        queue.bytes = queue
-            .bytes
-            .checked_sub(bytes)
-            .context("Trace byte reservation underflow")?;
+        queue.release_reserved(batch.len(), bytes)?;
         self.changed.notify_all();
         Ok(())
     }
@@ -177,6 +187,44 @@ impl Shared {
         queue.native_finished = true;
         self.changed.notify_all();
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct AdmissionLosses {
+    full: u64,
+    oversized: u64,
+    closed: u64,
+}
+
+#[derive(Default)]
+struct AdmissionLossWarnings {
+    reported: AdmissionLosses,
+    last_warning: Option<Instant>,
+}
+
+impl AdmissionLossWarnings {
+    fn due(&mut self, losses: &TraceLossSnapshot, now: Instant) -> Option<AdmissionLosses> {
+        let current = AdmissionLosses {
+            full: losses.full,
+            oversized: losses.oversized,
+            closed: losses.closed,
+        };
+        let grown = AdmissionLosses {
+            full: current.full.saturating_sub(self.reported.full),
+            oversized: current.oversized.saturating_sub(self.reported.oversized),
+            closed: current.closed.saturating_sub(self.reported.closed),
+        };
+        if grown == AdmissionLosses::default()
+            || self
+                .last_warning
+                .is_some_and(|last| now.saturating_duration_since(last) < LOSS_WARNING_INTERVAL)
+        {
+            return None;
+        }
+        self.reported = current;
+        self.last_warning = Some(now);
+        Some(grown)
     }
 }
 
@@ -468,19 +516,24 @@ impl TraceRuntime {
                 notified.await;
             }
         }
+        // Take ownership before any fallible step so an early error cannot
+        // leave the runtime permanently unjoinable.
+        let handles = self
+            .handles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         let deadline = self
             .shared
             .lock()?
             .deadline
             .context("Missing trace shutdown deadline")?;
-        let handles = self
-            .handles
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Trace handle lock failed"))?
-            .as_ref()
-            .map(|handles| (handles.provider.clone(), handles.native_spans.clone()));
         let mut failures = Vec::new();
-        if let Some((provider, collector)) = handles {
+        if let Some(TraceHandles {
+            provider,
+            native_spans: collector,
+        }) = handles
+        {
             let mut allowance = deadline.saturating_duration_since(Instant::now());
             let mut expired = false;
             loop {
@@ -499,23 +552,25 @@ impl TraceRuntime {
                     }
                 }
             }
-            self.shared.close()?;
+            if let Err(error) = self.shared.close() {
+                failures.push(error);
+            }
             if let Err(error) = self.join_export_worker().await {
                 failures.push(error);
             }
-            let result = tokio::task::spawn_blocking(move || {
+            match tokio::task::spawn_blocking(move || {
                 provider.shutdown_with_timeout(deadline.saturating_duration_since(Instant::now()))
             })
-            .await?;
-            if let Err(error) = result {
-                failures.push(error.into());
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => failures.push(error.into()),
+                Err(error) => failures.push(error.into()),
             }
-            self.handles
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Trace handle lock failed"))?
-                .take();
         } else {
-            self.shared.close()?;
+            if let Err(error) = self.shared.close() {
+                failures.push(error);
+            }
             if let Err(error) = self.join_export_worker().await {
                 failures.push(error);
             }
@@ -587,7 +642,11 @@ impl TraceRuntime {
     pub async fn is_joined(&self) -> bool {
         self.worker.read().await.is_none()
             && self.cleanup.read().await.is_none()
-            && self.handles.lock().is_ok_and(|handles| handles.is_none())
+            && self
+                .handles
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_none()
     }
 }
 
@@ -611,11 +670,26 @@ fn run_exports(
     let mut tick = Instant::now() + EXPORT_DELAY;
     let mut active_seen = false;
     let mut warnings = ExportWarnings::default();
+    let mut admission_warnings = AdmissionLossWarnings::default();
+    // Only records lost after the stop request make shutdown fail; earlier
+    // losses were already reported and remain in the counters/summary.
     let mut final_failure = false;
+    let mut discarded_at_deadline = 0;
     loop {
         let (active, deadline, finished) = {
             let mut queue = shared.lock()?;
             loop {
+                if let Some(grown) = admission_warnings.due(&queue.losses, Instant::now()) {
+                    drop(queue);
+                    log::warn!(
+                        "Trace span admission dropped records: full={}, oversized={}, closed={}",
+                        grown.full,
+                        grown.oversized,
+                        grown.closed
+                    );
+                    queue = shared.lock()?;
+                    continue;
+                }
                 if queue.active && !active_seen {
                     active_seen = true;
                     tick = Instant::now() + EXPORT_DELAY;
@@ -655,19 +729,20 @@ fn run_exports(
             (queue.active, queue.deadline, queue.native_finished)
         };
         if !active || deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            final_failure |= active;
             let mut queue = shared.lock()?;
             let discarded = queue.pending.len();
+            if active {
+                discarded_at_deadline = discarded;
+            }
             let bytes: usize = queue.pending.iter().map(|pending| pending.bytes).sum();
             queue.pending.clear();
-            queue.records -= discarded;
-            queue.bytes -= bytes;
             queue.losses.shutdown_discarded = queue
                 .losses
                 .shutdown_discarded
                 .saturating_add(discarded as u64);
             queue.open = false;
             shared.changed.notify_all();
+            queue.release_reserved(discarded, bytes)?;
             break;
         }
         let batch = shared.take_batch()?;
@@ -687,8 +762,9 @@ fn run_exports(
             fn drop(&mut self) {
                 match self.shared.lock() {
                     Ok(mut queue) => {
-                        queue.records -= self.records;
-                        queue.bytes -= self.bytes;
+                        if let Err(error) = queue.release_reserved(self.records, self.bytes) {
+                            log::error!("Trace reservation release failed: {error}");
+                        }
                         self.shared.changed.notify_all();
                     }
                     Err(error) => log::error!("Trace reservation release failed: {error}"),
@@ -727,7 +803,7 @@ fn run_exports(
                         .collector_rejected
                         .saturating_add(response.rejected_spans);
                     if response.rejected_spans != 0 || response.has_warning {
-                        final_failure = true;
+                        final_failure |= response.rejected_spans != 0 && deadline.is_some();
                         if let Some(suppressed) = warnings.failed(Instant::now()) {
                             log::warn!("OTLP trace collector reported rejection/warning; {suppressed} repeated diagnostics suppressed");
                         }
@@ -751,9 +827,19 @@ fn run_exports(
     }
     let deadline = shared.lock()?.deadline.unwrap_or_else(Instant::now);
     exporter.shutdown_with_timeout(deadline.saturating_duration_since(Instant::now()))?;
-    if final_failure {
-        anyhow::bail!("Trace export completed with rejected or failed final records");
-    }
+    anyhow::ensure!(
+        discarded_at_deadline == 0,
+        "Trace shutdown deadline expired; {discarded_at_deadline} pending spans discarded{}",
+        if final_failure {
+            " after rejected or failed final records"
+        } else {
+            ""
+        }
+    );
+    anyhow::ensure!(
+        !final_failure,
+        "Trace export completed with rejected or failed final records"
+    );
     Ok(())
 }
 
@@ -881,6 +967,50 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn trace_reservation_release_rejects_underflow_without_partial_update() -> anyhow::Result<()> {
+        let shared = Shared::new();
+        assert!(shared.admit(span())?);
+        let (records, bytes) = shared.retained()?;
+        let mut queue = shared.lock()?;
+        assert!(queue.release_reserved(records, bytes + 1).is_err());
+        assert!(queue.release_reserved(records + 1, bytes).is_err());
+        assert_eq!((queue.records, queue.bytes), (records, bytes));
+        queue.release_reserved(records, bytes)?;
+        assert_eq!((queue.records, queue.bytes), (0, 0));
+        Ok(())
+    }
+
+    #[test]
+    fn trace_admission_loss_warnings_report_growth_at_most_once_per_interval() {
+        let mut warnings = AdmissionLossWarnings::default();
+        let start = Instant::now();
+        let mut losses = TraceLossSnapshot::default();
+        assert_eq!(warnings.due(&losses, start), None);
+        losses.full = 2;
+        losses.oversized = 1;
+        assert_eq!(
+            warnings.due(&losses, start),
+            Some(AdmissionLosses {
+                full: 2,
+                oversized: 1,
+                closed: 0
+            })
+        );
+        losses.closed = 4;
+        assert_eq!(warnings.due(&losses, start + Duration::from_secs(1)), None);
+        losses.full = 3;
+        assert_eq!(
+            warnings.due(&losses, start + Duration::from_secs(31)),
+            Some(AdmissionLosses {
+                full: 1,
+                oversized: 0,
+                closed: 4
+            })
+        );
+        assert_eq!(warnings.due(&losses, start + Duration::from_secs(62)), None);
+    }
+
     #[tokio::test]
     async fn trace_batching_waits_for_activation_and_releases_reservations_once(
     ) -> anyhow::Result<()> {
@@ -976,6 +1106,101 @@ mod tests {
         let losses = runtime.losses()?;
         assert_eq!((losses.exported, losses.collector_rejected), (1, 2));
         assert_eq!(receiver.received_requests().await.unwrap().len(), 1);
+        Ok(())
+    }
+
+    async fn partial_success_receiver(rejected_spans: i64, message: &str) -> MockServer {
+        let receiver = MockServer::start().await;
+        let response = ExportTraceServiceResponse {
+            partial_success: Some(ExportTracePartialSuccess {
+                rejected_spans,
+                error_message: message.into(),
+            }),
+        }
+        .encode_to_vec();
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(response))
+            .mount(&receiver)
+            .await;
+        receiver
+    }
+
+    #[tokio::test]
+    async fn trace_rejection_before_shutdown_does_not_fail_shutdown() -> anyhow::Result<()> {
+        let receiver = partial_success_receiver(1, "rejected").await;
+        let (runtime, collection) = prepared(&receiver).await?;
+        drop(collection.tracer.start("rejected-while-running"));
+        runtime.activate()?;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while runtime.losses().unwrap().collector_rejected == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await?;
+        close(&runtime).await?;
+        assert_eq!(runtime.losses()?.collector_rejected, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn trace_warning_only_response_does_not_fail_shutdown() -> anyhow::Result<()> {
+        let receiver = partial_success_receiver(0, "advisory").await;
+        let (runtime, collection) = prepared(&receiver).await?;
+        drop(collection.tracer.start("accepted-with-warning"));
+        runtime.activate()?;
+        close(&runtime).await?;
+        let losses = runtime.losses()?;
+        assert_eq!((losses.exported, losses.collector_rejected), (1, 0));
+        assert_eq!(receiver.received_requests().await.unwrap().len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn trace_expired_deadline_without_pending_spans_is_not_an_export_failure(
+    ) -> anyhow::Result<()> {
+        let receiver = MockServer::start().await;
+        let (runtime, _collection) = prepared(&receiver).await?;
+        runtime.activate()?;
+        runtime.shared.request_stop(Instant::now())?;
+        runtime.join_export_worker().await?;
+        assert_eq!(runtime.losses()?.shutdown_discarded, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn trace_expired_deadline_reports_discarded_spans_distinctly() -> anyhow::Result<()> {
+        let receiver = MockServer::start().await;
+        let (runtime, collection) = prepared(&receiver).await?;
+        drop(collection.tracer.start("pending-at-deadline"));
+        runtime.activate()?;
+        runtime.shared.request_stop(Instant::now())?;
+        let error = runtime
+            .join_export_worker()
+            .await
+            .expect_err("discarded spans must remain visible");
+        assert!(
+            error.to_string().contains("deadline"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(runtime.losses()?.shutdown_discarded, 1);
+        assert!(receiver.received_requests().await.unwrap().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn trace_cleanup_releases_handles_after_poisoned_handle_lock() -> anyhow::Result<()> {
+        let receiver = MockServer::start().await;
+        let (runtime, _collection) = prepared(&receiver).await?;
+        let handles = runtime.handles.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = handles.lock();
+            panic!("test-only poisoning of the trace handle lock");
+        })
+        .join();
+        assert!(runtime.handles.is_poisoned());
+        runtime.activate()?;
+        close(&runtime).await?;
+        assert!(runtime.is_joined().await);
         Ok(())
     }
 
@@ -1267,6 +1492,7 @@ mod tests {
         runtime
             .request_shutdown(deadline + Duration::from_secs(10))
             .await?;
+        assert_eq!(runtime.shared.lock()?.deadline, Some(deadline));
         drop(cancelled_wait);
         assert!(runtime.wait_shutdown_until(deadline).await.is_err());
         assert!(!runtime.is_joined().await);
