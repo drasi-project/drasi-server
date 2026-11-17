@@ -38,6 +38,9 @@ pub(crate) async fn prepare_metrics(
 ) -> Result<PreparedMetrics> {
     effective.ensure_runtime_available()?;
     owner.retain_registry(registry.clone())?;
+    let process = effective
+        .process_metrics
+        .then(|| super::process::ProcessMetrics::new(effective.policy()));
     match effective.metrics_backend {
         MetricsBackend::None => Ok(PreparedMetrics {
             context: None,
@@ -61,7 +64,7 @@ pub(crate) async fn prepare_metrics(
                         progress_enabled: effective
                             .policy()
                             .allows_metric("drasi.query.progress.sequence"),
-                        process: None,
+                        process,
                     },
                     registry,
                 )
@@ -76,7 +79,9 @@ pub(crate) async fn prepare_metrics(
                 anyhow::anyhow!("Configured Prometheus metrics require a scrape configuration")
             })?;
             let (context, handle) = super::recorders::prometheus_recorder()?;
-            let runtime = super::prometheus::PrometheusRuntime::prepare(owner, handle).await?;
+            let runtime =
+                super::prometheus::PrometheusRuntime::prepare_with_process(owner, handle, process)
+                    .await?;
             Ok(PreparedMetrics {
                 context: Some(context),
                 prometheus: Some(super::prometheus::PreparedPrometheus::new(config, runtime)),

@@ -243,22 +243,10 @@ async fn builder_case(case: &str) -> Result<()> {
                     "conflicts with the management listener",
                 ),
                 (
-                    "profile: basic\nmetrics:\n  backend: prometheus\n  processMetrics: true\n  prometheus:\n    port: 9090",
-                    8080,
-                    false,
-                    "cannot activate: process metrics",
-                ),
-                (
                     "profile: basic\nmetrics:\n  backend: prometheus\n  prometheus:\n    path: /ui/metrics",
                     8080,
                     true,
                     "conflicts with a reserved management route",
-                ),
-                (
-                    "profile: basic\nmetrics:\n  backend: prometheus\n  processMetrics: true\n  prometheus:\n    path: /ui/metrics",
-                    8080,
-                    false,
-                    "cannot activate: process metrics",
                 ),
             ] {
                 let builder = source_builder(calls.clone())
@@ -445,17 +433,11 @@ async fn builder_conveniences_preserve_invalid_unrelated_fields() -> Result<()> 
 #[tokio::test]
 async fn builder_unavailable_capabilities_stay_gated_before_factories() -> Result<()> {
     let calls = Arc::new(AtomicUsize::new(0));
-    for yaml in [
-        "profile: basic\ntracing:\n  endpoint: http://127.0.0.1:4318/v1/traces\n  protocol: http/protobuf",
-        "profile: basic\ninspection:\n  enabled: true",
-        "profile: basic\nmetrics:\n  backend: prometheus\n  processMetrics: true",
-    ] {
-        rejected_before_factories(
-            source_builder(calls.clone()).with_telemetry(config(yaml)?),
-            &calls,
-            "cannot activate",
-        )
-        .await?;
-    }
-    Ok(())
+    rejected_before_factories(
+        source_builder(calls.clone())
+            .with_telemetry(config("profile: basic\ninspection:\n  enabled: true")?),
+        &calls,
+        "cannot activate",
+    )
+    .await
 }

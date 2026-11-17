@@ -178,8 +178,12 @@ impl ProcessMetrics {
         })
     }
 
-    /// Takes one snapshot; a failed reading never fails the caller.
+    /// Takes one snapshot; a failed reading never fails the caller. Takes none
+    /// when filters exclude every measurement.
     pub(crate) fn sample(&self) -> Vec<ProcessSample> {
+        if self.enabled.is_empty() {
+            return Vec::new();
+        }
         let projection = project(&(self.source)(), &self.enabled);
         let decision = self
             .warnings
@@ -425,6 +429,31 @@ mod tests {
         assert!(ProcessMetrics::with_source(&policy(&["process_"]), source)
             .sample()
             .is_empty());
+    }
+
+    #[test]
+    fn fully_excluded_measurements_take_no_snapshot() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let source: SnapshotSource = Arc::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Metrics {
+                cpu_seconds_total: Some(1.0),
+                ..Default::default()
+            }
+        });
+        let excluded = ProcessMetrics::with_source(&policy(&["process_"]), source.clone());
+        assert!(excluded.sample().is_empty());
+        let mut text = String::new();
+        excluded.append_prometheus(&mut text);
+        assert!(text.is_empty(), "{text}");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let cpu_only = ["memory", "fds", "threads", "start_time"];
+        let enabled = ProcessMetrics::with_source(&policy(&cpu_only), source);
+        assert_eq!(enabled.sample(), vec![sample(CpuSecondsTotal, 1.0)]);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]

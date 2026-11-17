@@ -34,7 +34,6 @@ pub(crate) mod traces;
 pub(crate) mod tracing_layer;
 mod transport;
 use transport::{OtlpSignal, ResolvedOtlpHttpClient as CoreHttpClient};
-#[allow(dead_code)] // Removed in Task 4 once startup uses the sampler.
 pub(crate) mod process;
 pub(crate) mod prometheus;
 pub(crate) mod recorders;

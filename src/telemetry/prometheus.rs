@@ -172,6 +172,7 @@ pub(crate) struct PrometheusRuntime {
 }
 
 impl PrometheusRuntime {
+    #[cfg(test)]
     pub(crate) async fn prepare(
         owner: &ServerCleanupHandle,
         handle: PrometheusHandle,
@@ -179,8 +180,8 @@ impl PrometheusRuntime {
         Self::prepare_with_process(owner, handle, None).await
     }
 
-    /// Like `prepare`, additionally appending one process snapshot to each
-    /// scrape inside the same owned render worker.
+    /// With `process`, each scrape also appends one process snapshot inside
+    /// the same owned render worker.
     pub(crate) async fn prepare_with_process(
         owner: &ServerCleanupHandle,
         handle: PrometheusHandle,

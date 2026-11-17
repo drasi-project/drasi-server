@@ -12,8 +12,8 @@ use drasi_lib::{
     DrasiLib, Query,
 };
 use drasi_server::{
-    config::telemetry::TelemetryConfig, server::CleanupPhase, DrasiServer, DrasiServerBuilder,
-    TelemetryBindings,
+    config::telemetry::TelemetryConfig, models::ConfigValue, server::CleanupPhase, DrasiServer,
+    DrasiServerBuilder, TelemetryBindings,
 };
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::ExportMetricsServiceRequest, common::v1::any_value::Value,
@@ -133,6 +133,17 @@ fn prometheus_scrape_bind_failure_rolls_back_both_listeners() -> Result<()> {
 #[test]
 fn prometheus_owned_result_retains_cleanup_on_bind_failure() -> Result<()> {
     child("prometheus-owned-busy")
+}
+
+#[test]
+fn process_metrics_prometheus_routes_have_one_unlabelled_set() -> Result<()> {
+    child("process-prometheus-shared")?;
+    child("process-prometheus-separate")
+}
+
+#[test]
+fn process_metrics_otlp_export_shares_drasi_resource() -> Result<()> {
+    child("process-otlp")
 }
 
 #[test]
@@ -372,7 +383,7 @@ async fn scenario(case: &str) -> Result<()> {
     let globals = Arc::new(Mutex::new(Vec::new()));
     metrics::set_global_recorder(GlobalRecorder(globals.clone()))
         .map_err(|_| anyhow::anyhow!("global test recorder already installed"))?;
-    if case.starts_with("prometheus-") {
+    if case.starts_with("prometheus-") || case.starts_with("process-prometheus-") {
         prometheus_scenario(case).await?;
         assert_global_untouched(&globals);
         return Ok(());
@@ -385,7 +396,7 @@ async fn scenario(case: &str) -> Result<()> {
     let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
         "profile": "basic",
         "tracing": { "serviceName": "task4-public" },
-        "metrics": { "backend": "otlp", "otlp": {
+        "metrics": { "backend": "otlp", "processMetrics": case == "process-otlp", "otlp": {
             "endpoint": format!("{}/custom/metrics", collector.uri()),
             "protocol": "http/protobuf", "exportInterval": 1, "exportTimeout": 1
         }}
@@ -515,6 +526,7 @@ async fn scenario(case: &str) -> Result<()> {
     let requests = collector.received_requests().await.unwrap();
     let mut identities = BTreeSet::new();
     let mut resources = BTreeSet::new();
+    let mut process_exports = 0;
     for request in requests {
         assert_eq!(request.url.path(), "/custom/metrics");
         assert_eq!(request.headers["content-type"], "application/x-protobuf");
@@ -533,7 +545,26 @@ async fn scenario(case: &str) -> Result<()> {
                 .value;
             resources.insert(format!("{identity:?}"));
             for scope in resource.scope_metrics {
+                let process_scope = scope
+                    .scope
+                    .as_ref()
+                    .is_some_and(|instrumentation| instrumentation.name == "drasi.server.process");
                 for metric in scope.metrics {
+                    if process_scope && metric.name == "process_cpu_seconds_total" {
+                        let Data::Sum(sum) = metric.data.context("process counter data")? else {
+                            anyhow::bail!("process counter was not a sum")
+                        };
+                        assert!(!sum.data_points.is_empty(), "empty process export");
+                        for point in sum.data_points {
+                            assert!(
+                                point.attributes.is_empty(),
+                                "labelled process point: {:?}",
+                                point.attributes
+                            );
+                        }
+                        process_exports += 1;
+                        continue;
+                    }
                     if metric.name == "drasi.plugin.task4.created" {
                         let Data::Sum(sum) = metric.data.context("counter data")? else {
                             anyhow::bail!("counter was not a sum")
@@ -561,6 +592,11 @@ async fn scenario(case: &str) -> Result<()> {
         BTreeSet::from(["first".into(), "second".into()])
     );
     assert_eq!(resources.len(), 1);
+    assert_eq!(
+        process_exports > 0,
+        case == "process-otlp",
+        "process metrics export did not follow processMetrics"
+    );
     assert_global_untouched(&globals);
     Ok(())
 }
@@ -648,7 +684,7 @@ async fn assert_scrape(
     client: &reqwest::Client,
     port: u16,
     expected_instances: &[&str],
-) -> Result<()> {
+) -> Result<String> {
     let response = client
         .get(format!("http://127.0.0.1:{port}{SCRAPE_PATH}"))
         .send()
@@ -677,7 +713,45 @@ async fn assert_scrape(
         assert!(sample.contains("graph_id=\""), "{sample}");
         assert_eq!(sample.rsplit_once(' ').context("sample value")?.1, "1");
     }
-    Ok(())
+    Ok(text)
+}
+
+/// One Server-level process set, independent of the number of instances.
+fn assert_process_families(text: &str) {
+    let lines = text.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| **line == "# TYPE process_cpu_seconds_total counter")
+            .count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("process_cpu_seconds_total "))
+            .count(),
+        1,
+        "{text}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("process_resident_memory_bytes ")),
+        "{text}"
+    );
+    for line in lines.iter().filter(|line| line.starts_with("process_")) {
+        assert!(
+            !line.contains('{'),
+            "labelled process sample {line}: {text}"
+        );
+    }
+}
+
+fn with_process_metrics(mut config: TelemetryConfig) -> TelemetryConfig {
+    config.metrics.process_metrics = ConfigValue::Static(true);
+    config
 }
 
 async fn assert_closed(port: u16) -> Result<()> {
@@ -741,7 +815,8 @@ async fn prometheus_scenario(case: &str) -> Result<()> {
     let (management_reservation, management_port) = reserved_port().await?;
     let (scrape_reservation, scrape_port) = reserved_port().await?;
     let disabled = matches!(case, "prometheus-off" | "prometheus-none");
-    let shared = case == "prometheus-shared";
+    let shared = matches!(case, "prometheus-shared" | "process-prometheus-shared");
+    let process = case.starts_with("process-");
     let config = prometheus_config(
         if case == "prometheus-off" {
             "off"
@@ -755,6 +830,11 @@ async fn prometheus_scenario(case: &str) -> Result<()> {
         },
         (!shared).then_some(scrape_port),
     )?;
+    let config = if process {
+        with_process_metrics(config)
+    } else {
+        config
+    };
 
     if matches!(case, "prometheus-owned" | "prometheus-owned-busy") {
         let _scrape_reservation = if case == "prometheus-owned" {
@@ -905,10 +985,47 @@ async fn prometheus_scenario(case: &str) -> Result<()> {
                 }
             })
             .await?;
-            assert_scrape(&client, port, &["first", "second"]).await?;
+            let text = assert_scrape(&client, port, &["first", "second"]).await?;
+            if process {
+                assert_process_families(&text);
+            }
             let expected = ["first", "second"];
             let reads = (0..4).map(|_| assert_scrape(&client, port, &expected));
             futures_util::future::try_join_all(reads).await?;
+        }
+        if case == "process-prometheus-separate" {
+            // Configured telemetry installs process-global logging, so another
+            // configured Server in this process must fail without disturbing
+            // the running one.
+            let second_observed = Arc::new(Mutex::new(Vec::new()));
+            let (_second_management, second_management_port) = reserved_port().await?;
+            let (_second_scrape, second_scrape_port) = reserved_port().await?;
+            let preparation = prometheus_builder(second_observed.clone())?
+                .with_host_port("127.0.0.1", second_management_port)
+                .with_telemetry(with_process_metrics(prometheus_config(
+                    "basic",
+                    "prometheus",
+                    Some(second_scrape_port),
+                )?))
+                .prepare();
+            let second_cleanup = preparation.cleanup_handle();
+            let error = preparation
+                .finish()
+                .await
+                .err()
+                .context("a second configured Server was accepted")?;
+            assert!(
+                format!("{error:#}").contains("already installed"),
+                "{error:#}"
+            );
+            assert!(
+                second_observed.lock().unwrap().is_empty(),
+                "rejection ran factories"
+            );
+            assert_eq!(second_cleanup.status().phase, CleanupPhase::Complete);
+            assert_eq!(second_cleanup.status().pending_workers, 0);
+            let text = assert_scrape(&client, port, &["first", "second"]).await?;
+            assert_process_families(&text);
         }
         assert_eq!(
             client

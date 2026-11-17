@@ -237,9 +237,6 @@ impl EffectiveTelemetry {
     /// Updated as production capabilities land in OBS-03 through OBS-06.
     pub fn ensure_runtime_available(&self) -> Result<()> {
         let mut unavailable = Vec::new();
-        if self.process_metrics {
-            unavailable.push("process metrics (OBS-06)");
-        }
         if self.inspection_enabled {
             unavailable.push("inspection API (OBS-06)");
         }
