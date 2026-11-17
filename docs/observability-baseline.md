@@ -302,6 +302,27 @@ issue was made. Native fixture proof, comprehensive/full-suite and release
 qualification remain unclaimed. The deferred failure must remain visible during
 OBS-05 work rather than being treated as a successful metrics-enabled run.
 
+**Update 2026-11-17: Core blocker fixed locally; enabled reruns pass.** The
+root cause and the Core fix
+([drasi-project/drasi-core#1027](https://github.com/drasi-project/drasi-core/issues/1027))
+are recorded under OBS-05 below. Server uses path dependencies on
+`../drasi-core`, so it builds against whichever Core branch is checked out.
+Rebuilt against Core branch `drasi-core-1027` with the fix (committed and
+pushed as `d698e4b1`; the build used the identical working tree), the same
+five-insert HTTP workload under Persistence processed **all five
+inputs** with Prometheus and with OTLP metrics. Trace export was also enabled
+in both runs. A later rerun after the merge (below) added a Prometheus
+metrics-only run, the original failing configuration, which also passed.
+The query stayed `Running`,
+and source dispatch, query processed and results emitted each reached 5.
+Prometheus showed 5 engine-duration and 10 successful steady commit
+observations. OTLP showed `drasi.query.progress.sequence` at 5 for both
+`input.committed` and `output.produced`, with `/metrics` returning 404.
+The failed results above remain the record for Core `5fc20eec`. A Server build
+against Core without this fix still has the blocker. On 2026-11-17 the fix was
+fast-forward merged into Core `otel-drasi-server-work` (`d698e4b1`, pushed). It
+is not on Core `main`, and #1027 is open.
+
 Use the [same observability example](../examples/observability/README.md) for
 the final bounded walkthrough. `build-plugins` builds only Server plus the
 three matching local libraries, offline with separate target graphs. Live
@@ -327,8 +348,8 @@ reference, not the current Task 6 command list.
 
 ## OBS-05 delivery status
 
-The uncommitted local implementation on `observability-item-5` (base
-`fb638ff`, sibling Core `5fc20eec` plus its recorded dirty files) adds OTLP
+The implementation on `observability-item-5` (committed as `64ee0d9` and
+`dceaeba` on base `fb638ff`; sibling Core `5fc20eec` plus its recorded dirty files) adds OTLP
 HTTP/protobuf trace export through one Server-owned bounded worker, sharing the
 metrics resource. Host spans pass through a permanent startup layer filtered by
 Core's catalogue; native completed records go through Core's collector without
@@ -409,10 +430,137 @@ reaction, Persistence profile, sample ratio 1.0, five sequential inputs.
   source's advertised `?view=full` link returns `SOURCE_NOT_FOUND`.
 - The PostgreSQL scenario was not run: no isolated database was supplied.
 
-**Implementation complete locally; qualification not complete.** The deferred
-Core blocker keeps the enabled live runs failing. No full Server/Core/workspace,
-cross-platform, CI, external-backend, release, overhead or hard-RSS
-qualification is claimed. No commit, issue closure or new issue was made.
+### Core blocker root cause, fix and rerun (2026-11-17)
+
+**Root cause (instrumented).** An ordinary native query runs its processing
+work through `run_output` or `run_deferred_progress`. That work captures the
+transform's `Transaction` observation scope, and the host spawns it on its
+runtime. On a multi-threaded runtime the work is therefore polled inside the
+scope on one worker thread, while the initiating transform future is polled
+inside the same scope on another. The plugin SDK's `QueryScope::in_scope` held
+a per-observation `try_lock` for the whole callback. Its thread-local re-entry
+check cannot see another thread, so the second thread got
+`invalid telemetry configuration: native query observation is busy` and the
+query was fenced into `Error`.
+
+Temporary per-site messages showed every first collision at the SDK
+`in_scope`, never at the Host `query_scope`. The contender was the scoped
+transform poll, and the holder was the processing work's begin/poll on another
+thread. A `finish` and a `Drop` cancellation that were also refused followed
+from that failure. The Host's `query_scope` used the same exclusive lock, so it
+would have failed next. Telemetry Off creates no observation, which explains
+the Off control.
+
+**Fix.** The fix is in Core `computation-plugin-sdk/src/query_telemetry.rs`
+and `host-sdk/src/computation/telemetry.rs`, committed and pushed as
+`d698e4b1` on `drasi-core-1027`:
+
+- Threads may share an entered observation scope. Each entry is tracked per
+  thread under a short internal lock that is never held across a host callback
+  or `finish`. A nested entry on the same thread is still rejected as busy.
+- A `finish` requested while another thread is inside the scope is recorded.
+  The last thread to leave applies it, and new entries after that are
+  `Retired`.
+- On the Host, scopes share a read guard with the same per-thread nesting
+  check. `finish_query` still takes the exclusive lock.
+- Cancellation/retirement, `busy; cancellation is pending`, and the stale or
+  foreign token errors are unchanged.
+- No wait blocks across a plugin callback.
+- There is no ABI or wire change, but plugin and host must both be rebuilt
+  from the fixed Core.
+
+**Core tests, observed failing before the fix and passing after:**
+
+- `ordinary_query_processes_sequential_inputs_{current,multi}_thread` in Host
+  SDK `native_query_observability`. These drive five sequential inputs through
+  `DrasiLib` and the loaded native query plugin. Before the fix the
+  multi-thread case failed 3 of 3 runs with `busy`; the current-thread case
+  passed. After the fix both passed 5 of 5 repeated runs.
+- `sdk_scope_admits_other_threads_and_defers_finish_until_they_leave` in the
+  Host SDK lib. It failed before the fix and passes after.
+
+**Focused Core results after the fix** (separate counts):
+
+- `native_query_observability`: **13 passed**; with `otel-context`, **17
+  passed**, including the trace parentage tests.
+- Host SDK lib `query` selector: **14 passed, 7 failed**. The 7 also fail on
+  unmodified `12e5b874`: a missing `native_recovery` example fixture and
+  non-UUID test component IDs.
+- Plugin SDK lib: **105 passed**.
+- `rustfmt` on the changed files and `-Dwarnings` Clippy (`--no-deps`) on the
+  changed lib/test targets are clean. `--all-targets` Clippy still fails in
+  untouched Core files.
+
+**Server, rebuilt against that Core.** Server uses path dependencies on
+`../drasi-core` and builds against whichever Core branch is checked out.
+
+- Matched fixtures were rebuilt in `target/observability-plugins` and the HTTP
+  bundle with `local_bundle.py build http`. The bundled query plugin's sha256
+  is `0571503475…`.
+- `DRASI_OBS05_FIXTURES_DIR=$PWD/target/observability-plugins cargo test
+  --locked --test observability_tracing native_ -- --ignored --test-threads=1`:
+  **5 passed**.
+
+**Live walkthrough 2026-11-17.** All runs used the ordinary HTTP source,
+native query and log reaction, Persistence, sample ratio 1.0, and five
+sequential direct inserts. OTLP requests went to a loopback capture receiver
+and were decoded from protobuf.
+
+- **Prometheus + traces: passed.** The query stayed `Running`. The results API
+  and log reaction showed values 1–5. The source, query and results counters
+  each reached 5, with 5 engine-duration and 10 successful steady commit
+  observations. Seven trace requests carried 73 spans: `source.publish` 5,
+  `query.process` 5, `sink.handle` 10, `query.bootstrap` 1, lifecycle and
+  control spans, and 5 of each native engine span. Shutdown was clean.
+- **OTLP metrics + traces: passed.** All five inputs were processed, and
+  `/metrics` returned 404. Across 37 metric requests:
+  - `drasi.query.events_processed`, `results_emitted` (`add`) and
+    `source.events_dispatched` were 5.
+  - `engine.duration` count was 5 and `commit.duration` count was 10, both in
+    unit `s`.
+  - `drasi.query.progress.sequence` (scope `drasi.progress`) was 5 for both
+    stages.
+
+  The trace set matched the Prometheus run. Traces and metrics shared one
+  `service.instance.id`. Shutdown logged only the pre-existing
+  `Cannot collect query progress` warning.
+- **Prometheus + traces, sampled `traceparent` on every input: passed.** All
+  five were processed. `reason=unattributed` did not appear. The incoming trace
+  IDs were not in the exports, which is the documented ordinary-plugin boundary.
+- Unchanged and not investigated: `drasi.reaction.results_processed` stayed 0
+  although the reaction printed all five, OTLP
+  `drasi.reaction.checkpoint_lag_events` reported 5, and no `reaction.process`
+  span appeared. Native Debug-level engine spans are still exported under
+  Persistence.
+- The Off control already passed and was not rerun. PostgreSQL was not run.
+
+**Post-merge rerun, 2026-11-17.** Core was checked out on
+`otel-drasi-server-work` after the fast-forward merge of `d698e4b1`. The
+existing HTTP bundle's receipt matched the merged Core and current Server
+sources, so it was reused without a rebuild. Each run used Persistence and five
+sequential inputs: the first through Server's proxy with a sampled
+`traceparent`, the rest direct.
+
+- **Prometheus metrics only, no trace export (the original OBS-04 failure):
+  passed.** The query stayed `Running`, results were 1–5, and the source,
+  query and results counters each reached 5.
+- **Prometheus + traces: passed.** Same results; 73 spans, matching the run
+  above.
+- **OTLP metrics + traces: passed.** Same results;
+  `drasi.query.progress.sequence` was 5 for both stages. The only warning was
+  the pre-existing shutdown `Cannot collect query progress`.
+- All three logged no `native query observation is busy` and no
+  `reason=unattributed`, and shut down cleanly in about 2 seconds.
+  `drasi.reaction.results_processed` still stayed 0.
+
+**Implementation complete; enabled live walkthrough passes with the Core fix;
+qualification not complete.** The Core fix for
+[drasi-project/drasi-core#1027](https://github.com/drasi-project/drasi-core/issues/1027)
+(`d698e4b1`) is merged into Core `otel-drasi-server-work` and pushed, but it
+is not on Core `main`, and the issue remains open.
+No full Server/Core/workspace, cross-platform, CI, external-backend, release,
+overhead or hard-RSS qualification is claimed. The Server work is committed and
+pushed to `observability-item-5` but not merged, and #238 remains open.
 
 ## Running the checks
 
