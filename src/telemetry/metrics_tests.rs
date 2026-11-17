@@ -1,6 +1,7 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
+use super::process::ProcessMetrics;
 use super::prometheus::{fixtures, scrape_router, PrometheusRuntime};
 use super::recorders::prometheus_recorder;
 use crate::server::{CleanupPhase, ServerCleanupHandle};
@@ -12,9 +13,10 @@ use drasi_lib::{
     computation::v1::{ComponentId, ComponentRole, ComponentSemanticKind},
     observability::{
         MetricKind, MetricRegistrationContext, MetricUnit, PluginMetricDefinition,
-        RegisteredMetric, TelemetryError, TelemetryProfile, TelemetryScope,
+        RegisteredMetric, TelemetryError, TelemetryProfile, TelemetryScope, TelemetrySettings,
     },
 };
+use metrics_process::collector::Metrics;
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
 use tokio::time::{timeout, Instant};
@@ -1686,6 +1688,168 @@ async fn empty_scrape_is_valid_prometheus_text() {
         .await
         .unwrap()
         .is_empty());
+    close(&owner).await;
+    assert!(runtime.is_joined().await);
+}
+
+fn process(metrics: Metrics) -> Arc<ProcessMetrics> {
+    let policy = TelemetrySettings::new(TelemetryProfile::Basic)
+        .with_metrics(true)
+        .resolve()
+        .unwrap();
+    // `Metrics` is not `Clone`; its fields are all `Copy`.
+    let Metrics {
+        cpu_seconds_total,
+        open_fds,
+        max_fds,
+        virtual_memory_bytes,
+        virtual_memory_max_bytes,
+        resident_memory_bytes,
+        start_time_seconds,
+        threads,
+    } = metrics;
+    ProcessMetrics::with_source(
+        &policy,
+        Arc::new(move || Metrics {
+            cpu_seconds_total,
+            open_fds,
+            max_fds,
+            virtual_memory_bytes,
+            virtual_memory_max_bytes,
+            resident_memory_bytes,
+            start_time_seconds,
+            threads,
+        }),
+    )
+}
+
+async fn scrape_text(runtime: &Arc<PrometheusRuntime>) -> String {
+    let response = scrape(runtime).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[CONTENT_TYPE],
+        "text/plain; version=0.0.4; charset=utf-8"
+    );
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    String::from_utf8(body.to_vec()).unwrap()
+}
+
+fn metric_name(line: &str) -> &str {
+    let sample = line
+        .strip_prefix("# HELP ")
+        .or_else(|| line.strip_prefix("# TYPE "))
+        .unwrap_or(line);
+    sample.split(['{', ' ']).next().unwrap_or_default()
+}
+
+#[tokio::test]
+async fn process_lines_form_valid_text_after_empty_render() {
+    let owner = ServerCleanupHandle::bootstrap();
+    let (_, handle) = prometheus_recorder().unwrap();
+    let runtime = PrometheusRuntime::prepare_with_process(
+        &owner,
+        handle,
+        Some(process(Metrics {
+            cpu_seconds_total: Some(1.25),
+            resident_memory_bytes: Some(4096),
+            ..Default::default()
+        })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        scrape_text(&runtime).await,
+        "# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.\n\
+         # TYPE process_cpu_seconds_total counter\n\
+         process_cpu_seconds_total 1.25\n\
+         # HELP process_resident_memory_bytes Resident memory size in bytes.\n\
+         # TYPE process_resident_memory_bytes gauge\n\
+         process_resident_memory_bytes 4096\n"
+    );
+    close(&owner).await;
+    assert!(runtime.is_joined().await);
+}
+
+#[tokio::test]
+async fn process_families_follow_drasi_metrics_without_collision() {
+    let owner = ServerCleanupHandle::bootstrap();
+    let (context, handle) = prometheus_recorder().unwrap();
+    register(
+        &context,
+        "cpu_seconds_total",
+        MetricKind::Counter,
+        MetricUnit::One,
+        &[],
+    )
+    .unwrap()
+    .counter()
+    .unwrap()
+    .increment(2);
+    let runtime = PrometheusRuntime::prepare_with_process(
+        &owner,
+        handle,
+        Some(process(Metrics {
+            cpu_seconds_total: Some(1.25),
+            resident_memory_bytes: Some(4096),
+            ..Default::default()
+        })),
+    )
+    .await
+    .unwrap();
+    let text = scrape_text(&runtime).await;
+    assert!(
+        text.contains("# TYPE drasi_plugin_probe_cpu_seconds_total counter"),
+        "{text}"
+    );
+    assert_eq!(
+        text.lines()
+            .filter(|line| *line == "# TYPE process_cpu_seconds_total counter")
+            .count(),
+        1,
+        "{text}"
+    );
+    let types: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("# TYPE "))
+        .collect();
+    let unique: std::collections::HashSet<_> = types.iter().collect();
+    assert_eq!(unique.len(), types.len(), "{text}");
+    let lines: Vec<_> = text.lines().collect();
+    let last_drasi = lines
+        .iter()
+        .rposition(|line| metric_name(line).starts_with("drasi_"))
+        .expect("drasi family rendered");
+    let first_process = lines
+        .iter()
+        .position(|line| metric_name(line).starts_with("process_"))
+        .expect("process family rendered");
+    assert!(last_drasi < first_process, "{text}");
+    close(&owner).await;
+    assert!(runtime.is_joined().await);
+}
+
+#[tokio::test]
+async fn failed_process_reading_keeps_scrape_successful() {
+    let owner = ServerCleanupHandle::bootstrap();
+    let (context, handle) = prometheus_recorder().unwrap();
+    register(&context, "depth", MetricKind::Gauge, MetricUnit::One, &[])
+        .unwrap()
+        .gauge()
+        .unwrap()
+        .set(3.0);
+    let runtime =
+        PrometheusRuntime::prepare_with_process(&owner, handle, Some(process(Metrics::default())))
+            .await
+            .unwrap();
+    let text = scrape_text(&runtime).await;
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with("drasi_plugin_probe_depth{") && line.ends_with(" 3")),
+        "{text}"
+    );
+    assert!(!text.contains("process_"), "{text}");
     close(&owner).await;
     assert!(runtime.is_joined().await);
 }

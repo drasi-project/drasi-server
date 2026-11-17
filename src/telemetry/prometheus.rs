@@ -9,7 +9,7 @@
 //! One skip-missed-ticks controller joins each off-executor upkeep before the
 //! next. Upkeep drains samples without scrapers, not a hard memory/RSS bound.
 
-use super::{metrics_terminal, ShutdownResult};
+use super::{metrics_terminal, process::ProcessMetrics, ShutdownResult};
 use crate::{
     api::shared::error::{error_codes, ErrorResponse},
     config::telemetry::{validate_path, EffectivePrometheus},
@@ -162,6 +162,7 @@ pub(crate) fn scrape_router(path: &str, runtime: Arc<PrometheusRuntime>) -> Resu
 
 pub(crate) struct PrometheusRuntime {
     backend: Arc<RwLock<PrometheusHandle>>,
+    process: Option<Arc<ProcessMetrics>>,
     state: Mutex<State>,
     controller: AsyncRwLock<Option<JoinHandle<ShutdownResult>>>,
     upkeep: AsyncRwLock<Option<JoinHandle<ShutdownResult>>>,
@@ -175,12 +176,23 @@ impl PrometheusRuntime {
         owner: &ServerCleanupHandle,
         handle: PrometheusHandle,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::prepare_with_process(owner, handle, None).await
+    }
+
+    /// Like `prepare`, additionally appending one process snapshot to each
+    /// scrape inside the same owned render worker.
+    pub(crate) async fn prepare_with_process(
+        owner: &ServerCleanupHandle,
+        handle: PrometheusHandle,
+        process: Option<Arc<ProcessMetrics>>,
+    ) -> anyhow::Result<Arc<Self>> {
         // Admission keeps cleanup from passing this synchronous publication
         // section. There is no suspension between retention and controller start.
         let _admission = owner.admit()?;
         let (stop, stopping) = watch::channel(None);
         let runtime = Arc::new(Self {
             backend: Arc::new(RwLock::new(handle)),
+            process,
             state: Mutex::new(State {
                 accepting: true,
                 renders: Vec::new(),
@@ -230,12 +242,23 @@ impl PrometheusRuntime {
             state.renders.push(job.clone());
             let worker = job.clone();
             let backend = self.backend.clone();
+            let process = self.process.clone();
             let (response, receiver) = oneshot::channel();
             if let Err(error) = try_spawn_owned_worker(&job.submission, async move {
                 spawn_owned_blocking_worker(&worker.work, move || {
-                    let rendered = backend.read().map(|handle| handle.render()).map_err(|_| {
-                        Arc::new(anyhow::Error::new(PrometheusError::BackendPoisoned))
-                    });
+                    // The backend guard is released before process sampling.
+                    let rendered = backend
+                        .read()
+                        .map(|handle| handle.render())
+                        .map(|mut text| {
+                            if let Some(process) = &process {
+                                process.append_prometheus(&mut text);
+                            }
+                            text
+                        })
+                        .map_err(|_| {
+                            Arc::new(anyhow::Error::new(PrometheusError::BackendPoisoned))
+                        });
                     let outcome = rendered.as_ref().map(|_| ()).map_err(Arc::clone);
                     let _ = response.send(rendered);
                     outcome

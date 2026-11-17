@@ -199,6 +199,28 @@ impl ProcessMetrics {
         }
         projection.samples
     }
+
+    /// Appends one snapshot as unlabeled Prometheus text families.
+    pub(crate) fn append_prometheus(&self, text: &mut String) {
+        use std::fmt::Write;
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        for ProcessSample { measurement, value } in self.sample() {
+            let name = measurement.name();
+            let help = measurement.help();
+            let kind = if measurement.is_counter() {
+                "counter"
+            } else {
+                "gauge"
+            };
+            // Writing to a `String` cannot fail.
+            let _ = writeln!(
+                text,
+                "# HELP {name} {help}\n# TYPE {name} {kind}\n{name} {value}"
+            );
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
