@@ -77,6 +77,9 @@ struct Service(ComponentDescriptor);
 
 #[async_trait]
 impl ComputationComponent for Service {
+    fn description(&self) -> drasi_lib::computation::v1::ComponentDescription {
+        drasi_lib::computation::v1::ComponentDescription::undeclared()
+    }
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.0
     }
@@ -92,6 +95,12 @@ impl ComputationService for Service {
 
 #[async_trait]
 impl ComponentFactory for Factory {
+    fn describe(
+        &self,
+        _: &drasi_lib::computation::v1::ConstructionContext,
+    ) -> anyhow::Result<drasi_lib::computation::v1::ComponentDescription> {
+        Ok(drasi_lib::computation::v1::ComponentDescription::undeclared())
+    }
     fn descriptor(&self) -> &FactoryDescriptor {
         &self.descriptor
     }
@@ -312,6 +321,9 @@ struct StreamComponent {
 
 #[async_trait]
 impl ComputationComponent for StreamComponent {
+    fn description(&self) -> drasi_lib::computation::v1::ComponentDescription {
+        drasi_lib::computation::v1::ComponentDescription::undeclared()
+    }
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
@@ -343,6 +355,12 @@ impl EnvelopeSink for StreamComponent {
 
 #[async_trait]
 impl ComponentFactory for StreamFactory {
+    fn describe(
+        &self,
+        _: &drasi_lib::computation::v1::ConstructionContext,
+    ) -> anyhow::Result<drasi_lib::computation::v1::ComponentDescription> {
+        Ok(drasi_lib::computation::v1::ComponentDescription::undeclared())
+    }
     fn descriptor(&self) -> &FactoryDescriptor {
         &self.descriptor
     }

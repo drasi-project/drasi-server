@@ -230,6 +230,9 @@ impl ComputationComponent for Source {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
+    fn description(&self) -> drasi_lib::computation::v1::ComponentDescription {
+        drasi_lib::computation::v1::ComponentDescription::undeclared()
+    }
     drasi_lib::passive_component_lifecycle!();
 }
 #[async_trait]
@@ -254,6 +257,9 @@ struct Sink {
 impl ComputationComponent for Sink {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
+    }
+    fn description(&self) -> drasi_lib::computation::v1::ComponentDescription {
+        drasi_lib::computation::v1::ComponentDescription::undeclared()
     }
     drasi_lib::passive_component_lifecycle!();
 }
@@ -281,6 +287,12 @@ struct EndpointFactory {
 impl ComponentFactory for EndpointFactory {
     fn descriptor(&self) -> &FactoryDescriptor {
         &self.descriptor
+    }
+    fn describe(
+        &self,
+        _: &ConstructionContext,
+    ) -> Result<drasi_lib::computation::v1::ComponentDescription> {
+        Ok(drasi_lib::computation::v1::ComponentDescription::undeclared())
     }
     fn validate(&self, _: &ComponentSpecification) -> Result<()> {
         Ok(())

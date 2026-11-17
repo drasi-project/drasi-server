@@ -346,6 +346,9 @@ impl ComponentFactory for DescribingFactory {
     fn validate(&self, _: &ComponentSpecification) -> Result<()> {
         Ok(())
     }
+    fn describe(&self, _: &ConstructionContext) -> Result<ComponentDescription> {
+        Ok(ComponentDescription::undeclared())
+    }
     async fn create(
         &self,
         _: ConstructionContext,

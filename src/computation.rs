@@ -746,11 +746,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             "this server recipe does not accept resource dependencies"
         );
         let handle = match recipe {
-            ComputationResourceConfig::MemoryIndexes {} => ResourceHandle::new(
+            ComputationResourceConfig::MemoryIndexes {} => QueryIndexProviderResource::handle(
                 ResourceRole::IndexBackend,
-                Arc::new(QueryIndexProviderResource(Arc::new(
-                    drasi_core::computation::InMemoryComputationProvider,
-                ))),
+                Arc::new(drasi_core::computation::InMemoryComputationProvider),
             ),
             ComputationResourceConfig::QueryCatalog {} => ResourceHandle::new(
                 ResourceRole::QueryCatalog,
