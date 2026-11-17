@@ -53,7 +53,7 @@ fn profile_backend_signal_matrix_preserves_independence() {
                         policy.metrics_otlp.is_some(),
                         profile != "off" && backend == "otlp"
                     );
-                    assert_eq!(policy.ensure_runtime_available().is_ok(), !inspection);
+                    assert!(policy.ensure_runtime_available().is_ok());
                 }
             }
         }
@@ -528,24 +528,4 @@ telemetry:
     ] {
         assert!(serde_json::from_value::<DrasiServerConfig>(value).is_err());
     }
-}
-
-#[tokio::test]
-async fn startup_rejects_unavailable_capabilities_before_loading_plugins() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("server.yaml");
-    std::fs::write(&path, "telemetry:\n  inspection:\n    enabled: true\n").unwrap();
-    let error = match crate::DrasiServer::new(
-        path,
-        8080,
-        directory.path().join("missing-plugins"),
-        false,
-        false,
-    )
-    .await
-    {
-        Ok(_) => panic!("unsupported inspection must not start"),
-        Err(error) => error,
-    };
-    assert!(format!("{error:#}").contains("inspection API (OBS-06)"));
 }

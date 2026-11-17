@@ -11,7 +11,9 @@ its focused local verification is recorded below. Earlier results
 below describe only the recorded OBS-01 baseline, not the new ownership batch.
 OBS-04 now implements the selected Prometheus/OTLP metrics paths; see
 [delivery status](#obs-04-delivery-status) for focused evidence and pending live
-qualification. Tracing/process/inspection remain gated. This does not change
+qualification. OBS-05 adds trace export and OBS-06 adds process metrics and
+read-only inspection; see their [OBS-05](#obs-05-delivery-status) and
+[OBS-06](#obs-06-delivery-status) records. This does not change
 the historical OBS-01 qualification claims.
 
 ## Local source and plugin ownership
@@ -230,8 +232,8 @@ thread from Server ownership. Server's owned polling path similarly creates no
 notify/debouncer backend. Legacy native SDK entrypoints still exist, without any
 new claim of opaque native-thread completion. All borrowed providers/collectors
 stay caller-owned. This is the historical OBS-03 qualification: production
-metrics belong to the separate OBS-04 record below, tracing remains OBS-05 and
-process/inspection remain OBS-06. The example now preserves its
+metrics belong to the separate OBS-04 record below, tracing to OBS-05 and
+process metrics/inspection to OBS-06. The example now preserves its
 configuration/logs-only default and adds an explicit live metrics mode.
 
 ## OBS-04 delivery status
@@ -562,6 +564,43 @@ No full Server/Core/workspace, cross-platform, CI, external-backend, release,
 overhead or hard-RSS qualification is claimed. The Server work is committed and
 pushed to `observability-item-5` but not merged, and #238 remains open.
 
+## OBS-06 delivery status
+
+The implementation on `observability-item-6` (sibling Core `d698e4b1` on
+`otel-drasi-server-work`, unchanged) adds two opt-in capabilities, described in
+[telemetry configuration](telemetry-configuration.md#process-metrics):
+
+- **Process metrics** (`metrics.processMetrics`). Seven unlabelled `process_*`
+  measurements come from one raw `metrics-process` 2.4.3 snapshot. Prometheus
+  appends them to every render: the shared route, a separate port and the
+  inspection route. OTLP exports them as observable instruments under scope
+  `drasi.server.process` on the existing provider and resource, sampled
+  immediately before each export collection. Unavailable, failed, non-finite
+  and unlimited readings are omitted, `filters.exclude` applies, and missing
+  expected readings warn at most once per 300 seconds. There is one set per
+  process; a second configured-telemetry Server in the same process already
+  fails startup on process-global logging.
+- **Read-only inspection** (`inspection.enabled`). `GET /api/v1/telemetry`
+  and `GET /api/v1/telemetry/metrics` are served on the management listener
+  only, with the new codes `TELEMETRY_METRICS_UNAVAILABLE` (503) and
+  `TELEMETRY_INSPECTION_FAILED` (500) and an OpenAPI `Telemetry` tag. The
+  OBS-06 availability rejections were removed, so Off plus inspection starts.
+  Inspection without the management listener, or with the owned-handles
+  result, is rejected at startup.
+- **Example.** The live configurations enable both by default, with
+  `DRASI_DEMO_PROCESS_METRICS` and `DRASI_DEMO_INSPECTION` overrides. The
+  Off/empty `start`, `validate` and `init` defaults are unchanged.
+
+No configuration field, builder method, authentication layer, per-instance
+policy or trace history was added. Access to inspection equals management
+listener reachability (OBS-02 decision).
+
+**Verification results: pending the end-of-implementation verification run.**
+Focused test counts, the live macOS walkthrough and the Clippy/format checks
+will be recorded here; nothing in this section is yet a qualification claim.
+Linux, Windows, CI, full-suite, release and overhead qualification are not
+claimed.
+
 ## Running the checks
 
 ```bash
@@ -645,7 +684,9 @@ CI setup remains deferred; these results are not full release qualification:
   adapter proof is formatted, and `git diff --check` passes. These existing
   differences are not reformatted as part of OBS-01.
 
-OBS-02/03/04 now provide configuration, ownership and production metrics wiring
-as separately recorded above. Later issues still own tracing export, process/
-inspection, and performance budgets. No new per-instance telemetry policy,
-management HTTP tracing or external-backend query proxy is introduced.
+OBS-02/03/04 provide configuration, ownership and production metrics wiring,
+OBS-05 trace export, and OBS-06 process metrics and read-only inspection, as
+separately recorded above with their remaining qualification gates. Later
+issues still own performance budgets. No new per-instance telemetry policy,
+management HTTP tracing, trace history or external-backend query proxy is
+introduced.

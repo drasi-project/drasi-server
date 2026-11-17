@@ -19,6 +19,7 @@ use drasi_lib::observability::{
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
+    api::v1::telemetry_handlers::TelemetryInspection,
     config::telemetry::{EffectiveTelemetry, MetricsBackend},
     instance_registry::InstanceRegistry,
     server::{ServerCleanupHandle, ServerPreparation},
@@ -93,6 +94,7 @@ pub(crate) async fn prepare_metrics(
 pub(crate) struct PreparedCollection {
     pub(crate) bindings: TelemetryBindings,
     pub(crate) prometheus: Option<super::prometheus::PreparedPrometheus>,
+    pub(crate) inspection: Option<std::sync::Arc<TelemetryInspection>>,
 }
 
 pub(crate) async fn prepare_collection(
@@ -104,6 +106,15 @@ pub(crate) async fn prepare_collection(
     effective.ensure_runtime_available()?;
     let resource = super::recorders::telemetry_resource(&effective.service_name);
     let metrics = prepare_metrics(owner, &effective, registry, &resource).await?;
+    let inspection = effective.inspection_enabled.then(|| {
+        TelemetryInspection::new(
+            &effective,
+            metrics
+                .prometheus
+                .as_ref()
+                .map(super::prometheus::PreparedPrometheus::runtime),
+        )
+    });
     let traces = if effective.tracing.is_some() {
         let runtime = std::sync::Arc::new(super::traces::TraceRuntime::new());
         owner.retain_traces(runtime.clone())?;
@@ -118,6 +129,7 @@ pub(crate) async fn prepare_collection(
     Ok(PreparedCollection {
         bindings,
         prometheus: metrics.prometheus,
+        inspection,
     })
 }
 
@@ -208,16 +220,12 @@ impl StandaloneTelemetry {
         owner: &ServerCleanupHandle,
         effective: EffectiveTelemetry,
         registry: &InstanceRegistry,
-    ) -> Result<(
-        TelemetryBindings,
-        Option<super::prometheus::PreparedPrometheus>,
-    )> {
+    ) -> Result<PreparedCollection> {
         effective.ensure_runtime_available()?;
         owner.retain_registry(registry.clone())?;
         let bindings = Self::initialize_logging(owner, "info".into())?;
-        let collection = tokio::runtime::Handle::try_current()?
-            .block_on(prepare_collection(owner, effective, registry, bindings))?;
-        Ok((collection.bindings, collection.prometheus))
+        tokio::runtime::Handle::try_current()?
+            .block_on(prepare_collection(owner, effective, registry, bindings))
     }
 
     pub(crate) fn initialize_logging(

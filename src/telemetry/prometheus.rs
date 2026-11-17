@@ -136,6 +136,10 @@ impl PreparedPrometheus {
         scrape_router(&self.config.path, self.runtime.clone())
     }
 
+    pub(crate) fn runtime(&self) -> Arc<PrometheusRuntime> {
+        self.runtime.clone()
+    }
+
     pub(crate) async fn bind_separate(
         &self,
         host: &str,

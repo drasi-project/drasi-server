@@ -523,7 +523,7 @@ async fn configured_startup_scenario(scenario: &str) -> Result<()> {
     let plugins = directory.path().join("plugins");
     std::fs::create_dir(&plugins)?;
     let policy = if scenario == "task5-runtime-rejection" {
-        "telemetry:\n  profile: basic\n  inspection:\n    enabled: true\n"
+        "telemetry:\n  profile: basic\n  tracing:\n    sampleRatio: 2\n"
     } else {
         "telemetry:\n  profile: off\n"
     };
@@ -563,9 +563,14 @@ async fn configured_startup_scenario(scenario: &str) -> Result<()> {
             DrasiServer::prepare_new_with_runtime(path, 0, plugins, false, false, standalone);
         let owner = preparation.cleanup_handle();
         if scenario == "task5-runtime-rejection" {
+            let error = preparation
+                .finish()
+                .await
+                .err()
+                .context("invalid policy activated")?;
             assert!(
-                preparation.finish().await.is_err(),
-                "unavailable policy activated"
+                format!("{error:#}").contains("telemetry.tracing.sampleRatio"),
+                "{error:#}"
             );
             assert_eq!(owner.status().phase, CleanupPhase::Complete);
             assert_eq!(original_owner.status().phase, CleanupPhase::Complete);

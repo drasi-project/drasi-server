@@ -50,7 +50,7 @@ instances:
 telemetry:
   profile: "${DRASI_DEMO_PROFILE:-persistence}"
   inspection:
-    enabled: false
+    enabled: "${DRASI_DEMO_INSPECTION:-true}"
   tracing:
     # CDC changes start new roots; they do not inherit a SQL client's trace.
     endpoint: "${DRASI_DEMO_TRACE_ENDPOINT:-}"
@@ -59,7 +59,7 @@ telemetry:
     sampleRatio: "${DRASI_DEMO_SAMPLE_RATIO:-1.0}"
   metrics:
     backend: "${DRASI_DEMO_METRICS_BACKEND:-prometheus}"
-    processMetrics: false
+    processMetrics: "${DRASI_DEMO_PROCESS_METRICS:-true}"
     prometheus:
       path: /metrics
     otlp:

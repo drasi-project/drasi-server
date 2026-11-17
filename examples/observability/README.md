@@ -8,11 +8,13 @@ Prometheus or OTLP/HTTP protobuf, plus optional OTLP/HTTP protobuf traces:
 - `live-postgres`: **PostgreSQL CDC source → native query → log reaction**
   against a database you already run and supply.
 
-Process collectors, inspection and handled-branch latency stay disabled. No
-dashboard, Docker, database or collector service is installed or started.
+Live modes also enable whole-process metrics and read-only inspection by
+default; handled-branch latency stays disabled. No dashboard, Docker, database
+or collector service is installed or started.
 
-These are reproducible instructions, **not a record of successful OBS-05 live
-qualification**. See the [baseline](../../docs/observability-baseline.md) for
+These are reproducible instructions, **not a record of successful OBS-05 or
+OBS-06 live qualification**. See the
+[baseline](../../docs/observability-baseline.md) for
 recorded results, the deferred native-query blocker and outstanding gates.
 Health alone proves no metrics or traces.
 
@@ -50,18 +52,23 @@ DRASI_DEMO_PROFILE=persistence DRASI_DEMO_METRICS_BACKEND=otlp \
 
 Replacing `validate` with `start` enables the chosen backends, but still starts
 **no pipeline**. Settings for the other metrics backend do not activate it.
-Process collection and inspection still reject startup explicitly:
+Inspection is independent of Off: the command below serves `/api/v1/telemetry`
+with profile `off`, backend `none` and `path: null`, while
+`/api/v1/telemetry/metrics` returns 503 `TELEMETRY_METRICS_UNAVAILABLE`:
 
 ```sh
 DRASI_DEMO_INSPECTION=true bash examples/observability/demo.sh start
 ```
 
+`server-config.yaml` keeps `processMetrics: false`; process metrics are shown
+with the live modes below.
+
 Invalid profiles, sample ratio `1.5`, interval `0`, timeout `31` and shutdown
 budget `301` fail validation even if a destination is retained but inactive.
 The wizard writes ignored `wizard-config.yaml`, refusing overwrite. Skip
-telemetry to omit it, choose Off/inspection-disabled for logs only, or choose
-tracing and one metrics backend without process collection/inspection. The
-launcher does not silently switch to wizard output.
+telemetry to omit it, choose Off (optionally with inspection) for logs only, or
+choose tracing and one metrics backend with optional process metrics and
+inspection. The launcher does not silently switch to wizard output.
 
 ## 1. Explicitly build one matching local scenario bundle
 
@@ -186,10 +193,39 @@ Basic/Debug both retain evaluator metrics; Debug does **not** imply Persistence
 commit metrics. Persistence adds supported commit/outbox/recovery observations,
 not every Debug detail. In the exclusion run, evaluator histogram HELP/TYPE,
 bucket/count/sum series must all be absent while query/result/reaction counters
-still grow. `drasi_query_progress_sequence`, `drasi_pipeline_end_to_end_duration`
-and CPU/memory collector metrics must be absent in every Prometheus variant.
+still grow. `drasi_query_progress_sequence` and `drasi_pipeline_end_to_end_duration`
+must be absent in every Prometheus variant. The `process_*` families are present
+by default and absent with `DRASI_DEMO_PROCESS_METRICS=false`.
 Progress is deliberately **OTLP-only**. The default exclusion is `drasi.plugin.`;
 `DRASI_DEMO_EXCLUDE` replaces that one literal substring (not a glob).
+
+### Process metrics and read-only inspection
+
+Live modes enable both by default. While the pipeline runs:
+
+```sh
+curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry
+curl --noproxy '*' -s http://127.0.0.1:18081/metrics | grep '^process_'
+curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry/metrics | grep '^process_'
+```
+
+With the defaults and no trace endpoint, the settings are:
+
+```json
+{"profile":"persistence","tracing":{"exportEnabled":false,"sampleRatio":1.0,"localInspection":false},"metrics":{"backend":"prometheus","processMetrics":true,"path":"/api/v1/telemetry/metrics"},"logs":{"pathTemplate":"/api/v1/instances/{instanceId}/{collection}/{componentId}/logs","streamPathTemplate":"/api/v1/instances/{instanceId}/{collection}/{componentId}/logs/stream"}}
+```
+
+The settings contain no endpoint, header or credential. Both metrics routes
+show the same unlabelled `process_*` samples next to the `drasi_*` families:
+`process_cpu_seconds_total` (a fractional counter), resident/virtual memory
+bytes, open/max file descriptors, threads and start time. They describe the
+whole Server process, not this instance. `process_max_fds` is omitted when the
+soft limit is unlimited; unavailable readings are omitted, never `0`. CPU usage
+is `rate(process_cpu_seconds_total[1m])`. `DRASI_DEMO_EXCLUDE=process_` also
+removes them (replacing the default `drasi.plugin.` exclusion), and
+`DRASI_DEMO_INSPECTION=false` makes both inspection routes return 404.
+Inspection has no authentication: anyone who can reach the management port can
+read it, which is loopback here.
 
 ## 3. Use an existing OTLP receiver instead
 
@@ -226,7 +262,13 @@ with multiple points (not duplicate instruments):
 
 Both scopes share `service.name=drasi-server-observability`, Server version,
 PID and one process-start-unique `service.instance.id`; a restart changes that
-ID. Run the Basic/Debug/Persistence and exclusion variants above with `otlp`.
+ID. With process metrics enabled (the default), the same requests also carry the
+seven `process_*` instruments, with the same names and no attributes, under
+scope `drasi.server.process` and the same resource. They are sampled once
+immediately before each export. In this mode `/api/v1/telemetry` reports
+backend `otlp` with `path: null`, and `/api/v1/telemetry/metrics` returns 503
+`TELEMETRY_METRICS_UNAVAILABLE`. Run the Basic/Debug/Persistence and exclusion
+variants above with `otlp`.
 To exclude progress entirely use `DRASI_DEMO_EXCLUDE=drasi.query.progress.`.
 To distinguish committed-but-unchanged input from produced output, use the
 existing focused progress proof; this always-inserting workload is not that
@@ -317,6 +359,106 @@ and inspect results, metrics and traces as above. Each CDC change starts a new
 trace root; it does not inherit the SQL client's trace. Remove the slot and
 publication yourself when finished; the launcher does not.
 
+## 6. See it in your own OpenTelemetry tool
+
+A local OpenTelemetry Collector can stand in for your observability tool as the
+receiver for sections 3 and 4. It needs no Docker and installs nothing
+system-wide. Download the official `otelcol-contrib` release archive for your
+platform into the ignored `target/observability-demo-tools/`, and verify it
+before unpacking. Recent releases publish a `<archive>.sha256` file per
+archive; older ones publish a combined
+`opentelemetry-collector-releases_otelcol-contrib_checksums.txt`. The
+walkthrough used v0.165.0 on macOS arm64:
+
+```sh
+VERSION=0.165.0 PLATFORM=darwin_arm64   # e.g. darwin_amd64, linux_amd64, linux_arm64
+ARCHIVE="otelcol-contrib_${VERSION}_${PLATFORM}.tar.gz"
+mkdir -p target/observability-demo-tools/download
+cd target/observability-demo-tools/download
+gh release download "v$VERSION" --repo open-telemetry/opentelemetry-collector-releases \
+  --pattern "$ARCHIVE" --pattern "$ARCHIVE.sha256"
+# Without gh: curl -fLO https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$VERSION/$ARCHIVE
+# (and the same URL with .sha256 appended).
+# Unpack only if the checksum prints OK:
+printf '%s  %s\n' "$(cat "$ARCHIVE.sha256")" "$ARCHIVE" | shasum -a 256 -c &&
+  tar -xzf "$ARCHIVE" -C ..
+cd ../../..
+target/observability-demo-tools/otelcol-contrib --version
+```
+
+Stop if the checksum does not match; do not unpack or run that archive.
+
+[`otel-collector.yaml`](otel-collector.yaml) receives OTLP/HTTP on
+`127.0.0.1:4318` (`/v1/metrics`, `/v1/traces`). It sends metrics to the `debug`
+exporter and to a `prometheus` exporter on `127.0.0.1:8889`; traces go to
+`debug` only. It is loopback-only and has no credentials or TLS, so use it for
+development only. To adapt it, copy it into `target/observability-demo-tools/`.
+Any new or edited non-Markdown file that Git does not ignore changes the live
+bundle's source fingerprint, so the next live start then requires
+`build-plugins` again.
+
+```sh
+target/observability-demo-tools/otelcol-contrib validate --config examples/observability/otel-collector.yaml
+# Terminal 1: the Collector. `basic` (the file's default) logs only counts;
+# `normal` also prints resource, scope, metric and span names.
+target/observability-demo-tools/otelcol-contrib --config examples/observability/otel-collector.yaml \
+  --set=exporters.debug.verbosity=normal
+# Terminal 2: Server with OTLP metrics and traces sent to the Collector.
+DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 \
+DRASI_DEMO_METRICS_ENDPOINT=http://127.0.0.1:4318/v1/metrics \
+DRASI_DEMO_TRACE_ENDPOINT=http://127.0.0.1:4318/v1/traces \
+DRASI_DEMO_EXPORT_INTERVAL=2 \
+  bash examples/observability/demo.sh live otlp
+```
+
+Send five inputs as in section 2, then check:
+
+```sh
+curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry
+curl --noproxy '*' -s -w '\nHTTP %{http_code}\n' http://127.0.0.1:18081/api/v1/telemetry/metrics
+curl --noproxy '*' -s http://127.0.0.1:8889/metrics | grep -E '^(process_|drasi_)'
+sleep 10
+curl --noproxy '*' -s http://127.0.0.1:8889/metrics | grep '^process_cpu_seconds_total'
+```
+
+- **Settings:** `/api/v1/telemetry` shows `"exportEnabled":true`,
+  `"backend":"otlp"`, `"processMetrics":true` and `"path":null`.
+  `/api/v1/telemetry/metrics` returns 503 `TELEMETRY_METRICS_UNAVAILABLE`
+  because OTLP has no local read, and `/metrics` returns 404. Read the metrics
+  from the Collector instead.
+- **Collector scrape:** the `process_*` families appear next to `drasi_*`, and
+  `process_cpu_seconds_total` grows between the two scrapes. The Collector's
+  Prometheus exporter renames series as it re-exposes them: gauges with unit
+  `1` get `_ratio` (`process_open_fds_ratio`, `process_max_fds_ratio`,
+  `process_threads_ratio`, `drasi_queue_depth_ratio`), Drasi counters get
+  `_total` and duration histograms get `_seconds`. It also adds
+  `otel_scope_name` (`drasi.server.process`, `drasi.core` or `drasi.progress`).
+  Server's own names are unchanged; the debug output and Server's Prometheus
+  backend show them.
+- **Shared identity:** both families carry the same `instance` (the resource's
+  `service.instance.id`) and `job="drasi-server-observability"`
+  (`service.name`). `target_info` carries `process_pid` and `service_version`.
+  A Server restart changes `instance`.
+- **Collector log:** each metrics export logs `ResourceMetrics #0
+  service.version=… service.name=drasi-server-observability process.pid=…
+  service.instance.id=…`, then `ScopeMetrics … drasi.server.process` followed
+  by the seven `process_*` lines with `{}` (no attributes), beside the
+  `drasi.core` and `drasi.progress` scopes. Traces log `ScopeTraces #0
+  drasi.core` with `source.publish`, `query.process` and `sink.handle` spans
+  that carry `instance_id`, `graph_id` and `component_id`.
+- **In your tool:** point a Prometheus-compatible scraper at
+  `http://127.0.0.1:8889/metrics`. `rate(process_cpu_seconds_total[1m])` is
+  CPU usage in cores (multiply by 100 for percent of one core), and
+  `process_resident_memory_bytes` is resident memory. To export straight to your
+  own tool instead, set the two endpoint variables to its OTLP/HTTP protobuf
+  URLs; see section 3 for HTTPS and authentication.
+
+Stop Server with Ctrl+C first, then the Collector. Confirm that ports 18081,
+18090, 4318 and 8889 are closed, for example with
+`lsof -nP -iTCP:4318 -iTCP:8889 -iTCP:18081 -iTCP:18090 -sTCP:LISTEN`.
+While the Collector still runs, it keeps serving the last values for a few
+minutes. Those are retained samples, not fresh exports.
+
 ## State, ownership and environment
 
 Each live start creates `target/observability-example/runs/run-<random>/` and
@@ -345,7 +487,8 @@ waits, not permission to abandon stalled workers or a hard process-exit promise.
 | `DRASI_DEMO_EXPORT_INTERVAL` | `30` seconds | `2` seconds |
 | `DRASI_DEMO_EXPORT_TIMEOUT` | `5` seconds | `1` second |
 | `DRASI_DEMO_SHUTDOWN_TIMEOUT` | `5` seconds | `5` seconds |
-| `DRASI_DEMO_INSPECTION` | `false` | not used; disabled |
+| `DRASI_DEMO_INSPECTION` | `false` | `true` |
+| `DRASI_DEMO_PROCESS_METRICS` | not used; disabled | `true` (the launcher sets `false` only when unset and the profile is `off` or the backend `none`) |
 | `DRASI_DEMO_TRACE_ENDPOINT` | empty (no trace export) | same |
 | `DRASI_DEMO_SAMPLE_RATIO` | `0.1` | `1.0` |
 | `DRASI_DEMO_SOURCE_PORT` | not used | `18090` (HTTP scenario) |

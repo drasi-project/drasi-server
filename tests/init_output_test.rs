@@ -191,18 +191,6 @@ telemetry:
     assert!(from_environment.status.success());
     assert!(String::from_utf8_lossy(&from_environment.stdout)
         .contains("No unavailable telemetry capabilities"));
-    let startup = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"))
-        .arg("--config")
-        .arg(&path)
-        .arg("--plugins-dir")
-        .arg(directory.path())
-        .env("OBS02_CLI_PROFILE", "basic")
-        .env("OBS05_CLI_INSPECTION", "true")
-        .output()
-        .unwrap();
-    assert!(!startup.status.success());
-    assert!(String::from_utf8_lossy(&startup.stderr).contains("this build cannot activate"));
-    assert!(String::from_utf8_lossy(&startup.stderr).contains("inspection API"));
 }
 
 #[test]

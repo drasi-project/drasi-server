@@ -225,7 +225,7 @@ mod tests {
             ],
         ]
         .into_iter()
-        .zip([true, false, true])
+        .zip([true, true, true])
         {
             let config = drasi_server::DrasiServerConfig {
                 telemetry: run(answers).unwrap(),

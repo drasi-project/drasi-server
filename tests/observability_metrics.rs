@@ -147,6 +147,15 @@ fn process_metrics_otlp_export_shares_drasi_resource() -> Result<()> {
 }
 
 #[test]
+fn inspection_routes_follow_backend_and_disabled_state() -> Result<()> {
+    child("inspection-prometheus-separate")?;
+    child("inspection-off")?;
+    child("inspection-disabled")?;
+    child("inspection-otlp")?;
+    child("inspection-owned")
+}
+
+#[test]
 #[ignore = "isolated global-installation subprocess entry point"]
 fn metrics_child() -> Result<()> {
     let mut runtime = match std::env::var(FLAVOR)?.as_str() {
@@ -385,6 +394,11 @@ async fn scenario(case: &str) -> Result<()> {
         .map_err(|_| anyhow::anyhow!("global test recorder already installed"))?;
     if case.starts_with("prometheus-") || case.starts_with("process-prometheus-") {
         prometheus_scenario(case).await?;
+        assert_global_untouched(&globals);
+        return Ok(());
+    }
+    if case.starts_with("inspection-") {
+        inspection_scenario(case).await?;
         assert_global_untouched(&globals);
         return Ok(());
     }
@@ -754,6 +768,11 @@ fn with_process_metrics(mut config: TelemetryConfig) -> TelemetryConfig {
     config
 }
 
+fn with_inspection(mut config: TelemetryConfig) -> TelemetryConfig {
+    config.inspection.enabled = ConfigValue::Static(true);
+    config
+}
+
 async fn assert_closed(port: u16) -> Result<()> {
     assert!(
         timeout(WAIT, tokio::net::TcpStream::connect(("127.0.0.1", port)))
@@ -1056,6 +1075,210 @@ async fn prometheus_scenario(case: &str) -> Result<()> {
                 reqwest::StatusCode::NOT_FOUND
             );
         }
+    }
+    cleanup.wait_until(Instant::now() + WAIT).await?;
+    timeout(WAIT, running).await???;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+    assert_eq!(cleanup.status().pending_workers, 0);
+    assert_closed(management_port).await?;
+    assert_closed(scrape_port).await?;
+    Ok(())
+}
+
+const SETTINGS_PATH: &str = "/api/v1/telemetry";
+const METRICS_PATH: &str = "/api/v1/telemetry/metrics";
+const LISTENER_ERROR: &str = "telemetry.inspection.enabled requires the management API listener; enable the API and use build() and run(), or disable inspection";
+
+async fn inspection_scenario(case: &str) -> Result<()> {
+    let client = client()?;
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let (management_reservation, management_port) = reserved_port().await?;
+    let (scrape_reservation, scrape_port) = reserved_port().await?;
+    if case == "inspection-owned" {
+        let preparation = prometheus_builder(observed.clone())?
+            .with_host_port("127.0.0.1", management_port)
+            .with_telemetry(with_inspection(prometheus_config(
+                "basic",
+                "prometheus",
+                Some(scrape_port),
+            )?))
+            .prepare_with_owned_handles();
+        let cleanup = preparation.cleanup_handle();
+        let error = preparation
+            .finish()
+            .await
+            .err()
+            .context("owned result accepted unservable inspection routes")?;
+        assert!(format!("{error:#}").contains(LISTENER_ERROR), "{error:#}");
+        assert!(
+            observed.lock().unwrap().is_empty(),
+            "rejection ran factories"
+        );
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        return Ok(());
+    }
+
+    let collector = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&collector)
+        .await;
+    let (config, builder) = match case {
+        "inspection-prometheus-separate" => (
+            with_inspection(with_process_metrics(prometheus_config(
+                "basic",
+                "prometheus",
+                Some(scrape_port),
+            )?)),
+            prometheus_builder(observed.clone())?,
+        ),
+        // Profile off provides no metric context to the recording factories.
+        "inspection-off" => (
+            with_inspection(prometheus_config("off", "prometheus", Some(scrape_port))?),
+            DrasiServerBuilder::new()
+                .with_id("inspection-off")
+                .disable_ui(),
+        ),
+        "inspection-disabled" => (
+            prometheus_config("basic", "prometheus", None)?,
+            prometheus_builder(observed.clone())?,
+        ),
+        "inspection-otlp" => (
+            serde_json::from_value::<TelemetryConfig>(serde_json::json!({
+                "profile": "basic",
+                "inspection": { "enabled": true },
+                "metrics": { "backend": "otlp", "otlp": {
+                    "endpoint": format!("{}/v1/metrics", collector.uri()),
+                    "protocol": "http/protobuf", "exportInterval": 3600
+                }}
+            }))?,
+            prometheus_builder(observed.clone())?,
+        ),
+        _ => anyhow::bail!("unknown inspection scenario: {case}"),
+    };
+    let server = builder
+        .with_host_port("127.0.0.1", management_port)
+        .with_telemetry(config)
+        .build()
+        .await?;
+    let cleanup = server.cleanup_handle();
+    drop(management_reservation);
+    drop(scrape_reservation);
+    let running = tokio::spawn(server.run());
+    assert_eq!(
+        ready(&client, management_port, "/health").await?.status(),
+        reqwest::StatusCode::OK
+    );
+    if case != "inspection-off" {
+        timeout(WAIT, async {
+            while observed.lock().unwrap().len() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+    }
+    let management = |path: &str| format!("http://127.0.0.1:{management_port}{path}");
+    match case {
+        "inspection-prometheus-separate" => {
+            let settings = client.get(management(SETTINGS_PATH)).send().await?;
+            assert_eq!(settings.status(), reqwest::StatusCode::OK);
+            let settings: serde_json::Value = settings.json().await?;
+            assert_eq!(settings["metrics"]["backend"], "prometheus");
+            assert_eq!(settings["metrics"]["path"], METRICS_PATH);
+            let metrics = client.get(management(METRICS_PATH)).send().await?;
+            assert_eq!(metrics.status(), reqwest::StatusCode::OK);
+            assert_eq!(
+                metrics.headers()["content-type"],
+                "text/plain; version=0.0.4; charset=utf-8"
+            );
+            let text = metrics.text().await?;
+            assert!(text.contains("process_cpu_seconds_total"), "{text}");
+            assert!(text.contains("drasi_plugin_test_count"), "{text}");
+            assert_eq!(
+                ready(&client, scrape_port, SCRAPE_PATH).await?.status(),
+                reqwest::StatusCode::OK
+            );
+            for path in [SETTINGS_PATH, METRICS_PATH] {
+                assert_eq!(
+                    client
+                        .get(format!("http://127.0.0.1:{scrape_port}{path}"))
+                        .send()
+                        .await?
+                        .status(),
+                    reqwest::StatusCode::NOT_FOUND,
+                    "scrape listener exposed {path}"
+                );
+            }
+            assert_eq!(
+                client
+                    .post(management(SETTINGS_PATH))
+                    .send()
+                    .await?
+                    .status(),
+                reqwest::StatusCode::METHOD_NOT_ALLOWED
+            );
+        }
+        "inspection-off" => {
+            let settings = client.get(management(SETTINGS_PATH)).send().await?;
+            assert_eq!(settings.status(), reqwest::StatusCode::OK);
+            let settings: serde_json::Value = settings.json().await?;
+            assert_eq!(settings["profile"], "off");
+            assert_eq!(settings["metrics"]["backend"], "none");
+            assert_eq!(
+                settings["metrics"].get("path"),
+                Some(&serde_json::Value::Null)
+            );
+            let metrics = client.get(management(METRICS_PATH)).send().await?;
+            assert_eq!(metrics.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+            let body: serde_json::Value = metrics.json().await?;
+            assert_eq!(body["code"], "TELEMETRY_METRICS_UNAVAILABLE");
+            assert_eq!(
+                client
+                    .get(management("/api/v1/instances"))
+                    .send()
+                    .await?
+                    .status(),
+                reqwest::StatusCode::OK
+            );
+            assert_closed(scrape_port).await?;
+        }
+        "inspection-disabled" => {
+            assert_eq!(
+                ready(&client, management_port, SCRAPE_PATH).await?.status(),
+                reqwest::StatusCode::OK
+            );
+            for path in [SETTINGS_PATH, METRICS_PATH] {
+                assert_eq!(
+                    client.get(management(path)).send().await?.status(),
+                    reqwest::StatusCode::NOT_FOUND,
+                    "disabled inspection exposed {path}"
+                );
+            }
+        }
+        "inspection-otlp" => {
+            for _ in 0..10 {
+                let settings = client.get(management(SETTINGS_PATH)).send().await?;
+                assert_eq!(settings.status(), reqwest::StatusCode::OK);
+                let settings: serde_json::Value = settings.json().await?;
+                assert_eq!(settings["metrics"]["backend"], "otlp");
+                assert_eq!(
+                    settings["metrics"].get("path"),
+                    Some(&serde_json::Value::Null)
+                );
+            }
+            for _ in 0..10 {
+                let metrics = client.get(management(METRICS_PATH)).send().await?;
+                assert_eq!(metrics.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+                let body: serde_json::Value = metrics.json().await?;
+                assert_eq!(body["code"], "TELEMETRY_METRICS_UNAVAILABLE");
+            }
+            assert!(
+                collector.received_requests().await.unwrap().is_empty(),
+                "inspection reads contacted the metrics backend"
+            );
+        }
+        _ => anyhow::bail!("unknown inspection scenario: {case}"),
     }
     cleanup.wait_until(Instant::now() + WAIT).await?;
     timeout(WAIT, running).await???;

@@ -431,13 +431,13 @@ async fn builder_conveniences_preserve_invalid_unrelated_fields() -> Result<()> 
 }
 
 #[tokio::test]
-async fn builder_unavailable_capabilities_stay_gated_before_factories() -> Result<()> {
+async fn inspection_requires_management_api_before_factories() -> Result<()> {
     let calls = Arc::new(AtomicUsize::new(0));
     rejected_before_factories(
         source_builder(calls.clone())
-            .with_telemetry(config("profile: basic\ninspection:\n  enabled: true")?),
+            .with_telemetry(config("profile: off\ninspection:\n  enabled: true")?),
         &calls,
-        "cannot activate",
+        "requires the management API listener",
     )
     .await
 }

@@ -76,6 +76,7 @@ pub struct DrasiServer {
     cleanup: ServerCleanupHandle,
     new_telemetry: bool,
     prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
+    inspection: Option<Arc<api::v1::telemetry_handlers::TelemetryInspection>>,
 }
 
 impl Drop for DrasiServer {
@@ -246,6 +247,7 @@ impl DrasiServer {
         let runtime_registry = InstanceRegistry::new();
         cleanup.retain_registry(runtime_registry.clone())?;
         let mut prometheus = None;
+        let mut inspection = None;
         let bindings = match telemetry {
             FileTelemetry::Borrowed(bindings) => {
                 cleanup.retain_bindings(bindings.clone())?;
@@ -268,6 +270,7 @@ impl DrasiServer {
                     )
                     .await?;
                     prometheus = collection.prometheus;
+                    inspection = collection.inspection;
                     collection.bindings
                 } else {
                     bindings
@@ -964,6 +967,7 @@ impl DrasiServer {
             cleanup,
             new_telemetry,
             prometheus,
+            inspection,
         })
     }
 
@@ -1097,6 +1101,7 @@ impl DrasiServer {
             cleanup,
             new_telemetry,
             prometheus: None,
+            inspection: None,
         }
     }
 
@@ -1105,6 +1110,14 @@ impl DrasiServer {
         prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
     ) -> Self {
         self.prometheus = prometheus;
+        self
+    }
+
+    pub(crate) fn with_prepared_inspection(
+        mut self,
+        inspection: Option<Arc<api::v1::telemetry_handlers::TelemetryInspection>>,
+    ) -> Self {
+        self.inspection = inspection;
         self
     }
 
@@ -1564,6 +1577,18 @@ impl DrasiServer {
             if prometheus.config.port.is_none() {
                 app = app.merge(prometheus.router()?);
             }
+        }
+        if let Some(inspection) = &self.inspection {
+            // route_layer applies management admission to both routes, including
+            // their 405 responses, without wrapping the listener-wide 404 fallback.
+            app = app.merge(
+                api::v1::telemetry_handlers::telemetry_router(inspection.clone()).route_layer(
+                    axum::middleware::from_fn_with_state(
+                        registry.clone(),
+                        api::v1::routes::management_admission,
+                    ),
+                ),
+            );
         }
         let app = app.layer(cors_layer);
 

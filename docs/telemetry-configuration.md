@@ -15,27 +15,30 @@ recorder/context and retained HTTP/protobuf exporter. Prometheus uses one
 guarded recorder/context with controlled scrape routing and retained upkeep.
 Server installs no global metrics recorder or provider. Configured tracing uses
 one owned HTTP/protobuf exporter for host operations and Core's completed native
-spans, sharing the new OTLP metrics resource identity. Process collectors and
-inspection remain unavailable. Native-plugin
+spans, sharing the new OTLP metrics resource identity. OBS-06 adds optional
+[process metrics](#process-metrics) and [read-only inspection](#read-only-inspection)
+routes. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification;
 the [example](../examples/observability/README.md) provides explicit live
 pipelines (an ordinary HTTP source, a native query and a log reaction, plus a
 PostgreSQL CDC variant) alongside its unchanged Off/empty default.
-Recorded evidence and deferred gates are in the
-[baseline](observability-baseline.md#obs-05-delivery-status).
+Recorded evidence and deferred gates are in the baseline
+([OBS-05](observability-baseline.md#obs-05-delivery-status),
+[OBS-06](observability-baseline.md#obs-06-delivery-status)).
 
 `drasi-server validate --config ...` checks the intended configuration and
-reports unavailable runtime capabilities separately. Successful validation does
-not mean this build can activate them. The wizard similarly validates output
-and explains staged availability.
+reports unavailable runtime capabilities separately. Every telemetry capability
+is available in this build, so it reports `No unavailable telemetry capabilities
+requested`. Listener requirements, such as inspection needing the management
+API, are checked at startup. The wizard validates its output the same way.
 
 Normal startup rejects every effectively enabled, unavailable capability
 before loading plugins or constructing components. It never silently accepts
 an exporter or inspection request and does nothing. Omitted telemetry, an
-empty section with no destinations, or Off with inspection disabled can start.
+empty section with no destinations, or Off can start.
 Off suppresses new tracing and metrics even if their destinations are retained.
-Inspection remains independent; Off plus inspection still fails startup until
-the inspection runtime is implemented.
+Inspection remains independent: Off plus inspection starts, reports profile
+`off`, backend `none` and `path: null`, and its metrics route returns 503.
 Retained inactive destination settings are still validated; configuring them
 never starts an additional backend.
 
@@ -78,13 +81,13 @@ The legacy `metrics` contract remains HTTP/JSON with a full metrics URL,
 | New setting | Default | Validation |
 |---|---|---|
 | `profile` | `basic` | `off`, `basic`, `debug`, `persistence` |
-| `inspection.enabled` | `false` | Independent of collection/profile |
+| `inspection.enabled` | `false` | Independent of collection/profile; requires the management API listener and `build()`/`run()` ([inspection](#read-only-inspection)) |
 | `tracing.endpoint` | absent | Empty resolved string also disables trace export |
 | `tracing.protocol` | absent | Explicit `http/protobuf` required for a nonempty endpoint |
 | `tracing.serviceName` | `drasi-server` | Nonempty, no control characters; shared OTLP resource identity, including metrics-only policy |
 | `tracing.sampleRatio` | `1.0` | Finite number in [0, 1]; parent-based root sampling |
 | `metrics.backend` | `none` | `none`, `prometheus`, `otlp`; exactly one active backend |
-| `metrics.processMetrics` | `false` | Requires non-Off profile and an enabled backend |
+| `metrics.processMetrics` | `false` | Requires non-Off profile and an enabled backend ([process metrics](#process-metrics)) |
 | `metrics.prometheus.path` | `/metrics` | Absolute literal route, no trailing slash, parameters, escaping, query, fragment or dot segments |
 | `metrics.prometheus.port` | absent | 1..=65,535; omitted shares management listener |
 | `metrics.otlp.endpoint` | absent | Required when OTLP metrics is active |
@@ -293,6 +296,8 @@ Only the configured literal path is registered (default `/metrics`); a custom
 path does not also register `/metrics`. Omitted `port` merges that single route
 into the management router. An explicit port serves **only** the scrape router:
 no health, management API, UI or authentication routes are copied to it.
+With inspection enabled, the management listener also serves the same render
+at `/api/v1/telemetry/metrics` ([inspection](#read-only-inspection)).
 Off/None creates no scrape route, separate listener or upkeep worker.
 
 A successful GET returns `200` with
@@ -363,6 +368,121 @@ Ordinary source plugins without negotiated portable context can receive these
 headers, but cannot continue the trace across their plugin boundary. Do not
 assume end-to-end propagation through them. The JSON proxy does not adapt HTTP
 input to gRPC sources.
+
+## Process metrics
+
+`metrics.processMetrics: true` adds seven unlabelled measurements of the whole
+Server process to the active metrics backend. It requires a non-Off profile and
+the `prometheus` or `otlp` backend. Both backends use these exact names:
+
+| Name | Prometheus type | OTLP instrument | Unit | Linux | macOS | Windows | FreeBSD |
+|---|---|---|---|---|---|---|---|
+| `process_cpu_seconds_total` | counter (fractional) | f64 observable counter, monotonic | `s` | x | x | x | x |
+| `process_resident_memory_bytes` | gauge | observable gauge | `By` | x | x | x | x |
+| `process_virtual_memory_bytes` | gauge | observable gauge | `By` | x | x | x | x |
+| `process_open_fds` | gauge | observable gauge | `1` | x | x | x | x |
+| `process_max_fds` | gauge | observable gauge | `1` | x | x | x | x |
+| `process_threads` | gauge | observable gauge | `1` | x | x |  | x |
+| `process_start_time_seconds` | gauge | observable gauge | `s` | x | x | x | x |
+
+Platform columns follow `metrics-process` 2.4.3; OpenBSD is not a qualified
+target. `process_virtual_memory_max_bytes` and `process_heap_bytes` are not
+emitted. CPU usage, in cores, is `rate(process_cpu_seconds_total[1m])`.
+
+- A measurement the platform cannot provide, or a reading that fails, is
+  omitted from that scrape or export. It is never published as `0` or as a
+  stale earlier value. Non-finite readings are also omitted.
+- `process_max_fds` is omitted when the soft limit is unlimited; that is a
+  valid reading, not a missing one. Windows has no per-process limit and the
+  crate reports a fixed 16,777,216 there: treat it as a platform constant.
+- The series describe the OS process. There is no per-instance, graph,
+  component or plugin attribution; several instances in one Server share one set.
+- `filters.exclude` applies to these names. `process_` excludes all of them,
+  and then no snapshot is taken.
+- When an expected measurement is missing, a warning names the metrics only:
+  immediately, then at most once per 300 seconds with a suppressed count, plus
+  an info line on recovery. Collection never fails a scrape, an export or the
+  Drasi metrics.
+
+Prometheus takes one snapshot per render and appends the process families after
+the Drasi families. Every scrape is current: the shared route, a separate
+`prometheus.port` listener and the inspection metrics route all use the same
+render job, admission, wait and content type. OTLP registers observable
+instruments under meter scope `drasi.server.process` on the existing provider,
+so they share the resource (`service.name`, `service.instance.id` and the rest)
+of the Drasi metrics. One snapshot is taken immediately before each export
+collection, including the final one; there is no separate timer or task.
+
+Exactly one set exists per OS process. Process metrics require configured
+telemetry, which owns process-global logging, so a second configured-telemetry
+Server in the same process fails startup with `a host logger is already
+installed`. Borrowed `TelemetryBindings` have no process metrics.
+
+## Read-only inspection
+
+`inspection.enabled: true` mounts `GET /api/v1/telemetry` and
+`GET /api/v1/telemetry/metrics` on the management listener only, never on a
+separate Prometheus listener. Inspection is independent of the profile and
+backend. Startup rejects it when the management API is disabled, or with the
+owned-handles builder result: `telemetry.inspection.enabled requires the
+management API listener; enable the API and use build() and run(), or disable
+inspection`. Borrowed `TelemetryBindings` have no inspection setting and mount
+nothing.
+
+The settings route returns a bare camelCase object, not the `ApiResponse`
+wrapper. It is computed once at startup, because telemetry settings are
+startup-only. For example:
+
+```json
+{
+  "profile": "basic",
+  "tracing": { "exportEnabled": true, "sampleRatio": 1.0, "localInspection": false },
+  "metrics": { "backend": "prometheus", "processMetrics": true, "path": "/api/v1/telemetry/metrics" },
+  "logs": {
+    "pathTemplate": "/api/v1/instances/{instanceId}/{collection}/{componentId}/logs",
+    "streamPathTemplate": "/api/v1/instances/{instanceId}/{collection}/{componentId}/logs/stream"
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `profile` | `off`, `basic`, `debug` or `persistence` |
+| `tracing.exportEnabled` | A trace destination is configured and the profile is not `off`; not collector health |
+| `tracing.sampleRatio` | Configured root sampling ratio in [0, 1] |
+| `tracing.localInspection` | Always `false`; no trace history is stored |
+| `metrics.backend` | Effective `none`, `prometheus` or `otlp` (`none` under `off`) |
+| `metrics.processMetrics` | Effective setting; per-OS availability is documented above, not returned |
+| `metrics.path` | `"/api/v1/telemetry/metrics"` when the Prometheus backend is active, otherwise `null` |
+| `logs.pathTemplate`, `logs.streamPathTemplate` | Constant templates for the existing log routes; `{collection}` is `sources`, `queries` or `reactions` |
+
+All fields are required; only `metrics.path` is nullable. Endpoint URLs, hosts,
+header names or values, credentials, raw YAML and environment values are never
+returned.
+
+The metrics route delegates to the Prometheus scrape job. It returns the same
+text and content type, including process families, and shares the four-render
+admission and five-second wait with the scrape route, even when that uses a
+separate port. It never installs a backend to manufacture data.
+
+| Situation | `/api/v1/telemetry` | `/api/v1/telemetry/metrics` |
+|---|---|---|
+| Inspection disabled, or no `telemetry` section | 404 | 404 |
+| Prometheus backend active | 200 | 200, Prometheus text |
+| OTLP, `none` or `off` | 200, `path: null` | 503 `TELEMETRY_METRICS_UNAVAILABLE` |
+| Four renders in flight or five-second wait elapsed | 200 | 503 `TELEMETRY_METRICS_UNAVAILABLE` |
+| Render failure | 200 | 500 `TELEMETRY_INSPECTION_FAILED` |
+| Server shutting down | 503 `SERVER_SHUTTING_DOWN` | 503 `SERVER_SHUTTING_DOWN` |
+| POST, PUT, PATCH or DELETE | 405 | 405 |
+
+Errors use the standard `ErrorResponse` body. Access equals reachability of
+the management listener (the OBS-02 decision): there is no authentication and
+the API's CORS policy applies. Restrict it with a trusted proxy or restricted
+network. **Enabling inspection exposes Prometheus metrics on the management
+port even when `/metrics` uses a separate `prometheus.port`**; deployments
+requiring strict metrics-port isolation must leave inspection disabled.
+Inspection stores no trace history, queries no external metrics or trace
+backend, and never changes policy or YAML.
 
 ## Init
 

@@ -28,7 +28,7 @@ use crate::{
     config::telemetry::{MetricsBackend, TelemetryConfig},
     instance_registry::InstanceRegistry,
     server::{DrasiServer, ServerCleanupHandle, ServerPreparation},
-    telemetry::StandaloneTelemetry,
+    telemetry::{runtime::PreparedCollection, StandaloneTelemetry},
     TelemetryBindings,
 };
 
@@ -460,25 +460,29 @@ impl DrasiServerBuilder {
         owner.retain_registry(registry.clone())?;
         let port = self.port.unwrap_or(8080);
         let host = self.host.unwrap_or_else(|| "127.0.0.1".into());
-        let (bindings, legacy_logging, prometheus) = if let Some(config) = self.telemetry_config {
-            let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
-            effective.ensure_runtime_available()?;
-            effective.ensure_listener_compatible(self.enable_api, start)?;
-            let (bindings, prometheus) =
-                StandaloneTelemetry::initialize_configured(owner, effective, &registry)?;
-            (Some(bindings), None, prometheus)
-        } else if let Some(bindings) = self.telemetry_bindings {
-            owner.retain_bindings(bindings.clone())?;
-            (Some(bindings), None, None)
-        } else {
-            let logging = init_default_subscriber()
-                .context("Cannot initialize or borrow Core's known default logging service")?;
-            owner.retain_bindings(TelemetryBindings::new(
-                TelemetrySettings::new(TelemetryProfile::Off),
-                logging.clone(),
-            ))?;
-            (None, Some(logging), None)
-        };
+        let (bindings, legacy_logging, prometheus, inspection) =
+            if let Some(config) = self.telemetry_config {
+                let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
+                effective.ensure_runtime_available()?;
+                effective.ensure_listener_compatible(self.enable_api, start)?;
+                let PreparedCollection {
+                    bindings,
+                    prometheus,
+                    inspection,
+                } = StandaloneTelemetry::initialize_configured(owner, effective, &registry)?;
+                (Some(bindings), None, prometheus, inspection)
+            } else if let Some(bindings) = self.telemetry_bindings {
+                owner.retain_bindings(bindings.clone())?;
+                (Some(bindings), None, None, None)
+            } else {
+                let logging = init_default_subscriber()
+                    .context("Cannot initialize or borrow Core's known default logging service")?;
+                owner.retain_bindings(TelemetryBindings::new(
+                    TelemetrySettings::new(TelemetryProfile::Off),
+                    logging.clone(),
+                ))?;
+                (None, Some(logging), None, None)
+            };
         let registry = match owner.bindings() {
             Some(bindings) => registry.with_runtime_context(bindings, owner.clone()),
             None => registry.with_cleanup_context(owner.clone()),
@@ -545,6 +549,7 @@ impl DrasiServerBuilder {
             new_telemetry,
             registry,
             prometheus,
+            inspection,
         })
     }
 }
@@ -560,6 +565,7 @@ struct BuiltCores {
     new_telemetry: bool,
     registry: InstanceRegistry,
     prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
+    inspection: Option<Arc<crate::api::v1::telemetry_handlers::TelemetryInspection>>,
 }
 
 impl BuiltCores {
@@ -583,6 +589,7 @@ impl BuiltCores {
             self.registry,
         )
         .with_prepared_prometheus(self.prometheus)
+        .with_prepared_inspection(self.inspection)
     }
 }
 

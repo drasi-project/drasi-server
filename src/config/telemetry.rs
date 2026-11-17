@@ -234,17 +234,9 @@ impl EffectiveTelemetry {
         &self.policy
     }
 
-    /// Updated as production capabilities land in OBS-03 through OBS-06.
+    /// All configured telemetry capabilities are available in this build.
+    /// Retained so startup, validation and init keep one readiness check.
     pub fn ensure_runtime_available(&self) -> Result<()> {
-        let mut unavailable = Vec::new();
-        if self.inspection_enabled {
-            unavailable.push("inspection API (OBS-06)");
-        }
-        ensure!(
-            unavailable.is_empty(),
-            "Telemetry configuration is valid, but this build cannot activate: {}. Disable these capabilities until their runtime support is available.",
-            unavailable.join(", ")
-        );
         Ok(())
     }
 
@@ -267,6 +259,10 @@ impl EffectiveTelemetry {
                 "Prometheus shared scrape routing requires an enabled management listener; enable the API or configure telemetry.metrics.prometheus.port for a separate listener"
             );
         }
+        ensure!(
+            !self.inspection_enabled || (enable_api && !handles_only),
+            "telemetry.inspection.enabled requires the management API listener; enable the API and use build() and run(), or disable inspection"
+        );
         Ok(())
     }
 }

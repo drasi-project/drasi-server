@@ -2167,6 +2167,117 @@ async fn failed_render_returns_typed_500_and_remains_a_cleanup_failure() {
     assert!(runtime.wait_for_completion().await.is_err());
 }
 
+fn inspection_router(runtime: Option<Arc<PrometheusRuntime>>) -> axum::Router {
+    use crate::api::v1::telemetry_handlers::{telemetry_router, TelemetryInspection};
+    let config: crate::config::telemetry::TelemetryConfig =
+        serde_json::from_value(serde_json::json!({
+            "inspection": {"enabled": true},
+            "metrics": {"backend": "prometheus"}
+        }))
+        .unwrap();
+    let effective = config
+        .resolve(&crate::api::mappings::DtoMapper::new(), 8080, true)
+        .unwrap();
+    telemetry_router(TelemetryInspection::new(&effective, runtime))
+}
+
+async fn inspect_metrics(router: &axum::Router) -> Response {
+    router
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .uri(crate::api::v1::telemetry_handlers::TELEMETRY_METRICS_PATH)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Status, error code and raw body of an error response.
+async fn error_parts(response: Response) -> (StatusCode, String, String) {
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    let body = String::from_utf8_lossy(&body).into_owned();
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let code = json["code"].as_str().unwrap_or_default().to_owned();
+    (status, code, body)
+}
+
+#[tokio::test]
+async fn inspection_metrics_route_status_matrix() {
+    let (status, code, _) = error_parts(inspect_metrics(&inspection_router(None)).await).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(code, "TELEMETRY_METRICS_UNAVAILABLE");
+
+    let owner = ServerCleanupHandle::bootstrap();
+    let (_, handle) = prometheus_recorder().unwrap();
+    let runtime = PrometheusRuntime::prepare(&owner, handle).await.unwrap();
+    let response = inspect_metrics(&inspection_router(Some(runtime.clone()))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[CONTENT_TYPE],
+        "text/plain; version=0.0.4; charset=utf-8"
+    );
+    close(&owner).await;
+    assert!(runtime.is_joined().await);
+
+    // A fresh runtime has no finished render awaiting reaping, so the four
+    // stalled renders deterministically fill admission.
+    let owner = ServerCleanupHandle::bootstrap();
+    let (_, handle) = prometheus_recorder().unwrap();
+    let runtime = PrometheusRuntime::prepare(&owner, handle).await.unwrap();
+    let router = inspection_router(Some(runtime.clone()));
+    let mut stall = fixtures::BackendStall::acquire(&runtime).await;
+    let mut waiters = Vec::new();
+    for _ in 0..4 {
+        let runtime = runtime.clone();
+        waiters.push(tokio::spawn(async move { scrape(&runtime).await }));
+    }
+    eventually(|| fixtures::render_count(&runtime) == 4).await;
+    let overloaded = timeout(Duration::from_millis(100), inspect_metrics(&router))
+        .await
+        .expect("inspection must reject without queuing");
+    let (status, code, _) = error_parts(overloaded).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(code, "TELEMETRY_METRICS_UNAVAILABLE");
+    let (status, code, _) = error_parts(scrape(&runtime).await).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(code, "TELEMETRY_SCRAPE_UNAVAILABLE");
+    assert_eq!(fixtures::render_count(&runtime), 4);
+    stall.release();
+    for waiter in waiters {
+        assert_eq!(
+            timeout(Duration::from_secs(2), waiter)
+                .await
+                .unwrap()
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+    }
+    close(&owner).await;
+    assert!(runtime.is_joined().await);
+    stall.finish();
+
+    let owner = ServerCleanupHandle::bootstrap();
+    let (_, handle) = prometheus_recorder().unwrap();
+    let runtime = PrometheusRuntime::prepare(&owner, handle).await.unwrap();
+    fixtures::poison_backend(&runtime);
+    let (status, code, body) =
+        error_parts(inspect_metrics(&inspection_router(Some(runtime.clone()))).await).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(code, "TELEMETRY_INSPECTION_FAILED");
+    assert!(!body.contains("poison"), "{body}");
+    assert!(timeout(Duration::from_secs(2), owner.shutdown())
+        .await
+        .unwrap()
+        .is_err());
+    assert!(runtime.is_joined().await);
+}
+
 #[tokio::test(start_paused = true)]
 async fn upkeep_runs_without_scrapers_and_cleanup_joins_actual_work() {
     let owner = ServerCleanupHandle::bootstrap();

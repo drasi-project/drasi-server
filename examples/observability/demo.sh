@@ -83,6 +83,12 @@ if [[ "$action" == live || "$action" == live-postgres ]]; then
         basic|debug|persistence) ;;
         *) printf 'live requires basic, debug or persistence; use start for Off.\n' >&2; exit 2 ;;
     esac
+    # processMetrics requires a non-Off profile and a backend; never override a set value.
+    if [[ -z "${DRASI_DEMO_PROCESS_METRICS+set}" ]]; then
+        case "$DRASI_DEMO_PROFILE/$DRASI_DEMO_METRICS_BACKEND" in
+            off/*|*/none) export DRASI_DEMO_PROCESS_METRICS=false ;;
+        esac
+    fi
     printf 'Live %s %s pipeline; instance=%s\nOwned WAL/state directory (retained): %s\n' \
         "$scenario" "$DRASI_DEMO_METRICS_BACKEND" "$DRASI_DEMO_INSTANCE" "$RUN_DIR"
     printf 'Management: http://127.0.0.1:%s ; Ctrl+C stops the foreground Server.\n' \
