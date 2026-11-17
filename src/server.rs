@@ -260,16 +260,15 @@ impl DrasiServer {
                     )?,
                 };
                 if let Some(effective) = effective {
-                    let metrics = crate::telemetry::runtime::prepare_metrics(
+                    let collection = crate::telemetry::runtime::prepare_collection(
                         &cleanup,
-                        &effective,
+                        effective,
                         &runtime_registry,
+                        bindings,
                     )
                     .await?;
-                    prometheus = metrics.prometheus;
-                    let bindings = bindings.with_configured_policy(effective, metrics.context)?;
-                    cleanup.configure_logging_bindings(bindings.clone())?;
-                    bindings
+                    prometheus = collection.prometheus;
+                    collection.bindings
                 } else {
                     bindings
                 }
@@ -1428,7 +1427,7 @@ impl DrasiServer {
                 .serve_listener(lifecycle::ApiListener::Prometheus, socket, app)?;
         }
         if self.metrics_config.is_none() {
-            self.cleanup.activate_metrics().await?;
+            self.cleanup.activate_collection().await?;
         }
         if self.cleanup.admission_is_open() {
             self.cleanup.running()?;

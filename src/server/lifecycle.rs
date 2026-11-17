@@ -33,7 +33,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use drasi_lib::{
     context::workers::{
         join_owned_worker_gracefully, spawn_owned_blocking_worker, try_spawn_owned_worker,
@@ -196,6 +196,8 @@ struct State {
     cores: Vec<Option<Arc<DrasiLib>>>,
     bindings: Option<TelemetryBindings>,
     owned_logging: Option<ComponentLogRuntime>,
+    trace_slot: Option<crate::telemetry::tracing_layer::StartupTraceSlot>,
+    traces: Option<Arc<crate::telemetry::traces::TraceRuntime>>,
     logging_deadline: Option<Instant>,
     budget: Option<ShutdownBudget>,
     running_registry: Option<InstanceRegistry>,
@@ -445,6 +447,37 @@ impl Owner {
                 && state.prometheus_listener.is_none()
         };
         if producers_complete {
+            let (metrics, prometheus, traces, collection_deadline) = {
+                let mut state = self.state();
+                state.phase = CleanupPhase::DrainingCollection;
+                let deadline = state
+                    .budget
+                    .as_mut()
+                    .expect("shutdown budget")
+                    .begin_collection();
+                (
+                    state.metrics.clone(),
+                    state.prometheus.clone(),
+                    state.traces.clone(),
+                    deadline,
+                )
+            };
+            self.changed();
+            if let Some(traces) = traces {
+                if let Err(error) = traces.request_shutdown(collection_deadline).await {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+            }
+            if let Some(metrics) = metrics {
+                if let Err(error) = metrics.lock().await.request_shutdown(collection_deadline) {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+            }
+            if let Some(prometheus) = prometheus {
+                if let Err(error) = prometheus.request_shutdown(collection_deadline) {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+            }
             let metrics = self.state().metrics.clone();
             if let Some(metrics) = metrics {
                 let deadline = {
@@ -502,6 +535,20 @@ impl Owner {
                     self.state().prometheus.take();
                 }
             }
+            let traces = self.state().traces.clone();
+            if let Some(traces) = traces {
+                if let Err(error) = traces.wait_shutdown_until(collection_deadline).await {
+                    self.state().history.cleanup.push(Arc::new(error));
+                }
+                if !traces.is_joined().await {
+                    if let Err(error) = traces.wait_for_completion().await {
+                        self.state().history.cleanup.push(Arc::new(error));
+                    }
+                }
+                if traces.is_joined().await {
+                    self.state().traces.take();
+                }
+            }
             let dependencies = {
                 let mut state = self.state();
                 (
@@ -541,6 +588,7 @@ impl Owner {
                 || state.prometheus_listener.is_some()
                 || state.metrics.is_some()
                 || state.prometheus.is_some()
+                || state.traces.is_some()
             {
                 None
             } else if let Some(logging) = state.owned_logging.clone() {
@@ -607,6 +655,7 @@ impl Owner {
                 || state.owned_logging.is_some()
                 || state.metrics.is_some()
                 || state.prometheus.is_some()
+                || state.traces.is_some()
                 || state.watcher.is_some()
                 || state.api.is_some()
                 || state.prometheus_listener.is_some();
@@ -679,6 +728,8 @@ impl ServerCleanupHandle {
                     cores: Vec::new(),
                     bindings: None,
                     owned_logging: None,
+                    trace_slot: None,
+                    traces: None,
                     logging_deadline: None,
                     budget: None,
                     running_registry: None,
@@ -756,13 +807,50 @@ impl ServerCleanupHandle {
         Ok(())
     }
 
-    pub(crate) async fn activate_metrics(&self) -> Result<()> {
+    pub(crate) async fn activate_collection(&self) -> Result<()> {
         let metrics = self.owner.state().metrics.clone();
         if let Some(metrics) = metrics {
             let mut metrics = metrics.lock().await;
             self.publish(|| metrics.activate())?;
         }
+        let traces = self.owner.state().traces.clone();
+        if let Some(traces) = traces {
+            self.publish(|| traces.activate())?;
+        }
         Ok(())
+    }
+
+    pub(crate) fn retain_traces(
+        &self,
+        traces: Arc<crate::telemetry::traces::TraceRuntime>,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || (state.phase == CleanupPhase::Quiescing && state.admitted > 0),
+            "Tracing must be retained before collection cleanup"
+        );
+        ensure!(state.traces.is_none(), "Tracing is already owned");
+        state.traces = Some(traces);
+        Ok(())
+    }
+
+    pub(crate) fn install_trace_collection(
+        &self,
+        collection: &crate::telemetry::traces::TraceCollection,
+        policy: drasi_lib::observability::ResolvedTelemetry,
+    ) -> Result<()> {
+        let slot = {
+            let state = self.owner.state();
+            ensure!(
+                state.admitted > 0 && state.cores.is_empty(),
+                "Tracing must be configured by admitted construction before Core creation"
+            );
+            state
+                .trace_slot
+                .clone()
+                .context("Standalone trace layer is not composed")?
+        };
+        slot.install(collection.tracer.clone(), policy)
     }
 
     pub(crate) fn retain_watcher(&self, watcher: OwnedPollingWatcher) -> Result<()> {
@@ -1103,6 +1191,23 @@ impl ServerCleanupHandle {
         Ok(())
     }
 
+    pub(crate) fn retain_trace_slot(
+        &self,
+        slot: crate::telemetry::tracing_layer::StartupTraceSlot,
+    ) -> Result<()> {
+        let mut state = self.owner.state();
+        ensure!(
+            state.admission_open || state.admitted > 0,
+            "Tracing must be composed before cleanup"
+        );
+        ensure!(
+            state.trace_slot.is_none(),
+            "Standalone trace layer is already composed"
+        );
+        state.trace_slot = Some(slot);
+        Ok(())
+    }
+
     /// Close admission and start rollback/cleanup once, without cancelling work.
     ///
     /// Repeated calls join the same attempt; they never retry a failed phase.
@@ -1384,7 +1489,7 @@ pub struct ServerPreparation<T> {
     cleanup: ServerCleanupHandle,
     result: Option<oneshot::Receiver<std::result::Result<T, ()>>>,
     published: bool,
-    activate_metrics_on_publish: bool,
+    activate_collection_on_publish: bool,
 }
 
 impl<T: Send + 'static> ServerPreparation<T> {
@@ -1434,7 +1539,7 @@ impl<T: Send + 'static> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
-            activate_metrics_on_publish: false,
+            activate_collection_on_publish: false,
         })
     }
 
@@ -1471,7 +1576,7 @@ impl<T: Send + 'static> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
-            activate_metrics_on_publish: false,
+            activate_collection_on_publish: false,
         })
     }
 }
@@ -1488,12 +1593,12 @@ impl<T> ServerPreparation<T> {
             cleanup,
             result: Some(receiver),
             published: false,
-            activate_metrics_on_publish: false,
+            activate_collection_on_publish: false,
         }
     }
 
-    pub(crate) fn activating_metrics(mut self) -> Self {
-        self.activate_metrics_on_publish = true;
+    pub(crate) fn activating_collection(mut self) -> Self {
+        self.activate_collection_on_publish = true;
         self
     }
 
@@ -1523,8 +1628,8 @@ impl<T> ServerPreparation<T> {
                 }
             };
             if publish {
-                let activation = if self.activate_metrics_on_publish {
-                    self.cleanup.activate_metrics().await
+                let activation = if self.activate_collection_on_publish {
+                    self.cleanup.activate_collection().await
                 } else {
                     Ok(())
                 };

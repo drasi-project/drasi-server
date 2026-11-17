@@ -5,12 +5,13 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s [start|validate|init|build-plugins|live [prometheus|otlp]]\n' "$0"
-    printf '  start     Run the configuration-only Server in the foreground (default).\n'
-    printf '  validate  Validate server-config.yaml without starting a Server.\n'
-    printf '  init      Run the wizard, writing wizard-config.yaml without overwriting it.\n'
-    printf '  build-plugins  Explicitly build only Server + matched local mock/query/log libraries.\n'
-    printf '  live      Run the native pipeline, choosing exactly one metrics backend.\n'
+    printf 'Usage: %s [start|validate|init|build-plugins [http|postgres]|live [prometheus|otlp]|live-postgres [prometheus|otlp]]\n' "$0"
+    printf '  start          Run the configuration-only Server in the foreground (default).\n'
+    printf '  validate       Validate server-config.yaml without starting a Server.\n'
+    printf '  init           Run the wizard, writing wizard-config.yaml without overwriting it.\n'
+    printf '  build-plugins  Explicitly build Server + one matched local scenario bundle (default http).\n'
+    printf '  live           Run HTTP input -> native query -> log, choosing one metrics backend.\n'
+    printf '  live-postgres  Run an existing PostgreSQL CDC source -> native query -> log.\n'
 }
 
 if [[ $# -gt 2 ]]; then
@@ -19,11 +20,19 @@ if [[ $# -gt 2 ]]; then
 fi
 
 action="${1:-start}"
+scenario=http
 case "$action" in
-    start|validate|init|build-plugins)
+    start|validate|init)
         [[ $# -le 1 ]] || { usage >&2; exit 2; }
         ;;
-    live)
+    build-plugins)
+        case "${2:-http}" in
+            http|postgres) scenario="${2:-http}" ;;
+            *) usage >&2; exit 2 ;;
+        esac
+        ;;
+    live|live-postgres)
+        [[ "$action" == live-postgres ]] && scenario=postgres
         case "${2:-prometheus}" in
             prometheus|otlp) export DRASI_DEMO_METRICS_BACKEND="${2:-prometheus}" ;;
             *) usage >&2; exit 2 ;;
@@ -48,26 +57,44 @@ CONFIG="$SCRIPT_DIR/server-config.yaml"
 
 cd "$ROOT"
 if [[ "$action" == build-plugins ]]; then
-    exec python3 "$SCRIPT_DIR/local_bundle.py" build
+    exec python3 "$SCRIPT_DIR/local_bundle.py" build "$scenario"
 fi
-if [[ "$action" == live ]]; then
+if [[ "$action" == live || "$action" == live-postgres ]]; then
     if [[ "${DRASI_DEMO_TRUST_LOCAL_PLUGINS:-}" != 1 ]]; then
-        printf 'live requires DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 to trust the three receipt-checked, unsigned local demo plugins.\n' >&2
+        printf '%s requires DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 to trust the three receipt-checked, unsigned local demo plugins.\n' "$action" >&2
         exit 2
     fi
-    RUN_DIR="$(python3 "$SCRIPT_DIR/local_bundle.py" prepare)"
+    if [[ "$scenario" == postgres ]]; then
+        # The launcher never starts or chooses a database; supply an isolated one.
+        for name in DRASI_DEMO_PG_HOST DRASI_DEMO_PG_DATABASE DRASI_DEMO_PG_USER DRASI_DEMO_PG_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+                printf 'live-postgres requires %s for an existing, isolated PostgreSQL database.\n' "$name" >&2
+                exit 2
+            fi
+        done
+        CONFIG_FILE="$SCRIPT_DIR/postgres-config.yaml"
+    else
+        CONFIG_FILE="$SCRIPT_DIR/pipeline-config.yaml"
+    fi
+    RUN_DIR="$(python3 "$SCRIPT_DIR/local_bundle.py" prepare "$scenario")"
     export DRASI_DEMO_INSTANCE="${RUN_DIR##*/}"
     export DRASI_DEMO_PROFILE="${DRASI_DEMO_PROFILE:-persistence}"
     case "$DRASI_DEMO_PROFILE" in
         basic|debug|persistence) ;;
         *) printf 'live requires basic, debug or persistence; use start for Off.\n' >&2; exit 2 ;;
     esac
-    printf 'Live %s pipeline; instance=%s\nOwned WAL/state directory (retained): %s\n' \
-        "$DRASI_DEMO_METRICS_BACKEND" "$DRASI_DEMO_INSTANCE" "$RUN_DIR"
+    printf 'Live %s %s pipeline; instance=%s\nOwned WAL/state directory (retained): %s\n' \
+        "$scenario" "$DRASI_DEMO_METRICS_BACKEND" "$DRASI_DEMO_INSTANCE" "$RUN_DIR"
     printf 'Management: http://127.0.0.1:%s ; Ctrl+C stops the foreground Server.\n' \
         "${DRASI_DEMO_PORT:-18081}"
+    if [[ -n "${DRASI_DEMO_TRACE_ENDPOINT:-}" ]]; then
+        printf 'Trace export: HTTP/protobuf to the configured receiver; sample ratio %s.\n' \
+            "${DRASI_DEMO_SAMPLE_RATIO:-1.0}"
+    else
+        printf 'Trace export: disabled (set DRASI_DEMO_TRACE_ENDPOINT to a full /v1/traces URL).\n'
+    fi
     cd "$RUN_DIR"
-    exec "$SERVER" --config "$SCRIPT_DIR/pipeline-config.yaml" \
+    exec "$SERVER" --config "$CONFIG_FILE" \
         --plugins-dir "$RUN_DIR/plugins" --disable-ui --skip-verification
 fi
 cargo build --offline --locked --bin drasi-server --target-dir "$TARGET_DIR"

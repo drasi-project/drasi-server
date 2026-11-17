@@ -325,6 +325,73 @@ workspace, cross-platform, CI, release, overhead and hard-RSS qualification
 remain unclaimed. The historical baseline recipe below is retained for
 reference, not the current Task 6 command list.
 
+## OBS-05 delivery status
+
+The uncommitted local implementation on `observability-item-5` (base
+`fb638ff`, sibling Core `5fc20eec` plus its recorded dirty files) adds OTLP
+HTTP/protobuf trace export through one Server-owned bounded worker, sharing the
+metrics resource. Host spans pass through a permanent startup layer filtered by
+Core's catalogue; native completed records go through Core's collector without
+renaming. Partial-success responses are counted without logging collector text.
+The source-data proxy forwards only validated W3C context. Bounds and behavior
+are described in [telemetry configuration](telemetry-configuration.md).
+
+Two proxy defects coupled to this work were fixed with failing tests first:
+the proxy now forwards to the source's assigned ID, which ordinary HTTP sources
+validate, and it resolves `host`/`port`/`endpoint` environment references
+instead of silently trying port 8081. Secret references are not resolved.
+
+Final focused results after the last edit (separate counts, not a suite total):
+
+- Lib selectors `telemetry::`, `source_proxy`, `server::lifecycle_tests`:
+  **160 passed, 5 ignored** isolated child entry points.
+- Public tracing **6 passed**; its 6 ignored are the 5 opt-in native tests and
+  one child entry point. With matched native fixtures (provenance recorded in
+  the local ledger) the native tests **5 passed**. Core Host SDK
+  `native_execution_context` 1, `native_metrics_telemetry` 2 and
+  `native_telemetry` 2 passed against the same fixtures.
+- `observability_metrics` **15 passed, 2 ignored**; `observability_runtime`
+  **23 passed, 1 ignored**; `openapi_test` **11 passed**; example helper
+  Python tests **9 passed**; `bash -n` and ShellCheck passed.
+- Strict lib/bin Clippy reports only the 7 baseline findings in untouched files
+  (6 `result_large_err`, 1 `too_many_arguments`). With those two categories
+  allowed, lib/bin, lib unit tests and the touched integration tests pass. The
+  unmodified OBS-04 `observability_metrics.rs` has 17 baseline `unwrap_used`
+  findings; `--tests` across all targets still fails to compile in the untouched
+  fixtures listed under the remaining gates below.
+
+Live walkthrough, 2026-11-16: ordinary HTTP source, native query and log
+reaction, Persistence profile, sample ratio 1.0, five sequential inputs.
+
+- **Prometheus + traces and OTLP metrics + traces (two runs): failing.** Each
+  processed the first accepted input, then the query moved to `Error` with the
+  deferred `native query observation is busy` blocker. Source dispatch stopped
+  at 2 and query processed/emitted at 1. Traces still exported
+  `source.publish`, `query.process`, `sink.handle`, lifecycle and control
+  spans. The native query also exported Debug-level engine spans (`solve`,
+  `project_solution` and four others) under Persistence; Server forwards these
+  unchanged, and their selection is Core's.
+  `drasi.reaction.results_processed` stayed 0 although the log reaction printed
+  the result; this was not investigated.
+- **Telemetry Off control: passed.** All five results were processed and
+  printed, nothing was exported, and shutdown was clean.
+- **Proxy propagation:** after the fixes a proxied push with `traceparent`
+  returned 200. The incoming trace ID did not appear in exports, consistent with
+  the documented ordinary-plugin boundary.
+- **Native SDK loss diagnostic:** `Telemetry records rejected:
+  reason=unattributed` appeared in 2 of 4 runs, only when an input carrying
+  `traceparent` was processed before the blocker failed the next input. It is
+  correlated, not root-caused, and is recorded for the Core owner.
+- Pre-existing and unchanged: OTLP final collection runs after the graph is
+  cancelled, so shutdown logs `Cannot collect query progress`; a config-declared
+  source's advertised `?view=full` link returns `SOURCE_NOT_FOUND`.
+- The PostgreSQL scenario was not run: no isolated database was supplied.
+
+**Implementation complete locally; qualification not complete.** The deferred
+Core blocker keeps the enabled live runs failing. No full Server/Core/workspace,
+cross-platform, CI, external-backend, release, overhead or hard-RSS
+qualification is claimed. No commit, issue closure or new issue was made.
+
 ## Running the checks
 
 ```bash

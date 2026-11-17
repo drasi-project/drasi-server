@@ -19,22 +19,47 @@ ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / "target/observability-example"
 SERVER_TARGET = ROOT / "target/observability-server"
 SERVER = SERVER_TARGET / "debug/drasi-server"
-PLUGINS = ROOT / "target/debug/plugins"
-MANIFEST = STATE / "local-build.json"
-CRATES = (
-    "drasi-source-mock", "drasi-computation-transformer-query", "drasi-reaction-log",
-)
+RECEIPT_FORMAT = 2
+# Query bootstrap is disabled in both scenarios, so no bootstrap library is bundled.
+SCENARIOS = {
+    "http": ("drasi-source-http", "drasi-computation-transformer-query", "drasi-reaction-log"),
+    "postgres": (
+        "drasi-source-postgres", "drasi-computation-transformer-query", "drasi-reaction-log",
+    ),
+}
 REBUILD = "Run: bash examples/observability/demo.sh build-plugins"
 
 
-def plugin_names():
+def crates(scenario):
+    try:
+        return SCENARIOS[scenario]
+    except KeyError:
+        raise ValueError(f"Unknown observability scenario: {scenario}") from None
+
+
+def plugin_names(scenario):
     if sys.platform == "darwin":
         prefix, suffix = "lib", ".dylib"
     elif sys.platform.startswith("linux"):
         prefix, suffix = "lib", ".so"
     else:
         raise ValueError("This local walkthrough supports macOS/Linux only.")
-    return tuple(prefix + name.replace("-", "_") + suffix for name in CRATES)
+    return tuple(prefix + name.replace("-", "_") + suffix for name in crates(scenario))
+
+
+def bundle_dir(scenario):
+    """Example-owned copies; never a live or shared plugin directory."""
+    crates(scenario)
+    return STATE / "bundles" / scenario
+
+
+def manifest_path(scenario):
+    crates(scenario)
+    return STATE / f"{scenario}-build.json"
+
+
+def rebuild(scenario):
+    return REBUILD if scenario == "http" else f"{REBUILD} {scenario}"
 
 
 def sha256(path):
@@ -62,12 +87,15 @@ def source_fingerprint(root):
     return digest.hexdigest()
 
 
-def bundle_state(root, core, server, plugins, toolchain):
-    paths = [server, *(plugins / name for name in plugin_names())]
+def bundle_state(root, core, server, plugins, toolchain, scenario):
+    names = plugin_names(scenario)
+    paths = [server, *(plugins / name for name in names)]
     if any(not path.is_file() or path.is_symlink() for path in paths):
-        raise ValueError(f"Missing/non-regular local bundle binary. {REBUILD}")
+        raise ValueError(f"Missing/non-regular local bundle binary. {rebuild(scenario)}")
     return {
-        "format": 1,
+        "format": RECEIPT_FORMAT,
+        "scenario": scenario,
+        "plugins": list(names),
         "serverRoot": str(root.resolve()),
         "coreRoot": str(core.resolve()),
         "serverSources": source_fingerprint(root),
@@ -78,26 +106,30 @@ def bundle_state(root, core, server, plugins, toolchain):
 
 
 def verify_bundle(manifest, current):
+    scenario = current["scenario"]
     try:
         recorded = json.loads(manifest.read_text())
     except (OSError, ValueError) as error:
-        raise ValueError(f"No valid trusted local build receipt. {REBUILD}") from error
+        raise ValueError(f"No valid trusted local build receipt. {rebuild(scenario)}") from error
+    if recorded.get("format") != RECEIPT_FORMAT or recorded.get("scenario") != scenario:
+        raise ValueError(f"Receipt is for another format or scenario. {rebuild(scenario)}")
     if recorded != current:
-        raise ValueError(f"Local sources/toolchain/binaries changed since build. {REBUILD}")
+        raise ValueError(f"Local sources/toolchain/binaries changed since build. {rebuild(scenario)}")
 
 
-def create_run(parent, plugins):
+def create_run(parent, plugins, scenario):
     parent.mkdir(parents=True, exist_ok=True)
     run = parent / ("run-" + secrets.token_hex(12))
     run.mkdir(mode=0o700)
     (run / "plugins").mkdir()
-    for name in plugin_names():
+    for name in plugin_names(scenario):
         shutil.copyfile(plugins / name, run / "plugins" / name)
         if sha256(run / "plugins" / name) != sha256(plugins / name):
             raise ValueError("Plugin changed while copying; rebuild the local bundle.")
     (run / "demo-owner.json").write_text(json.dumps({
         "owner": "drasi-server/examples/observability",
         "instance": run.name,
+        "scenario": scenario,
         "note": "Unique demo WAL directory; launcher never deletes this state.",
     }) + "\n")
     return run
@@ -106,7 +138,11 @@ def create_run(parent, plugins):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("build", "prepare"))
+    parser.add_argument("scenario", nargs="?", default="http", choices=tuple(SCENARIOS))
     args = parser.parse_args()
+    scenario = args.scenario
+    plugins = bundle_dir(scenario)
+    manifest = manifest_path(scenario)
     try:
         os.environ["CARGO_NET_OFFLINE"] = "true"
         core = Path(subprocess.check_output([
@@ -124,30 +160,32 @@ def main():
             command = [
                 "cargo", "build", "--locked", "--lib", "--target-dir", str(target),
             ]
-            for crate in CRATES:
+            for crate in crates(scenario):
                 command.extend(["-p", crate])
-            command.extend(["--features", ",".join(crate + "/dynamic-plugin" for crate in CRATES)])
+            command.extend([
+                "--features", ",".join(crate + "/dynamic-plugin" for crate in crates(scenario)),
+            ])
             subprocess.run(command, cwd=core, check=True, stdout=sys.stderr)
-            PLUGINS.mkdir(parents=True, exist_ok=True)
-            for name in plugin_names():
-                destination = PLUGINS / name
+            plugins.mkdir(parents=True, exist_ok=True)
+            for name in plugin_names(scenario):
+                destination = plugins / name
                 if destination.is_symlink():
-                    raise ValueError("Refusing to overwrite a symlink in target/debug/plugins.")
+                    raise ValueError("Refusing to overwrite a symlink in the example bundle.")
                 shutil.copyfile(target / "debug" / name, destination)
-            state = bundle_state(ROOT, core, SERVER, PLUGINS, toolchain)
+            state = bundle_state(ROOT, core, SERVER, plugins, toolchain, scenario)
             if before != (state["serverSources"], state["coreSources"]):
                 raise ValueError("Sources changed during build; rerun build-plugins.")
             STATE.mkdir(parents=True, exist_ok=True)
-            MANIFEST.write_text(json.dumps(state, indent=2) + "\n")
-            print("Matched local bundle built; no registry downloads or tests run.")
+            manifest.write_text(json.dumps(state, indent=2) + "\n")
+            print(f"Matched local {scenario} bundle built; no registry downloads or tests run.")
         else:
-            current = bundle_state(ROOT, core, SERVER, PLUGINS, toolchain)
-            verify_bundle(MANIFEST, current)
-            run = create_run(STATE / "runs", PLUGINS)
+            current = bundle_state(ROOT, core, SERVER, plugins, toolchain, scenario)
+            verify_bundle(manifest, current)
+            run = create_run(STATE / "runs", plugins, scenario)
             # Detect replacement while preparing, before the host opens libraries.
-            verify_bundle(MANIFEST, bundle_state(ROOT, core, SERVER, PLUGINS, toolchain))
-            for name in plugin_names():
-                if sha256(run / "plugins" / name) != current["binaries"][str((PLUGINS / name).resolve())]:
+            verify_bundle(manifest, bundle_state(ROOT, core, SERVER, plugins, toolchain, scenario))
+            for name in plugin_names(scenario):
+                if sha256(run / "plugins" / name) != current["binaries"][str((plugins / name).resolve())]:
                     raise ValueError("Copied plugin does not match trusted build receipt.")
             print(run)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:

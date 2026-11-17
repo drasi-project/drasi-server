@@ -22,11 +22,13 @@ mod instance_handlers;
 mod query_handlers;
 mod reaction_handlers;
 mod source_handlers;
+mod source_proxy;
 
 pub use instance_handlers::*;
 pub use query_handlers::*;
 pub use reaction_handlers::*;
 pub use source_handlers::*;
+pub use source_proxy::SourceProxyClient;
 
 use axum::{
     extract::Extension,

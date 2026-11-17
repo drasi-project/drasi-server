@@ -34,6 +34,7 @@ pub(crate) async fn prepare_metrics(
     owner: &ServerCleanupHandle,
     effective: &EffectiveTelemetry,
     registry: &InstanceRegistry,
+    resource: &opentelemetry_sdk::Resource,
 ) -> Result<PreparedMetrics> {
     effective.ensure_runtime_available()?;
     owner.retain_registry(registry.clone())?;
@@ -56,7 +57,7 @@ pub(crate) async fn prepare_metrics(
                         })?,
                         export_interval: effective.export_interval,
                         export_timeout: effective.export_timeout,
-                        resource: super::recorders::metrics_resource(&effective.service_name),
+                        resource: resource.clone(),
                         progress_enabled: effective
                             .policy()
                             .allows_metric("drasi.query.progress.sequence"),
@@ -81,6 +82,37 @@ pub(crate) async fn prepare_metrics(
             })
         }
     }
+}
+
+pub(crate) struct PreparedCollection {
+    pub(crate) bindings: TelemetryBindings,
+    pub(crate) prometheus: Option<super::prometheus::PreparedPrometheus>,
+}
+
+pub(crate) async fn prepare_collection(
+    owner: &ServerCleanupHandle,
+    effective: EffectiveTelemetry,
+    registry: &InstanceRegistry,
+    logging_bindings: TelemetryBindings,
+) -> Result<PreparedCollection> {
+    effective.ensure_runtime_available()?;
+    let resource = super::recorders::telemetry_resource(&effective.service_name);
+    let metrics = prepare_metrics(owner, &effective, registry, &resource).await?;
+    let traces = if effective.tracing.is_some() {
+        let runtime = std::sync::Arc::new(super::traces::TraceRuntime::new());
+        owner.retain_traces(runtime.clone())?;
+        let collection = runtime.prepare(&effective, resource).await?;
+        owner.install_trace_collection(&collection, effective.policy().clone())?;
+        Some(collection)
+    } else {
+        None
+    };
+    let bindings = logging_bindings.with_configured_policy(effective, metrics.context, traces)?;
+    owner.configure_logging_bindings(bindings.clone())?;
+    Ok(PreparedCollection {
+        bindings,
+        prometheus: metrics.prometheus,
+    })
 }
 
 /// Owns standalone component-log capture and its retained cleanup operation.
@@ -177,11 +209,9 @@ impl StandaloneTelemetry {
         effective.ensure_runtime_available()?;
         owner.retain_registry(registry.clone())?;
         let bindings = Self::initialize_logging(owner, "info".into())?;
-        let metrics = tokio::runtime::Handle::try_current()?
-            .block_on(prepare_metrics(owner, &effective, registry))?;
-        let bindings = bindings.with_configured_policy(effective, metrics.context)?;
-        owner.configure_logging_bindings(bindings.clone())?;
-        Ok((bindings, metrics.prometheus))
+        let collection = tokio::runtime::Handle::try_current()?
+            .block_on(prepare_collection(owner, effective, registry, bindings))?;
+        Ok((collection.bindings, collection.prometheus))
     }
 
     pub(crate) fn initialize_logging(
@@ -230,7 +260,10 @@ impl StandaloneTelemetry {
             .with_max_level(policy.max_level())
             .init()
             .map_err(|_| LoggingError::LoggerConflict)?;
+        let trace_slot = super::tracing_layer::StartupTraceSlot::new();
+        owner.retain_trace_slot(trace_slot.clone())?;
         let subscriber = tracing_subscriber::registry()
+            .with(trace_slot.layer())
             .with(logging.layer())
             .with(tracing_subscriber::fmt::layer().with_filter(console_filter));
         tracing::subscriber::set_global_default(subscriber)

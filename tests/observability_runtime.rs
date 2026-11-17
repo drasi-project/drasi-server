@@ -523,7 +523,7 @@ async fn configured_startup_scenario(scenario: &str) -> Result<()> {
     let plugins = directory.path().join("plugins");
     std::fs::create_dir(&plugins)?;
     let policy = if scenario == "task5-runtime-rejection" {
-        "telemetry:\n  profile: basic\n  metrics:\n    backend: prometheus\n"
+        "telemetry:\n  profile: basic\n  inspection:\n    enabled: true\n"
     } else {
         "telemetry:\n  profile: off\n"
     };

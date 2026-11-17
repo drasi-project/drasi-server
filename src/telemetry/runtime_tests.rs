@@ -28,6 +28,84 @@ use crate::{
 
 const WAIT: Duration = Duration::from_secs(5);
 
+#[test]
+fn configured_traces_prepare_before_factories_and_activate_at_publication() -> Result<()> {
+    for flavor in ["current_thread", "multi_thread"] {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "telemetry::runtime_tests::configured_trace_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("DRASI_OBS05_RUNTIME_FLAVOR", flavor)
+            .env("RUST_LOG", "off")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{flavor}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "isolated global-installation subprocess entry point"]
+fn configured_trace_child() -> Result<()> {
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+    use prost::Message;
+    use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+    let mut runtime = if std::env::var("DRASI_OBS05_RUNTIME_FLAVOR")? == "current_thread" {
+        tokio::runtime::Builder::new_current_thread()
+    } else {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder.worker_threads(2);
+        builder
+    };
+    runtime.enable_all().build()?.block_on(async {
+        let receiver = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&receiver)
+            .await;
+        let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
+            "tracing": {"endpoint": format!("{}/custom/traces", receiver.uri()),
+                "protocol": "http/protobuf"}
+        }))?;
+        let built = crate::DrasiServerBuilder::new()
+            .with_id("traced")
+            .add_instance_builder(source_builder(
+                "source-instance",
+                Arc::new(AtomicUsize::new(0)),
+            ))
+            .with_telemetry(config)
+            .build_with_owned_handles()
+            .await?;
+        assert!(built.server.telemetry().context_adapter().is_some());
+        let source_core = &built.servers["source-instance"];
+        tokio::time::timeout(WAIT, source_core.component_by_name("input")?.wait_started())
+            .await??;
+        tokio::time::timeout(WAIT, async {
+            while receiver.received_requests().await.unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        let requests = receiver.received_requests().await.unwrap();
+        let spans = ExportTraceServiceRequest::decode(requests[0].body.as_slice())?;
+        assert!(spans
+            .resource_spans
+            .iter()
+            .flat_map(|resource| &resource.scope_spans)
+            .flat_map(|scope| &scope.spans)
+            .any(|span| span.name == "component.start"));
+        built.shutdown().await?;
+        Ok(())
+    })
+}
+
 fn source_builder(id: &str, calls: Arc<AtomicUsize>) -> DrasiLibBuilder {
     DrasiLib::builder()
         .with_id(id)

@@ -145,10 +145,15 @@ impl TelemetryBindings {
         mut self,
         effective: crate::config::telemetry::EffectiveTelemetry,
         metrics: Option<MetricRegistrationContext>,
+        tracing: Option<super::traces::TraceCollection>,
     ) -> Result<Self> {
         effective.ensure_runtime_available()?;
         self.settings = effective.settings().clone();
         self.metrics = metrics;
+        if let Some(tracing) = tracing {
+            self.context_adapter = Some(tracing.context_adapter);
+            self.native_spans = Some(tracing.native_spans);
+        }
         self.shutdown_timeout_seconds = effective.shutdown_timeout.as_secs();
         self.validate()?;
         Ok(self)

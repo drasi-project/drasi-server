@@ -66,7 +66,9 @@ pub fn build_v1_router(
         .layer(Extension(config_persistence))
         .layer(Extension(plugin_registry))
         .layer(Extension(solutions_dir))
-        .layer(Extension(reqwest::Client::new()))
+        .layer(Extension(
+            crate::api::shared::handlers::SourceProxyClient::default(),
+        ))
         .layer(Extension(ApiPrefix(
             ApiVersion::V1.path_prefix().to_string(),
         )))
@@ -150,7 +152,10 @@ fn build_dynamic_instance_router() -> Router {
             "/computation/ordinary-definitions/:id",
             put(handlers::update_managed_ordinary).delete(handlers::delete_managed_ordinary),
         )
-        .route("/computation/snapshots", get(handlers::list_configuration_snapshots))
+        .route(
+            "/computation/snapshots",
+            get(handlers::list_configuration_snapshots),
+        )
         .route(
             "/computation/snapshots/:name",
             get(handlers::get_configuration_snapshot)

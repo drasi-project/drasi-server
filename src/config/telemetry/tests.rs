@@ -53,10 +53,7 @@ fn profile_backend_signal_matrix_preserves_independence() {
                         policy.metrics_otlp.is_some(),
                         profile != "off" && backend == "otlp"
                     );
-                    assert_eq!(
-                        policy.ensure_runtime_available().is_ok(),
-                        !inspection && (profile == "off" || !tracing)
-                    );
+                    assert_eq!(policy.ensure_runtime_available().is_ok(), !inspection);
                 }
             }
         }

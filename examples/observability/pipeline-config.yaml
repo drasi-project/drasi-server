@@ -9,20 +9,21 @@ autoInstallPlugins: false
 
 # Launch through demo.sh live: each invocation owns a new working/WAL directory.
 # Component IDs are deliberately omitted; names bind references, Core assigns UUIDs.
+# Input arrives on the ordinary HTTP source (direct POST or the Server push proxy).
 instances:
   - id: "${DRASI_DEMO_INSTANCE}"
     persistIndex: false
     sources:
-      - kind: mock
+      - kind: http
         name: observations
         autoStart: true
-        dataType:
-          type: generic
-        intervalMs: 1000
+        host: "127.0.0.1"
+        port: "${DRASI_DEMO_SOURCE_PORT:-18090}"
+        timeoutMs: 10000
     queries:
       - name: observed-values
         autoStart: true
-        query: "MATCH (n:Generic) RETURN n.value AS value"
+        query: "MATCH (n:Reading) RETURN n.value AS value"
         queryLanguage: Cypher
         enableBootstrap: false
         inputs:
@@ -39,7 +40,11 @@ telemetry:
   inspection:
     enabled: false
   tracing:
+    # Empty endpoint disables trace export; set a full .../v1/traces URL.
+    endpoint: "${DRASI_DEMO_TRACE_ENDPOINT:-}"
+    protocol: http/protobuf
     serviceName: drasi-server-observability
+    sampleRatio: "${DRASI_DEMO_SAMPLE_RATIO:-1.0}"
   metrics:
     backend: "${DRASI_DEMO_METRICS_BACKEND:-prometheus}"
     processMetrics: false

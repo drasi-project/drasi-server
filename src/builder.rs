@@ -396,7 +396,7 @@ impl DrasiServerBuilder {
             })
         })();
         match submitted {
-            Ok(preparation) => preparation.activating_metrics(),
+            Ok(preparation) => preparation.activating_collection(),
             Err(error) => ServerPreparation::failed(cleanup, error),
         }
     }

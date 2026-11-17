@@ -1,14 +1,20 @@
-# Observability: configuration and an explicit live metrics pipeline
+# Observability: configuration and explicit live trace/metrics pipelines
 
 The default remains **configuration-only**: Off, no instances, no plugins.
-The optional `live` mode uses a real local **mock source → native query → log
-reaction** with exactly one backend, Prometheus or OTLP/HTTP protobuf. It does
-not enable tracing, process collectors, inspection or handled-branch latency.
-No dashboard, Docker or collector service is installed by this example.
+Two optional live modes use real local plugins and exactly one metrics backend,
+Prometheus or OTLP/HTTP protobuf, plus optional OTLP/HTTP protobuf traces:
 
-These are reproducible instructions, **not a record of successful OBS-04 live
+- `live`: **HTTP source → native query → log reaction**; you send the input.
+- `live-postgres`: **PostgreSQL CDC source → native query → log reaction**
+  against a database you already run and supply.
+
+Process collectors, inspection and handled-branch latency stay disabled. No
+dashboard, Docker, database or collector service is installed or started.
+
+These are reproducible instructions, **not a record of successful OBS-05 live
 qualification**. See the [baseline](../../docs/observability-baseline.md) for
-recorded results and outstanding qualification. Health alone proves no metrics.
+recorded results, the deferred native-query blocker and outstanding gates.
+Health alone proves no metrics or traces.
 
 ## Prerequisites and unchanged default
 
@@ -32,23 +38,21 @@ under `target/observability-server` and uses
 `DRASI_DEMO_PORT=18082` chooses another loopback management port.
 
 Validation checks policy; it neither binds ports nor contacts the destination.
-Prometheus and metrics-only OTLP are now available:
+Prometheus, OTLP metrics and OTLP traces are available:
 
 ```sh
 DRASI_DEMO_PROFILE=basic DRASI_DEMO_METRICS_BACKEND=prometheus \
   bash examples/observability/demo.sh validate
 DRASI_DEMO_PROFILE=persistence DRASI_DEMO_METRICS_BACKEND=otlp \
+  DRASI_DEMO_TRACE_ENDPOINT=http://127.0.0.1:4318/v1/traces \
   bash examples/observability/demo.sh validate
 ```
 
-Replacing `validate` with `start` enables the chosen backend, but still starts
-**no pipeline**. Settings for the other backend do not activate it. Effective
-tracing, process collection and inspection still reject startup explicitly:
+Replacing `validate` with `start` enables the chosen backends, but still starts
+**no pipeline**. Settings for the other metrics backend do not activate it.
+Process collection and inspection still reject startup explicitly:
 
 ```sh
-DRASI_DEMO_PROFILE=debug \
-  DRASI_DEMO_TRACE_ENDPOINT=http://127.0.0.1:4318/v1/traces \
-  bash examples/observability/demo.sh start
 DRASI_DEMO_INSPECTION=true bash examples/observability/demo.sh start
 ```
 
@@ -56,62 +60,84 @@ Invalid profiles, sample ratio `1.5`, interval `0`, timeout `31` and shutdown
 budget `301` fail validation even if a destination is retained but inactive.
 The wizard writes ignored `wizard-config.yaml`, refusing overwrite. Skip
 telemetry to omit it, choose Off/inspection-disabled for logs only, or choose
-one available metrics backend without tracing/process/inspection. The launcher
-does not silently switch to wizard output.
+tracing and one metrics backend without process collection/inspection. The
+launcher does not silently switch to wizard output.
 
-## 1. Explicitly build the three matching local libraries
+## 1. Explicitly build one matching local scenario bundle
 
 Stop other instances of this demo before rebuilding. This is the manual,
 opt-in preparation command; neither ordinary startup nor live startup downloads
 plugins or adopts an arbitrary existing executable:
 
 ```sh
-python3 scripts/plugin_origin.py mode       # must print local
-bash examples/observability/demo.sh build-plugins
+python3 scripts/plugin_origin.py mode                 # must print local
+bash examples/observability/demo.sh build-plugins     # HTTP scenario
+bash examples/observability/demo.sh build-plugins postgres   # optional
 ```
 
-The second command builds only Server plus `drasi-source-mock`,
-`drasi-computation-transformer-query` and `drasi-reaction-log` with their
-`dynamic-plugin` features. It uses the currently selected Core sources,
-including local guard edits. Cargo runs offline; missing cached dependencies
-are an explicit failure, not a registry fallback. It runs **no tests**.
-Core and Server lockfile graphs use separate target directories:
+Each command builds only Server plus that scenario's three libraries with
+their `dynamic-plugin` features: `drasi-source-http` (or
+`drasi-source-postgres`), `drasi-computation-transformer-query` and
+`drasi-reaction-log`. Query bootstrap is disabled, so no bootstrap library is
+bundled. It uses the currently selected Core sources, including local edits.
+Cargo runs offline; missing cached dependencies are an explicit failure, not a
+registry fallback. It runs **no tests**. Core and Server lockfile graphs use
+separate target directories:
 
 - Server: `target/observability-server`
 - Core libraries: `target/observability-plugins`
-- Published local files: `target/debug/plugins/libdrasi_source_mock.dylib`,
-  `libdrasi_computation_transformer_query.dylib`, `libdrasi_reaction_log.dylib`
-  on macOS (`.so` on Linux).
+- Example-owned copies: `target/observability-example/bundles/<scenario>/`.
+  Nothing is published to `target/debug/plugins` or another live plugin folder.
 
-`target/observability-example/local-build.json` records source fingerprints
-(including dirty/untracked source), compiler identity and binary hashes **after
-that build**. Live startup rejects a missing receipt, a missing/replaced binary
-or changed Core/Server source; rerun the explicit build command. Matching names,
-ABI versions or an old successful build are insufficient provenance. This is
-a developer-trusted local receipt, not a cryptographic supply-chain attestation.
-The host still performs its normal metadata/ABI/capability checks when loading.
-No library is opened by the preparation helper. The local libraries are unsigned:
-live mode requires `DRASI_DEMO_TRUST_LOCAL_PLUGINS=1` and then passes
-`--skip-verification` for only the three receipt-checked local files. This is
-an explicit development trust decision, not signature verification. Normal
-configuration-only startup retains verification. Never use this opt-in for
-untrusted or registry-downloaded libraries.
+`target/observability-example/<scenario>-build.json` records the scenario, its
+exact plugin set, source fingerprints (including dirty/untracked source),
+compiler identity and binary hashes **after that build**. Live startup rejects a
+missing receipt, an older receipt format, another scenario's receipt, a
+missing/replaced binary or changed Core/Server source; rerun the matching build
+command. Matching names, ABI versions or an old successful build are
+insufficient provenance. This is a developer-trusted local receipt, not a
+cryptographic supply-chain attestation. The host still performs its normal
+metadata/ABI/capability checks when loading. No library is opened by the
+preparation helper. The local libraries are unsigned: live modes require
+`DRASI_DEMO_TRUST_LOCAL_PLUGINS=1` and then pass `--skip-verification` for only
+the three receipt-checked local files. This is an explicit development trust
+decision, not signature verification. Normal configuration-only startup retains
+verification. Never use this opt-in for untrusted or registry-downloaded libraries.
 Another Cargo build/test can replace the Server executable with a different
 feature set; rerun `build-plugins` if the receipt then rejects it.
 
-## 2. Run and scrape the real pipeline
+## 2. Run the HTTP pipeline, send input and scrape
 
 ```sh
 DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 bash examples/observability/demo.sh live prometheus
 ```
 
-The launcher prints its unique instance and owned run directory. In another
-terminal, after several log reaction results have appeared:
+The launcher prints its unique instance and owned run directory. The HTTP
+source listens on loopback port `DRASI_DEMO_SOURCE_PORT` (default `18090`). In
+another terminal, send several readings, either directly to the source or
+through Server's instance-scoped source-data proxy:
+
+```sh
+INSTANCE=run-REPLACE_WITH_PRINTED_SUFFIX
+API="http://127.0.0.1:18081/api/v1/instances/$INSTANCE"
+# The source listener validates its assigned UUID, not the name `observations`.
+SOURCE_ID=$(curl --noproxy '*' --fail -s "$API/sources" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
+for value in 1 2 3 4 5; do
+  curl --noproxy '*' --fail -H 'content-type: application/json' \
+    -d "{\"operation\":\"insert\",\"element\":{\"type\":\"node\",\"id\":\"reading-$value\",\"labels\":[\"Reading\"],\"properties\":{\"value\":$value}}}" \
+    "http://127.0.0.1:18090/sources/$SOURCE_ID/events"
+done
+# The same JSON through Server's proxy (path accepts the source name):
+curl --noproxy '*' --fail -H 'content-type: application/json' \
+  -d '{"operation":"insert","element":{"type":"node","id":"reading-6","labels":["Reading"],"properties":{"value":6}}}' \
+  "$API/sources/observations/push"
+```
+
+Then inspect the pipeline and metrics:
 
 ```sh
 curl --noproxy '*' --fail http://127.0.0.1:18081/api/v1/instances
-# Substitute the printed instance; list endpoints return assigned UUIDs + names.
-INSTANCE=run-REPLACE_WITH_PRINTED_SUFFIX
 curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/sources"
 curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/queries"
 curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/reactions"
@@ -135,11 +161,10 @@ Check real observations, not just HTTP 200:
 | `drasi_query_commit_duration` | histogram under Persistence only; evaluation/publication and delivery acknowledgement are distinct commits |
 | `drasi_queue_depth` / `drasi_queue_depth_max` | gauges for actual supported `queue_id`, with actual instance/graph identity |
 
-Scrape twice a few seconds apart to establish growth. Allow asynchronous
-in-flight differences; continuous mock input is not a one-event exact-count
-fixture. Identity labels are `instance_id`, `graph_id`, `component_id` and the
-specific source/query/reaction/queue labels, not guessed names or fabricated
-zeros. Queue IDs name physical bindings; they need not be component UUIDs.
+Scrape twice, sending input in between, to establish growth. Count actual
+inputs; asynchronous in-flight work can briefly lag. Identity labels are
+`instance_id`, `graph_id`, `component_id` and the specific
+source/query/reaction/queue labels, not guessed names or fabricated zeros. Queue IDs name physical bindings; they need not be component UUIDs.
 No `_seconds` or `_total` suffix is appended. Histograms expose `_bucket`,
 `_sum`, `_count`; finite boundaries match the [shared bucket list](../../docs/telemetry-configuration.md#metric-data-and-bounds).
 The query result API and log reaction output should advance while scraping.
@@ -214,6 +239,80 @@ production settings. Redirects are not followed. No automatic `OTEL_*` variables
 override this new policy. The focused TLS boundary test uses a test-only trust
 anchor; it does not qualify a real external authenticated collector.
 
+## 4. Export traces
+
+Add a receiver you already run that accepts **HTTP/protobuf traces** at a full
+URL. Either metrics backend can be combined with trace export:
+
+```sh
+DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 \
+DRASI_DEMO_TRACE_ENDPOINT=http://127.0.0.1:4318/v1/traces \
+DRASI_DEMO_SAMPLE_RATIO=1.0 DRASI_DEMO_PROFILE=debug \
+  bash examples/observability/demo.sh live prometheus
+```
+
+Send input as in section 2. Decode the receiver's request as
+`ExportTraceServiceRequest`. Expect actual graph operations such as
+`source.publish`, `query.process` and `reaction.process` (Debug adds
+`query.evaluate`/`query.commit` phases), with `instance_id`, `graph_id` and
+`component_id` attributes, and the same resource identity as OTLP metrics.
+Completed native plugin spans keep their original IDs, parents, events and
+timestamps; Server does not wrap them in new spans.
+
+`DRASI_DEMO_SAMPLE_RATIO=0` exports no new root traces, while metrics, query
+results and ordinary logs continue. A sampled incoming parent is still honored,
+and an unsampled parent is never resampled. Without a trace endpoint, no trace
+exporter starts. Exports are bounded (2,048 spans / 16 MiB, batches of 256,
+one request at a time, no retries); an unavailable receiver drops batches with
+diagnostics and never blocks processing.
+
+### What incoming context can and cannot reach
+
+Send a W3C parent with either input path:
+
+```sh
+curl --noproxy '*' --fail -H 'content-type: application/json' \
+  -H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' \
+  -d '{"operation":"insert","element":{"type":"node","id":"traced-1","labels":["Reading"],"properties":{"value":7}}}' \
+  "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/sources/observations/push"
+```
+
+The proxy forwards only a validated `traceparent`/`tracestate` (never baggage or
+credentials) and starts no span of its own; invalid metadata is dropped without
+rejecting the data. This scenario's HTTP source is an **ordinary** source plugin.
+Ordinary source cdylibs without negotiated portable context receive the header,
+but the context does not cross their plugin boundary: downstream operations
+start a new trace. Do not expect the incoming trace ID here. Native
+`drasi.network` HTTP/gRPC sources do continue incoming context through polling;
+that is qualified by the focused Server/Core tests, not by this walkthrough.
+
+## 5. PostgreSQL CDC against an existing database
+
+`live-postgres` never starts, creates or deletes a database, replication slot
+or publication. Supply an isolated database with logical replication enabled
+and a table such as:
+
+```sql
+CREATE TABLE observation (id integer PRIMARY KEY, value integer NOT NULL);
+```
+
+```sh
+export DRASI_DEMO_TRUST_LOCAL_PLUGINS=1
+export DRASI_DEMO_PG_HOST=127.0.0.1 DRASI_DEMO_PG_DATABASE=observability
+export DRASI_DEMO_PG_USER=drasi_demo DRASI_DEMO_PG_PASSWORD=...  # from your secret store
+bash examples/observability/demo.sh build-plugins postgres
+bash examples/observability/demo.sh live-postgres prometheus
+```
+
+The launcher refuses to start until host, database, user and password are set;
+`DRASI_DEMO_PG_PORT`, `DRASI_DEMO_PG_SLOT` and `DRASI_DEMO_PG_PUBLICATION`
+default to `5432`, `drasi_observability_slot` and `drasi_observability_pub`.
+Credentials stay environment references and are never written to receipts or
+run directories. Insert rows (for example `INSERT INTO observation VALUES (1, 10);`)
+and inspect results, metrics and traces as above. Each CDC change starts a new
+trace root; it does not inherit the SQL client's trace. Remove the slot and
+publication yourself when finished; the launcher does not.
+
 ## State, ownership and environment
 
 Each live start creates `target/observability-example/runs/run-<random>/` and
@@ -242,12 +341,15 @@ waits, not permission to abandon stalled workers or a hard process-exit promise.
 | `DRASI_DEMO_EXPORT_INTERVAL` | `30` seconds | `2` seconds |
 | `DRASI_DEMO_EXPORT_TIMEOUT` | `5` seconds | `1` second |
 | `DRASI_DEMO_SHUTDOWN_TIMEOUT` | `5` seconds | `5` seconds |
-| `DRASI_DEMO_INSPECTION` / `TRACE_ENDPOINT` / `SAMPLE_RATIO` | `false` / empty / `0.1` | not used; disabled |
+| `DRASI_DEMO_INSPECTION` | `false` | not used; disabled |
+| `DRASI_DEMO_TRACE_ENDPOINT` | empty (no trace export) | same |
+| `DRASI_DEMO_SAMPLE_RATIO` | `0.1` | `1.0` |
+| `DRASI_DEMO_SOURCE_PORT` | not used | `18090` (HTTP scenario) |
+| `DRASI_DEMO_PG_*` | not used | PostgreSQL scenario only; see section 5 |
 | `DRASI_DEMO_EXCLUDE` | not used | `drasi.plugin.` |
 | `DRASI_DEMO_INSTANCE` | not used | launcher-owned unique run name |
 
-The last combined row abbreviates `DRASI_DEMO_TRACE_ENDPOINT` and
-`DRASI_DEMO_SAMPLE_RATIO`. These are ordinary `ConfigValue` references, not a
+These are ordinary `ConfigValue` references, not a
 second environment system. Existing environment values win over defaults;
 unset overrides to restore baseline behavior. The CLI loads optional `.env`
 without overriding existing values; live mode runs in a new directory without

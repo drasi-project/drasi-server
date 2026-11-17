@@ -30,6 +30,10 @@ pub use bindings::TelemetryBindings;
 pub(crate) mod runtime;
 pub use runtime::StandaloneTelemetry;
 mod progress;
+pub(crate) mod traces;
+pub(crate) mod tracing_layer;
+mod transport;
+use transport::{OtlpSignal, ResolvedOtlpHttpClient as CoreHttpClient};
 pub(crate) mod prometheus;
 pub(crate) mod recorders;
 
@@ -163,7 +167,7 @@ impl PreparedMetrics {
                     .build()?;
                 (
                     exporter,
-                    recorders::metrics_resource("drasi-server"),
+                    recorders::telemetry_resource("drasi-server"),
                     None,
                     Duration::from_millis(config.export_interval_ms),
                     true,
@@ -181,7 +185,8 @@ impl PreparedMetrics {
                     "Metrics interval must be nonzero"
                 );
                 anyhow::ensure!(!export_timeout.is_zero(), "Metrics timeout must be nonzero");
-                let transport = CoreHttpClient::new(destination, export_timeout)?;
+                let transport =
+                    CoreHttpClient::new(destination, export_timeout, OtlpSignal::Metrics)?;
                 let exporter = tracing::subscriber::with_default(
                     tracing::subscriber::NoSubscriber::default(),
                     || {
@@ -236,96 +241,6 @@ impl PreparedMetrics {
             transport,
             interval,
         })
-    }
-}
-
-/// SDK 0.33.1 unconditionally merges OTEL header variables. Replace routing
-/// and headers at its HTTP seam, retaining its protobuf encoding unchanged.
-#[derive(Clone)]
-struct CoreHttpClient {
-    client: reqwest_otel::blocking::Client,
-    destination: crate::config::telemetry::OtlpDestination,
-    timeout: Duration,
-    deadline: Arc<std::sync::Mutex<Instant>>,
-}
-
-impl std::fmt::Debug for CoreHttpClient {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("CoreHttpClient { protocol: http/protobuf, .. }")
-    }
-}
-
-impl CoreHttpClient {
-    fn new(
-        destination: crate::config::telemetry::OtlpDestination,
-        timeout: Duration,
-    ) -> Result<Self> {
-        let client = reqwest_otel::blocking::Client::builder()
-            .timeout(timeout)
-            .redirect(reqwest_otel::redirect::Policy::none())
-            .build()
-            .map_err(|_| anyhow::anyhow!("Cannot initialize OTLP metrics HTTP client"))?;
-        Ok(Self {
-            client,
-            destination,
-            timeout,
-            deadline: Arc::new(std::sync::Mutex::new(Instant::now())),
-        })
-    }
-
-    fn allow_until(&self, phase_deadline: Option<Instant>) -> OTelSdkResult {
-        let request_deadline = Instant::now() + self.timeout;
-        *self.deadline.lock().map_err(|_| {
-            OTelSdkError::InternalFailure("Metrics request deadline lock failed".into())
-        })? = phase_deadline.map_or(request_deadline, |deadline| deadline.min(request_deadline));
-        Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl opentelemetry_http::HttpClient for CoreHttpClient {
-    async fn send_bytes(
-        &self,
-        request: opentelemetry_http::Request<bytes::Bytes>,
-    ) -> std::result::Result<
-        opentelemetry_http::Response<bytes::Bytes>,
-        opentelemetry_http::HttpError,
-    > {
-        use std::io::Read;
-        let deadline = *self
-            .deadline
-            .lock()
-            .map_err(|_| std::io::Error::other("Metrics request deadline lock failed"))?;
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Metrics request allowance elapsed",
-            )
-            .into());
-        }
-        let response = self
-            .client
-            .post(self.destination.endpoint().clone())
-            .headers(self.destination.headers().clone())
-            .header(axum::http::header::CONTENT_TYPE, "application/x-protobuf")
-            .timeout(remaining)
-            .body(request.into_body())
-            .send()
-            .map_err(|_| std::io::Error::other("Metrics HTTP request failed"))?;
-        let status = response.status();
-        // Preserve the pinned HTTP adapter's existing four-MiB response bound.
-        let mut body = Vec::new();
-        response
-            .take(4 * 1024 * 1024 + 1)
-            .read_to_end(&mut body)
-            .map_err(|_| std::io::Error::other("Metrics HTTP response failed"))?;
-        if body.len() > 4 * 1024 * 1024 {
-            return Err(opentelemetry_http::ResponseBodyTooLarge::new().into());
-        }
-        Ok(opentelemetry_http::Response::builder()
-            .status(status)
-            .body(body.into())?)
     }
 }
 

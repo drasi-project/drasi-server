@@ -13,8 +13,10 @@ adds standalone logging composition, explicit borrowed bindings and retained
 construction/running cleanup. Configured OTLP metrics now use one explicit
 recorder/context and retained HTTP/protobuf exporter. Prometheus uses one
 guarded recorder/context with controlled scrape routing and retained upkeep.
-Server installs no global metrics recorder or provider. Tracing export,
-process collectors and inspection remain unavailable. Native-plugin
+Server installs no global metrics recorder or provider. Configured tracing uses
+one owned HTTP/protobuf exporter for host operations and Core's completed native
+spans, sharing the new OTLP metrics resource identity. Process collectors and
+inspection remain unavailable. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification;
 the [example](../examples/observability/README.md) now provides an explicit live
 mock/native-query/log mode alongside its unchanged Off/empty default.
@@ -35,6 +37,18 @@ Inspection remains independent; Off plus inspection still fails startup until
 the inspection runtime is implemented.
 Retained inactive destination settings are still validated; configuring them
 never starts an additional backend.
+
+Tracing retains at most 2,048 completed spans and 16 MiB of accounted span data,
+including in-flight exports, after Core's separately bounded native handoff.
+Exports contain at most 256 spans, run every second or when a batch is ready,
+and use a five-second request timeout capped by the remaining shutdown deadline.
+Full/oversized records and failed batches are dropped with loss diagnostics;
+there is no automatic retry or durable trace storage. These bounds are not a
+hard RSS guarantee. Trace sampling does not suppress metrics or ordinary logs.
+Prepared and failed/never-run Servers send no trace exports; activation follows
+the same serving/publication boundary as metrics. Shared collection remains
+open when an individual instance stops. Native/plugin qualification and the
+deferred query-observation blocker are recorded separately in the baseline.
 
 ## Defaults and compatibility
 
@@ -314,6 +328,33 @@ processing. After activation, producer stop precedes one bounded final export/
 close. Cancellation or an expired wait retains actual workers, one physical
 close and historical deadline errors; it neither claims completion nor grants
 a new final-export budget. Borrowed providers remain caller-owned.
+
+### Incoming trace context and the source-data proxy
+
+Exporting to an OTLP endpoint does not propagate incoming context. Supported
+native HTTP/gRPC sources extract W3C `traceparent`/`tracestate` at ingress and
+carry it as transient execution context, never in persisted events.
+
+`POST /api/v1/instances/{instanceId}/sources/{id}/push` remains a JSON proxy.
+It forwards only a validated `traceparent` and `tracestate`, regardless of
+telemetry policy, and never baggage, credentials or other caller headers. It
+starts no Server span. `traceparent` is limited to 512 bytes; repeated
+`tracestate` fields are joined in wire order and limited to 512 bytes and 32
+members. A missing parent forwards no context. Duplicate, malformed, oversized
+or parentless state metadata is dropped with a rate-limited diagnostic, and
+the data is still forwarded. The proxy does not follow redirects.
+
+The proxy forwards to the source's assigned ID. It reads the source's reported
+`host`, `port` and `endpoint`; static values and environment references
+(`${VAR:-default}` or structured `EnvironmentVariable`) resolve from the Server
+process environment. Secret references are never resolved by the proxy, and
+an unresolvable or invalid configured value fails with `Source proxy target
+unavailable` rather than falling back to the default port.
+
+Ordinary source plugins without negotiated portable context can receive these
+headers, but cannot continue the trace across their plugin boundary. Do not
+assume end-to-end propagation through them. The JSON proxy does not adapt HTTP
+input to gRPC sources.
 
 ## Init
 

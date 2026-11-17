@@ -29,7 +29,7 @@ pub(crate) const HISTOGRAM_BOUNDS: &[f64] = &[
 ];
 
 // Task 4 supplies this once to the retained runtime, not once per graph/export.
-pub fn metrics_resource(service_name: &str) -> Resource {
+pub fn telemetry_resource(service_name: &str) -> Resource {
     Resource::builder_empty()
         .with_attributes([
             KeyValue::new("service.name", service_name.to_owned()),

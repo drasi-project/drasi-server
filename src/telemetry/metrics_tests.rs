@@ -20,13 +20,149 @@ use std::time::Duration;
 use tokio::time::{timeout, Instant};
 use tower::ServiceExt;
 
+mod trace_transport {
+    use crate::{api::mappings::DtoMapper, config::telemetry::TelemetryConfig};
+    use opentelemetry_http::HttpClient;
+    use opentelemetry_proto::tonic::collector::trace::v1::{
+        ExportTracePartialSuccess, ExportTraceServiceResponse,
+    };
+    use prost::Message;
+    use std::time::Duration;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    async fn send_response(
+        response: Vec<u8>,
+        deadline: Option<tokio::time::Instant>,
+    ) -> anyhow::Result<(super::super::transport::TraceExportResponse, Vec<u8>)> {
+        let receiver = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/custom/traces"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(response))
+            .mount(&receiver)
+            .await;
+        let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
+            "tracing": {
+                "endpoint": format!("{}/custom/traces", receiver.uri()),
+                "protocol": "http/protobuf"
+            }
+        }))?;
+        let destination = config
+            .resolve(&DtoMapper::new(), 8080, true)?
+            .tracing
+            .unwrap();
+        tokio::task::spawn_blocking(move || {
+            let client = crate::telemetry::CoreHttpClient::new(
+                destination,
+                Duration::from_secs(2),
+                crate::telemetry::OtlpSignal::Traces,
+            )?;
+            client.allow_until(deadline)?;
+            let request = opentelemetry_http::Request::builder()
+                .uri("http://unused.invalid/ignored")
+                .body(bytes::Bytes::new())?;
+            let response = futures::executor::block_on(client.send_bytes(request))
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
+            Ok((client.take_trace_response()?, response.into_body().to_vec()))
+        })
+        .await?
+    }
+
+    #[tokio::test]
+    async fn trace_transport_rejects_malformed_nonempty_success() {
+        assert!(send_response(vec![0xff], None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn trace_transport_rejects_negative_rejection_count() {
+        // ExportTraceServiceResponse.partial_success.rejected_spans = -1.
+        let response = vec![
+            0x0a, 0x0b, 0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ];
+        assert!(send_response(response, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn trace_transport_observes_partial_rejection_without_echoing_text() {
+        let body = ExportTraceServiceResponse {
+            partial_success: Some(ExportTracePartialSuccess {
+                rejected_spans: 2,
+                error_message: "collector-response-secret".into(),
+            }),
+        }
+        .encode_to_vec();
+        let (response, sdk_body) = send_response(body, None).await.unwrap();
+        assert_eq!(response.rejected_spans, 2);
+        assert!(response.has_warning);
+        assert!(!format!("{response:?}").contains("collector-response-secret"));
+        assert!(
+            sdk_body.is_empty(),
+            "collector text must not reach SDK diagnostics"
+        );
+        let (response, _) = send_response(Vec::new(), None).await.unwrap();
+        assert_eq!(response.rejected_spans, 0);
+        assert!(!response.has_warning);
+    }
+
+    #[tokio::test]
+    async fn trace_transport_preserves_resolved_destination_and_deadline() {
+        assert!(send_response(Vec::new(), None).await.is_ok());
+        assert!(send_response(Vec::new(), Some(tokio::time::Instant::now()))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn trace_transport_never_follows_redirects() -> anyhow::Result<()> {
+        let target = MockServer::start().await;
+        let receiver = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", format!("{}/custom/traces", target.uri())),
+            )
+            .mount(&receiver)
+            .await;
+        let config: TelemetryConfig = serde_json::from_value(serde_json::json!({
+            "tracing": {
+                "endpoint": format!("{}/custom/traces", receiver.uri()),
+                "protocol": "http/protobuf"
+            }
+        }))?;
+        let destination = config
+            .resolve(&DtoMapper::new(), 8080, true)?
+            .tracing
+            .unwrap();
+        let status = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+            let client = crate::telemetry::CoreHttpClient::new(
+                destination,
+                Duration::from_secs(2),
+                crate::telemetry::OtlpSignal::Traces,
+            )?;
+            client.allow_until(None)?;
+            let request = opentelemetry_http::Request::builder()
+                .uri("http://unused.invalid/ignored")
+                .body(bytes::Bytes::new())?;
+            Ok(futures::executor::block_on(client.send_bytes(request))
+                .map_err(|error| anyhow::anyhow!("{error}"))?
+                .status())
+        })
+        .await??;
+        assert_eq!(status, 307);
+        assert!(target.received_requests().await.unwrap().is_empty());
+        Ok(())
+    }
+}
+
 mod otlp {
     use super::*;
     use crate::{
         api::mappings::DtoMapper,
         config::telemetry::TelemetryConfig,
         instance_registry::InstanceRegistry,
-        telemetry::{recorders::metrics_resource, MetricsMode, MetricsRuntime},
+        telemetry::{recorders::telemetry_resource, MetricsMode, MetricsRuntime},
     };
     use opentelemetry_proto::tonic::{
         collector::metrics::v1::ExportMetricsServiceRequest,
@@ -54,7 +190,7 @@ mod otlp {
             destination: effective.metrics_otlp.unwrap(),
             export_interval: Duration::from_secs(1),
             export_timeout: Duration::from_secs(1),
-            resource: metrics_resource("wire-test"),
+            resource: telemetry_resource("wire-test"),
             progress_enabled,
         }
     }
@@ -569,7 +705,12 @@ mod otlp {
         const PAYLOAD: &[u8] = b"test-only-sensitive-input";
         let (root, root_key) = tls_certificate(None)?;
         let (leaf, key) = tls_certificate(Some((&root, &root_key)))?;
-        for trusted in [false, true] {
+        for (trusted, signal) in [
+            (false, crate::telemetry::OtlpSignal::Metrics),
+            (true, crate::telemetry::OtlpSignal::Metrics),
+            (false, crate::telemetry::OtlpSignal::Traces),
+            (true, crate::telemetry::OtlpSignal::Traces),
+        ] {
             let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
             listener.set_nonblocking(true)?;
             let endpoint = format!("https://{}/custom/metrics", listener.local_addr()?);
@@ -658,8 +799,11 @@ mod otlp {
                     .with_writer(move || writer.clone())
                     .finish();
                 let _scope = tracing::subscriber::set_default(subscriber);
-                let mut client =
-                    crate::telemetry::CoreHttpClient::new(destination, Duration::from_secs(2))?;
+                let mut client = crate::telemetry::CoreHttpClient::new(
+                    destination,
+                    Duration::from_secs(2),
+                    signal,
+                )?;
                 if trusted {
                     // Test-only trust anchor: no custom-CA production configuration.
                     client.client = reqwest_otel::blocking::Client::builder()
