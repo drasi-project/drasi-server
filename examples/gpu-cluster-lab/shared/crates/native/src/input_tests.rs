@@ -33,7 +33,7 @@ fn aggregate(signature: u64, records: Value) -> Result<(ChangeOperation, ResultO
     let dataset = drasi_computation_contracts::output_identity::dataset_namespace(
         "test",
         "graph",
-        &drasi_computation_contracts::ComponentId::try_new(DATABASE_QUERY)?,
+        &crate::test_contexts::component_id(DATABASE_QUERY)?,
         &drasi_computation_contracts::PortId::try_new("out")?,
     )?;
     let projector = ResultNodeProjector::try_new(&dataset, None)?;
@@ -246,7 +246,7 @@ async fn single_configuration_query_projects_every_table_and_live_settings() -> 
     let mut query = query(DATABASE_QUERY, &text).await?;
     let mut source = Emitter::new(
         StreamId::try_new("database-input-test")?,
-        ComponentId::try_new("database-input-fixture")?,
+        crate::test_contexts::component_id("database-input-fixture")?,
         None,
     )?;
     let mut changes = Vec::new();
@@ -272,7 +272,9 @@ async fn single_configuration_query_projects_every_table_and_live_settings() -> 
         serde_json::to_value(&fixture.configuration)?
     );
     let mut policy = processor(Kind::Policy, Arc::new(Workers::default()))?;
-    policy.start().await?;
+    policy
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut complete = boundary(epoch, None);
     complete.queries.insert(
         DATABASE_QUERY.into(),
@@ -333,8 +335,8 @@ async fn single_configuration_query_projects_every_table_and_live_settings() -> 
     assert!(published
         .iter()
         .any(|row| row["settings"][&gpu]["background_compute_units"] == 35));
-    policy.stop().await?;
-    query.stop().await?;
+    policy.stop(&crate::test_contexts::sdk::stop()).await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -358,7 +360,7 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
         let mut query = ContinuousQueryTransformer::new_configured(
             ContinuousQueryDefinition {
                 graph_id: "gpu-transaction-test".into(),
-                id: ComponentId::try_new(DATABASE_QUERY)?,
+                id: crate::test_contexts::component_id(DATABASE_QUERY)?,
                 query: crate::inputs::database_queries().remove(0).1,
                 language: ComputationQueryLanguage::Cypher,
                 output_stream: StreamId::try_new("input-configuration/out")?,
@@ -380,11 +382,14 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
             None,
         )
         .await?;
-        query.start().await?;
+        query.start(&crate::test_contexts::lib::start()).await?;
         Ok(query)
     }
     fn transaction(sequence: u64, changes: Vec<SourceChange>) -> Result<InputEnvelope> {
-        let mut builder = SourceTransactionBuilder::new("postgres", limits())?;
+        let mut builder = SourceTransactionBuilder::new(
+            &crate::test_contexts::component_id("postgres")?,
+            limits(),
+        )?;
         for change in changes {
             builder.push(change)?;
         }
@@ -413,8 +418,8 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
     let epoch = Uuid::new_v4();
     let mut records = records(epoch)?.as_array().unwrap().clone();
     let mut source = Emitter::new(
-        StreamId::try_new("postgres")?,
-        ComponentId::try_new("postgres-fixture")?,
+        StreamId::try_new(gpu_contracts::component_id("postgres"))?,
+        crate::test_contexts::component_id("postgres-fixture")?,
         None,
     )?;
     let mut changes = Vec::new();
@@ -434,7 +439,9 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
     query.delivery_completed(&first).await?;
     let initial = snapshot(&query, epoch)?;
     let mut policy = processor(Kind::Policy, Arc::new(Workers::default()))?;
-    policy.start().await?;
+    policy
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let row =
         QueryChangeCodec::decode_row(query.results().snapshot()?.rows.values().next().unwrap())?;
     let mut complete = boundary(epoch, Some(serde_json::to_value(&row.values["records"])?));
@@ -520,7 +527,7 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
         .await?;
     assert_eq!(payloads(&projected, "FleetConfiguration")?.len(), 1);
     query.delivery_completed(&outputs).await?;
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     drop(query);
     let mut query = persistent(directory.path()).await?;
     assert_eq!(
@@ -553,9 +560,9 @@ async fn committed_configuration_is_atomic_persistent_and_retracts_deleted_input
         "deleted workloads remain visible"
     );
     query.delivery_completed(&outputs).await?;
-    policy.stop().await?;
-    ui.stop().await?;
-    query.stop().await?;
+    policy.stop(&crate::test_contexts::sdk::stop()).await?;
+    ui.stop(&crate::test_contexts::lib::stop()).await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -628,7 +635,7 @@ async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<(
     let mut database = query(DATABASE_QUERY, &text).await?;
     let mut source = Emitter::new(
         StreamId::try_new("policy-revocation-input")?,
-        ComponentId::try_new("policy-revocation-fixture")?,
+        crate::test_contexts::component_id("policy-revocation-fixture")?,
         None,
     )?;
     let mut changes = Vec::new();
@@ -659,7 +666,9 @@ async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<(
 
     let workers = Arc::new(Workers::default());
     let mut policy = processor(Kind::Policy, workers.clone())?;
-    policy.start().await?;
+    policy
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     policy.signals.lock().expect("signal lock").bootstrap = Some(complete);
     let initial = policy.on_wakeup().await?;
     let queries = crate::inputs::processing_queries();
@@ -791,10 +800,10 @@ async fn completed_old_policy_cannot_reauthorize_new_configuration() -> Result<(
         .values()
         .all(|pair| pair.authorization == gpu_policy::Authorization::Deny));
 
-    policy.stop().await?;
-    simulation.stop().await?;
-    scheduling.stop().await?;
-    database.stop().await?;
+    policy.stop(&crate::test_contexts::sdk::stop()).await?;
+    simulation.stop(&crate::test_contexts::lib::stop()).await?;
+    scheduling.stop(&crate::test_contexts::lib::stop()).await?;
+    database.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 

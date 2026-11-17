@@ -24,6 +24,7 @@ use tempfile::TempDir;
 /// Create a mock source config for testing
 pub fn mock_source(id: impl Into<String>) -> SourceConfig {
     SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: id.into(),
         auto_start: true,
@@ -36,6 +37,7 @@ pub fn mock_source(id: impl Into<String>) -> SourceConfig {
 /// Create a mock source config with auto_start disabled
 pub fn mock_source_manual(id: impl Into<String>) -> SourceConfig {
     SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: id.into(),
         auto_start: false,
@@ -68,6 +70,7 @@ pub fn test_query(
 /// Create a log reaction config for testing
 pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
     ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id: id.into(),
         queries: queries
@@ -87,6 +90,7 @@ pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConf
 /// Create a log reaction config with auto_start disabled
 pub fn log_reaction_manual(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
     ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id: id.into(),
         queries: queries

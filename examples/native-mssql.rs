@@ -31,12 +31,66 @@ fn stream(value: &str) -> StreamId {
 fn endpoint(value: &str, port: &str) -> Endpoint {
     Endpoint::new(id(value), PortId::try_new(port).expect("constant port"))
 }
-fn settings(key: &str) -> ConfigurationValue {
-    ConfigurationValue::Reference {
-        resource: resource("mssql-settings"),
-        key: format!("env-json:{key}").into(),
-        secret: true,
+/// Source and bootstrap fields supplied per deployment, each as one JSON
+/// environment value named `DRASI_MSSQL_<FIELD>`.
+pub const SOURCE_FIELDS: &[&str] = &[
+    "host",
+    "port",
+    "database",
+    "user",
+    "password",
+    "encryption",
+    "trustServerCertificate",
+    "tables",
+    "barrierTable",
+];
+/// Sink fields supplied per deployment as `DRASI_MSSQL_SINK_<FIELD>`.
+pub const SINK_FIELDS: &[&str] = &[
+    "host",
+    "port",
+    "database",
+    "user",
+    "password",
+    "encryption",
+    "trustServerCertificate",
+    "defaultTemplate",
+];
+/// The environment variable that supplies `field`, for example
+/// `trustServerCertificate` under `DRASI_MSSQL` is
+/// `DRASI_MSSQL_TRUST_SERVER_CERTIFICATE`.
+pub fn variable(prefix: &str, field: &str) -> String {
+    let mut name = format!("{prefix}_");
+    for character in field.chars() {
+        if character.is_ascii_uppercase() {
+            name.push('_');
+        }
+        name.push(character.to_ascii_uppercase());
     }
+    name
+}
+fn references(
+    prefix: &str,
+    fields: &'static [&'static str],
+) -> impl Iterator<Item = (std::sync::Arc<str>, ConfigurationValue)> {
+    let prefix = prefix.to_owned();
+    fields.iter().map(move |field| {
+        (
+            (*field).into(),
+            ConfigurationValue::Reference {
+                resource: resource("mssql-settings"),
+                key: format!("env-json:{}", variable(&prefix, field)).into(),
+                secret: *field == "password",
+            },
+        )
+    })
+}
+/// Valid stand-ins for the referenced connection fields, used only while the
+/// factory validates the specification; every one is replaced by a reference.
+fn placeholders() -> Value {
+    json!({
+        "host":"localhost", "port":1433, "database":"placeholder", "user":"placeholder",
+        "password":"placeholder", "encryption":"required", "trustServerCertificate":false,
+    })
 }
 fn bootstrap_edge(
     builder: ComponentBatchBuilder,
@@ -169,12 +223,14 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
                 "stream".into(),
                 ConfigurationValue::Literal(json!(stream("items"))),
             ),
-            ("settings".into(), settings("DRASI_MSSQL_SETTINGS")),
             (
                 "labels".into(),
                 ConfigurationValue::Literal(json!(["Items"])),
             ),
-        ]),
+        ])
+        .into_iter()
+        .chain(references("DRASI_MSSQL", SOURCE_FIELDS))
+        .collect(),
         dependencies: if bootstrap
             .descriptor()
             .dependencies
@@ -202,17 +258,41 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
         "kind":"consumerProgress","producer":id("items"),"consumers":{id("all").as_str():"all-progress",id("high").as_str():"high-progress"},
     }))?.resource_dependency(resource("consumers"),resource("all-progress"),ResourceRole::Checkpoint)?
         .resource_dependency(resource("consumers"),resource("high-progress"),ResourceRole::Checkpoint)?;
-    let mut source = source_factory
-        .specification(id("items"), json!({"stream":stream("items"),"settings":{}}))?;
+    let mut configuration = placeholders();
+    configuration["stream"] = json!(stream("items"));
+    configuration["tables"] = json!(["dbo.Items"]);
+    configuration["barrierTable"] = json!("dbo.DrasiBarrier");
+    let mut source = source_factory.specification(id("items"), configuration)?;
     source
         .configuration
-        .insert("settings".into(), settings("DRASI_MSSQL_SETTINGS"));
+        .extend(references("DRASI_MSSQL", SOURCE_FIELDS));
     source
         .dependencies
         .insert("consumer_progress".into(), vec![resource("consumers")]);
-    let mut sink = sink_factory.specification(id("effect"), json!({"settings":{}}))?;
+    let mut configuration = placeholders();
+    configuration["defaultTemplate"] = json!({"added":{"template":"SELECT 1"}});
+    let mut sink = sink_factory.specification(id("effect"), configuration)?;
     sink.configuration
-        .insert("settings".into(), settings("DRASI_MSSQL_SINK_SETTINGS"));
+        .extend(references("DRASI_MSSQL_SINK", SINK_FIELDS));
+    builder = declare(
+        builder,
+        "delivery-indexes",
+        ResourceRole::IndexBackend,
+        json!({"kind":"memoryIndexes"}),
+    )?;
+    builder = declare(
+        builder,
+        "delivery",
+        ResourceRole::IndexBackend,
+        json!({"kind":"nativeConsumer","failureScope":"processRestart","maxStreams":2,"receiptsPerStream":64}),
+    )?
+    .resource_dependency(
+        resource("delivery"),
+        resource("delivery-indexes"),
+        ResourceRole::IndexBackend,
+    )?;
+    sink.dependencies
+        .insert("consumer".into(), vec![resource("delivery")]);
     let mut outlet = outlet_factory.specification_from_config(id("query-results"), json!({}))?;
     outlet
         .dependencies

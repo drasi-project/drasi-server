@@ -34,19 +34,68 @@ fn stream(source: &str) -> Result<StreamId> {
 fn literal(value: impl serde::Serialize) -> Result<ConfigurationValue> {
     Ok(ConfigurationValue::Literal(serde_json::to_value(value)?))
 }
-fn settings_key(kind: &str, source: &str) -> String {
+fn variable(kind: &str, source: &str, suffix: &str) -> String {
     format!(
-        "DRASI_{}_{}_SETTINGS",
+        "DRASI_{}_{}_{suffix}",
         if kind == "postgres" { "PG" } else { "HTTP" },
         source.replace('-', "_").to_ascii_uppercase()
     )
 }
-fn settings_reference(kind: &str, source: &str) -> Result<ConfigurationValue> {
+fn settings_key(kind: &str, source: &str) -> String {
+    variable(kind, source, "SETTINGS")
+}
+fn reference(key: String, secret: bool) -> Result<ConfigurationValue> {
     Ok(ConfigurationValue::Reference {
         resource: resource("postgres-configuration")?,
-        key: format!("env-json:{}", settings_key(kind, source)).into(),
-        secret: true,
+        key: key.into(),
+        secret,
     })
+}
+fn settings_reference(kind: &str, source: &str) -> Result<ConfigurationValue> {
+    reference(format!("env-json:{}", settings_key(kind, source)), true)
+}
+
+/// PostgreSQL connection fields supplied per deployment, each through its own
+/// environment variable: (field, variable suffix, JSON-typed, secret).
+const POSTGRES_FIELDS: &[(&str, &str, bool, bool)] = &[
+    ("host", "HOST", false, false),
+    ("port", "PORT", true, false),
+    ("database", "DATABASE", false, false),
+    ("user", "USER", false, false),
+    ("password", "PASSWORD", false, true),
+    ("sslMode", "SSL_MODE", false, false),
+    ("publication", "PUBLICATION", false, false),
+    ("slotName", "SLOT_NAME", false, false),
+];
+
+/// Flat PostgreSQL settings shared by the source and its bootstrap provider:
+/// recipe literals plus valid placeholders for the per-deployment fields, which
+/// `postgres_references` replaces with environment references.
+fn postgres_literals(source: &Value) -> Value {
+    json!({
+        "host":"localhost", "port":5432, "database":"placeholder", "user":"placeholder",
+        "password":"placeholder", "sslMode":"prefer", "publication":"placeholder",
+        "slotOwnership":"external", "slotName":"placeholder",
+        "tables":source.get("tables").cloned().unwrap_or(json!([])),
+        "tableKeys":source.get("tableKeys").cloned().unwrap_or(json!([])),
+        "maxTransactionChanges":4096, "maxTransactionBytes":8388608,
+        "maxTransactionDurationMs":30000, "maxProtocolBytes":8388608,
+        "ioTimeoutMs":10000, "feedbackIntervalMs":1000,
+    })
+}
+fn postgres_references(source: &str) -> Result<Vec<(Arc<str>, ConfigurationValue)>> {
+    POSTGRES_FIELDS
+        .iter()
+        .map(|(field, suffix, typed, secret)| {
+            let name = variable("postgres", source, suffix);
+            let key = if *typed {
+                format!("env-json:{name}")
+            } else {
+                format!("env:{name}")
+            };
+            Ok(((*field).into(), reference(key, *secret)?))
+        })
+        .collect()
 }
 
 fn load(directory: &Path, package: &str) -> Result<Arc<NativePlugin>> {
@@ -359,14 +408,25 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         } else {
             http_bootstrap.clone().context("HTTP bootstrap factory")?
         };
+        let mut provider_configuration = BTreeMap::from([
+            ("source".into(), literal(component_id)?),
+            ("stream".into(), literal(stream(source_id)?)?),
+        ]);
+        if kind == "postgres" {
+            let Value::Object(fields) = postgres_literals(source) else {
+                unreachable!("PostgreSQL settings are an object");
+            };
+            for (field, value) in fields {
+                provider_configuration.insert(field.into(), literal(value)?);
+            }
+            provider_configuration.extend(postgres_references(source_id)?);
+        } else {
+            provider_configuration.insert("settings".into(), settings_reference(kind, source_id)?);
+        }
         let provider = provider_node(
             &provider_factory,
             provider_id.clone(),
-            BTreeMap::from([
-                ("source".into(), literal(component_id)?),
-                ("stream".into(), literal(stream(source_id)?)?),
-                ("settings".into(), settings_reference(kind, source_id)?),
-            ]),
+            provider_configuration,
             &consumers
                 .values()
                 .map(|progress| resource(progress))
@@ -389,7 +449,7 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             let mut specification = factory.specification(
                 component_id.clone(),
                 json!({
-                    "sourceId":source_id, "stream":stream(source_id)?,
+                    "stream":stream(source_id)?,
                     "host":source.get("host").cloned().unwrap_or(json!("0.0.0.0")),
                     "port":source.get("port").cloned().unwrap_or(json!(9100)),
                     "timeoutMs":source.get("timeoutMs").cloned().unwrap_or(json!(10000)),
@@ -440,17 +500,14 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
                 ResourceRole::Checkpoint,
             )?;
         }
-        let mut specification = source_factory.specification(
-            component_id.clone(),
-            json!({
-                "stream":stream(source_id)?, "settings":{},
-                "persistent":false, "auto_create_slot":false, "start_from_slot":false,
-            }),
-        )?;
-        specification.configuration.insert(
-            "settings".into(),
-            settings_reference("postgres", source_id)?,
-        );
+        let mut configuration = postgres_literals(source);
+        configuration["stream"] = json!(stream(source_id)?);
+        configuration["persistent"] = json!(false);
+        let mut specification =
+            source_factory.specification(component_id.clone(), configuration)?;
+        specification
+            .configuration
+            .extend(postgres_references(source_id)?);
         specification
             .dependencies
             .insert("consumer_progress".into(), vec![resource(&feedback)?]);
@@ -546,7 +603,9 @@ fn resolve(value: &Value) -> Result<Value> {
     Ok(value.clone())
 }
 
-fn settings(recipe: &Path, source_id: &str) -> Result<Value> {
+/// The environment variables a generated configuration references for one
+/// source, resolved from the application recipe.
+fn settings(recipe: &Path, source_id: &str) -> Result<Vec<(String, String)>> {
     let value: Value = serde_yaml::from_slice(&std::fs::read(recipe)?)?;
     let source = value["instances"][0]["sources"]
         .as_array()
@@ -564,7 +623,10 @@ fn settings(recipe: &Path, source_id: &str) -> Result<Value> {
             .as_object_mut()
             .context("HTTP bootstrap settings")?
             .remove("kind");
-        return resolve(&settings);
+        return Ok(vec![(
+            settings_key("http", source_id),
+            resolve(&settings)?.to_string(),
+        )]);
     }
     anyhow::ensure!(source["kind"] == "postgres", "unsupported source kind");
     let get = |name: &str, default: Value| resolve(source.get(name).unwrap_or(&default));
@@ -585,21 +647,24 @@ fn settings(recipe: &Path, source_id: &str) -> Result<Value> {
             .context("invalid PostgreSQL port")?,
     };
     anyhow::ensure!(port > 0, "PostgreSQL port must be nonzero");
-    Ok(json!({
-        "connection":{
-            "host":get("host",json!("localhost"))?, "port":port,
-            "database":required("database")?, "user":required("user")?,
-            "password":required("password")?, "ssl_mode":get("sslMode",json!("prefer"))?,
-            "tables":source.get("tables").cloned().unwrap_or(json!([])),
-            "slot_name":required("slotName")?, "publication_name":required("publicationName")?,
-            "table_keys":source.get("tableKeys").and_then(Value::as_array).map(|keys| keys.iter().map(|key| json!({
-                "table":key["table"], "key_columns":key["keyColumns"],
-            })).collect::<Vec<_>>()).unwrap_or_default(),
-        },
-        "start_lsn":"0/0",
-        "transactions":{"max_changes":4096,"max_bytes":8388608,"max_duration_ms":30000},
-        "max_protocol_bytes":8388608,"io_timeout_ms":10000,"feedback_interval_ms":1000,
-    }))
+    let text = |value: Value| match value {
+        Value::String(value) => value,
+        value => value.to_string(),
+    };
+    let values = [
+        ("HOST", text(get("host", json!("localhost"))?)),
+        ("PORT", port.to_string()),
+        ("DATABASE", text(required("database")?)),
+        ("USER", text(required("user")?)),
+        ("PASSWORD", text(required("password")?)),
+        ("SSL_MODE", text(get("sslMode", json!("prefer"))?)),
+        ("PUBLICATION", text(required("publicationName")?)),
+        ("SLOT_NAME", text(required("slotName")?)),
+    ];
+    Ok(values
+        .into_iter()
+        .map(|(suffix, value)| (variable("postgres", source_id, suffix), value))
+        .collect())
 }
 
 #[allow(clippy::print_stdout)]
@@ -625,10 +690,11 @@ fn main() -> Result<()> {
             let recipe = PathBuf::from(args.next().context("application recipe")?);
             let source = args.next().context("PostgreSQL source ID")?;
             anyhow::ensure!(args.next().is_none(), "unexpected arguments");
-            println!(
-                "{}",
+            for (name, value) in
                 settings(&recipe, source.to_str().context("source ID is not UTF-8")?)?
-            );
+            {
+                println!("export {name}='{}'", value.replace('\'', r"'\''"));
+            }
         }
         "inspect" => {
             let file = PathBuf::from(args.next().context("configuration path")?);

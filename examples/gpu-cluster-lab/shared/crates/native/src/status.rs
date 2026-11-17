@@ -2,6 +2,10 @@ use crate::wire::Emitter;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use drasi_computation_contracts::{ComponentDescriptor, OutputEnvelope, StreamId};
+use drasi_computation_plugin_sdk::lifecycle::{
+    nothing_to_do, DisposeContext, InitializeContext, LifecycleResult, PauseContext, ResumeContext,
+    StartContext, StopContext,
+};
 use drasi_computation_plugin_sdk::{NativeComponent, NativeSource};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -326,6 +330,7 @@ impl Hub {
         decision_id: Option<Uuid>,
         plan_version: Option<String>,
     ) -> Result<()> {
+        let id = &gpu_contracts::component_label(id);
         let mut state = self
             .state
             .lock()
@@ -355,6 +360,7 @@ impl Hub {
         error: Option<String>,
         epoch: Option<Uuid>,
     ) -> Result<()> {
+        let id = &gpu_contracts::component_label(id);
         let status = Status {
             schema_version: 1,
             component_id: id.into(),
@@ -451,29 +457,50 @@ impl NativeComponent for Producer {
     fn configuration(&self) -> Result<serde_json::Value> {
         Ok(self.configuration.clone())
     }
-    async fn start(&mut self) -> Result<()> {
-        anyhow::ensure!(!self.running, "status producer already running");
-        anyhow::ensure!(
-            !self.stopped,
-            "stopped status producer requires fresh factory construction"
-        );
-        self.hub.begin_runtime()?;
-        self.running = true;
-        self.observed = None;
-        self.hub
-            .publish(self.descriptor.id().as_str(), "running", None, None)
+    async fn initialize(&mut self, _ctx: &InitializeContext) -> LifecycleResult {
+        nothing_to_do()
     }
-    async fn stop(&mut self) -> Result<()> {
-        if !self.running {
-            return Ok(());
+    async fn start(&mut self, _ctx: &mut StartContext) -> LifecycleResult {
+        async {
+            anyhow::ensure!(!self.running, "status producer already running");
+            anyhow::ensure!(
+                !self.stopped,
+                "stopped status producer requires fresh factory construction"
+            );
+            self.hub.begin_runtime()?;
+            self.running = true;
+            self.observed = None;
+            self.hub
+                .publish(self.descriptor.id().as_str(), "running", None, None)
         }
-        self.running = false;
-        self.stopped = true;
-        let published = self
-            .hub
-            .publish(self.descriptor.id().as_str(), "stopped", None, None);
-        let released = self.hub.end_runtime();
-        published.and(released)
+        .await
+        .map_err(Into::into)
+    }
+    // The host pulls work, so paused components produce nothing.
+    async fn pause(&mut self, _ctx: &PauseContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn resume(&mut self, _ctx: &ResumeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn stop(&mut self, _ctx: &StopContext) -> LifecycleResult {
+        async {
+            if !self.running {
+                return Ok(());
+            }
+            self.running = false;
+            self.stopped = true;
+            let published = self
+                .hub
+                .publish(self.descriptor.id().as_str(), "stopped", None, None);
+            let released = self.hub.end_runtime();
+            published.and(released)
+        }
+        .await
+        .map_err(Into::into)
+    }
+    async fn dispose(&mut self, _ctx: &DisposeContext) -> LifecycleResult {
+        nothing_to_do()
     }
 }
 #[async_trait]

@@ -141,6 +141,7 @@ mod tests {
     /// Helper to create a mock source config for testing
     fn mock_source_config(id: &str) -> SourceConfig {
         SourceConfig {
+            component_id: None,
             kind: "mock".to_string(),
             id: id.to_string(),
             auto_start: true,
@@ -153,6 +154,7 @@ mod tests {
     /// Helper to create an HTTP source config for testing
     fn http_source_config(id: &str) -> SourceConfig {
         SourceConfig {
+            component_id: None,
             kind: "http".to_string(),
             id: id.to_string(),
             auto_start: true,
@@ -165,6 +167,7 @@ mod tests {
     /// Helper to create a log reaction config for testing
     fn log_reaction_config(id: &str) -> ReactionConfig {
         ReactionConfig {
+            component_id: None,
             kind: "log".to_string(),
             id: id.to_string(),
             queries: vec![drasi_lib::config::ComponentReference::by_name(
@@ -179,6 +182,7 @@ mod tests {
     /// Helper to create an SSE reaction config for testing
     fn sse_reaction_config(id: &str) -> ReactionConfig {
         ReactionConfig {
+            component_id: None,
             kind: "sse".to_string(),
             id: id.to_string(),
             queries: vec![drasi_lib::config::ComponentReference::by_name(

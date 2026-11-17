@@ -293,6 +293,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         prompt_bootstrap_provider_for_postgres(&host, port, &database, &user, &password, &tables)?;
 
     Ok(SourceConfig {
+        component_id: None,
         kind: "postgres".to_string(),
         id,
         auto_start: true,
@@ -432,6 +433,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
     let bootstrap_provider = prompt_bootstrap_provider_generic()?;
 
     Ok(SourceConfig {
+        component_id: None,
         kind: "http".to_string(),
         id,
         auto_start: true,
@@ -464,6 +466,7 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
     let bootstrap_provider = prompt_bootstrap_provider_generic()?;
 
     Ok(SourceConfig {
+        component_id: None,
         kind: "grpc".to_string(),
         id,
         auto_start: true,
@@ -510,6 +513,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
     let interval_ms: u64 = interval_str.parse().unwrap_or(5000);
 
     Ok(SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id,
         auto_start: true,
@@ -571,6 +575,7 @@ fn prompt_log_reaction() -> Result<ReactionConfig> {
         .prompt()?;
 
     Ok(ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id,
         queries: vec![sample_query_reference()],
@@ -597,6 +602,7 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
         .prompt()?;
 
     Ok(ReactionConfig {
+        component_id: None,
         kind: "http".to_string(),
         id,
         queries: vec![sample_query_reference()],
@@ -630,6 +636,7 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
     let port: u16 = port_str.parse().unwrap_or(8081);
 
     Ok(ReactionConfig {
+        component_id: None,
         kind: "sse".to_string(),
         id,
         queries: vec![sample_query_reference()],
@@ -660,6 +667,7 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
         .prompt()?;
 
     Ok(ReactionConfig {
+        component_id: None,
         kind: "grpc".to_string(),
         id,
         queries: vec![sample_query_reference()],
@@ -845,6 +853,7 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
     let bootstrap_provider = prompt_bootstrap_provider_generic()?;
 
     Ok(SourceConfig {
+        component_id: None,
         kind: kind.to_string(),
         id,
         auto_start: true,
@@ -944,6 +953,7 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
         serde_json::from_str(&config_json).unwrap_or_else(|_| serde_json::json!({}));
 
     Ok(ReactionConfig {
+        component_id: None,
         kind: kind.to_string(),
         id,
         queries: vec![sample_query_reference()],

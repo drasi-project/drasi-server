@@ -7,7 +7,14 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
 use drasi_computation_contracts::*;
-use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeTransformer};
+use drasi_computation_plugin_sdk::{
+    lifecycle::{
+        nothing_to_do, DisposeContext, InitializeContext, LifecycleResult, PauseContext,
+        ResumeContext, StartContext, StopContext,
+    },
+    wire::Scope,
+    NativeComponent, NativeTransformer,
+};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -17,17 +24,20 @@ pub struct Geometry {
     scene: Scene,
     emitter: Emitter,
     sequence: Option<(u64, u64)>,
+    /// The context query feeding this transformer, fixed by its first change.
+    context_query: Option<ComponentId>,
     revision: u64,
     stopped: bool,
 }
 impl Geometry {
     pub fn new(id: ComponentId, scope: Option<&Scope>) -> Result<Self> {
         Ok(Self {
-            emitter: Emitter::new("geometry/out", id.clone(), scope)?,
+            emitter: Emitter::new(&format!("{id}/out"), id.clone(), scope)?,
             descriptor: descriptor(id)?,
             rows: vec![],
             scene: Scene::new(),
             sequence: None,
+            context_query: None,
             revision: 0,
             stopped: false,
         })
@@ -124,16 +134,32 @@ impl NativeComponent for Geometry {
     fn configuration(&self) -> Result<serde_json::Value> {
         Ok(json!({}))
     }
-    async fn start(&mut self) -> Result<()> {
-        ensure!(
-            !self.stopped,
-            "geometry restart requires reconstruction and a fresh source bootstrap"
-        );
-        Ok(())
+    async fn initialize(&mut self, _ctx: &InitializeContext) -> LifecycleResult {
+        nothing_to_do()
     }
-    async fn stop(&mut self) -> Result<()> {
+    async fn start(&mut self, _ctx: &mut StartContext) -> LifecycleResult {
+        async {
+            ensure!(
+                !self.stopped,
+                "geometry restart requires reconstruction and a fresh source bootstrap"
+            );
+            Ok::<_, anyhow::Error>(())
+        }
+        .await
+        .map_err(Into::into)
+    }
+    async fn pause(&mut self, _ctx: &PauseContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn resume(&mut self, _ctx: &ResumeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn stop(&mut self, _ctx: &StopContext) -> LifecycleResult {
         self.stopped = true;
         Ok(())
+    }
+    async fn dispose(&mut self, _ctx: &DisposeContext) -> LifecycleResult {
+        nothing_to_do()
     }
 }
 #[async_trait]
@@ -141,8 +167,9 @@ impl NativeTransformer for Geometry {
     async fn transform(&mut self, input: InputEnvelope) -> Result<Vec<OutputEnvelope>> {
         ensure!(!self.stopped, "geometry transformer stopped");
         ensure!(input.port.as_str() == "in", "unknown geometry port");
+        let query = QueryChangeCodec::metadata(&input.envelope)?.query_id;
         ensure!(
-            QueryChangeCodec::metadata(&input.envelope)?.query_id == "geometry-context",
+            self.context_query.get_or_insert_with(|| query.clone()) == &query,
             "unexpected context query"
         );
         let position = (

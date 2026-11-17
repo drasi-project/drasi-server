@@ -93,7 +93,10 @@ impl SourceMiddleware for PostgresJson {
             changes = decoded;
         }
         for change in &mut changes {
-            if let SourceChange::Update { removed_properties, .. } = change {
+            if let SourceChange::Update {
+                removed_properties, ..
+            } = change
+            {
                 removed_properties.remove("__gpu_table");
             }
             if let SourceChange::Insert { element }
@@ -218,7 +221,10 @@ mod tests {
             SourceChange::Replace {
                 element: element.clone(),
             },
-            SourceChange::Update { element, removed_properties: Default::default() },
+            SourceChange::Update {
+                element,
+                removed_properties: Default::default(),
+            },
         ] {
             let decoded = middleware.process(original.clone(), &index).await?;
             assert_eq!(decoded.len(), 1);

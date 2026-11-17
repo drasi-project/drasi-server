@@ -45,7 +45,12 @@ use super::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 #[derive(Debug, Clone)]
 pub struct SourceConfig {
     pub kind: String,
+    /// Component name. Configuration writes it as `name` when a fixed
+    /// `component_id` is set, and as `id` otherwise.
     pub id: String,
+    /// Fixed component UUID, set when the configuration gives both `name` and
+    /// a UUID `id`. When absent, the graph assigns the UUID.
+    pub component_id: Option<drasi_lib::ComponentId>,
     pub auto_start: bool,
     pub bootstrap_provider: Option<BootstrapProviderRef>,
     /// Reference (by `id`) to an entry in the top-level
@@ -64,7 +69,13 @@ impl Serialize for SourceConfig {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("kind", &self.kind)?;
-        map.serialize_entry("id", &self.id)?;
+        match &self.component_id {
+            Some(component_id) => {
+                map.serialize_entry("id", component_id.as_str())?;
+                map.serialize_entry("name", &self.id)?;
+            }
+            None => map.serialize_entry("id", &self.id)?,
+        }
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(bp) = &self.bootstrap_provider {
             match bp {
@@ -109,6 +120,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 // Storage for common fields
                 let mut kind: Option<String> = None;
                 let mut id: Option<String> = None;
+                let mut name: Option<String> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut bootstrap_provider: Option<serde_json::Value> = None;
                 let mut identity_provider: Option<String> = None;
@@ -129,6 +141,12 @@ impl<'de> Deserialize<'de> for SourceConfig {
                                 return Err(de::Error::duplicate_field("id"));
                             }
                             id = Some(map.next_value()?);
+                        }
+                        "name" => {
+                            if name.is_some() {
+                                return Err(de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
                         }
                         "autoStart" => {
                             if auto_start.is_some() {
@@ -174,7 +192,8 @@ impl<'de> Deserialize<'de> for SourceConfig {
 
                 // Validate required fields
                 let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
-                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let (id, component_id) =
+                    super::component_identity(id, name).map_err(de::Error::custom)?;
                 let auto_start = auto_start.unwrap_or(true);
 
                 let remaining_value = serde_json::Value::Object(remaining);
@@ -209,6 +228,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 Ok(SourceConfig {
                     kind,
                     id,
+                    component_id,
                     auto_start,
                     bootstrap_provider,
                     identity_provider,
@@ -222,9 +242,21 @@ impl<'de> Deserialize<'de> for SourceConfig {
 }
 
 impl SourceConfig {
-    /// Get the source ID
+    /// The component name (the `id` field when no `name` is given).
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The fixed component UUID, when the configuration sets one.
+    pub fn component_id(&self) -> Option<&drasi_lib::ComponentId> {
+        self.component_id.as_ref()
+    }
+
+    /// The fixed component UUID, or a newly generated one.
+    pub fn component_id_or_generate(&self) -> drasi_lib::ComponentId {
+        self.component_id
+            .clone()
+            .unwrap_or_else(drasi_lib::ComponentId::generate)
     }
 
     /// Check if auto_start is enabled
@@ -303,6 +335,27 @@ fn merge_bootstrap_provider_with_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_name_with_pinned_uuid_round_trips() {
+        let id = "8f4e3b2a-1c5d-4e6f-9a7b-0c1d2e3f4a5b";
+        let source: SourceConfig =
+            serde_json::from_value(serde_json::json!({"kind": "mock", "id": id, "name": "orders"}))
+                .unwrap();
+        assert_eq!(source.id(), "orders");
+        assert_eq!(source.component_id().unwrap().as_str(), id);
+        let value = serde_json::to_value(&source).unwrap();
+        assert_eq!(value["id"], id);
+        assert_eq!(value["name"], "orders");
+    }
+
+    #[test]
+    fn source_name_with_non_uuid_id_is_rejected() {
+        let result: Result<SourceConfig, _> = serde_json::from_value(
+            serde_json::json!({"kind": "mock", "id": "orders", "name": "orders"}),
+        );
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_source_deserialize_mock_minimal() {
@@ -707,6 +760,7 @@ intervalMs: 1000
     #[test]
     fn test_source_serialize_deserialize_roundtrip() {
         let original = SourceConfig {
+            component_id: None,
             kind: "mock".to_string(),
             id: "roundtrip-source".to_string(),
             auto_start: false,

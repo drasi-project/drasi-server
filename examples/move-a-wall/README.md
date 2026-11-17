@@ -215,7 +215,7 @@ reconstruction starts a new epoch because the example has no durable state owner
 Geometry preserves the context query's producer-sequence ordering, lineage and
 timestamps while assigning its own increasing output progress, not the query's
 identity. Native construction supplies the actual component and instance/graph
-scope; the existing `scene/out` and `geometry/out` stream names are unchanged.
+scope; each emits on its default stream, `<component-id>/out`.
 
 The source accepts `put`, `delete`, `reset`, and `clear` commands with an
 `expected_revision`. One mutex serializes mutations; stale revisions are rejected.
@@ -360,6 +360,9 @@ isolated `.build/ui/dist` runtime directory. Server logs are in
 ### Editing the solution
 
 Edit `server.yaml`, not a Rust configuration program or `.build/server.yaml`.
+Each component has a UUID `id`, used by connections, readers and stream names,
+and a readable `name`, used by the REST API and the administration UI. The
+`wall-ui` SSE sink maps readable output aliases to component IDs with `outputs`.
 The same file is used by setup, startup and the Rust query tests. Query text and
 join definitions live there once, rather than being copied into Rust helpers.
 

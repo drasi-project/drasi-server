@@ -123,8 +123,8 @@ export POSTGRES_PASSWORD='drasi_password' # Default for a newly provisioned demo
 ```
 
 The wrapper uses the already built matching local Server/generator/plugins.
-It resolves native PostgreSQL settings into
-`DRASI_PG_POSTGRES_MESSAGES_SETTINGS`, starts the generated configuration,
+It resolves native PostgreSQL settings into the
+`DRASI_PG_POSTGRES_MESSAGES_*` environment variables, starts the generated configuration,
 and connects one shared native source to all three real query owners.
 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE` and `POSTGRES_USER`
 can override the recipe's defaults; existing credentials are never reset.

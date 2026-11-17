@@ -34,9 +34,8 @@ use crate::api::models::SecretStoreConfig;
 use crate::config::DrasiServerConfig;
 use crate::factories::{
     build_bootstrap_provider_config_map, build_config_resolver_context,
-    build_identity_provider_map, config_resolver_callback, create_reaction_locked,
-    create_secret_store_from_registry, create_source_locked, create_state_store_provider,
-    resolve_source_bootstrap_provider,
+    build_identity_provider_map, config_resolver_callback, create_secret_store_from_registry,
+    create_state_store_provider,
 };
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
@@ -487,15 +486,6 @@ impl DrasiServer {
                 let mut builder = DrasiLib::builder()
                     .with_id(&instance.id)
                     .with_allow_external_component_ids(true);
-                let persisted = instance.configuration_store.is_some();
-                if !instance.queries.is_empty() && !persisted {
-                    let registry = plugin_registry.read().await;
-                    builder = builder.with_query_factory(
-                        crate::query_plugin::factory(&registry).with_context(|| {
-                            format!("Query plugin for instance '{}'", instance.id)
-                        })?,
-                    );
-                }
 
                 // Set capacity defaults if configured (resolve env vars)
                 if let Some(capacity) = instance.default_priority_queue_capacity {
@@ -576,120 +566,83 @@ impl DrasiServer {
                 // referencing source instantiates its own provider from the config.
                 let bootstrap_providers =
                     build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
-                // Persisted instances seed declared components into their store.
-                let declared = if persisted {
-                    (Vec::new(), Vec::new(), Vec::new())
-                } else {
-                    (
-                        instance.sources.clone(),
-                        instance.queries.clone(),
-                        instance.reactions.clone(),
-                    )
+                let ordinary = crate::ordinary_resolver::OrdinarySeed {
+                    sources: &instance.sources,
+                    queries: &instance.queries,
+                    reactions: &instance.reactions,
                 };
-                let (declared_sources, declared_queries, declared_reactions) = declared;
-                // Create and add sources from config
+                let settings = crate::ordinary_resolver::InstanceComponentSettings {
+                    identity_providers: identity_providers.clone(),
+                    bootstrap_providers: bootstrap_providers.clone(),
+                };
+                let secrets = process_secret_store
+                    .clone()
+                    .filter(|_| instance.secret_store.is_some());
                 info!(
-                    "Loading {} source(s) from configuration for instance '{}'",
+                    "Loading {} source(s), {} query(ies) and {} reaction(s) from configuration for instance '{}'",
                     instance.sources.len(),
+                    instance.queries.len(),
+                    instance.reactions.len(),
                     instance.id
                 );
-                for source_config in declared_sources {
-                    let source_name = drasi_lib::ComponentName::try_new(source_config.id())?;
-                    let source_config =
-                        resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
-                    let identity_ref = source_config.identity_provider().map(str::to_string);
-                    let (source, plugin_meta) = create_source_locked(
-                        &plugin_registry,
-                        drasi_lib::ComponentId::generate(),
-                        source_config,
-                    )
-                    .await?;
-                    if let Some(id) = identity_ref {
-                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Source references unknown identityProvider '{id}'. \
-                             Declared providers: {:?}",
-                                identity_providers.keys().collect::<Vec<_>>()
-                            )
-                        })?;
-                        source.set_identity_provider(provider).await;
-                    }
-                    builder = builder.with_source_metadata(source_name, source, plugin_meta);
-                }
-
-                // Add queries from config (already resolved in config/types.rs)
-                for query_config in declared_queries {
-                    builder = builder.with_query(query_config);
-                }
-
-                // Create and add reactions from config
-                for reaction_config in declared_reactions {
-                    let reaction_name = drasi_lib::ComponentName::try_new(reaction_config.id())?;
-                    let identity_ref = reaction_config.identity_provider().map(str::to_string);
-                    let (reaction, plugin_meta) = create_reaction_locked(
-                        &plugin_registry,
-                        drasi_lib::ComponentId::generate(),
-                        reaction_config,
-                    )
-                    .await?;
-                    if let Some(id) = identity_ref {
-                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Reaction references unknown identityProvider '{id}'. \
-                             Declared providers: {:?}",
-                                identity_providers.keys().collect::<Vec<_>>()
-                            )
-                        })?;
-                        reaction.set_identity_provider(provider).await;
-                    }
-                    builder = builder.with_reaction_metadata(reaction_name, reaction, plugin_meta);
-                }
-
-                // Build and initialize the core
-                if let Some(store) = &instance.configuration_store {
+                // Components are managed definitions in both modes; a store only
+                // makes them durable.
+                let in_memory = if let Some(store) = &instance.configuration_store {
                     builder = configuration_stores
                         .configure_with_components(
                             builder,
                             &instance.id,
                             store,
                             instance.computation.as_ref(),
-                            crate::ordinary_resolver::OrdinarySeed {
-                                sources: &instance.sources,
-                                queries: &instance.queries,
-                                reactions: &instance.reactions,
-                            },
-                            crate::ordinary_resolver::InstanceComponentSettings {
-                                identity_providers: identity_providers.clone(),
-                                bootstrap_providers: bootstrap_providers.clone(),
-                            },
+                            ordinary,
+                            settings,
                             plugin_registry.clone(),
-                            process_secret_store
-                                .clone()
-                                .filter(|_| instance.secret_store.is_some()),
+                            secrets,
                         )
                         .await?;
-                }
+                    None
+                } else {
+                    let (prepared, seed) = crate::managed_configuration::configure_in_memory(
+                        builder,
+                        &instance.id,
+                        ordinary,
+                        settings,
+                        plugin_registry.clone(),
+                        secrets,
+                    )
+                    .await?;
+                    builder = prepared;
+                    Some(seed)
+                };
                 let core = builder.build().await.context("Failed to create DrasiLib")?;
 
+                let instance_id = instance.id.clone();
                 instances.push(PreparedInstance {
                     id_hint: Some(instance.id),
                     core: core.clone(),
                     bootstrap_providers,
                 });
-                if let Some(computation) = instance
-                    .computation
-                    .as_ref()
-                    .filter(|_| instance.configuration_store.is_none())
-                {
-                    let registry = plugin_registry.read().await;
-                    let factories = crate::computation::native_factory_registry(&registry)?;
-                    let computation = computation.resolve(&factories)?;
-                    let registration =
-                        crate::computation::register_components(&computation, &core, &registry);
-                    drop(registry);
-                    registration
+                if let Some(seed) = in_memory {
+                    crate::managed_configuration::seed_in_memory(&core, seed)
                         .await
-                        .with_context(|| "Failed to configure instance computation components")?;
+                        .with_context(|| {
+                            format!("Failed to configure components of instance '{instance_id}'")
+                        })?;
+                    if let Some(computation) = instance.computation.as_ref() {
+                        let registry = plugin_registry.read().await;
+                        let factories = crate::computation::native_factory_registry(&registry)?;
+                        let computation = computation.resolve(&factories)?;
+                        let registration =
+                            crate::computation::register_components(&computation, &core, &registry);
+                        drop(registry);
+                        registration.await.with_context(|| {
+                            "Failed to configure instance computation components"
+                        })?;
+                    }
+                    // Acceptance is asynchronous; declare everything before startup.
+                    core.reconcile_desired_state().await.with_context(|| {
+                        format!("Failed to declare components of instance '{instance_id}'")
+                    })?;
                 }
             }
             Ok::<_, anyhow::Error>(())
@@ -896,6 +849,37 @@ impl DrasiServer {
             let core = Arc::new(core);
             info!("Starting ComputationGraph instance '{id}'");
             println!("  Instance '{id}': ComputationGraph");
+            // The default signal disposition was replaced above, so a stalled
+            // start must still observe shutdown requests.
+            #[cfg(unix)]
+            {
+                let started = tokio::select! {
+                    result = crate::managed_configuration::start_instance(&core) => Some(result),
+                    _ = interrupt.recv() => None,
+                    _ = terminate.recv() => None,
+                };
+                if let Some(result) = started {
+                    result?;
+                } else {
+                    warn!("Shutdown requested while starting instance '{id}'");
+                    let started = instance_map.values().cloned().chain([core.clone()]);
+                    let cleanup = async {
+                        for started in started {
+                            if let Err(error) = started.shutdown().await {
+                                error!("Failed to shut down a starting instance: {error}");
+                            }
+                        }
+                    };
+                    if tokio::time::timeout(Duration::from_secs(30), cleanup)
+                        .await
+                        .is_err()
+                    {
+                        error!("Instances did not shut down within 30 seconds");
+                    }
+                    anyhow::bail!("Drasi Server shutdown requested during startup");
+                }
+            }
+            #[cfg(not(unix))]
             crate::managed_configuration::start_instance(&core).await?;
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
             instance_map.insert(id, core);

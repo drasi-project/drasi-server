@@ -79,12 +79,10 @@ impl ComputationComponent for QueryLog {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.0
     }
-    async fn start(&mut self) -> Result<()> {
-        Ok(())
+    fn description(&self) -> ComponentDescription {
+        ComponentDescription::undeclared()
     }
-    async fn stop(&mut self) -> Result<()> {
-        Ok(())
-    }
+    drasi_lib::passive_component_lifecycle!();
 }
 #[async_trait]
 impl EnvelopeSink for QueryLog {
@@ -193,10 +191,27 @@ impl ComputationComponent for Recorder {
     fn descriptor(&self) -> &ComponentDescriptor {
         &self.descriptor
     }
+    fn description(&self) -> ComponentDescription {
+        ComponentDescription::undeclared()
+    }
     fn configuration(&self) -> Result<Value> {
         Ok(json!({"directory":DIRECTORY,"max_total_bytes":MAX_BYTES}))
     }
-    async fn start(&mut self) -> Result<()> {
+    async fn initialize(&mut self, _: &InitializeContext) -> Result<()> {
+        Ok(())
+    }
+    // Recording happens only inside `handle`, so a pause needs no extra gate.
+    async fn pause(&mut self, _: &PauseContext) -> Result<()> {
+        Ok(())
+    }
+    async fn resume(&mut self, _: &ResumeContext) -> Result<()> {
+        Ok(())
+    }
+    // Trace files are diagnostics for operators and outlive the component.
+    async fn dispose(&mut self, _: &DisposeContext) -> Result<()> {
+        Ok(())
+    }
+    async fn start(&mut self, _: &StartContext) -> Result<()> {
         ensure!(self.file.is_none(), "diagnostic recorder already started");
         fs::create_dir_all(&self.directory).await?;
         let mut files = fs::read_dir(&self.directory).await?;
@@ -229,7 +244,7 @@ impl ComputationComponent for Recorder {
         Ok(())
     }
 
-    async fn stop(&mut self) -> Result<()> {
+    async fn stop(&mut self, _: &StopContext) -> Result<()> {
         if let Some(mut file) = self.file.take() {
             file.flush().await?;
         }
@@ -320,10 +335,14 @@ mod tests {
             envelope: envelope.clone(),
         };
         assert!(recorder.handle(input.clone()).await.is_err());
-        recorder.start().await?;
+        recorder
+            .start(&gpu_native::test_contexts::lib::start())
+            .await?;
         recorder.handle(input.clone()).await?;
         assert!(recorder.handle(input.clone()).await.is_err());
-        recorder.stop().await?;
+        recorder
+            .stop(&gpu_native::test_contexts::lib::stop())
+            .await?;
         let first = recorder.path.clone();
         let recorded: Value = serde_json::from_slice(&fs::read(&first).await?)?;
         let decoded = recorder
@@ -335,9 +354,13 @@ mod tests {
             GraphChangeCodec::decode_changes(&decoded)?,
             GraphChangeCodec::decode_changes(&envelope)?
         );
-        recorder.start().await?;
+        recorder
+            .start(&gpu_native::test_contexts::lib::start())
+            .await?;
         recorder.handle(input).await?;
-        recorder.stop().await?;
+        recorder
+            .stop(&gpu_native::test_contexts::lib::stop())
+            .await?;
         fs::remove_file(first).await?;
         fs::remove_file(&recorder.path).await?;
         fs::remove_dir(directory).await?;

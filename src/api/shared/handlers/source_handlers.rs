@@ -24,8 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
-    ApiPrefix, ComponentViewQuery, ObservabilityQuery,
+    apply_limit, component_links, parse_component_name, persist_after_operation,
+    resolve_component_name, sse_event_async, ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::SourceConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
@@ -137,7 +137,7 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let source_name = parse_component_name(&source_id, "source")?;
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         let providers = instance_registry.bootstrap_providers(&instance_id).await;
         return managed::write_source(
             &core,
@@ -159,7 +159,7 @@ pub async fn create_source_handler(
 
     let (source, plugin_meta) = create_source_locked(
         &plugin_registry,
-        drasi_lib::ComponentId::generate(),
+        create_config.component_id_or_generate(),
         create_config,
     )
     .await
@@ -251,7 +251,9 @@ pub async fn upsert_source_handler(
         )
     })?;
 
-    if config.id() != path_id {
+    if config.id() != path_id
+        && config.component_id().map(|id| id.as_str()) != Some(path_id.as_str())
+    {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
             format!(
@@ -264,7 +266,7 @@ pub async fn upsert_source_handler(
     let source_id = config.id().to_string();
     let source_name = parse_component_name(&source_id, "source")?;
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         let providers = instance_registry.bootstrap_providers(&instance_id).await;
         return managed::write_source(
             &core,
@@ -342,7 +344,7 @@ pub async fn upsert_source_handler(
 
     let (source, plugin_meta) = create_source_locked(
         &plugin_registry,
-        drasi_lib::ComponentId::generate(),
+        create_config.component_id_or_generate(),
         create_config,
     )
     .await
@@ -403,7 +405,7 @@ pub async fn get_source(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     // Read authoritative graph-backed source information.
     let info = core
         .get_source_info_by_name(&name)
@@ -446,7 +448,7 @@ pub async fn get_source_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -467,7 +469,7 @@ pub async fn stream_source_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -497,7 +499,7 @@ pub async fn get_source_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -517,7 +519,7 @@ pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     core.get_source_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -556,8 +558,8 @@ pub async fn delete_source(
         ));
     }
 
-    let name = parse_component_name(&id, "source")?;
-    if core.configuration_is_persistent() {
+    let name = resolve_component_name(&core, &id, "source").await?;
+    if core.constructs_ordinary_components() {
         return managed::delete_component(&core, &config_persistence, ComponentRole::Source, &name)
             .await
             .map(|status| Json(ApiResponse::success(status)));
@@ -592,7 +594,7 @@ pub async fn start_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     match core.start_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source started successfully".to_string(),
@@ -607,7 +609,7 @@ pub async fn stop_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     match core.stop_source_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source stopped successfully".to_string(),
@@ -627,7 +629,7 @@ pub async fn push_source_data(
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let name = parse_component_name(&id, "source")?;
+    let name = resolve_component_name(&core, &id, "source").await?;
     let info = core
         .get_source_info_by_name(&name)
         .await

@@ -272,6 +272,7 @@ fn test_mock_source_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
                 auto_start: true,
@@ -334,6 +335,7 @@ fn test_http_source_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "http".to_string(),
                 id: "http-source".to_string(),
                 auto_start: true,
@@ -395,6 +397,7 @@ fn test_grpc_source_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "grpc".to_string(),
                 id: "grpc-source".to_string(),
                 auto_start: true,
@@ -455,6 +458,7 @@ fn test_postgres_source_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "postgres-source".to_string(),
                 auto_start: true,
@@ -561,6 +565,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
                 auto_start: true,
@@ -649,6 +654,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
                 auto_start: true,
@@ -723,6 +729,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             default_dispatch_buffer_capacity: None,
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
                 auto_start: true,
@@ -795,6 +802,7 @@ fn test_log_reaction_generates_valid_yaml() {
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "log".to_string(),
                 id: "log-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -858,6 +866,7 @@ fn test_http_reaction_generates_valid_yaml() {
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "http".to_string(),
                 id: "http-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -922,6 +931,7 @@ fn test_sse_reaction_generates_valid_yaml() {
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "sse".to_string(),
                 id: "sse-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -989,6 +999,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
             sources: vec![],
             queries: vec![],
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "grpc".to_string(),
                 id: "grpc-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -1161,6 +1172,7 @@ fn test_full_config_roundtrip() {
             default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
             activation_timeout_secs: None,
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "mock".to_string(),
                 id: "mock-source".to_string(),
                 auto_start: true,
@@ -1195,6 +1207,7 @@ fn test_full_config_roundtrip() {
                 result: Default::default(),
             }],
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "log".to_string(),
                 id: "log-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(

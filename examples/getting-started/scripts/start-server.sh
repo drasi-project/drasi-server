@@ -45,9 +45,9 @@ for binary in "$SERVER_BIN" "$GENERATOR_BIN"; do
     fi
 done
 : "${POSTGRES_PASSWORD:?Export the configured drasi_user password before starting}"
-DRASI_PG_POSTGRES_MESSAGES_SETTINGS="$("$GENERATOR_BIN" settings \
+POSTGRES_ENVIRONMENT="$("$GENERATOR_BIN" settings \
     "$SERVER_ROOT/examples/postgres/recipes/getting-started-server.yaml" postgres-messages)"
-export DRASI_PG_POSTGRES_MESSAGES_SETTINGS
+eval "$POSTGRES_ENVIRONMENT"
 
 echo
 echo "Starting Drasi Server..."

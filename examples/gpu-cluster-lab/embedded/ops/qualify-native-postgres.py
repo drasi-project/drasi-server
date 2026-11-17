@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -173,8 +174,7 @@ class Qualification:
 
     def slot(self):
         names = self.sql("SELECT slot_name FROM pg_replication_slots WHERE database='gpu_demo' ORDER BY slot_name;").splitlines()
-        assert len(names) == 1 and names[0].startswith("gpu_native_"), names
-        UUID(names[0].removeprefix("gpu_native_"))
+        assert len(names) == 1 and re.fullmatch(r"drasi_[0-9a-f]{24}_[0-9a-f]{32}", names[0]), names
         return names[0]
 
     @staticmethod

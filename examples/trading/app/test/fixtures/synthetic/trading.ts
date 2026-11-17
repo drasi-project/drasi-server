@@ -211,7 +211,7 @@ export class SyntheticTrading {
     }
     if (path === '/api/v1/computation/configuration' && method === 'GET') {
       return ok({
-        version: 1, instance: { sources: [], queries: [] },
+        version: 2, instance: { sources: [], queries: [] },
         native_components: this.nativeTopology ? { topology: this.nativeTopology } : null,
       });
     }

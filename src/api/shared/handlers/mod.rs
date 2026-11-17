@@ -176,6 +176,48 @@ pub(crate) fn parse_component_name(
     })
 }
 
+/// Resolve a REST path segment that selects a source, query or reaction by
+/// its UUID or by its current name.
+///
+/// A UUID-shaped segment selects the component with that UUID. When none
+/// exists, the segment is treated as a name. A segment that is one
+/// component's UUID and a different component's name is rejected as ambiguous.
+pub(crate) async fn resolve_component_name(
+    core: &DrasiLib,
+    value: &str,
+    component_type: &str,
+) -> Result<drasi_lib::computation::v1::ComponentName, ErrorResponse> {
+    let Ok(id) = drasi_lib::ComponentId::try_new(value) else {
+        return parse_component_name(value, component_type);
+    };
+    let by_id = match component_type {
+        "source" => core.get_source_info_by_id(&id).await.ok().map(|i| i.name),
+        "query" => core.get_query_config_by_id(&id).await.ok().map(|c| c.name),
+        "reaction" => core.get_reaction_info_by_id(&id).await.ok().map(|i| i.name),
+        _ => None,
+    };
+    let Some(name) = by_id else {
+        return parse_component_name(value, component_type);
+    };
+    if name.as_str() != value {
+        if let Ok(named) = parse_component_name(value, component_type) {
+            if core
+                .component_by_name(&named)
+                .is_ok_and(|handle| handle.id() != &id)
+            {
+                return Err(ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    format!(
+                        "'{value}' is the UUID of {component_type} '{name}' and the name of \
+                         another component; select it by an unambiguous name"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(name)
+}
+
 const COMPUTATION_CREATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Limit the health wait, not the already-committed node's realization.

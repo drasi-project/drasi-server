@@ -9,17 +9,20 @@ mod processor;
 pub mod projections;
 mod reaction;
 mod status;
+#[doc(hidden)]
+pub mod test_contexts;
 pub mod wire;
 pub use status::{RuntimeComponent, RuntimeObservation};
 
 use anyhow::Result;
 use drasi_computation_contracts::{
-    ComponentRole, GraphChangeCodec, ImplementationIdentity, PipeRequirements, PortDescriptor,
-    PortDirection, PortId, QueryChangeCodec,
+    ComponentDescription, ComponentRole, GraphChangeCodec, ImplementationIdentity,
+    OutputDescription, PipeRequirements, PortDescriptor, PortDirection, PortId,
+    ProgressPersistence, QueryChangeCodec,
 };
 use drasi_computation_plugin_sdk::{
-    Capabilities, Component, ConfigField, ConfigSchema, ConfigType, ControlSender, CreateRequest,
-    CreatedComponent, Factory, FactoryMetadata, PluginDefinition,
+    wire::DescribeRequest, Capabilities, Component, ConfigField, ConfigSchema, ConfigType,
+    ControlSender, CreateRequest, CreatedComponent, Factory, FactoryMetadata, PluginDefinition,
 };
 use std::{
     collections::BTreeMap,
@@ -70,6 +73,9 @@ pub struct NativeFactory {
     pub workers: Arc<Workers>,
 }
 impl Factory for NativeFactory {
+    fn describe(&self, request: &DescribeRequest) -> Result<ComponentDescription> {
+        Ok(request.volatile_transformer())
+    }
     fn metadata(&self) -> FactoryMetadata {
         FactoryMetadata {
             implementation: ImplementationIdentity::try_new(self.kind.name(), "1")
@@ -83,6 +89,7 @@ impl Factory for NativeFactory {
                         value_type: ConfigType::String,
                         required: true,
                         secret: false,
+                        constraint: None,
                     },
                 )]),
                 allow_additional: false,
@@ -165,6 +172,13 @@ pub struct AuxiliaryFactory {
     hub: Arc<status::Hub>,
 }
 impl Factory for AuxiliaryFactory {
+    fn describe(&self, request: &DescribeRequest) -> Result<ComponentDescription> {
+        Ok(if self.reaction {
+            request.unkeyed_sink()
+        } else {
+            request.source_description(OutputDescription::VOLATILE, ProgressPersistence::Undeclared)
+        })
+    }
     fn metadata(&self) -> FactoryMetadata {
         let mut fields = BTreeMap::new();
         for (name, secret) in if self.reaction {
@@ -178,6 +192,7 @@ impl Factory for AuxiliaryFactory {
                     value_type: ConfigType::String,
                     required: true,
                     secret,
+                    constraint: None,
                 },
             );
         }

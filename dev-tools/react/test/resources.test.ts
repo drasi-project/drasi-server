@@ -122,6 +122,21 @@ describe('versioned real server read contract', () => {
     expect(readReaction(value, reactionDetails)).toEqual(value);
   });
 
+  it('reads UUID-identified reactions whose queries are `{ id }` references', () => {
+    const uuid = '00000000-0000-0000-0000-0000000000aa';
+    const query = '00000000-0000-0000-0000-0000000000bb';
+    const value = {
+      ...captured.reaction.body.data,
+      id: uuid,
+      name: 'sse-stream',
+      config: { ...captured.reaction.body.data.config, id: 'sse-stream', queries: [{ id: query }] },
+    };
+    expect(readReaction(value, reactionDetails).config.queries).toEqual([query]);
+    expect(() => readReaction({ ...value, config: { ...value.config, queries: [{ id: query, port: 'out' }] } },
+      reactionDetails)).toThrow(DrasiError);
+    expect(() => readReaction({ ...value, name: 'other' }, reactionDetails)).toThrow(DrasiError);
+  });
+
   it.each([null, {}, [null], [42], [['nested-row']], [{ invalid: Infinity }], [{ nested: { value: undefined } }]])(
     'rejects snapshots that are not arrays of JSON objects: %j', value => {
       expect(() => readRows(value, queryDetails)).toThrow(DrasiError);

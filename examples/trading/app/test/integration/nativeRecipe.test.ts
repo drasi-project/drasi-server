@@ -10,8 +10,8 @@ describe('native Trading recipe export', () => {
     const exported = nativeQueries(ALL_QUERIES);
     expect(exported).toHaveLength(11);
     for (const [index, query] of exported.entries()) {
-      const { description: _description, ...definition } = ALL_QUERIES[index];
-      expect(query).toEqual({ ...definition, queryLanguage: 'Cypher', autoStart: true });
+      const { description: _description, id, ...definition } = ALL_QUERIES[index];
+      expect(query).toEqual({ ...definition, name: id, queryLanguage: 'Cypher', autoStart: true });
       expect(query.inputs.length).toBeGreaterThan(0);
       expect(query).not.toHaveProperty('description');
       expect(query).not.toHaveProperty('sources');

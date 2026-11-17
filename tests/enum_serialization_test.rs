@@ -9,6 +9,7 @@ use serde_json::json;
 #[test]
 fn test_source_config_mock_serializes_camelcase() {
     let source = SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: "test-mock".to_string(),
         auto_start: true,
@@ -56,6 +57,7 @@ fn test_source_config_mock_serializes_camelcase() {
 #[test]
 fn test_source_config_postgres_serializes_camelcase() {
     let source = SourceConfig {
+        component_id: None,
         kind: "postgres".to_string(),
         id: "test-postgres".to_string(),
         auto_start: false,
@@ -114,6 +116,7 @@ fn test_source_config_postgres_serializes_camelcase() {
 #[test]
 fn test_source_config_http_serializes_camelcase() {
     let source = SourceConfig {
+        component_id: None,
         kind: "http".to_string(),
         id: "test-http".to_string(),
         auto_start: true,
@@ -161,6 +164,7 @@ fn test_source_config_http_serializes_camelcase() {
 #[test]
 fn test_reaction_config_log_serializes_camelcase() {
     let reaction = ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id: "test-log".to_string(),
         queries: vec![ComponentReference::by_name(
@@ -188,6 +192,7 @@ fn test_reaction_config_log_serializes_camelcase() {
 #[test]
 fn test_reaction_config_http_serializes_camelcase() {
     let reaction = ReactionConfig {
+        component_id: None,
         kind: "http".to_string(),
         id: "test-http-reaction".to_string(),
         queries: vec![ComponentReference::by_name(
@@ -228,6 +233,7 @@ fn test_reaction_config_http_serializes_camelcase() {
 #[test]
 fn test_reaction_config_grpc_serializes_camelcase() {
     let reaction = ReactionConfig {
+        component_id: None,
         kind: "grpc".to_string(),
         id: "test-grpc-reaction".to_string(),
         queries: vec![ComponentReference::by_name(

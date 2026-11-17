@@ -14,12 +14,12 @@ async fn derived_emitter_owns_progress_through_real_query_chain() -> Result<()> 
     for _ in 0..2 {
         let mut source = Emitter::new(
             StreamId::try_new("input/out")?,
-            ComponentId::try_new("input-fixture")?,
+            crate::test_contexts::component_id("input-fixture")?,
             Some(&scope),
         )?;
         let mut emitter = Emitter::new(
             StreamId::try_new("derived/out")?,
-            ComponentId::try_new("processor-worker")?,
+            crate::test_contexts::component_id("processor-worker")?,
             Some(&scope),
         )?;
         let mut upstream = query(
@@ -127,7 +127,10 @@ async fn derived_emitter_owns_progress_through_real_query_chain() -> Result<()> 
                     let progress = GraphProducerProgress::from_envelope(&output.envelope)?
                         .context("immediate emitter progress")?;
                     let current = progress.identity();
-                    assert_eq!(current.component_id().as_str(), "processor-worker");
+                    assert_eq!(
+                        current.component_id().as_str(),
+                        gpu_contracts::component_id("processor-worker")
+                    );
                     assert_eq!(current.stream().as_str(), "derived/out");
                     assert_eq!(current.construction_scope(), "gpu-test-instance");
                     assert_eq!(current.graph_id(), "gpu-cluster-test");
@@ -154,8 +157,8 @@ async fn derived_emitter_owns_progress_through_real_query_chain() -> Result<()> 
         }
         assert_eq!(sequence, 5);
         previous_epoch = identity.map(|identity| identity.incarnation());
-        upstream.stop().await?;
-        downstream.stop().await?;
+        upstream.stop(&crate::test_contexts::lib::stop()).await?;
+        downstream.stop(&crate::test_contexts::lib::stop()).await?;
     }
     Ok(())
 }
@@ -168,7 +171,7 @@ async fn native_status_factory_uses_actual_scope_and_component_identity() -> Res
         hub: hub.clone(),
     };
     let request = CreateRequest {
-        id: ComponentId::try_new("status-worker")?,
+        id: crate::test_contexts::component_id("status-worker")?,
         implementation: factory.metadata().implementation,
         configuration_version: 1,
         configuration: json!({"stream": "observations/out"}),
@@ -178,6 +181,7 @@ async fn native_status_factory_uses_actual_scope_and_component_identity() -> Res
             generation: 1,
         }),
         inputs: Vec::new(),
+        update_directive: None,
         activation_credentials_bound: false,
     };
     let mut previous_epoch = None;
@@ -188,7 +192,9 @@ async fn native_status_factory_uses_actual_scope_and_component_identity() -> Res
         else {
             anyhow::bail!("expected status source");
         };
-        source.start().await?;
+        source
+            .start(&mut crate::test_contexts::sdk::start())
+            .await?;
         let initial = source.next().await?.context("initial status")?;
         let first = GraphProducerProgress::from_envelope(&initial.envelope)?
             .context("status output progress")?;
@@ -206,7 +212,7 @@ async fn native_status_factory_uses_actual_scope_and_component_identity() -> Res
         assert_eq!(second.identity(), first.identity());
         assert_eq!(second.sequence(), 2);
         previous_epoch = Some(first.identity().incarnation());
-        source.stop().await?;
+        source.stop(&crate::test_contexts::sdk::stop()).await?;
     }
     Ok(())
 }

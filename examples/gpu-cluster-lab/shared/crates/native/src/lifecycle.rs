@@ -58,7 +58,9 @@ impl NativeControlHandler for Handler {
                     .context("component has no database inputs")?
                     .lock()
                     .map_err(|_| anyhow::anyhow!("lifecycle signal lock poisoned"))?;
-                let result = if message.from.as_str() == crate::inputs::DATABASE_QUERY {
+                let result = if message.from.as_str()
+                    == gpu_contracts::component_id(crate::inputs::DATABASE_QUERY)
+                {
                     signals
                         .transfer
                         .receive(&kind, payload, message.generation, Instant::now())
@@ -92,6 +94,9 @@ impl NativeControlHandler for Handler {
             }
             ControlNotification::Custom { kind, .. } => {
                 anyhow::bail!("unsupported GPU runtime control message: {kind}")
+            }
+            ControlNotification::BootstrapRequest(_) => {
+                anyhow::bail!("GPU components do not serve bootstrap requests")
             }
             ControlNotification::Ready
             | ControlNotification::NotReady

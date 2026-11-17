@@ -40,7 +40,10 @@ fn main() -> Result<()> {
                         "metadata":element.get_metadata(),
                         "properties":Value::Object(element.get_properties().into()),
                     }),
-                    SourceChange::Update { element, removed_properties } => json!({
+                    SourceChange::Update {
+                        element,
+                        removed_properties,
+                    } => json!({
                         "metadata":element.get_metadata(),
                         "properties":Value::Object(element.get_properties().into()),
                         "removed_properties":removed_properties,

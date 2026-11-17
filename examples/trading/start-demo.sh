@@ -405,11 +405,13 @@ wait_for_service "http://localhost:${TRADING_API_PORT:-9200}/health" "Trading AP
 GENERATOR="$DRASI_SERVER_ROOT/target/release/examples/native-postgres"
 RECIPE="$SCRIPT_DIR/server/trading-native-recipe.json"
 [ -x "$GENERATOR" ] || { echo "Rebuild the native Trading configuration generator." >&2; exit 1; }
-DRASI_PG_POSTGRES_STOCKS_SETTINGS="$("$GENERATOR" settings "$RECIPE" postgres-stocks)"
-DRASI_PG_POSTGRES_BROKER_SETTINGS="$("$GENERATOR" settings "$RECIPE" postgres-broker)"
+POSTGRES_ENVIRONMENT="$("$GENERATOR" settings "$RECIPE" postgres-stocks)"
+eval "$POSTGRES_ENVIRONMENT"
+POSTGRES_ENVIRONMENT="$("$GENERATOR" settings "$RECIPE" postgres-broker)"
+eval "$POSTGRES_ENVIRONMENT"
 export TRADING_SNAPSHOT_URL="${TRADING_SNAPSHOT_URL:-http://localhost:${TRADING_API_PORT:-9200}/api/initial-prices}"
-DRASI_HTTP_PRICE_FEED_SETTINGS="$("$GENERATOR" settings "$RECIPE" price-feed)"
-export DRASI_PG_POSTGRES_STOCKS_SETTINGS DRASI_PG_POSTGRES_BROKER_SETTINGS DRASI_HTTP_PRICE_FEED_SETTINGS
+PRICE_FEED_ENVIRONMENT="$("$GENERATOR" settings "$RECIPE" price-feed)"
+eval "$PRICE_FEED_ENVIRONMENT"
 export DRASI_HTTP_PRICE_FEED_HOST="${DRASI_HTTP_PRICE_FEED_HOST:-0.0.0.0}"
 export DRASI_HTTP_PRICE_FEED_PORT="${DRASI_HTTP_PRICE_FEED_PORT:-9100}"
 export TRADING_PRICE_SOURCE_URL="${TRADING_PRICE_SOURCE_URL:-http://localhost:$DRASI_HTTP_PRICE_FEED_PORT}"

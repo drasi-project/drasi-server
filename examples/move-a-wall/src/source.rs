@@ -12,7 +12,14 @@ use axum::{
     Json, Router,
 };
 use drasi_computation_contracts::*;
-use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeSource};
+use drasi_computation_plugin_sdk::{
+    lifecycle::{
+        nothing_to_do, DisposeContext, InitializeContext, LifecycleResult, PauseContext,
+        ResumeContext, StartContext, StopContext,
+    },
+    wire::Scope,
+    NativeComponent, NativeSource,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -62,10 +69,13 @@ pub struct SceneSource {
     )>,
 }
 
+/// The component ID of a source built by [`channel`] outside a graph.
+pub const SCENE_TEST_ID: &str = "00000000-0000-0000-0000-00000000005c";
+
 pub fn channel() -> Result<(Store, SceneSource)> {
     channel_with_descriptor(
         ComponentDescriptor::try_new(
-            ComponentId::try_new("scene")?,
+            ComponentId::try_new(SCENE_TEST_ID)?,
             vec![wire::port("out", PortDirection::Output, false)?],
         )?,
         None,
@@ -81,7 +91,11 @@ fn channel_with_descriptor(
             revision: 0,
             scene: Scene::new(),
             versions: BTreeMap::new(),
-            emitter: Emitter::new("scene/out", descriptor.id().clone(), scope)?,
+            emitter: Emitter::new(
+                &format!("{}/out", descriptor.id()),
+                descriptor.id().clone(),
+                scope,
+            )?,
             sender,
         },
         SceneSource {
@@ -112,22 +126,29 @@ mod identity_tests {
             generation: 1,
         };
         let descriptor = ComponentDescriptor::try_new(
-            ComponentId::try_new("scene-worker")?,
+            ComponentId::try_new(crate::tests::test_id("scene-worker"))?,
             vec![wire::port("out", PortDirection::Output, false)?],
         )?;
         let (mut store, mut source) = channel_with_descriptor(descriptor, Some(&scope))?;
-        source.start().await?;
+        source.start(&mut crate::tests::native_start()).await?;
         store.command(0, Command::Reset).await?;
         let output = source.next().await?.context("scene output")?;
         let progress = GraphProducerProgress::from_envelope(&output.envelope)?
             .context("scene output progress")?;
-        assert_eq!(progress.identity().component_id().as_str(), "scene-worker");
-        assert_eq!(progress.identity().stream().as_str(), "scene/out");
+        assert_eq!(
+            progress.identity().component_id().as_str(),
+            crate::tests::test_id("scene-worker")
+        );
+        assert_eq!(
+            progress.identity().stream().as_str(),
+            format!("{}/out", crate::tests::test_id("scene-worker"))
+        );
         assert_eq!(progress.identity().construction_scope(), "wall-instance");
         assert_eq!(progress.identity().graph_id(), "wall-graph");
         assert!(!progress.identity().persistent());
         assert_eq!(progress.sequence(), 1);
-        source.stop().await
+        source.stop(&crate::tests::native_stop()).await?;
+        Ok(())
     }
 }
 impl Store {
@@ -242,39 +263,60 @@ impl NativeComponent for SceneSource {
     fn configuration(&self) -> Result<serde_json::Value> {
         Ok(json!({}))
     }
-    async fn start(&mut self) -> Result<()> {
-        ensure!(
-            !self.started,
-            "source restart requires a new graph and explicit bootstrap"
-        );
-        if let Some(store) = &self.http_store {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:8423").await?;
-            store.lock().await.command(0, Command::Reset).await?;
-            let app = Router::new()
-                .route("/commands", post(command))
-                .route("/health", get(|| async { Json(json!({"source":"scene"})) }))
-                .layer(DefaultBodyLimit::max(64 * 1024))
-                .with_state(store.clone());
-            let (stop, stopped) = oneshot::channel();
-            let task = tokio::spawn(async move {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(async {
-                        let _ = stopped.await;
-                    })
-                    .await
-            });
-            self.server = Some((stop, task));
-        }
-        self.started = true;
-        Ok(())
+    async fn initialize(&mut self, _ctx: &InitializeContext) -> LifecycleResult {
+        nothing_to_do()
     }
-    async fn stop(&mut self) -> Result<()> {
-        self.receiver.close();
-        if let Some((stop, task)) = self.server.take() {
-            let _ = stop.send(());
-            task.await??;
+    async fn start(&mut self, _ctx: &mut StartContext) -> LifecycleResult {
+        async {
+            ensure!(
+                !self.started,
+                "source restart requires a new graph and explicit bootstrap"
+            );
+            if let Some(store) = &self.http_store {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:8423").await?;
+                store.lock().await.command(0, Command::Reset).await?;
+                let app = Router::new()
+                    .route("/commands", post(command))
+                    .route("/health", get(|| async { Json(json!({"source":"scene"})) }))
+                    .layer(DefaultBodyLimit::max(64 * 1024))
+                    .with_state(store.clone());
+                let (stop, stopped) = oneshot::channel();
+                let task = tokio::spawn(async move {
+                    axum::serve(listener, app)
+                        .with_graceful_shutdown(async {
+                            let _ = stopped.await;
+                        })
+                        .await
+                });
+                self.server = Some((stop, task));
+            }
+            self.started = true;
+            Ok::<_, anyhow::Error>(())
         }
-        Ok(())
+        .await
+        .map_err(Into::into)
+    }
+    // The host pulls `next`, so no output is produced while paused.
+    async fn pause(&mut self, _ctx: &PauseContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn resume(&mut self, _ctx: &ResumeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn stop(&mut self, _ctx: &StopContext) -> LifecycleResult {
+        async {
+            self.receiver.close();
+            if let Some((stop, task)) = self.server.take() {
+                let _ = stop.send(());
+                task.await??;
+            }
+            Ok::<_, anyhow::Error>(())
+        }
+        .await
+        .map_err(Into::into)
+    }
+    async fn dispose(&mut self, _ctx: &DisposeContext) -> LifecycleResult {
+        nothing_to_do()
     }
 }
 #[async_trait]

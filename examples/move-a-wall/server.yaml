@@ -22,24 +22,27 @@ instances:
           wall-output-snapshots:
             kind: nativeOutputSnapshots
             outputs:
-              - {component: scene-inputs, port: out}
-              - {component: geometry-context, port: out}
-              - {component: obstructions, port: out}
-              - {component: affected-journeys, port: out}
-              - {component: geometry-status, port: out}
+              - {component: 00000000-0000-4000-8000-000000000003, port: out}
+              - {component: 00000000-0000-4000-8000-000000000004, port: out}
+              - {component: 00000000-0000-4000-8000-000000000005, port: out}
+              - {component: 00000000-0000-4000-8000-000000000006, port: out}
+              - {component: 00000000-0000-4000-8000-000000000007, port: out}
             timeoutMs: 5000
             maxReaders: 16
 
         components:
-          - id: scene
+          - id: 00000000-0000-4000-8000-000000000001
+            name: scene
             kind: move-a-wall/scene
             version: "1"
 
-          - id: geometry
+          - id: 00000000-0000-4000-8000-000000000002
+            name: geometry
             kind: move-a-wall/geometry
             version: "1"
 
-          - id: scene-inputs
+          - id: 00000000-0000-4000-8000-000000000003
+            name: scene-inputs
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -51,7 +54,8 @@ instances:
                 MATCH (n:SceneObject)
                 RETURN collect(n.payload) AS objects
 
-          - id: geometry-context
+          - id: 00000000-0000-4000-8000-000000000004
+            name: geometry-context
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -64,7 +68,8 @@ instances:
                 WHERE n.active = true
                 RETURN collect(n.payload) AS objects
 
-          - id: obstructions
+          - id: 00000000-0000-4000-8000-000000000005
+            name: obstructions
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -78,7 +83,8 @@ instances:
                        o.cart_id AS cart_id, o.obstacle_id AS obstacle_id,
                        o.distance_m AS distance_m, o.required_m AS required_m
 
-          - id: affected-journeys
+          - id: 00000000-0000-4000-8000-000000000006
+            name: affected-journeys
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -114,7 +120,8 @@ instances:
                        b.id AS obstacle_id, b.name AS obstacle,
                        o.distance_m AS distance_m, o.required_m AS required_m
 
-          - id: geometry-status
+          - id: 00000000-0000-4000-8000-000000000007
+            name: geometry-status
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -128,14 +135,16 @@ instances:
                        s.objects AS objects, s.obstructions AS obstructions
 
       # Publish the same query results to the stock Server snapshot API.
-          - id: query-results
+          - id: 00000000-0000-4000-8000-000000000008
+            name: query-results
             kind: drasi/query-results-outlet
             version: "1"
             resources:
               catalog: wall-query-catalog
 
       # Send query changes directly to the browser over native SSE.
-          - id: wall-ui
+          - id: 00000000-0000-4000-8000-000000000009
+            name: wall-ui
             kind: drasi.network/sse-sink
             version: "1"
             resources:
@@ -144,25 +153,32 @@ instances:
               host: 127.0.0.1
               port: 8422
               ssePath: /events
+              # Name each query's output for SSE events and snapshot URLs.
+              outputs:
+                scene-inputs: {component: 00000000-0000-4000-8000-000000000003}
+                geometry-context: {component: 00000000-0000-4000-8000-000000000004}
+                obstructions: {component: 00000000-0000-4000-8000-000000000005}
+                affected-journeys: {component: 00000000-0000-4000-8000-000000000006}
+                geometry-status: {component: 00000000-0000-4000-8000-000000000007}
               heartbeatIntervalMs: 5000
 
     # A component name selects its single output/input port.
         connections:
-          - {from: scene, to: scene-inputs}
-          - {from: scene, to: geometry-context}
-          - {from: geometry-context, to: geometry}
-          - {from: geometry, to: obstructions}
-          - {from: geometry, to: affected-journeys}
-          - {from: geometry, to: geometry-status}
+          - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000003}
+          - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000004}
+          - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000002}
+          - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000005}
+          - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000006}
+          - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000007}
 
-          - {from: scene-inputs, to: query-results}
-          - {from: geometry-context, to: query-results}
-          - {from: obstructions, to: query-results}
-          - {from: affected-journeys, to: query-results}
-          - {from: geometry-status, to: query-results}
+          - {from: 00000000-0000-4000-8000-000000000003, to: 00000000-0000-4000-8000-000000000008}
+          - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000008}
+          - {from: 00000000-0000-4000-8000-000000000005, to: 00000000-0000-4000-8000-000000000008}
+          - {from: 00000000-0000-4000-8000-000000000006, to: 00000000-0000-4000-8000-000000000008}
+          - {from: 00000000-0000-4000-8000-000000000007, to: 00000000-0000-4000-8000-000000000008}
 
-          - {from: scene-inputs, to: wall-ui}
-          - {from: geometry-context, to: wall-ui}
-          - {from: obstructions, to: wall-ui}
-          - {from: affected-journeys, to: wall-ui}
-          - {from: geometry-status, to: wall-ui}
+          - {from: 00000000-0000-4000-8000-000000000003, to: 00000000-0000-4000-8000-000000000009}
+          - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000009}
+          - {from: 00000000-0000-4000-8000-000000000005, to: 00000000-0000-4000-8000-000000000009}
+          - {from: 00000000-0000-4000-8000-000000000006, to: 00000000-0000-4000-8000-000000000009}
+          - {from: 00000000-0000-4000-8000-000000000007, to: 00000000-0000-4000-8000-000000000009}

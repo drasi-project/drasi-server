@@ -63,7 +63,7 @@ target/debug/examples/native-postgres generate target/debug \
 
 # Supply the real database credentials/connection overrides to the recipe.
 export POSTGRES_PASSWORD='your-configured-password'
-export DRASI_PG_POSTGRES_MESSAGES_SETTINGS="$(
+eval "$(
   target/debug/examples/native-postgres settings \
     examples/postgres/recipes/getting-started-server.yaml postgres-messages
 )"
@@ -73,21 +73,25 @@ target/debug/drasi-server \
 ```
 
 Use `--skip-verification` only for the deliberately matched local build.
-Settings keys are `DRASI_PG_<UPPERCASE_SOURCE_ID_WITH_UNDERSCORES>_SETTINGS`.
-The generator's `settings <recipe> <source-id>` command resolves the recipe's
-existing environment settings and emits native settings JSON. Keep that JSON
-in the process environment or a suitable secret store, not in committed YAML.
-For the numbered steps, the source is `my-postgres` and the key is
-`DRASI_PG_MY_POSTGRES_SETTINGS`. CDC-complete uses `app-database`; order exceptions
-use the source ID declared in their recipe.
+The generated source and bootstrap provider take flat PostgreSQL settings. Each
+connection field comes from its own environment variable,
+`DRASI_PG_<UPPERCASE_SOURCE_ID_WITH_UNDERSCORES>_<FIELD>`, where `<FIELD>` is
+`HOST`, `PORT`, `DATABASE`, `USER`, `PASSWORD`, `SSL_MODE`, `PUBLICATION` or
+`SLOT_NAME`. Tables, table keys and transaction limits are literals in the
+generated YAML. The generator's `settings <recipe> <source-id>` command resolves
+the recipe's existing environment settings and prints one `export` line per
+variable. Keep those values in the process environment or a suitable secret
+store, not in committed YAML. For the numbered steps, the source is
+`my-postgres`, so the variables start with `DRASI_PG_MY_POSTGRES_`. CDC-complete
+uses `app-database`; order exceptions use the source ID declared in their recipe.
 
-A canonical configuration reference looks like:
+A canonical configuration reference for the password looks like:
 
 ```json
 {
   "Reference": {
     "resource": "postgres-configuration",
-    "key": "env-json:DRASI_PG_POSTGRES_MESSAGES_SETTINGS",
+    "key": "env:DRASI_PG_POSTGRES_MESSAGES_PASSWORD",
     "secret": true
   }
 }

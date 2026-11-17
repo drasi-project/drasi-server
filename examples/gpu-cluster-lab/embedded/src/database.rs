@@ -1,9 +1,7 @@
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
 use drasi_computation_plugin_sdk::Scope;
-use drasi_computation_source_postgres::{
-    PostgresSourceConfig, PostgresTransactionConfig, SslMode, TableKeyConfig,
-};
+use drasi_computation_source_postgres::{PostgresTableKey, PostgresTransactionConfig, SslMode};
 use drasi_core::middleware::MiddlewareTypeRegistry;
 use drasi_host_sdk::computation::NativePlugin;
 use drasi_index_rocksdb::{
@@ -60,7 +58,7 @@ struct Settings(Value);
 #[async_trait]
 impl ConfigurationResolver for Settings {
     fn validate_reference(&self, key: &str) -> Result<()> {
-        ensure!(key == "postgres", "unknown database settings reference");
+        ensure!(key == "password", "unknown database secret reference");
         Ok(())
     }
     async fn resolve(&self, key: &str) -> Result<Value> {
@@ -69,14 +67,17 @@ impl ConfigurationResolver for Settings {
     }
 }
 
+/// Adds the database source, its query and their resources to `batch`, and
+/// returns the relationships between them.
 pub fn components(
+    mut batch: ComponentBatchBuilder,
     host: &str,
     port: u16,
     password: &str,
     path: &str,
     catalog: QueryResultsCatalog,
     middleware: Arc<MiddlewareTypeRegistry>,
-) -> Result<ComponentBatch> {
+) -> Result<(ComponentBatchBuilder, Vec<DesiredRelationship>)> {
     let tables = [
         ("regional_clusters", "cluster_id"),
         ("placement_policies", "policy_id"),
@@ -91,31 +92,31 @@ pub fn components(
         max_bytes: NonZeroUsize::new(8 * 1024 * 1024).unwrap(),
         max_duration_ms: NonZeroU64::new(30_000).unwrap(),
     };
-    let settings = PostgresTransactionConfig {
-        connection: PostgresSourceConfig {
-            host: host.into(),
-            port,
-            database: "gpu_demo".into(),
-            user: "gpu_reader".into(),
-            password: password.into(),
-            tables: tables.iter().map(|(table, _)| (*table).into()).collect(),
-            slot_name: "gpu_native".into(),
-            publication_name: "gpu_demo_publication".into(),
-            ssl_mode: SslMode::Disable,
-            table_keys: tables
-                .iter()
-                .map(|(table, key)| TableKeyConfig {
-                    table: (*table).into(),
-                    key_columns: vec![(*key).into()],
-                })
-                .collect(),
-        },
-        tls_ca_pem: None,
-        start_lsn: "0/0".into(),
-        transactions: limits,
-        max_protocol_bytes: NonZeroUsize::new(8 * 1024 * 1024).unwrap(),
-        io_timeout_ms: NonZeroU64::new(30_000).unwrap(),
-        feedback_interval_ms: NonZeroU64::new(1_000).unwrap(),
+    let mut settings = PostgresTransactionConfig::new(
+        host,
+        port,
+        "gpu_demo",
+        "gpu_reader",
+        "gpu_demo_publication",
+    );
+    settings.password = password.into();
+    settings.ssl_mode = SslMode::Disable;
+    settings.tables = tables.iter().map(|(table, _)| (*table).into()).collect();
+    settings.table_keys = tables
+        .iter()
+        .map(|(table, key)| PostgresTableKey {
+            table: (*table).into(),
+            key_columns: vec![(*key).into()],
+        })
+        .collect();
+    settings.max_transaction_changes = limits.max_changes;
+    settings.max_transaction_bytes = limits.max_bytes;
+    settings.max_transaction_duration_ms = limits.max_duration_ms;
+    settings.max_protocol_bytes = NonZeroUsize::new(8 * 1024 * 1024).unwrap();
+    settings.io_timeout_ms = NonZeroU64::new(30_000).unwrap();
+    settings.feedback_interval_ms = NonZeroU64::new(1_000).unwrap();
+    let Value::Object(flat_settings) = serde_json::to_value(&settings)? else {
+        anyhow::bail!("PostgreSQL settings did not serialize as an object");
     };
     let progress = Arc::new(QuerySourceProgress::new(
         catalog.graph_id(),
@@ -134,7 +135,12 @@ pub fn components(
         .context("native PostgreSQL bootstrap factory is missing")?
         .create_provider(
             super::id(DATABASE_QUERY)?,
-            json!({"source": "postgres", "stream": "postgres/out", "settings": settings}),
+            {
+                let mut value = flat_settings.clone();
+                value.insert("source".into(), json!(super::id("postgres")?.as_str()));
+                value.insert("stream".into(), json!("postgres/out"));
+                Value::Object(value)
+            },
             Some(Scope {
                 instance_id: super::INSTANCE.into(),
                 graph_id: catalog.graph_id().into(),
@@ -183,15 +189,11 @@ pub fn components(
         middleware_id?,
         catalog_id?,
     );
-    let mut batch = ComponentBatch::builder();
     for (id, role, handle) in [
         (
             indexes.clone(),
             ResourceRole::IndexBackend,
-            ResourceHandle::new(
-                ResourceRole::IndexBackend,
-                Arc::new(QueryIndexProviderResource(provider)),
-            ),
+            QueryIndexProviderResource::handle(ResourceRole::IndexBackend, provider),
         ),
         (
             progress_id.clone(),
@@ -206,9 +208,9 @@ pub fn components(
             ResourceRole::SecretStore,
             ResourceHandle::new(
                 ResourceRole::SecretStore,
-                Arc::new(ConfigurationResolverResource(Arc::new(Settings(
-                    serde_json::to_value(&settings)?,
-                )))),
+                Arc::new(ConfigurationResolverResource(Arc::new(Settings(json!(
+                    password
+                ))))),
             ),
         ),
         (
@@ -266,12 +268,13 @@ pub fn components(
             config: Default::default(),
         }],
         inputs: vec![serde_json::from_value(json!({
-            "component":"postgres", "pipeline":[gpu_native::postgres::POSTGRES_JSON],
+            "component": super::id("postgres")?.as_str(), "pipeline":[gpu_native::postgres::POSTGRES_JSON],
         }))?],
         ..Default::default()
     };
     batch = batch
         .component(
+            super::name("postgres")?,
             ComponentSpecification {
                 descriptor: source_factory
                     .metadata()
@@ -280,24 +283,29 @@ pub fn components(
                 completion: None,
                 implementation: source_factory.descriptor().implementation.clone(),
                 configuration_version: 1,
-                configuration: BTreeMap::from([
-                    (
-                        "stream".into(),
-                        ConfigurationValue::Literal(json!("postgres/out")),
-                    ),
-                    (
-                        "coordinated_snapshot".into(),
-                        ConfigurationValue::Literal(json!(true)),
-                    ),
-                    (
-                        "settings".into(),
-                        ConfigurationValue::Reference {
-                            resource: secrets,
-                            key: "postgres".into(),
-                            secret: true,
-                        },
-                    ),
-                ]),
+                configuration: flat_settings
+                    .into_iter()
+                    .filter(|(key, _)| key != "password")
+                    .map(|(key, value)| (key.into(), ConfigurationValue::Literal(value)))
+                    .chain([
+                        (
+                            "stream".into(),
+                            ConfigurationValue::Literal(json!("postgres/out")),
+                        ),
+                        (
+                            "coordinatedSnapshot".into(),
+                            ConfigurationValue::Literal(json!(true)),
+                        ),
+                        (
+                            "password".into(),
+                            ConfigurationValue::Reference {
+                                resource: secrets,
+                                key: "password".into(),
+                                secret: true,
+                            },
+                        ),
+                    ])
+                    .collect(),
                 dependencies: BTreeMap::from([(
                     "source_progress".into(),
                     vec![progress_id.clone()],
@@ -310,6 +318,7 @@ pub fn components(
             StreamId::try_new("postgres/out")?,
         )
         .component(
+            super::name(DATABASE_QUERY)?,
             ComponentSpecification {
                 descriptor: definition.descriptor(),
                 role: ComponentRole::Transformer,
@@ -345,14 +354,18 @@ pub fn components(
             super::endpoint(DATABASE_QUERY, "out")?,
             definition.output_stream,
         )
-        .sink(Box::new(QueryResultsOutlet::new(
-            super::id("database-results")?,
-            catalog,
-        )));
-    let mut batch = batch.build()?;
-    batch.definition.relationships.extend([
-        super::relationship("postgres", DATABASE_QUERY, 1)?,
-        super::relationship(DATABASE_QUERY, "database-results", 32)?,
-    ]);
-    Ok(batch)
+        .sink(
+            super::name("database-results")?,
+            Box::new(QueryResultsOutlet::new(
+                super::id("database-results")?,
+                catalog,
+            )),
+        );
+    Ok((
+        batch,
+        vec![
+            super::relationship("postgres", DATABASE_QUERY, 1)?,
+            super::relationship(DATABASE_QUERY, "database-results", 32)?,
+        ],
+    ))
 }

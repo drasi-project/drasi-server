@@ -13,7 +13,7 @@ async fn every_ui_query_constructs_with_its_declared_joins() -> Result<()> {
         configured_query(id, text, settings)
             .await
             .with_context(|| format!("constructing {id}"))?
-            .stop()
+            .stop(&crate::test_contexts::lib::stop())
             .await?;
     }
     Ok(())
@@ -31,7 +31,7 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
     let assessment = Evaluator::new()?.evaluate(&configuration)?;
     let mut source = Emitter::new(
         StreamId::try_new("shared-policy-projection")?,
-        ComponentId::try_new("policy-projection-fixture")?,
+        crate::test_contexts::component_id("policy-projection-fixture")?,
         None,
     )?;
     let mut query = query("shared-policy-status", views::STATUS).await?;
@@ -133,7 +133,7 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
     );
     assert!(rows[0]["data_profiles"].is_null());
     assert_eq!(rows[0]["policy_rules_current"], false);
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -147,12 +147,14 @@ async fn timeline_is_bounded_and_preserves_explicit_observation_epochs() -> Resu
     let mut producer = crate::status::Producer::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("bounded-timeline")?)?,
+            .descriptor(crate::test_contexts::component_id("bounded-timeline")?)?,
         json!({"stream":"bounded-timeline-source"}),
         hub.clone(),
         None,
     )?;
-    producer.start().await?;
+    producer
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let epoch = Uuid::new_v4();
     for index in 0..130 {
         hub.event(
@@ -202,8 +204,8 @@ async fn timeline_is_bounded_and_preserves_explicit_observation_epochs() -> Resu
             row["observation_epoch"].as_str().unwrap(),
             row["event_sequence"].as_str().unwrap()
         )));
-    producer.stop().await?;
-    timeline.stop().await?;
+    producer.stop(&crate::test_contexts::sdk::stop()).await?;
+    timeline.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -216,7 +218,7 @@ async fn fresh_runtime_producer_does_not_reuse_prior_epoch_evidence() -> Result<
     };
     let descriptor = factory
         .metadata()
-        .descriptor(ComponentId::try_new("runtime-status")?)?;
+        .descriptor(crate::test_contexts::component_id("runtime-status")?)?;
     let mut first = crate::status::Producer::new(
         descriptor.clone(),
         json!({"stream":"first-status"}),
@@ -229,9 +231,12 @@ async fn fresh_runtime_producer_does_not_reuse_prior_epoch_evidence() -> Result<
         hub.clone(),
         None,
     )?;
-    first.start().await?;
+    first.start(&mut crate::test_contexts::sdk::start()).await?;
     assert!(
-        second.start().await.is_err(),
+        second
+            .start(&mut crate::test_contexts::sdk::start())
+            .await
+            .is_err(),
         "concurrent runtime owners must be rejected"
     );
     let epoch = Uuid::new_v4();
@@ -269,26 +274,33 @@ async fn fresh_runtime_producer_does_not_reuse_prior_epoch_evidence() -> Result<
             .len(),
         1
     );
-    old_timeline.stop().await?;
+    old_timeline
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
     let mut old_status = query("old-runtime-status", views::STATUS).await?;
     assert_eq!(
         project(&mut old_status, &[old]).await?[0]["scenario_ready"],
         true
     );
-    old_status.stop().await?;
-    first.stop().await?;
+    old_status.stop(&crate::test_contexts::lib::stop()).await?;
+    first.stop(&crate::test_contexts::sdk::stop()).await?;
     assert!(
-        first.start().await.is_err(),
+        first
+            .start(&mut crate::test_contexts::sdk::start())
+            .await
+            .is_err(),
         "restart requires reconstruction"
     );
-    second.start().await?;
-    first.stop().await?;
+    second
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    first.stop(&crate::test_contexts::sdk::stop()).await?;
     let output = second.next().await?.context("new runtime status missing")?;
     let mut timeline = query("new-runtime-timeline", views::TIMELINE).await?;
     assert!(project(&mut timeline, std::slice::from_ref(&output))
         .await?
         .is_empty());
-    timeline.stop().await?;
+    timeline.stop(&crate::test_contexts::lib::stop()).await?;
     let mut query = query("fresh-status", views::STATUS).await?;
     let rows = project(&mut query, &[output]).await?;
     assert_eq!(rows[0]["scenario_ready"], false);
@@ -298,8 +310,8 @@ async fn fresh_runtime_producer_does_not_reuse_prior_epoch_evidence() -> Result<
         .iter()
         .any(|component| component["component_id"] == "runtime-status"
             && component["status"] == "running"));
-    query.stop().await?;
-    second.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
+    second.stop(&crate::test_contexts::sdk::stop()).await?;
     Ok(())
 }
 
@@ -313,12 +325,14 @@ async fn runtime_readiness_requires_complete_lifecycle_observations() -> Result<
     let mut producer = crate::status::Producer::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("runtime-status")?)?,
+            .descriptor(crate::test_contexts::component_id("runtime-status")?)?,
         json!({"stream":"readiness-test"}),
         workers.hub.clone(),
         None,
     )?;
-    producer.start().await?;
+    producer
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut query = query("readiness-test", views::STATUS).await?;
     let output = producer.next().await?.context("missing status output")?;
     let rows = project(&mut query, &[output]).await?;
@@ -436,8 +450,8 @@ async fn runtime_readiness_requires_complete_lifecycle_observations() -> Result<
         true,
         "a stopped component from an old epoch cannot override current host evidence"
     );
-    producer.stop().await?;
-    query.stop().await?;
+    producer.stop(&crate::test_contexts::sdk::stop()).await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -565,18 +579,22 @@ async fn simulator_activity_names_actual_moves_without_inventing_moves_on_bootst
     let mut runtime = crate::status::Producer::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("move-status")?)?,
+            .descriptor(crate::test_contexts::component_id("move-status")?)?,
         json!({"stream":"move-status"}),
         workers.hub.clone(),
         None,
     )?;
-    runtime.start().await?;
-    simulator.start().await?;
+    runtime
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    simulator
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut input = query("move-input", "MATCH (i:Input) RETURN i.payload AS payload").await?;
     let mut timeline = query("move-timeline", views::TIMELINE).await?;
     let mut source = Emitter::new(
         StreamId::try_new("move-source")?,
-        ComponentId::try_new("replica-move-fixture")?,
+        crate::test_contexts::component_id("replica-move-fixture")?,
         None,
     )?;
     let boot = bootstrap(&fixture, epoch)?;
@@ -691,10 +709,10 @@ async fn simulator_activity_names_actual_moves_without_inventing_moves_on_bootst
             .count(),
         1
     );
-    simulator.stop().await?;
-    input.stop().await?;
-    timeline.stop().await?;
-    runtime.stop().await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+    input.stop(&crate::test_contexts::lib::stop()).await?;
+    timeline.stop(&crate::test_contexts::lib::stop()).await?;
+    runtime.stop(&crate::test_contexts::sdk::stop()).await?;
     Ok(())
 }
 
@@ -812,7 +830,7 @@ async fn workload_identity_survives_readiness_and_execution_transitions() -> Res
     .await?;
     let mut source = Emitter::new(
         StreamId::try_new("workload-identity")?,
-        ComponentId::try_new("workload-fixture")?,
+        crate::test_contexts::component_id("workload-fixture")?,
         None,
     )?;
     let fixture = fixtures::load("baseline")?;
@@ -942,7 +960,7 @@ async fn workload_identity_survives_readiness_and_execution_transitions() -> Res
     assert_eq!(live.len(), 3);
     assert!(!live.contains_key(&renamed.workload_id.to_string()));
     assert_eq!(current.len(), 3);
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -974,13 +992,17 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
         let mut runtime = crate::status::Producer::new(
             factory
                 .metadata()
-                .descriptor(ComponentId::try_new("runtime-status")?)?,
+                .descriptor(crate::test_contexts::component_id("runtime-status")?)?,
             json!({"stream":"rejected-plan-status"}),
             workers.hub.clone(),
             None,
         )?;
-        runtime.start().await?;
-        simulator.start().await?;
+        runtime
+            .start(&mut crate::test_contexts::sdk::start())
+            .await?;
+        simulator
+            .start(&mut crate::test_contexts::sdk::start())
+            .await?;
         let mut input_query = query(
             "startup-inputs",
             "MATCH (i:Input) RETURN i.payload AS payload",
@@ -989,7 +1011,7 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
         let mut status_query = query("startup-status", views::STATUS).await?;
         let mut source = Emitter::new(
             StreamId::try_new("rejected-plan-source")?,
-            ComponentId::try_new("rejected-plan-fixture")?,
+            crate::test_contexts::component_id("rejected-plan-fixture")?,
             None,
         )?;
         deliver(
@@ -1056,7 +1078,7 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
             .unwrap()
             .iter()
             .any(|component| {
-                component["component_id"] == "Simulator"
+                component["component_id"] == simulator.descriptor().id().as_str()
                     && component["status"] == "application-rejected"
                     && component["error"].is_string()
             }));
@@ -1072,10 +1094,12 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
             false,
             "source failure must still close the input gate"
         );
-        simulator.stop().await?;
-        input_query.stop().await?;
-        status_query.stop().await?;
-        runtime.stop().await?;
+        simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+        input_query.stop(&crate::test_contexts::lib::stop()).await?;
+        status_query
+            .stop(&crate::test_contexts::lib::stop())
+            .await?;
+        runtime.stop(&crate::test_contexts::sdk::stop()).await?;
     }
     Ok(())
 }
@@ -1108,7 +1132,7 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
     .await?;
     let mut database = Emitter::new(
         StreamId::try_new("expiry-database")?,
-        ComponentId::try_new("expiry-database-fixture")?,
+        crate::test_contexts::component_id("expiry-database-fixture")?,
         None,
     )?;
     project(
@@ -1118,7 +1142,7 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
     .await?;
     let mut context = Emitter::new(
         StreamId::try_new("expiry-policy")?,
-        ComponentId::try_new("expiry-policy-fixture")?,
+        crate::test_contexts::component_id("expiry-policy-fixture")?,
         None,
     )?;
     let mut snapshot = json!({
@@ -1143,7 +1167,7 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
     project(&mut query, &context.emit(changes, None)?).await?;
     let mut reports = Emitter::new(
         StreamId::try_new("expiry-simulator")?,
-        ComponentId::try_new("expiry-simulator-fixture")?,
+        crate::test_contexts::component_id("expiry-simulator-fixture")?,
         None,
     )?;
     let now = wire::utc_millis()?;
@@ -1219,7 +1243,7 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
         }
     })
     .await??;
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1230,7 +1254,9 @@ async fn inventory_views_preserve_reports_until_the_real_deadline() -> Result<()
     let epoch = Uuid::new_v4();
     let workers = Arc::new(Workers::default());
     let mut simulator = processor(Kind::Simulator, workers)?;
-    simulator.start().await?;
+    simulator
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query(
         "inventory-input",
         "MATCH (i:Input) RETURN i.payload AS payload",
@@ -1238,7 +1264,7 @@ async fn inventory_views_preserve_reports_until_the_real_deadline() -> Result<()
     .await?;
     let mut source = Emitter::new(
         StreamId::try_new("inventory-source")?,
-        ComponentId::try_new("inventory-fixture")?,
+        crate::test_contexts::component_id("inventory-fixture")?,
         None,
     )?;
     let mut gpus =
@@ -1417,10 +1443,10 @@ async fn inventory_views_preserve_reports_until_the_real_deadline() -> Result<()
         false
     );
     assert!(payloads(&unavailable, "GpuSample")?.is_empty());
-    simulator.stop().await?;
-    inputs.stop().await?;
-    gpus.stop().await?;
-    clusters.stop().await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
+    gpus.stop(&crate::test_contexts::lib::stop()).await?;
+    clusters.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1433,7 +1459,7 @@ async fn optional_native_join_replaces_the_unmatched_snapshot_row() -> Result<()
     ).await?;
     let mut source = Emitter::new(
         StreamId::try_new("optional-join-probe-source")?,
-        ComponentId::try_new("optional-join-fixture")?,
+        crate::test_contexts::component_id("optional-join-fixture")?,
         None,
     )?;
     let left = source
@@ -1477,7 +1503,7 @@ async fn optional_native_join_replaces_the_unmatched_snapshot_row() -> Result<()
     assert!(project(&mut query, &source.emit(vec![removed], None)?)
         .await?
         .is_empty());
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1487,7 +1513,7 @@ async fn optional_fleet_context_preserves_inventory_before_bootstrap() -> Result
         "MATCH (w:workload_requirements) OPTIONAL MATCH (a:AppliedPlan) RETURN w.workload_id AS workload_id, a.fleet_id AS fleet_id").await?;
     let mut source = Emitter::new(
         StreamId::try_new("optional-context")?,
-        ComponentId::try_new("optional-context-fixture")?,
+        crate::test_contexts::component_id("optional-context-fixture")?,
         None,
     )?;
     let change = source
@@ -1502,7 +1528,7 @@ async fn optional_fleet_context_preserves_inventory_before_bootstrap() -> Result
         rows,
         vec![json!({"workload_id":"workload","fleet_id":null})]
     );
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1514,7 +1540,7 @@ async fn optional_assignment_list_preserves_null_before_and_after_context() -> R
     ).await?;
     let mut source = Emitter::new(
         StreamId::try_new("optional-assignment-list-source")?,
-        ComponentId::try_new("optional-assignment-fixture")?,
+        crate::test_contexts::component_id("optional-assignment-fixture")?,
         None,
     )?;
     let workload = source
@@ -1551,7 +1577,7 @@ async fn optional_assignment_list_preserves_null_before_and_after_context() -> R
         project(&mut query, &source.emit(vec![plan], None)?).await?,
         vec![json!({"workload_id":"workload","matching":null})]
     );
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1563,7 +1589,7 @@ async fn assignment_list_matches_equal_property_maps() -> Result<()> {
     ).await?;
     let mut source = Emitter::new(
         StreamId::try_new("assignment-equality-source")?,
-        ComponentId::try_new("assignment-equality-fixture")?,
+        crate::test_contexts::component_id("assignment-equality-fixture")?,
         None,
     )?;
     let assignment = json!({"gpu_id":"gpu-1","workload_revision":"1","memory_mib":4096});
@@ -1584,7 +1610,7 @@ async fn assignment_list_matches_equal_property_maps() -> Result<()> {
         .unwrap();
     let rows = project(&mut query, &source.emit(vec![plan], None)?).await?;
     assert_eq!(rows[0]["matching"], json!([assignment]));
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1595,7 +1621,7 @@ async fn aggregate_count_equals_integer_list_size() -> Result<()> {
     ).await?;
     let mut source = Emitter::new(
         StreamId::try_new("numeric-count-source")?,
-        ComponentId::try_new("numeric-count-fixture")?,
+        crate::test_contexts::component_id("numeric-count-fixture")?,
         None,
     )?;
     let workload = source
@@ -1604,7 +1630,7 @@ async fn aggregate_count_equals_integer_list_size() -> Result<()> {
     let rows = project(&mut query, &source.emit(vec![workload], None)?).await?;
     assert_eq!(rows[0]["equal"], true, "{}", rows[0]);
     assert_eq!(rows[0]["unequal"], false);
-    query.stop().await?;
+    query.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -1619,20 +1645,30 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     let mut runtime = crate::status::Producer::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("runtime-status")?)?,
+            .descriptor(crate::test_contexts::component_id("runtime-status")?)?,
         json!({"stream":"projection-runtime"}),
         workers.hub.clone(),
         None,
     )?;
-    runtime.start().await?;
+    runtime
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut policy = processor(Kind::Policy, workers.clone())?;
     let mut simulator = processor(Kind::Simulator, workers.clone())?;
     let mut placement = processor(Kind::Placement, workers.clone())?;
     let mut resilience = processor(Kind::Resilience, workers.clone())?;
-    policy.start().await?;
-    simulator.start().await?;
-    placement.start().await?;
-    resilience.start().await?;
+    policy
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    simulator
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    placement
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    resilience
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut input_query = query(
         "projection-input",
         "MATCH (i:Input) RETURN i.payload AS payload",
@@ -1640,7 +1676,7 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     .await?;
     let mut source = Emitter::new(
         StreamId::try_new("projection-source")?,
-        ComponentId::try_new("projection-fixture")?,
+        crate::test_contexts::component_id("projection-fixture")?,
         None,
     )?;
     let mut policy_query = query("ui-policy", views::POLICY).await?;
@@ -1910,7 +1946,7 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
             project(&mut diagnostic, output).await?;
         }
         let diagnostics = project(&mut diagnostic, &[]).await?;
-        diagnostic.stop().await?;
+        diagnostic.stop(&crate::test_contexts::lib::stop()).await?;
         anyhow::bail!(
             "Fresh confirmation counts are incorrect: {}; predicate diagnostics: {}",
             serde_json::to_string(&rows)?,
@@ -1945,7 +1981,7 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
             project(&mut diagnostic, output).await?;
         }
         let diagnostics = project(&mut diagnostic, &[]).await?;
-        diagnostic.stop().await?;
+        diagnostic.stop(&crate::test_contexts::lib::stop()).await?;
         anyhow::bail!(
             "Placement confirmation is missing; count diagnostics: {}",
             serde_json::to_string(&diagnostics)?
@@ -2229,21 +2265,37 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     if let Some(path) = std::env::var_os("GPU_LAB_NATIVE_ROWS") {
         std::fs::write(path, serde_json::to_vec_pretty(&batches)?)?;
     }
-    policy.stop().await?;
-    simulator.stop().await?;
-    placement.stop().await?;
-    resilience.stop().await?;
-    runtime.stop().await?;
-    input_query.stop().await?;
-    policy_query.stop().await?;
-    decision_query.stop().await?;
-    timeline_query.stop().await?;
-    resilience_query.stop().await?;
-    gpu_query.stop().await?;
-    cluster_query.stop().await?;
-    workload_query.stop().await?;
-    placement_query.stop().await?;
-    status_query.stop().await?;
+    policy.stop(&crate::test_contexts::sdk::stop()).await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+    placement.stop(&crate::test_contexts::sdk::stop()).await?;
+    resilience.stop(&crate::test_contexts::sdk::stop()).await?;
+    runtime.stop(&crate::test_contexts::sdk::stop()).await?;
+    input_query.stop(&crate::test_contexts::lib::stop()).await?;
+    policy_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    decision_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    timeline_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    resilience_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    gpu_query.stop(&crate::test_contexts::lib::stop()).await?;
+    cluster_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    workload_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    placement_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
+    status_query
+        .stop(&crate::test_contexts::lib::stop())
+        .await?;
     Ok(())
 }
 
@@ -2251,7 +2303,7 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
 fn graph_projection_rejects_lossy_integers_without_caching_failed_records() -> Result<()> {
     let mut emitter = Emitter::new(
         StreamId::try_new("typed-record-test")?,
-        ComponentId::try_new("typed-record-fixture")?,
+        crate::test_contexts::component_id("typed-record-fixture")?,
         None,
     )?;
     let invalid = json!({"nested":[{"counter":u64::MAX}]});

@@ -7,22 +7,25 @@ import { queryIds } from './records';
 const outputs = queryIds.map(id => ({ id, component: id, port: 'out' }));
 const validateNativeSseGraph = (value: unknown) => validateGraph(value, outputs, 'wall-ui');
 
+// Components have UUIDs; the browser names them.
+const uuid = (name: string) => `00000000-0000-4000-8000-${[...name].reduce((hash, c) => (hash * 31 + c.charCodeAt(0)) % 2 ** 40, 0).toString(16).padStart(12, '0')}`;
+
 function graph() {
   return {
     success: true,
     data: {
       graph: { state: 'Running', driverFailed: false },
       components: [
-        { id: 'wall-ui', role: 'Sink', lifecycle: 'Running', health: 'Unknown', failurePhase: null,
+        { id: uuid('wall-ui'), name: 'wall-ui', role: 'Sink', lifecycle: 'Running', health: 'Unknown', failurePhase: null,
           implementation: { name: 'drasi.network/sse-sink' } },
         ...queryIds.map(id => ({
-          id, role: 'Query', lifecycle: 'Running', health: 'Unknown', failurePhase: null,
+          id: uuid(id), name: id, role: 'Query', lifecycle: 'Running', health: 'Unknown', failurePhase: null,
           implementation: { name: 'drasi/continuous-query' },
         })),
       ],
       relationships: queryIds.map(id => ({
         representation: 'NativeProvider', binding: 'Bound',
-        from: { component: id, port: 'out' }, to: { component: 'wall-ui', port: 'in' },
+        from: { component: uuid(id), port: 'out' }, to: { component: uuid('wall-ui'), port: 'in' },
       })),
     },
   };

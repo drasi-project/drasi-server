@@ -11,8 +11,11 @@ RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
 WORKDIR /ui
 COPY embedded/.build/runtime-src/drasi-server/examples/native-sse-client/ /native-sse-client/
 COPY shared/ui/package.json shared/ui/package-lock.json shared/ui/.npmrc ./
+# @drasi/react is rebuilt from source here, so its checksum can differ from the vendored copy.
 RUN --mount=type=cache,id=gpu-lab-npm,target=/root/.npm \
-    mkdir vendor && cp /tmp/drasi-react-0.1.0.tgz vendor/drasi-react-0.1.0.tgz && npm ci --no-audit --no-fund
+    mkdir vendor && cp /tmp/drasi-react-0.1.0.tgz vendor/drasi-react-0.1.0.tgz && \
+    node -e "const fs=require('fs');const l=JSON.parse(fs.readFileSync('package-lock.json'));delete l.packages['node_modules/@drasi/react'].integrity;fs.writeFileSync('package-lock.json',JSON.stringify(l,null,2))" && \
+    npm ci --no-audit --no-fund
 COPY shared/ui/ ./
 RUN npm run build
 

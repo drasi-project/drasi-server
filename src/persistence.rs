@@ -73,11 +73,16 @@ pub struct ConfigPersistence {
 
 type RenderedComponents = (Vec<SourceConfig>, Vec<QueryConfigDto>, Vec<ReactionConfig>);
 
-/// Render a persisted instance's ordinary components from its committed
+/// Render a managed instance's ordinary components from its committed
 /// desired state. Secret references are stored unresolved, so none are
 /// expanded here. The native topology is not rendered: it may hold values
 /// accepted only into the encrypted store, which must not reach plaintext YAML.
-fn render_desired(id: &str, core: &drasi_lib::DrasiLib) -> Result<RenderedComponents> {
+/// Instances without a store keep component UUIDs, since YAML is their only record.
+fn render_desired(
+    id: &str,
+    core: &drasi_lib::DrasiLib,
+    keep_ids: bool,
+) -> Result<RenderedComponents> {
     use crate::ordinary_resolver::{
         component_names, named_reference, reaction_config, source_config,
     };
@@ -93,7 +98,13 @@ fn render_desired(id: &str, core: &drasi_lib::DrasiLib) -> Result<RenderedCompon
     let mut reactions = Vec::new();
     for record in &desired.ordinary {
         match &record.component {
-            OrdinaryComponent::Source { .. } => sources.push(source_config(record)?),
+            OrdinaryComponent::Source { .. } => {
+                let mut source = source_config(record)?;
+                if !keep_ids {
+                    source.component_id = None;
+                }
+                sources.push(source);
+            }
             OrdinaryComponent::Query { .. } => {
                 let mut query = record.query_configuration()?.into_authoring();
                 for input in &mut query.inputs {
@@ -112,7 +123,11 @@ fn render_desired(id: &str, core: &drasi_lib::DrasiLib) -> Result<RenderedCompon
                     .cloned()
                     .map(|input| named_reference(&names, input))
                     .collect();
-                reactions.push(reaction_config(record, queries)?);
+                let mut reaction = reaction_config(record, queries)?;
+                if !keep_ids {
+                    reaction.component_id = None;
+                }
+                reactions.push(reaction);
             }
             OrdinaryComponent::ProcessLocal { .. } => anyhow::bail!(
                 "Cannot persist process-local component '{}' in instance '{id}'",
@@ -367,7 +382,7 @@ impl ConfigPersistence {
                     settings.configuration_store.is_some(),
                     "Cannot persist managed instance '{id}' without its configurationStore"
                 );
-                let (sources, queries, reactions) = render_desired(&id, &core)?;
+                let (sources, queries, reactions) = render_desired(&id, &core, false)?;
                 settings.sources = sources;
                 settings.queries = queries;
                 settings.reactions = reactions;
@@ -384,6 +399,15 @@ impl ConfigPersistence {
                 .map_err(|e| anyhow::anyhow!("Failed to snapshot instance '{id}': {e}"))?;
             let computation =
                 crate::computation::configuration_from_snapshot(&snapshot)?.map(Into::into);
+            if core.constructs_ordinary_components() {
+                let (sources, queries, reactions) = render_desired(&id, &core, true)?;
+                settings.sources = sources;
+                settings.queries = queries;
+                settings.reactions = reactions;
+                settings.computation = computation;
+                instance_configs.push(settings);
+                continue;
+            }
             let snapshot = snapshot.instance;
 
             // Map snapshot sources to SourceConfig, filtering internal sources
@@ -397,6 +421,7 @@ impl ConfigPersistence {
                         config_map.insert(k.clone(), v.clone());
                     }
                     SourceConfig {
+                        component_id: Some(s.id.clone()),
                         kind: s.source_type.clone(),
                         id: s.name.to_string(),
                         auto_start: s.auto_start,
@@ -449,6 +474,7 @@ impl ConfigPersistence {
                         config_map.insert(k.clone(), v.clone());
                     }
                     ReactionConfig {
+                        component_id: Some(r.id.clone()),
                         kind: r.reaction_type.clone(),
                         id: r.name.to_string(),
                         queries: r.queries.clone(),
@@ -852,7 +878,10 @@ mod tests {
         let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         assert_eq!(sources.len(), 3, "all three sources must be present");
 
-        let ids: Vec<&str> = sources.iter().map(|s| s["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = sources
+            .iter()
+            .map(|s| s["name"].as_str().unwrap())
+            .collect();
         assert!(ids.contains(&"src-a"));
         assert!(ids.contains(&"src-b"));
         assert!(ids.contains(&"src-c"));
@@ -873,6 +902,7 @@ mod tests {
             instances: vec![crate::config::DrasiLibInstanceConfig {
                 id: ConfigValue::Static("inst1".to_string()).into(),
                 sources: vec![SourceConfig {
+                    component_id: None,
                     kind: "postgres".to_string(),
                     id: "src1".to_string(),
                     auto_start: false,
@@ -933,6 +963,7 @@ mod tests {
                     },
                 }],
                 sources: vec![SourceConfig {
+                    component_id: None,
                     kind: "postgres".to_string(),
                     id: "src1".to_string(),
                     auto_start: false,
@@ -1067,7 +1098,7 @@ mod tests {
 
         let webhook = reactions
             .iter()
-            .find(|r| r["id"].as_str() == Some("rx-webhook"))
+            .find(|r| r["name"].as_str() == Some("rx-webhook"))
             .unwrap();
         assert_eq!(webhook["kind"].as_str().unwrap(), "http");
         assert_eq!(
@@ -1104,7 +1135,10 @@ mod tests {
 
         let val = read_yaml(&cfg_path);
         let sources = val["instances"][0]["sources"].as_sequence().unwrap();
-        let ids: Vec<&str> = sources.iter().map(|s| s["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = sources
+            .iter()
+            .map(|s| s["name"].as_str().unwrap())
+            .collect();
         assert!(ids.contains(&"visible"), "user source must be present");
         assert!(
             !ids.iter().any(|id| id.starts_with("__")),
@@ -1207,11 +1241,11 @@ mod tests {
         let sources = val["instances"][0]["sources"].as_sequence().unwrap();
         let src_on = sources
             .iter()
-            .find(|s| s["id"].as_str() == Some("src-on"))
+            .find(|s| s["name"].as_str() == Some("src-on"))
             .unwrap();
         let src_off = sources
             .iter()
-            .find(|s| s["id"].as_str() == Some("src-off"))
+            .find(|s| s["name"].as_str() == Some("src-off"))
             .unwrap();
         assert!(src_on["autoStart"].as_bool().unwrap());
         assert!(!src_off["autoStart"].as_bool().unwrap());
@@ -1233,7 +1267,7 @@ mod tests {
         let reactions = val["instances"][0]["reactions"].as_sequence().unwrap();
         let rx = reactions
             .iter()
-            .find(|r| r["id"].as_str() == Some("rx1"))
+            .find(|r| r["name"].as_str() == Some("rx1"))
             .unwrap();
         assert!(
             rx["autoStart"].as_bool().is_some(),

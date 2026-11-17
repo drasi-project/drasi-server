@@ -201,54 +201,109 @@ impl ConfigurationStores {
         secrets: Option<Arc<dyn SecretStoreProvider>>,
     ) -> Result<DrasiLibBuilder> {
         let provider = self.open(config).await?;
-        let (factories, query_factory, records) = {
-            let registry = plugins.read().await;
-            let factories = crate::computation::native_factory_registry(&registry)?;
-            let query_factory = match crate::query_plugin::factory(&registry) {
-                Ok(factory) => Some(factory),
-                Err(error) if ordinary.queries.is_empty() => {
-                    log::debug!("Persisted instance '{instance}' has no query factory: {error}");
-                    None
-                }
-                Err(error) => return Err(error).context("query plugin for declared queries"),
-            };
-            // Seed errors only matter when the store is still empty.
-            let records = ordinary.records(&registry, &settings);
-            (factories, query_factory, records)
-        };
+        let (builder, factories, records) =
+            managed_builder(builder, instance, ordinary, settings, plugins, secrets).await?;
         provider
             .initialize_if_absent_with(instance, INITIAL_REQUEST_ID, || {
-                let mut desired = seed
-                    .map(|config| {
-                        config
-                            .resolve(&factories)
-                            .map(|config| DesiredInstance::from(config.definition.clone()))
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                desired.ordinary = records.context("invalid declared components")?;
-                let desired = desired.normalized()?;
-                crate::ordinary_resolver::ensure_references_resolved(&desired)?;
-                Ok(desired)
+                initial_desired(seed, &factories, records)
             })
             .await
             .with_context(|| format!("initialize configuration store for instance '{instance}'"))?;
-        let mut builder = builder
-            .with_id(instance)
-            .with_component_factories(factories)
-            .with_management_resources(Arc::new(LiveResources {
-                plugins: plugins.clone(),
-                secrets,
-            }))
-            .with_ordinary_component_resolver(Arc::new(ServerOrdinaryResolver::new(
-                plugins, settings,
-            )))
-            .with_configuration_store(provider);
-        if let Some(factory) = query_factory {
-            builder = builder.with_query_factory(factory);
-        }
-        Ok(builder)
+        Ok(builder.with_configuration_store(provider))
     }
+}
+
+/// Prepare an instance without a configuration store. Components are still
+/// managed definitions, held in memory, so they can be updated like persisted
+/// ones. Call [`seed_in_memory`] with the returned seed after building.
+pub async fn configure_in_memory(
+    builder: DrasiLibBuilder,
+    instance: &str,
+    ordinary: OrdinarySeed<'_>,
+    settings: InstanceComponentSettings,
+    plugins: Arc<RwLock<PluginRegistry>>,
+    secrets: Option<Arc<dyn SecretStoreProvider>>,
+) -> Result<(DrasiLibBuilder, InMemorySeed)> {
+    let (builder, factories, records) =
+        managed_builder(builder, instance, ordinary, settings, plugins, secrets).await?;
+    Ok((builder, InMemorySeed { factories, records }))
+}
+
+/// Declared components for an in-memory instance, accepted after build.
+pub struct InMemorySeed {
+    factories: drasi_lib::computation::v1::FactoryRegistry,
+    records: Result<Vec<drasi_lib::management::OrdinaryComponentRecord>>,
+}
+
+/// Accept the declared ordinary components into a built in-memory instance.
+/// Native computation components keep their imperative registration.
+pub async fn seed_in_memory(core: &drasi_lib::DrasiLib, seed: InMemorySeed) -> Result<()> {
+    let desired = initial_desired(None, &seed.factories, seed.records)?;
+    let revision = core.desired_configuration()?.revision;
+    core.apply_desired_state(revision, INITIAL_REQUEST_ID, desired)
+        .await
+        .context("accept declared components")?;
+    Ok(())
+}
+
+async fn managed_builder(
+    builder: DrasiLibBuilder,
+    instance: &str,
+    ordinary: OrdinarySeed<'_>,
+    settings: InstanceComponentSettings,
+    plugins: Arc<RwLock<PluginRegistry>>,
+    secrets: Option<Arc<dyn SecretStoreProvider>>,
+) -> Result<(
+    DrasiLibBuilder,
+    drasi_lib::computation::v1::FactoryRegistry,
+    Result<Vec<drasi_lib::management::OrdinaryComponentRecord>>,
+)> {
+    let (factories, query_factory, records) = {
+        let registry = plugins.read().await;
+        let factories = crate::computation::native_factory_registry(&registry)?;
+        let query_factory = match crate::query_plugin::factory(&registry) {
+            Ok(factory) => Some(factory),
+            Err(error) if ordinary.queries.is_empty() => {
+                log::debug!("Instance '{instance}' has no query factory: {error}");
+                None
+            }
+            Err(error) => return Err(error).context("query plugin for declared queries"),
+        };
+        // Seed errors only matter when the declarations are used.
+        let records = ordinary.records(&registry, &settings);
+        (factories, query_factory, records)
+    };
+    let mut builder = builder
+        .with_id(instance)
+        .with_component_factories(factories.clone())
+        .with_management_resources(Arc::new(LiveResources {
+            plugins: plugins.clone(),
+            secrets,
+        }))
+        .with_ordinary_component_resolver(Arc::new(ServerOrdinaryResolver::new(plugins, settings)));
+    if let Some(factory) = query_factory {
+        builder = builder.with_query_factory(factory);
+    }
+    Ok((builder, factories, records))
+}
+
+fn initial_desired(
+    seed: Option<&ComputationConfigInput>,
+    factories: &drasi_lib::computation::v1::FactoryRegistry,
+    records: Result<Vec<drasi_lib::management::OrdinaryComponentRecord>>,
+) -> Result<DesiredInstance> {
+    let mut desired = seed
+        .map(|config| {
+            config
+                .resolve(factories)
+                .map(|config| DesiredInstance::from(config.definition.clone()))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    desired.ordinary = records.context("invalid declared components")?;
+    let desired = desired.normalized()?;
+    crate::ordinary_resolver::ensure_references_resolved(&desired)?;
+    Ok(desired)
 }
 
 /// Create a configuration key only for a new database. A database without its

@@ -34,6 +34,8 @@ export interface ComputationPort {
 
 export interface ComputationComponent {
   id: string;
+  /** The readable name the REST API addresses the component by. */
+  name?: string;
   role: string;
   implementation?: {
     name: string;

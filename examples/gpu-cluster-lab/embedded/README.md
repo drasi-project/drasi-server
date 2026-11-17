@@ -781,7 +781,7 @@ coordinated snapshot provider with:
 | Database / host | `gpu_demo` / Compose service `postgres` |
 | Reader | `gpu_reader`, using `REPLICATION_PASSWORD` |
 | Publication | `gpu_demo_publication` |
-| Replication slot | Query-owned `gpu_native_<uuid>`; retained with the query state |
+| Replication slot | Source-owned `drasi_<prefix>_<live>`, derived from the source identity; retained with the source state |
 | Tables | The seven published domain tables listed above, with explicit primary-key mappings |
 | Connection mode | SSL disabled inside this local demo network |
 
@@ -1426,7 +1426,7 @@ queue-depth measurement.
 [check-query-isolation.mjs](ops/check-query-isolation.mjs) and
 [query-isolation.Dockerfile](ops/query-isolation.Dockerfile) replay the exact
 fourteen-query corpus individually and together against a new native recording,
-comparing bare memory with the real pipeline default. An optional paced mode
+using a bare in-memory index. An optional paced mode
 preserves input intervals and checks final timer expiry. Run performance
 diagnostics after compilation has finished; a replay is not the live feedback
 loop or a cross-platform throughput guarantee. Its synthesized graph input measures

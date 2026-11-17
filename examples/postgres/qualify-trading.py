@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import subprocess
@@ -77,14 +78,14 @@ class Trading(Qualification):
             "RUST_LOG": "info",
         })
         recipe = EXAMPLES / "trading/server/trading-native-recipe.json"
-        for source, key in [
-            ("postgres-stocks", "DRASI_PG_POSTGRES_STOCKS_SETTINGS"),
-            ("postgres-broker", "DRASI_PG_POSTGRES_BROKER_SETTINGS"),
-            ("price-feed", "DRASI_HTTP_PRICE_FEED_SETTINGS"),
-        ]:
-            self.env[key] = self.run([
+        for source in ["postgres-stocks", "postgres-broker", "price-feed"]:
+            exports = self.run([
                 str(self.args.generator.resolve()), "settings", str(recipe), source,
-            ], env=self.env).stdout.strip()
+            ], env=self.env).stdout
+            for line in exports.splitlines():
+                _, assignment = shlex.split(line)
+                key, value = assignment.split("=", 1)
+                self.env[key] = value
         self.api_log = (self.evidence / "trading-api.log").open("w")
         self.api_process = subprocess.Popen([
             self.args.python, str(EXAMPLES / "trading/mock-generator/trading_api.py"),

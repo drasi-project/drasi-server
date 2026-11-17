@@ -93,14 +93,17 @@ const consume = (async () => {
 })();
 try {
   const graph = await get('/computation');
-  assert.ok(graph.components.some(c => c.id === 'geometry' && c.role === 'Transformer'),'actual topology must contain the geometry transformer');
-  assert.ok(graph.components.some(c => c.id === 'wall-ui' && c.role === 'Sink' &&
+  // Components have UUIDs; relationships refer to them by ID, people by name.
+  const id = Object.fromEntries(graph.components.map(c => [c.name, c.id]));
+  const edge = (from,to) => graph.relationships.some(r => r.from.component === id[from] && r.to.component === id[to]);
+  assert.ok(graph.components.some(c => c.name === 'geometry' && c.role === 'Transformer'),'actual topology must contain the geometry transformer');
+  assert.ok(graph.components.some(c => c.name === 'wall-ui' && c.role === 'Sink' &&
     c.implementation?.name === 'drasi.network/sse-sink'),'UI delivery must be the native SSE sink');
   for (const [from,to] of [['scene','geometry-context'],['geometry-context','geometry'],['geometry','affected-journeys']]) {
-    assert.ok(graph.relationships.some(r => r.from.component === from && r.to.component === to),`missing actual graph edge ${from} -> ${to}`);
+    assert.ok(edge(from,to),`missing actual graph edge ${from} -> ${to}`);
   }
   for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
-    assert.ok(graph.relationships.some(r => r.from.component === query && r.to.component === 'wall-ui'),
+    assert.ok(edge(query,'wall-ui'),
       `missing direct native SSE edge ${query} -> wall-ui`);
   }
   await command({action:'reset'});
@@ -149,7 +152,7 @@ try {
   assert.equal((await rows('obstructions')).length,0);
   await command({action:'reset'});
   const impactChanges = () => messages.filter(message =>
-    message.output?.component === 'affected-journeys' && message.output.port === 'out').flatMap(message => {
+    message.output?.alias === 'affected-journeys' && message.output.component === id['affected-journeys'] && message.output.port === 'out').flatMap(message => {
     assert.ok(Array.isArray(message.changes),'native SSE must use the canonical graph-change protocol');
     assert.ok(!('queryId' in message),'native output identity must not masquerade as a query ID');
     return message.changes;

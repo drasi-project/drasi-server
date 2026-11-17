@@ -400,24 +400,26 @@ for (const [id, role, implementation] of [
   ['input-configuration', 'Query', 'drasi/continuous-query'],
   ['gpu-demo-ui', 'Sink', 'drasi.network/sse-sink'],
 ]) {
-  const node = graph.components.find(node => node.id === id);
+  const node = graph.components.find(node => node.name === id);
   assert.ok(node, `${id}: missing native node`);
   assert.equal(node.role, role);
   assert.equal(node.implementation.name, implementation);
   assert.equal(node.lifecycle, 'Running');
   assert.equal(node.failurePhase, null);
 }
-const databaseEdges = graph.relationships.filter(edge => edge.from.component === 'postgres');
+// Graph edges address components by ID; the checks use readable names.
+const graphId = name => graph.components.find(node => node.name === name)?.id;
+const databaseEdges = graph.relationships.filter(edge => edge.from.component === graphId('postgres'));
 assert.equal(databaseEdges.length, 1, 'PostgreSQL must have exactly one persistent transaction owner');
-assert.equal(databaseEdges[0].to.component, 'input-configuration');
+assert.equal(databaseEdges[0].to.component, graphId('input-configuration'));
 for (const query of queryIds) {
-  assert.ok(graph.relationships.some(edge => edge.from.component === query &&
-    edge.from.port === 'out' && edge.to.component === 'gpu-demo-ui' && edge.to.port === 'in' &&
+  assert.ok(graph.relationships.some(edge => edge.from.component === graphId(query) &&
+    edge.from.port === 'out' && edge.to.component === graphId('gpu-demo-ui') && edge.to.port === 'in' &&
     edge.representation === 'NativeProvider' && edge.binding === 'Bound'), `${query}: missing native SSE edge`);
 }
 for (const query of queryIds) {
   const config = await json(demo, `/api/v1/instances/gpu-demo/queries/${query}?view=full`);
-  assert.equal(config.data.id, query);
+  assert.equal(config.data.name, query);
   assert.equal(config.data.status.toLowerCase(), 'running');
   assert.ok((await rows(query)).length > 0, `${query}: no live rows`);
 }
@@ -443,7 +445,8 @@ try {
       const data = event.split('\n').find(line => line.startsWith('data:'));
       if (data) {
         const message = JSON.parse(data.slice(5));
-        if (queryIds.includes(message.output?.component) && message.output.port === 'out') {
+        if (queryIds.includes(message.output?.alias) && message.output.port === 'out') {
+          assert.equal(message.output.component, graphId(message.output.alias), 'SSE output must carry the query identity');
           assert.ok(!('queryId' in message), 'native output must retain its actual component identity');
           assert.ok(Array.isArray(message.changes) && message.changes.length > 0);
           for (const change of message.changes) {

@@ -11,6 +11,19 @@ struct NativeFactory {
     source: bool,
 }
 impl Factory for NativeFactory {
+    fn describe(
+        &self,
+        request: &drasi_computation_plugin_sdk::wire::DescribeRequest,
+    ) -> Result<ComponentDescription> {
+        Ok(if self.source {
+            request.source_description(
+                OutputDescription::VOLATILE,
+                drasi_computation_plugin_sdk::ProgressPersistence::Undeclared,
+            )
+        } else {
+            request.volatile_transformer()
+        })
+    }
     fn metadata(&self) -> FactoryMetadata {
         FactoryMetadata {
             implementation: ImplementationIdentity::try_new(

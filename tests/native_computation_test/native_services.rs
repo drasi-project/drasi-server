@@ -537,17 +537,24 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
                 "stream".into(),
                 ConfigurationValue::Literal(json!("input/out")),
             ),
+            ("path".into(), ConfigurationValue::Literal(json!(path))),
             (
-                "settings".into(),
-                ConfigurationValue::Literal(json!({
-                    "path":path,
-                    "tables":["Item"],
-                    "max_tables":8,
-                    "max_bytes":65536,
-                    "max_duration_ms":5000,
-                    "output_capacity":1,
-                    "shutdown_timeout_ms":5000
-                })),
+                "tables".into(),
+                ConfigurationValue::Literal(json!(["Item"])),
+            ),
+            ("maxTables".into(), ConfigurationValue::Literal(json!(8))),
+            ("maxBytes".into(), ConfigurationValue::Literal(json!(65536))),
+            (
+                "maxDurationMs".into(),
+                ConfigurationValue::Literal(json!(5000)),
+            ),
+            (
+                "outputCapacity".into(),
+                ConfigurationValue::Literal(json!(1)),
+            ),
+            (
+                "shutdownTimeoutMs".into(),
+                ConfigurationValue::Literal(json!(5000)),
             ),
         ]);
         add_bootstrap_provider(&mut topology, file_bootstrap.clone(), configuration)?;

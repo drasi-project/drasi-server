@@ -112,11 +112,12 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO drasi_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO drasi_user;
 
 -- Create publication for logical replication (stocks source)
--- This defines which tables' changes will be streamed
-CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, watchlist;
+-- This defines which tables' changes will be streamed. The Drasi PostgreSQL
+-- source does not support TRUNCATE, so it is not published.
+CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, watchlist WITH (publish = 'insert, update, delete');
 
 -- Create publication for broker source (limit orders)
-CREATE PUBLICATION drasi_broker_pub FOR TABLE limit_orders;
+CREATE PUBLICATION drasi_broker_pub FOR TABLE limit_orders WITH (publish = 'insert, update, delete');
 
 -- Create replication slot for Drasi Server (stocks source)
 -- This maintains the position in the WAL stream

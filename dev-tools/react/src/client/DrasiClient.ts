@@ -214,7 +214,9 @@ export class DrasiClient {
   /** Validate references/usability, not desired query text or deployment settings. */
   async validateResources(signal?: AbortSignal): Promise<void> {
     const queries = await Promise.allSettled([...this.outputIds].map(async queryId => {
-      requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
+      const query = await this.getQuery(queryId, signal);
+      requireRunning(query, this.details('query', queryId));
+      return [queryId, query.id] as const;
     }));
     // Drain a validation batch before handing an error to an app that may
     // immediately retry. Explicit cancellation still aborts every request.
@@ -223,8 +225,10 @@ export class DrasiClient {
     }
     const reaction = await this.getReaction(signal);
     const details = this.details('reaction', this.reaction.id);
-    if (reaction.config.kind !== 'sse' ||
-        [...this.outputIds].some(id => !reaction.config.queries.includes(id))) {
+    // A reaction may reference each query by its name or by its UUID.
+    const subscribed = new Set(reaction.config.queries);
+    if (reaction.config.kind !== 'sse' || queries.some(query => query.status === 'fulfilled' &&
+        !query.value.some(id => subscribed.has(id)))) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
     }
     requireRunning(reaction, details);

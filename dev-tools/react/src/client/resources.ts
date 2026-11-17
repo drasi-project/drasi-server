@@ -89,7 +89,9 @@ export function readComponent(
   value: unknown,
   details: DrasiErrorDetails,
 ): Component<Record<string, unknown>> {
-  if (!isRecord(value) || !isIdentifier(value.id) || value.id !== details.resourceId ||
+  if (!isRecord(value) || !isIdentifier(value.id) ||
+      (value.name !== undefined && !isIdentifier(value.name)) ||
+      (value.id !== details.resourceId && value.name !== details.resourceId) ||
       !isRecord(value.config) || !isRecord(value.links) ||
       (value.error_message !== undefined && typeof value.error_message !== 'string')) {
     throw new DrasiError('INVALID_PAYLOAD', details);
@@ -97,17 +99,20 @@ export function readComponent(
   const status = statuses.find(status => status === value.status);
   if (!status) throw new DrasiError('INVALID_PAYLOAD', details);
   const kind = details.resourceKind === 'query' ? 'queries' : 'reactions';
-  const path = `/api/v1/instances/${details.instanceId}/${kind}/${value.id}`;
-  const encoded = instancePath('', details.instanceId ?? '', kind, value.id);
-  // Current v1 links interpolate IDs literally. Accept that spelling or encoded
-  // segments, but expose only an unambiguous, instance-scoped link.
-  if ((value.links.self !== path && value.links.self !== encoded) ||
-      value.links.full !== `${value.links.self}?view=full`) {
+  // Links address the component by the identifier used in the request (UUID
+  // or name). Accept literal or encoded segments, but expose only an
+  // unambiguous, instance-scoped link.
+  const identifiers = [value.id, value.name, details.resourceId].filter(isIdentifier);
+  const encoded = identifiers.map(id => instancePath('', details.instanceId ?? '', kind, id));
+  const links = [...identifiers.map(id => `/api/v1/instances/${details.instanceId}/${kind}/${id}`), ...encoded];
+  const index = links.indexOf(value.links.self as string);
+  if (index < 0 || value.links.full !== `${value.links.self}?view=full`) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
+  const self = encoded[index % identifiers.length];
   return {
-    id: value.id, status, config: value.config,
-    links: { self: encoded, full: `${encoded}?view=full` },
+    id: value.id, ...(value.name === undefined ? {} : { name: value.name }), status, config: value.config,
+    links: { self, full: `${self}?view=full` },
     ...(value.error_message === undefined ? {} : { error_message: value.error_message }),
   };
 }
@@ -118,11 +123,12 @@ function isOptionalStringArray(value: unknown): boolean {
 
 function isInput(value: unknown): value is QueryInput {
   if (isIdentifier(value)) return true;
-  return isRecord(value) && isIdentifier(value.component) &&
+  return isRecord(value) &&
+    (isIdentifier(value.component) ? value.id === undefined : isIdentifier(value.id)) &&
     (value.port === undefined || isIdentifier(value.port)) &&
     isOptionalStringArray(value.nodes) && isOptionalStringArray(value.relations) &&
     isOptionalStringArray(value.pipeline) &&
-    Object.keys(value).every(key => ['component', 'port', 'nodes', 'relations', 'pipeline'].includes(key));
+    Object.keys(value).every(key => ['component', 'id', 'port', 'nodes', 'relations', 'pipeline'].includes(key));
 }
 
 function isResult(value: unknown): boolean {
@@ -177,10 +183,18 @@ function isReactionConfig(value: unknown): value is ReactionConfig {
     ));
 }
 
+// Servers report subscribed queries by name or as `{ id }` references to the
+// query component's UUID. Expose them uniformly as identifiers.
+function reactionQuery(value: unknown): unknown {
+  return isRecord(value) && Object.keys(value).length === 1 && isIdentifier(value.id) ? value.id : value;
+}
+
 export function readReaction(value: unknown, details: DrasiErrorDetails): Component<ReactionConfig> {
   const component = readComponent(value, details);
-  const config = component.config;
-  if (!isReactionConfig(config) || config.id !== component.id) {
+  const raw = component.config;
+  const config = Array.isArray(raw.queries) ? { ...raw, queries: raw.queries.map(reactionQuery) } : raw;
+  if (!isReactionConfig(config) ||
+      (config.id !== component.id && (component.name === undefined || config.id !== component.name))) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }
   return { ...component, config };

@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { ALL_QUERIES, type QueryDefinition } from '../src/services/queries.ts';
 
 export function nativeQueries<T extends QueryDefinition>(queries: readonly T[]) {
-  return queries.map(({ description: _description, ...query }) => ({
-    ...query, queryLanguage: 'Cypher', autoStart: true,
+  return queries.map(({ description: _description, id, ...query }) => ({
+    ...query, name: id, queryLanguage: 'Cypher', autoStart: true,
   }));
 }
 

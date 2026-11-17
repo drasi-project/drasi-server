@@ -19,7 +19,7 @@ function requireRunning(node: Record<string, unknown>): void {
 /**
  * One graph output the browser reads: the sink's route `id`, and the real
  * component and output port that produce its data. A source, a transformer or a
- * query may be an output.
+ * query may be an output. Components are named by their ID or their name.
  */
 export type NativeOutput = { readonly id: string; readonly component: string; readonly port: string };
 
@@ -36,7 +36,11 @@ export function validateNativeSseGraph(value: unknown, outputs: readonly NativeO
   }
   const components: unknown[] = value.data.components;
   const edges: unknown[] = value.data.relationships;
-  const sink = components.find(node => record(node) && node.id === sinkId);
+  // Graph relationships always refer to component IDs; callers may use names.
+  const named = (reference: string) =>
+    components.find(node => record(node) && node.id === reference) ??
+    components.find(node => record(node) && node.name === reference);
+  const sink = named(sinkId);
   if (!record(sink)) throw new DrasiError('REACTION_NOT_FOUND');
   if (sink.role !== 'Sink' || !record(sink.implementation) ||
       sink.implementation.name !== 'drasi.network/sse-sink') {
@@ -44,15 +48,15 @@ export function validateNativeSseGraph(value: unknown, outputs: readonly NativeO
   }
   requireRunning(sink);
   for (const output of outputs) {
-    const producer = components.find(node => record(node) && node.id === output.component);
+    const producer = named(output.component);
     if (!record(producer)) throw new DrasiError('OUTPUT_NOT_FOUND', { resourceId: output.id });
     if (typeof producer.role !== 'string' || !OUTPUT_ROLES.includes(producer.role)) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: output.id });
     }
     requireRunning(producer);
     if (!edges.some(edge => record(edge) && edge.representation === 'NativeProvider' &&
-        edge.binding === 'Bound' && record(edge.from) && edge.from.component === output.component &&
-        edge.from.port === output.port && record(edge.to) && edge.to.component === sinkId &&
+        edge.binding === 'Bound' && record(edge.from) && edge.from.component === producer.id &&
+        edge.from.port === output.port && record(edge.to) && edge.to.component === sink.id &&
         edge.to.port === 'in')) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', { resourceId: output.id });
     }

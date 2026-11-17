@@ -26,7 +26,12 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub struct ReactionConfig {
     pub kind: String,
+    /// Component name. Configuration writes it as `name` when a fixed
+    /// `component_id` is set, and as `id` otherwise.
     pub id: String,
+    /// Fixed component UUID, set when the configuration gives both `name` and
+    /// a UUID `id`. When absent, the graph assigns the UUID.
+    pub component_id: Option<drasi_lib::ComponentId>,
     pub queries: Vec<drasi_lib::config::ComponentReference>,
     pub auto_start: bool,
     /// Reference (by `id`) to an entry in the top-level
@@ -45,7 +50,13 @@ impl Serialize for ReactionConfig {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("kind", &self.kind)?;
-        map.serialize_entry("id", &self.id)?;
+        match &self.component_id {
+            Some(component_id) => {
+                map.serialize_entry("id", component_id.as_str())?;
+                map.serialize_entry("name", &self.id)?;
+            }
+            None => map.serialize_entry("id", &self.id)?,
+        }
         map.serialize_entry("queries", &self.queries)?;
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(ip) = &self.identity_provider {
@@ -81,6 +92,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
             {
                 let mut kind: Option<String> = None;
                 let mut id: Option<String> = None;
+                let mut name: Option<String> = None;
                 let mut queries: Option<Vec<drasi_lib::config::ComponentReference>> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut identity_provider: Option<String> = None;
@@ -101,6 +113,12 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                                 return Err(de::Error::duplicate_field("id"));
                             }
                             id = Some(map.next_value()?);
+                        }
+                        "name" => {
+                            if name.is_some() {
+                                return Err(de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
                         }
                         "queries" => {
                             if queries.is_some() {
@@ -141,7 +159,8 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 
                 // Validate required fields
                 let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
-                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let (id, component_id) =
+                    super::component_identity(id, name).map_err(de::Error::custom)?;
                 let queries = queries.ok_or_else(|| de::Error::missing_field("queries"))?;
                 let auto_start = auto_start.unwrap_or(true);
 
@@ -150,6 +169,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                 Ok(ReactionConfig {
                     kind,
                     id,
+                    component_id,
                     queries,
                     auto_start,
                     identity_provider,
@@ -163,9 +183,21 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 }
 
 impl ReactionConfig {
-    /// Get the reaction ID
+    /// The component name (the `id` field when no `name` is given).
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The fixed component UUID, when the configuration sets one.
+    pub fn component_id(&self) -> Option<&drasi_lib::ComponentId> {
+        self.component_id.as_ref()
+    }
+
+    /// The fixed component UUID, or a newly generated one.
+    pub fn component_id_or_generate(&self) -> drasi_lib::ComponentId {
+        self.component_id
+            .clone()
+            .unwrap_or_else(drasi_lib::ComponentId::generate)
     }
 
     /// Get the query IDs this reaction subscribes to
@@ -551,6 +583,7 @@ autoStart: true
     #[test]
     fn test_reaction_serialize_deserialize_roundtrip() {
         let original = ReactionConfig {
+            component_id: None,
             kind: "log".to_string(),
             id: "roundtrip-reaction".to_string(),
             queries: vec![query_ref("q1"), query_ref("q2")],

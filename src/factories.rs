@@ -821,6 +821,7 @@ mod tests {
         // top-level provider is rewritten to an inline definition so the
         // source-creation path can instantiate and wire it live.
         let source = SourceConfig {
+            component_id: None,
             kind: "postgres".to_string(),
             id: "src1".to_string(),
             auto_start: true,
@@ -853,6 +854,7 @@ mod tests {
     #[test]
     fn test_resolve_source_bootstrap_provider_unknown_reference_errors() {
         let source = SourceConfig {
+            component_id: None,
             kind: "postgres".to_string(),
             id: "src1".to_string(),
             auto_start: true,
@@ -873,6 +875,7 @@ mod tests {
     fn test_resolve_source_bootstrap_provider_inline_untouched() {
         // Inline providers (and sources without one) are left unchanged.
         let source = SourceConfig {
+            component_id: None,
             kind: "postgres".to_string(),
             id: "src1".to_string(),
             auto_start: true,
@@ -903,6 +906,7 @@ mod tests {
     async fn test_unknown_source_kind_rejected() {
         let registry = test_registry();
         let config = SourceConfig {
+            component_id: None,
             kind: "nonexistent".to_string(),
             id: "test".to_string(),
             auto_start: true,
@@ -924,6 +928,7 @@ mod tests {
     async fn test_unknown_reaction_kind_rejected() {
         let registry = test_registry();
         let config = ReactionConfig {
+            component_id: None,
             kind: "nonexistent".to_string(),
             id: "test".to_string(),
             queries: vec![],

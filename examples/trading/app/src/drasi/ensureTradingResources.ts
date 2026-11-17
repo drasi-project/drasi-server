@@ -23,6 +23,9 @@ function canonical(value: unknown): string {
 
 const nativeDefinition = TRADING_NATIVE_COMPUTATION.definition;
 const nativeIds = new Set(nativeDefinition.components.map(component => component.descriptor.id));
+// The server reports query inputs by component UUID; definitions use names.
+const nativeIdsByName = new Map(nativeDefinition.components.map(component =>
+  [component.name, component.descriptor.id] as const));
 const resourceIds = new Set(nativeDefinition.resources.map(resource => resource.id));
 const componentId = (value: unknown) =>
   isRecord(value) && isRecord(value.descriptor) ? value.descriptor.id : undefined;
@@ -127,7 +130,8 @@ function queryContract(config: TradingQueryDefinition): string {
     query: config.query.trim(),
     language: config.queryLanguage,
     inputs: config.inputs.map(input => typeof input === 'string' ? { component: input } : input).map(input => ({
-      component: input.component, port: input.port ?? null, pipeline: input.pipeline ?? [],
+      component: input.id ?? nativeIdsByName.get(input.component ?? '') ?? input.component,
+      port: input.port ?? null, pipeline: input.pipeline ?? [],
       nodes: input.nodes ?? [], relations: input.relations ?? [],
     })),
     joins: (config.joins ?? []).map(join => ({
@@ -181,8 +185,12 @@ async function prepare(
   const readReaction = async () => {
     Object.assign(active, details('reaction', TRADING_REACTION.id));
     const component = await client.getReaction(signal);
-    const expected = { ...TRADING_REACTION, queries: TRADING_QUERY_IDS };
-    if (Object.entries(expected).some(([key, value]) => JSON.stringify(component.config[key]) !== JSON.stringify(value))) {
+    const { queries, ...config } = component.config;
+    // The server may report each subscribed query by name or by its UUID.
+    const sameQueries = queries.length === TRADING_QUERY_IDS.length && TRADING_QUERY_IDS.every((name, index) =>
+      queries[index] === name || queries[index] === nativeIdsByName.get(name));
+    if (!sameQueries || Object.entries(TRADING_REACTION).some(([key, value]) =>
+      JSON.stringify(config[key]) !== JSON.stringify(value))) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', details('reaction', TRADING_REACTION.id));
     }
     checkState(component, 'reaction');
@@ -211,7 +219,7 @@ async function prepare(
   const readNative = async () => {
     Object.assign(active, bundleDetails);
     const { data } = await request(fetcher, `${nativeUrl}/configuration`, signal, {}, bundleDetails);
-    if (!isRecord(data) || data.version !== 1 || !isRecord(data.instance)) {
+    if (!isRecord(data) || data.version !== 2 || !isRecord(data.instance)) {
       throw new DrasiError('INVALID_PAYLOAD', bundleDetails);
     }
     for (const kind of ['sources', 'queries'] as const) {

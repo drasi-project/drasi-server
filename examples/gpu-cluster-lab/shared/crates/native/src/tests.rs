@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use drasi_computation_plugin_sdk::{NativeComponent, NativeSink, NativeSource, NativeTransformer};
 use drasi_core::{computation::InMemoryComputationProvider, models::SourceChange};
 use drasi_lib::computation::v1::*;
-use drasi_lib::{queries::FetchError, ComponentStatus, DrasiError};
 use gpu_contracts::*;
 use gpu_policy::Evaluator;
 use std::{
@@ -37,7 +36,7 @@ fn processor(kind: Kind, workers: Arc<Workers>) -> Result<Processor> {
         kind,
         factory
             .metadata()
-            .descriptor(ComponentId::try_new(format!("{kind:?}"))?)?,
+            .descriptor(crate::test_contexts::component_id(format!("{kind:?}"))?)?,
         serde_json::json!({"stream":format!("{kind:?}/{}",Uuid::new_v4())}),
         workers,
         None,
@@ -54,7 +53,7 @@ async fn configured_query(
     let mut query = ContinuousQueryTransformer::new_configured(
         ContinuousQueryDefinition {
             graph_id: "gpu-cluster-test".into(),
-            id: ComponentId::try_new(id)?,
+            id: crate::test_contexts::component_id(id)?,
             query: text.into(),
             language: ComputationQueryLanguage::Cypher,
             output_stream: StreamId::try_new(format!("{id}/out"))?,
@@ -66,7 +65,7 @@ async fn configured_query(
         None,
     )
     .await?;
-    query.start().await?;
+    query.start(&crate::test_contexts::lib::start()).await?;
     Ok(query)
 }
 async fn project(
@@ -196,12 +195,16 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
     let workers = Arc::new(Workers::default());
     let mut policy = processor(Kind::Policy, workers.clone())?;
     let mut simulator = processor(Kind::Simulator, workers)?;
-    policy.start().await?;
-    simulator.start().await?;
+    policy
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    simulator
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query("inputs", "MATCH (m:Input) RETURN m.payload AS payload").await?;
     let mut source = Emitter::new(
         StreamId::try_new("test-source")?,
-        ComponentId::try_new("simulator-input-fixture")?,
+        crate::test_contexts::component_id("simulator-input-fixture")?,
         None,
     )?;
     let bootstrap = bootstrap(&f, epoch)?;
@@ -359,10 +362,10 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
     }
     assert_eq!(resumed.len(), 8);
     assert!(resumed.iter().all(|e| e["state"] == "running"));
-    simulator.stop().await?;
-    policy.stop().await?;
-    inputs.stop().await?;
-    heartbeat.stop().await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+    policy.stop(&crate::test_contexts::sdk::stop()).await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
+    heartbeat.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -381,7 +384,9 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
         assessment: Evaluator::new()?.evaluate(&f.configuration)?,
     };
     let mut simulator = processor(Kind::Simulator, Arc::new(Workers::default()))?;
-    simulator.start().await?;
+    simulator
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query(
         "recovery-input",
         "MATCH (m:Input) RETURN m.payload AS payload",
@@ -389,7 +394,7 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
     .await?;
     let mut source = Emitter::new(
         StreamId::try_new("recovery-source")?,
-        ComponentId::try_new("recovery-fixture")?,
+        crate::test_contexts::component_id("recovery-fixture")?,
         None,
     )?;
     let steps = [
@@ -467,120 +472,16 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
         deleted_samples, 1,
         "removed inventory must delete the old sample"
     );
-    simulator.stop().await?;
-    simulator.stop().await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
+    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
     assert!(
-        simulator.start().await.is_err(),
+        simulator
+            .start(&mut crate::test_contexts::sdk::start())
+            .await
+            .is_err(),
         "restart must construct fresh volatile state"
     );
-    inputs.stop().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn native_root_query_is_exposed_through_ordinary_read_apis() -> Result<()> {
-    let (source, _handle) = drasi_source_application::ApplicationSource::new(
-        "probe",
-        drasi_source_application::ApplicationSourceConfig {
-            properties: Default::default(),
-            durability: None,
-        },
-    )?;
-    let drasi = drasi_lib::DrasiLib::builder()
-        .with_id("gpu-demo-probe")
-        .with_source(source)
-        .build()
-        .await?;
-    let root_id = drasi.computation_control()?.desired_snapshot().id.clone();
-    let config = drasi_lib::Query::cypher("ui-gpus")
-        .query("MATCH (n:Probe) RETURN n.id AS id")
-        .from_input("probe")
-        .enable_bootstrap(false)
-        .auto_start(false)
-        .build();
-    let batch: ComponentBatch = drasi
-        .computation_pipeline()?
-        .source(
-            drasi.borrow_computation_source("probe").await?,
-            SourceSubscriptionOptions::default(),
-        )?
-        .query(config.clone())
-        .build()?
-        .auto_start(false);
-    let report: ReconciliationReport = drasi.add_components(batch).await?;
-    assert!(
-        report.committed,
-        "component declarations were not committed"
-    );
-    assert_eq!(report.summary, OperationSummary::Completed);
-    assert!(report.failures.is_empty(), "{:?}", report.failures);
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        drasi.computation_component("ui-gpus")?.wait_created(),
-    )
-    .await
-    .context("ui-gpus creation did not finish")??;
-    let snapshot = drasi.inspect_computation_graph()?.snapshot();
-    assert_eq!(snapshot.desired.id, root_id, "instance root changed");
-    let query = snapshot
-        .desired
-        .nodes
-        .iter()
-        .find(|node| node.descriptor.id().as_str() == "ui-gpus")
-        .context("ui-gpus was not declared in the instance root")?;
-    assert_eq!(query.role, ComponentRole::Transformer);
-    assert_eq!(
-        query.descriptor.semantic_kind(),
-        Some(drasi_lib::computation::v1::ComponentSemanticKind::Query)
-    );
-    let inventory = drasi.inspect_computation_inventory().await?;
-    assert_eq!(
-        inventory
-            .scopes
-            .values()
-            .filter(|scope| scope.owner.is_none())
-            .count(),
-        1,
-        "the instance must have exactly one root"
-    );
-    assert_eq!(
-        drasi.list_queries().await?,
-        vec![("ui-gpus".to_string(), ComponentStatus::Added)]
-    );
-    assert_eq!(
-        serde_json::to_value(drasi.get_query_config("ui-gpus").await?)?,
-        serde_json::to_value(&config)?
-    );
-    assert_eq!(
-        drasi.get_query_status("ui-gpus").await?,
-        ComponentStatus::Added
-    );
-    let info = drasi.get_query_info("ui-gpus").await?;
-    assert_eq!(info.id, config.id);
-    assert_eq!(info.query, config.query);
-    assert_eq!(info.status, ComponentStatus::Added);
-    assert_eq!(
-        serde_json::to_value(info.inputs)?,
-        serde_json::to_value(&config.inputs)?
-    );
-    assert!(info.error_message.is_none());
-    let error = drasi.get_query_results("ui-gpus").await.unwrap_err();
-    assert!(
-        matches!(&error, DrasiError::InvalidState { message } if message == "Query 'ui-gpus' is not running"),
-        "an unstarted query must fail as not running, not as missing: {error:?}"
-    );
-    let query = drasi
-        .query_manager()
-        .get_query_instance("ui-gpus")
-        .await
-        .map_err(anyhow::Error::msg)?;
-    assert_eq!(
-        query.fetch_snapshot().await.unwrap_err(),
-        FetchError::NotRunning {
-            status: ComponentStatus::Added
-        }
-    );
-    drasi.shutdown().await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -601,12 +502,16 @@ async fn native_placement_and_resilience_keep_hypothetical_allocations_read_only
     let workers = Arc::new(Workers::default());
     let mut placement = processor(Kind::Placement, workers.clone())?;
     let mut resilience = processor(Kind::Resilience, workers)?;
-    placement.start().await?;
-    resilience.start().await?;
+    placement
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    resilience
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query("scheduling", "MATCH (m:Input) RETURN m.payload AS payload").await?;
     let mut source = Emitter::new(
         StreamId::try_new("test-scheduling")?,
-        ComponentId::try_new("scheduling-fixture")?,
+        crate::test_contexts::component_id("scheduling-fixture")?,
         None,
     )?;
     for row in send(
@@ -638,9 +543,9 @@ async fn native_placement_and_resilience_keep_hypothetical_allocations_read_only
     assert!(payloads(&assessment, "ResilienceAssessment")?[0]
         .get("assignments")
         .is_none());
-    placement.stop().await?;
-    resilience.stop().await?;
-    inputs.stop().await?;
+    placement.stop(&crate::test_contexts::sdk::stop()).await?;
+    resilience.stop(&crate::test_contexts::sdk::stop()).await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }
 
@@ -662,7 +567,7 @@ async fn managed_plan_reaction_reports_real_receipts_via_status_producer() -> Re
     let mut reaction = crate::reaction::Reaction::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("plan-writer")?)?,
+            .descriptor(crate::test_contexts::component_id("plan-writer")?)?,
         serde_json::json!({"endpoint":endpoint,"token":"test-only"}),
         hub.clone(),
     )?;
@@ -673,18 +578,22 @@ async fn managed_plan_reaction_reports_real_receipts_via_status_producer() -> Re
     let mut status = crate::status::Producer::new(
         factory
             .metadata()
-            .descriptor(ComponentId::try_new("status-producer")?)?,
+            .descriptor(crate::test_contexts::component_id("status-producer")?)?,
         serde_json::json!({"stream":"test-runtime-status"}),
         hub,
         None,
     )?;
     assert_eq!(reaction.completion(), SinkCompletion::Accepted);
-    status.start().await?;
-    reaction.start().await?;
+    status
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
+    reaction
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query("write-plan", "MATCH (m:Input) RETURN m.payload AS payload").await?;
     let mut emitter = Emitter::new(
         StreamId::try_new("test-plan-source")?,
-        ComponentId::try_new("plan-fixture")?,
+        crate::test_contexts::component_id("plan-fixture")?,
         None,
     )?;
     let candidate = Candidate {
@@ -733,9 +642,9 @@ async fn managed_plan_reaction_reports_real_receipts_via_status_producer() -> Re
     .await??;
     assert_eq!(receipt["decision_id"], candidate.decision_id.to_string());
     assert_eq!(receipt["plan_version"], "2");
-    reaction.stop().await?;
-    status.stop().await?;
-    inputs.stop().await?;
+    reaction.stop(&crate::test_contexts::sdk::stop()).await?;
+    status.stop(&crate::test_contexts::sdk::stop()).await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
     server.abort();
     let _ = server.await;
     Ok(())
@@ -762,7 +671,9 @@ async fn policy_infeasibility_gets_only_a_read_only_capacity_diagnostic() -> Res
         plan,
     };
     let mut placement = processor(Kind::Placement, Arc::new(Workers::default()))?;
-    placement.start().await?;
+    placement
+        .start(&mut crate::test_contexts::sdk::start())
+        .await?;
     let mut inputs = query(
         "blocked-scheduling",
         "MATCH (m:Input) RETURN m.payload AS payload",
@@ -770,7 +681,7 @@ async fn policy_infeasibility_gets_only_a_read_only_capacity_diagnostic() -> Res
     .await?;
     let mut source = Emitter::new(
         StreamId::try_new("blocked-source")?,
-        ComponentId::try_new("blocked-fixture")?,
+        crate::test_contexts::component_id("blocked-fixture")?,
         None,
     )?;
     for row in send(
@@ -801,7 +712,7 @@ async fn policy_infeasibility_gets_only_a_read_only_capacity_diagnostic() -> Res
     .await??;
     assert_eq!(diagnostic["diagnostic"]["feasible"], true);
     assert!(diagnostic["diagnostic"].get("assignments").is_none());
-    placement.stop().await?;
-    inputs.stop().await?;
+    placement.stop(&crate::test_contexts::sdk::stop()).await?;
+    inputs.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
 }

@@ -19,6 +19,43 @@ pub const UI_QUERIES: [&str; 9] = [
     "ui-policy",
 ];
 
+/// The stable component UUID for a named GPU lab graph component.
+///
+/// Drasi component IDs are UUIDs; the lab derives them from its readable
+/// component names so the runtime and plugins agree without a lookup table.
+pub fn component_id(name: &str) -> String {
+    let digest =
+        Sha256::digest([b"gpu-cluster-lab.component.v1:".as_slice(), name.as_bytes()].concat());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    uuid::Builder::from_random_bytes(bytes)
+        .into_uuid()
+        .to_string()
+}
+
+/// The GPU lab's named native components.
+pub const COMPONENTS: [&str; 6] = [
+    "policy",
+    "simulator",
+    "placement",
+    "resilience",
+    "plan-writer",
+    "runtime-status",
+];
+
+/// The readable name of a native lab component, else its ID.
+pub fn component_label(id: &str) -> String {
+    component_name(id, &COMPONENTS).map_or_else(|| id.to_owned(), str::to_owned)
+}
+
+/// The name among `candidates` whose [`component_id`] is `id`.
+pub fn component_name<'a>(id: &str, candidates: &[&'a str]) -> Option<&'a str> {
+    candidates
+        .iter()
+        .copied()
+        .find(|name| component_id(name) == id)
+}
+
 pub mod decimal {
     use serde::{de::Error, Deserialize, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {

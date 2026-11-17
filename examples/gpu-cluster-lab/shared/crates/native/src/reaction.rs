@@ -5,6 +5,10 @@ use drasi_computation_contracts::{
     ChangeOperation, ComponentDescriptor, InputEnvelope, PortId, QueryChangeCodec, SinkCompletion,
     SnapshotConsumer,
 };
+use drasi_computation_plugin_sdk::lifecycle::{
+    nothing_to_do, DisposeContext, InitializeContext, LifecycleResult, PauseContext, ResumeContext,
+    StartContext, StopContext,
+};
 use drasi_computation_plugin_sdk::{NativeComponent, NativeSink};
 use gpu_contracts::Candidate;
 use gpu_control::writer::{Outcome, PlanWriter};
@@ -81,84 +85,105 @@ impl NativeComponent for Reaction {
     fn configuration(&self) -> Result<serde_json::Value> {
         Ok(self.configuration.clone())
     }
-    async fn start(&mut self) -> Result<()> {
-        anyhow::ensure!(self.task.is_none(), "plan reaction already started");
-        let config: Config = serde_json::from_value(self.configuration.clone())?;
-        let mut writer = PlanWriter::new(config.endpoint, config.token)?;
-        let (sender, mut pending) = watch::channel::<Option<Candidate>>(None);
-        let (desired, mut current) = watch::channel(None);
-        let hub = self.hub.clone();
-        let id = self.descriptor.id().to_string();
-        self.task = Some(tokio::spawn(async move {
-            while pending.changed().await.is_ok() {
-                let candidate = pending.borrow_and_update().clone();
-                let Some(candidate) = candidate else {
-                    continue;
-                };
-                let epoch = Hub::candidate_epoch(&candidate)?;
-                hub.publish(&id, "writing", None, Some(epoch))?;
-                match writer.write(&candidate, &mut current).await {
-                    Ok(Outcome::Committed(receipt)) => {
-                        hub.receipt(&receipt)?;
-                        hub.write_outcome(
-                            &candidate,
-                            "receipt",
-                            "HTTP commit receipt received; awaiting committed allocation input.",
-                        )?;
-                        hub.event(epoch, &id, "write-receipt",
-                            "Plan writer received an HTTP commit receipt. Waiting for the committed allocation input; application is not confirmed.".into(),
-                            Some(candidate.decision_id), Some(receipt.plan_version.to_string()))?;
-                        hub.publish(&id, "committed", None, Some(epoch))?;
-                    }
-                    Ok(Outcome::Conflict) => {
-                        let detail = "Candidate rejected with 409; no retry";
-                        hub.write_outcome(&candidate, "rejected", detail)?;
-                        hub.event(
-                            epoch,
-                            &id,
-                            "write-rejected",
-                            detail.into(),
-                            Some(candidate.decision_id),
-                            None,
-                        )?;
-                        hub.publish(&id, "awaiting-newer-cdc", Some(detail.into()), Some(epoch))?;
-                    }
-                    Ok(Outcome::Superseded) => {
-                        hub.write_outcome(&candidate, "superseded", "Candidate superseded; this is not proof that an earlier in-flight request did not commit.")?;
-                        hub.publish(&id, "superseded", None, Some(epoch))?;
-                    }
-                    Err(error) => {
-                        let detail = format!("{error:#}");
-                        hub.write_outcome(&candidate, "unknown", &detail)?;
-                        hub.event(
-                            epoch,
-                            &id,
-                            "write-unknown",
-                            detail.clone(),
-                            Some(candidate.decision_id),
-                            None,
-                        )?;
-                        hub.publish(&id, "write-error", Some(detail), Some(epoch))?;
+    async fn initialize(&mut self, _ctx: &InitializeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn start(&mut self, _ctx: &mut StartContext) -> LifecycleResult {
+        async {
+            anyhow::ensure!(self.task.is_none(), "plan reaction already started");
+            let config: Config = serde_json::from_value(self.configuration.clone())?;
+            let mut writer = PlanWriter::new(config.endpoint, config.token)?;
+            let (sender, mut pending) = watch::channel::<Option<Candidate>>(None);
+            let (desired, mut current) = watch::channel(None);
+            let hub = self.hub.clone();
+            let id = self.descriptor.id().to_string();
+            self.task = Some(tokio::spawn(async move {
+                while pending.changed().await.is_ok() {
+                    let candidate = pending.borrow_and_update().clone();
+                    let Some(candidate) = candidate else {
+                        continue;
+                    };
+                    let epoch = Hub::candidate_epoch(&candidate)?;
+                    hub.publish(&id, "writing", None, Some(epoch))?;
+                    match writer.write(&candidate, &mut current).await {
+                        Ok(Outcome::Committed(receipt)) => {
+                            hub.receipt(&receipt)?;
+                            hub.write_outcome(
+                                &candidate,
+                                "receipt",
+                                "HTTP commit receipt received; awaiting committed allocation input.",
+                            )?;
+                            hub.event(epoch, &id, "write-receipt",
+                                "Plan writer received an HTTP commit receipt. Waiting for the committed allocation input; application is not confirmed.".into(),
+                                Some(candidate.decision_id), Some(receipt.plan_version.to_string()))?;
+                            hub.publish(&id, "committed", None, Some(epoch))?;
+                        }
+                        Ok(Outcome::Conflict) => {
+                            let detail = "Candidate rejected with 409; no retry";
+                            hub.write_outcome(&candidate, "rejected", detail)?;
+                            hub.event(
+                                epoch,
+                                &id,
+                                "write-rejected",
+                                detail.into(),
+                                Some(candidate.decision_id),
+                                None,
+                            )?;
+                            hub.publish(&id, "awaiting-newer-cdc", Some(detail.into()), Some(epoch))?;
+                        }
+                        Ok(Outcome::Superseded) => {
+                            hub.write_outcome(&candidate, "superseded", "Candidate superseded; this is not proof that an earlier in-flight request did not commit.")?;
+                            hub.publish(&id, "superseded", None, Some(epoch))?;
+                        }
+                        Err(error) => {
+                            let detail = format!("{error:#}");
+                            hub.write_outcome(&candidate, "unknown", &detail)?;
+                            hub.event(
+                                epoch,
+                                &id,
+                                "write-unknown",
+                                detail.clone(),
+                                Some(candidate.decision_id),
+                                None,
+                            )?;
+                            hub.publish(&id, "write-error", Some(detail), Some(epoch))?;
+                        }
                     }
                 }
-            }
-            Ok(())
-        }));
-        self.sender = Some(sender);
-        self.desired = Some(desired);
-        self.hub
-            .publish(self.descriptor.id().as_str(), "running", None, None)
+                Ok(())
+            }));
+            self.sender = Some(sender);
+            self.desired = Some(desired);
+            self.hub
+                .publish(self.descriptor.id().as_str(), "running", None, None)
+        }
+        .await
+        .map_err(Into::into)
     }
-    async fn stop(&mut self) -> Result<()> {
-        if let Some(desired) = self.desired.take() {
-            desired.send_replace(None);
+    // The host pulls work, so paused components produce nothing.
+    async fn pause(&mut self, _ctx: &PauseContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn resume(&mut self, _ctx: &ResumeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn stop(&mut self, _ctx: &StopContext) -> LifecycleResult {
+        async {
+            if let Some(desired) = self.desired.take() {
+                desired.send_replace(None);
+            }
+            self.sender = None;
+            if let Some(task) = self.task.take() {
+                task.await.context("plan reaction worker panicked")??;
+            }
+            self.hub
+                .publish(self.descriptor.id().as_str(), "stopped", None, None)
         }
-        self.sender = None;
-        if let Some(task) = self.task.take() {
-            task.await.context("plan reaction worker panicked")??;
-        }
-        self.hub
-            .publish(self.descriptor.id().as_str(), "stopped", None, None)
+        .await
+        .map_err(Into::into)
+    }
+    async fn dispose(&mut self, _ctx: &DisposeContext) -> LifecycleResult {
+        nothing_to_do()
     }
 }
 #[async_trait]

@@ -32,8 +32,8 @@ use tokio::sync::RwLock;
 use crate::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
 use crate::plugin_registry::PluginRegistry;
 
-const SOURCE_FIELDS: [&str; 3] = ["kind", "id", "autoStart"];
-const REACTION_FIELDS: [&str; 4] = ["kind", "id", "autoStart", "queries"];
+const SOURCE_FIELDS: [&str; 4] = ["kind", "id", "name", "autoStart"];
+const REACTION_FIELDS: [&str; 5] = ["kind", "id", "name", "autoStart", "queries"];
 
 /// A requested change that a persisted component cannot apply in place.
 #[derive(Debug, thiserror::Error)]
@@ -64,7 +64,8 @@ fn restore(
         map.remove(*field);
     }
     map.insert("kind".into(), kind.into());
-    map.insert("id".into(), record.name.as_str().into());
+    map.insert("id".into(), record.id.as_str().into());
+    map.insert("name".into(), record.name.as_str().into());
     map.insert("autoStart".into(), record.auto_start.into());
     Ok(map)
 }
@@ -72,7 +73,7 @@ fn restore(
 /// Encode a source DTO as an ordinary definition named by its DTO `id`.
 pub fn source_definition(config: &SourceConfig) -> Result<OrdinaryComponentDefinition> {
     Ok(OrdinaryComponentDefinition {
-        id: None,
+        id: config.component_id().cloned(),
         name: ComponentName::try_new(config.id()).context("invalid source name")?,
         auto_start: config.auto_start(),
         component: OrdinaryComponent::Source {
@@ -85,7 +86,7 @@ pub fn source_definition(config: &SourceConfig) -> Result<OrdinaryComponentDefin
 /// Encode a reaction DTO as an ordinary definition named by its DTO `id`.
 pub fn reaction_definition(config: &ReactionConfig) -> Result<OrdinaryComponentDefinition> {
     Ok(OrdinaryComponentDefinition {
-        id: None,
+        id: config.component_id().cloned(),
         name: ComponentName::try_new(config.id()).context("invalid reaction name")?,
         auto_start: config.auto_start,
         component: OrdinaryComponent::Reaction {
@@ -305,7 +306,9 @@ impl OrdinarySeed<'_> {
         let mut records = Vec::new();
         for source in self.sources {
             settings.validate_source(registry, source)?;
-            records.push(source_definition(source)?.with_assigned_id(ComponentId::generate()));
+            records.push(
+                source_definition(source)?.with_assigned_id(source.component_id_or_generate()),
+            );
         }
         for query in self.queries {
             let id = query.id.clone().unwrap_or_else(ComponentId::generate);
@@ -317,7 +320,10 @@ impl OrdinarySeed<'_> {
         }
         for reaction in self.reactions {
             settings.validate_reaction(registry, reaction)?;
-            records.push(reaction_definition(reaction)?.with_assigned_id(ComponentId::generate()));
+            records.push(
+                reaction_definition(reaction)?
+                    .with_assigned_id(reaction.component_id_or_generate()),
+            );
         }
         Ok(records)
     }
@@ -465,11 +471,15 @@ mod tests {
             configuration["password"],
             json!({"kind": "Secret", "name": "db-password"})
         );
-        let record = definition.with_assigned_id(ComponentId::generate());
+        let assigned = ComponentId::generate();
+        let record = definition.with_assigned_id(assigned.clone());
         let rebuilt = source_config(&record).unwrap();
+        assert_eq!(rebuilt.component_id(), Some(&assigned));
+        let mut expected = source();
+        expected.component_id = Some(assigned);
         assert_eq!(
             serde_json::to_value(rebuilt).unwrap(),
-            serde_json::to_value(source()).unwrap()
+            serde_json::to_value(expected).unwrap()
         );
     }
 
@@ -483,9 +493,10 @@ mod tests {
             "token": {"kind": "Secret", "name": "token"},
         }))
         .unwrap();
+        let assigned = ComponentId::generate();
         let record = reaction_definition(&config)
             .unwrap()
-            .with_assigned_id(ComponentId::generate());
+            .with_assigned_id(assigned.clone());
         assert_eq!(
             references(&record),
             vec![ComponentReference::by_name(
@@ -493,9 +504,11 @@ mod tests {
             )]
         );
         let rebuilt = reaction_config(&record, references(&record)).unwrap();
+        let mut expected = config;
+        expected.component_id = Some(assigned);
         assert_eq!(
             serde_json::to_value(rebuilt).unwrap(),
-            serde_json::to_value(config).unwrap()
+            serde_json::to_value(expected).unwrap()
         );
     }
 

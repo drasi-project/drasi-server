@@ -101,6 +101,7 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Create sources using enum variants
     let source1 = SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: "test-source-1".to_string(),
         auto_start: true,
@@ -109,6 +110,7 @@ async fn test_persistence_saves_complete_configuration() {
         config: default_mock_config(),
     };
     let source2 = SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: "test-source-2".to_string(),
         auto_start: false,
@@ -142,6 +144,7 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Create reaction using enum variant
     let reaction = ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id: "test-reaction-1".to_string(),
         queries: vec![component_reference("test-query-1")],
@@ -246,6 +249,7 @@ async fn test_persistence_atomic_write() {
 
     // Create updated config with a new source
     let new_source = SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: "new-source".to_string(),
         auto_start: true,

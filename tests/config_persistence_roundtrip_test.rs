@@ -50,6 +50,7 @@ fn test_secret_reference_survives_source_config_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -99,6 +100,7 @@ fn test_secret_reference_survives_reaction_config_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "http".to_string(),
                 id: "webhook".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -141,6 +143,7 @@ fn test_env_var_reference_survives_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -179,6 +182,7 @@ fn test_env_var_without_default_survives_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -217,6 +221,7 @@ fn test_camelcase_keys_preserved_in_source_config_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -275,6 +280,7 @@ fn test_camelcase_keys_preserved_in_reaction_config_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             reactions: vec![ReactionConfig {
+                component_id: None,
                 kind: "sse".to_string(),
                 id: "sse-reaction".to_string(),
                 queries: vec![ComponentReference::by_name(
@@ -322,6 +328,7 @@ fn test_mixed_static_secret_and_env_var_values_roundtrip() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -390,6 +397,7 @@ fn test_password_field_preserved_not_stripped() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -424,6 +432,7 @@ fn test_password_as_secret_preserved() {
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg-source".to_string(),
                 auto_start: true,
@@ -465,6 +474,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
             sources: vec![
                 SourceConfig {
+                    component_id: None,
                     kind: "postgres".to_string(),
                     id: "source-1".to_string(),
                     auto_start: true,
@@ -476,6 +486,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                     identity_provider: None,
                 },
                 SourceConfig {
+                    component_id: None,
                     kind: "http".to_string(),
                     id: "source-2".to_string(),
                     auto_start: false,
@@ -489,6 +500,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
             ],
             reactions: vec![
                 ReactionConfig {
+                    component_id: None,
                     kind: "log".to_string(),
                     id: "reaction-1".to_string(),
                     queries: vec![ComponentReference::by_name(
@@ -499,6 +511,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                     identity_provider: None,
                 },
                 ReactionConfig {
+                    component_id: None,
                     kind: "http".to_string(),
                     id: "reaction-2".to_string(),
                     queries: vec![ComponentReference::by_name(

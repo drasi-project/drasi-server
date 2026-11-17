@@ -416,6 +416,7 @@ mod tests {
 
     fn source(kind: &str, id: &str) -> SourceConfig {
         SourceConfig {
+            component_id: None,
             kind: kind.to_string(),
             id: id.to_string(),
             auto_start: true,
@@ -494,6 +495,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -516,6 +518,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -544,6 +547,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -568,6 +572,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -591,6 +596,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -629,6 +635,7 @@ mod tests {
         let config = config_with(
             vec![],
             vec![ReactionConfig {
+                component_id: None,
                 kind: "log".to_string(),
                 id: "log1".to_string(),
                 queries: vec![],
@@ -650,6 +657,7 @@ mod tests {
         let config = config_with(
             vec![],
             vec![ReactionConfig {
+                component_id: None,
                 kind: "log".to_string(),
                 id: "log1".to_string(),
                 queries: vec![],
@@ -671,6 +679,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
@@ -698,6 +707,7 @@ mod tests {
         let registry = mock_registry();
         let config = config_with(
             vec![SourceConfig {
+                component_id: None,
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,

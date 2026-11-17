@@ -429,7 +429,7 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|config| config["id"] == id && config["failStart"] == true),
+                .any(|config| config["name"] == id && config["failStart"] == true),
             "pending node configuration must be saved: {persisted}"
         );
 
@@ -1121,7 +1121,7 @@ async fn default_runtime_reports_autostart_failures_as_node_health() {
             .unwrap()
             .contains("fixture start failure"));
         let persisted = serde_json::to_value(harness.saved()).unwrap();
-        assert_eq!(persisted["instances"][0][resource][0]["id"], id);
+        assert_eq!(persisted["instances"][0][resource][0]["name"], id);
     }
     assert_eq!(harness.source_probe.starts.load(Ordering::SeqCst), 1);
     assert_eq!(harness.reaction_probe.starts.load(Ordering::SeqCst), 1);

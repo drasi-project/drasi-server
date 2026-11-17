@@ -23,7 +23,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use super::{
-    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
+    apply_limit, component_links, persist_after_operation, resolve_component_name, sse_event_async,
     ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
@@ -113,7 +113,7 @@ pub async fn create_query(
         )
     })?;
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         let definition = drasi_lib::management::OrdinaryComponentDefinition::query(config)
             .map_err(|e| {
                 ErrorResponse::new(
@@ -209,8 +209,10 @@ pub async fn upsert_query_handler(
             "Server is in read-only mode. Cannot create or update queries.",
         ));
     }
-    let name = parse_component_name(&id, "query")?;
-    if config_dto.name.to_string() != id {
+    let name = resolve_component_name(&core, &id, "query").await?;
+    if config_dto.name.as_str() != id
+        && config_dto.id.as_ref().map(|id| id.as_str()) != Some(id.as_str())
+    {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
             format!(
@@ -219,7 +221,8 @@ pub async fn upsert_query_handler(
             ),
         ));
     }
-    if core.get_query_config_by_name(&name).await.is_err() && !core.configuration_is_persistent() {
+    if core.get_query_config_by_name(&name).await.is_err() && !core.constructs_ordinary_components()
+    {
         return create_query(
             Extension(core),
             Extension(read_only),
@@ -238,7 +241,7 @@ pub async fn upsert_query_handler(
                 format!("Invalid query configuration: {e}"),
             )
         })?;
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         crate::query_plugin::ensure_registered(&core, &plugins)
             .await
             .map_err(|error| {
@@ -286,7 +289,7 @@ pub async fn get_query(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     match core.get_query_config_by_name(&name).await {
         Ok(query_config) => {
             let config = if view.include_config() {
@@ -336,7 +339,7 @@ pub async fn get_query_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -357,7 +360,7 @@ pub async fn stream_query_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -387,7 +390,7 @@ pub async fn get_query_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -407,7 +410,7 @@ pub async fn stream_query_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     core.get_query_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -446,8 +449,8 @@ pub async fn delete_query(
         ));
     }
 
-    let name = parse_component_name(&id, "query")?;
-    if core.configuration_is_persistent() {
+    let name = resolve_component_name(&core, &id, "query").await?;
+    if core.constructs_ordinary_components() {
         return managed::delete_component(&core, &config_persistence, ComponentRole::Query, &name)
             .await
             .map(|status| Json(ApiResponse::success(status)));
@@ -476,7 +479,7 @@ pub async fn start_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     match core.start_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query started successfully".to_string(),
@@ -491,7 +494,7 @@ pub async fn stop_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     match core.stop_query_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query stopped successfully".to_string(),
@@ -506,7 +509,7 @@ pub async fn get_query_results(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     match core.get_query_results_by_name(&name).await {
         Ok(results) => Ok(Json(ApiResponse::success(results))),
         Err(e) => Err(ErrorResponse::from(e)),
@@ -518,7 +521,7 @@ pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "query")?;
+    let name = resolve_component_name(&core, &id, "query").await?;
     core.get_query_config_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;

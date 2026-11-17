@@ -345,6 +345,7 @@ pub async fn create_solution_template(
             });
 
             let source_dto = SourceConfig {
+                component_id: None,
                 kind: source_snap.source_type.clone(),
                 id: source_snap.name.to_string(),
                 auto_start: source_snap.auto_start,
@@ -402,6 +403,7 @@ pub async fn create_solution_template(
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
             let reaction_dto = ReactionConfig {
+                component_id: None,
                 kind: reaction_snap.reaction_type.clone(),
                 id: reaction_snap.name.to_string(),
                 queries: reaction_snap.queries.clone(),
@@ -871,7 +873,7 @@ pub async fn deploy_solution(
         ));
     }
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         return deploy_persisted(
             &core,
             &persistence,
@@ -916,7 +918,7 @@ pub async fn deploy_solution(
 
         let (source, plugin_meta) = match create_source_locked(
             plugin_registry,
-            drasi_lib::ComponentId::generate(),
+            source_config.component_id_or_generate(),
             source_config.clone(),
         )
         .await
@@ -1037,7 +1039,7 @@ pub async fn deploy_solution(
 
         let (reaction, plugin_meta) = match create_reaction_locked(
             plugin_registry,
-            drasi_lib::ComponentId::generate(),
+            reaction_config.component_id_or_generate(),
             reaction_config.clone(),
         )
         .await
@@ -1452,7 +1454,7 @@ reactions: []
     #[tokio::test]
     async fn deploy_registers_query_factory_for_memory_instances() -> anyhow::Result<()> {
         let core = Arc::new(drasi_lib::DrasiLib::builder().build().await?);
-        assert!(!core.configuration_is_persistent());
+        assert!(!core.constructs_ordinary_components());
         assert!(core.query_factory_implementation().is_none());
         let registry = crate::instance_registry::InstanceRegistry::new();
         registry

@@ -119,8 +119,10 @@ export interface ConnectionStatus {
  * omits `port`, `nodes`, `relations` and `pipeline` when they are unset or empty.
  */
 export interface QueryInputObject {
-  /** Upstream component: a source, another query or a transformer. */
-  readonly component: string;
+  /** Upstream component name: a source, another query or a transformer. */
+  readonly component?: string;
+  /** Upstream component UUID, as returned by the server. Exactly one of `component` or `id` is set. */
+  readonly id?: string;
   /** Output port; absent means the component's primary (or only) output. */
   readonly port?: string;
   readonly nodes?: readonly string[];
@@ -203,7 +205,10 @@ export interface ComponentLinks {
 
 /** Full-view v1 component DTO. Links are validated against the requested instance/resource. */
 export interface Component<T> {
+  /** Server-assigned component UUID (or the configured ID on servers without UUID identity). */
   readonly id: string;
+  /** Unique configured component name, when the server reports one. */
+  readonly name?: string;
   readonly status: ComponentStatus;
   readonly error_message?: string;
   readonly links: ComponentLinks;

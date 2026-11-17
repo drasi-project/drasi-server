@@ -46,6 +46,33 @@ pub mod source;
 pub mod state_store;
 
 // Re-export all DTO types for convenient access
+/// Resolve the identity fields shared by source and reaction configurations.
+///
+/// With `name`, the component is called `name` and an optional `id` fixes its
+/// UUID. Without `name`, `id` is the component name and the graph assigns the
+/// UUID. Returns the name and the optional fixed UUID.
+pub(crate) fn component_identity(
+    id: Option<String>,
+    name: Option<String>,
+) -> Result<(String, Option<drasi_lib::ComponentId>), String> {
+    match (id, name) {
+        (id, Some(name)) => {
+            let component_id = id
+                .map(|id| {
+                    drasi_lib::ComponentId::try_new(id.as_str()).map_err(|error| {
+                        format!(
+                            "`id` must be a component UUID when `name` is set (got '{id}'): {error}"
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok((name, component_id))
+        }
+        (Some(id), None) => Ok((id, None)),
+        (None, None) => Err("missing field `name` (or `id`)".to_string()),
+    }
+}
+
 pub use bootstrap::{
     BootstrapProviderConfig, BootstrapProviderRef, TopLevelBootstrapProviderConfig,
 };

@@ -73,6 +73,8 @@ pub struct ComputationComponentInfo {
     pub lifecycle: Option<String>,
     pub health: Option<String>,
     pub failure_phase: Option<String>,
+    /// Why the component failed, when it has a recorded failure.
+    pub failure_cause: Option<String>,
     #[schema(value_type = Vec<serde_json::Value>)]
     pub waiting_for: Vec<drasi_lib::computation::v1::DependencyWait>,
     pub waiting_reason: Option<String>,
@@ -217,6 +219,12 @@ pub async fn create_computation_components(
         })
     })?;
     core.add_components(components).await?;
+    // Acceptance is asynchronous; wait for a reconciliation pass so the
+    // response and later reads include the new components. Individual
+    // creation and activation failures remain visible through inspection.
+    core.reconcile_desired_state()
+        .await
+        .map_err(|error| operation_error(&instance_id, "reconcile components", error))?;
     persist_after_operation(&persistence, "creating computation components").await?;
     Ok(Json(ApiResponse::success(
         core.computation_info().await?.into(),
@@ -268,6 +276,9 @@ pub async fn inspect_computation_graph(
                 failure_phase: observed
                     .and_then(|value| value.failure.as_ref())
                     .map(|failure| format!("{:?}", failure.phase)),
+                failure_cause: observed
+                    .and_then(|value| value.failure.as_ref())
+                    .map(|failure| format!("{:#}", failure.cause)),
                 waiting_for: observed
                     .map(|value| value.waiting_for.clone())
                     .unwrap_or_default(),

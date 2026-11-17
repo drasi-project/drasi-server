@@ -38,13 +38,22 @@ fn canonical_server_configuration_uses_three_native_roles_and_secret_references(
             && yaml.contains("drasi.mssql/storedproc"),
         "SQL Server native family missing"
     );
+    for (prefix, fields) in [
+        ("DRASI_MSSQL", generator::SOURCE_FIELDS),
+        ("DRASI_MSSQL_SINK", generator::SINK_FIELDS),
+    ] {
+        for field in fields {
+            let key = format!("env-json:{}", generator::variable(prefix, field));
+            ensure!(yaml.contains(&key), "SQL Server reference {key} lost");
+        }
+    }
+    let lines = yaml.lines().collect::<Vec<_>>();
     ensure!(
-        yaml.contains("env-json:DRASI_MSSQL_SETTINGS")
-            && yaml.contains("env-json:DRASI_MSSQL_SINK_SETTINGS"),
-        "SQL Server secret references lost"
-    );
-    ensure!(
-        !yaml.contains("password:"),
+        lines
+            .windows(5)
+            .all(|window| !window[0].trim_end().ends_with("password:")
+                || (window[1].trim() == "Reference:"
+                    && window.iter().any(|line| line.trim() == "secret: true"))),
         "literal credential field leaked into Server configuration"
     );
     Ok(())
@@ -56,14 +65,21 @@ async fn real_server() -> Result<()> {
     let json =
         serde_json::to_string(&config)?.replace("env-json:DRASI_MSSQL", "secret-json:DRASI_MSSQL");
     let config: DrasiServerConfig = serde_json::from_str(&json)?;
-    let source = database.settings();
-    let sink = json!({"connection":source["connection"],"outputs":{"all":{"component":"all","port":"out"}},
-        "default_template":{"added":{"template":database.scoped_sql("EXEC {{schema}}.ApplyEffect {{param operation}},{{param after.id}},{{param after.value}}")}}});
-    let secrets = Arc::new(
-        MemorySecretStoreProvider::new()
-            .with_secret("DRASI_MSSQL_SETTINGS", source.to_string())
-            .with_secret("DRASI_MSSQL_SINK_SETTINGS", sink.to_string()),
-    );
+    let mut sink = database.settings();
+    sink["defaultTemplate"] = json!({"added":{"template":database.scoped_sql("EXEC {{schema}}.ApplyEffect {{param operation}},{{param after.id}},{{param after.value}}")}});
+    let mut secrets = MemorySecretStoreProvider::new();
+    for (prefix, fields, values) in [
+        ("DRASI_MSSQL", generator::SOURCE_FIELDS, database.settings()),
+        ("DRASI_MSSQL_SINK", generator::SINK_FIELDS, sink),
+    ] {
+        for field in fields {
+            let value = values
+                .get(*field)
+                .with_context(|| format!("test settings missing {field}"))?;
+            secrets = secrets.with_secret(generator::variable(prefix, field), value.to_string());
+        }
+    }
+    let secrets = Arc::new(secrets);
     let mut registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut registry);
     for plugin in generator::plugins(&libraries())? {

@@ -78,7 +78,9 @@ async fn bootstrap_transport_policy_stays_uninitialized_until_commit_and_reports
     let parts = notifications(&boundary(24_000)?)?;
     for timeout in [false, true] {
         let mut policy = processor(Kind::Policy, Arc::new(Workers::default()))?;
-        policy.start().await?;
+        policy
+            .start(&mut crate::test_contexts::sdk::start())
+            .await?;
         for (index, (kind, payload)) in parts.iter().enumerate() {
             {
                 let mut signals = policy.signals.lock().unwrap();
@@ -110,7 +112,7 @@ async fn bootstrap_transport_policy_stays_uninitialized_until_commit_and_reports
                 break;
             }
         }
-        policy.stop().await?;
+        policy.stop(&crate::test_contexts::sdk::stop()).await?;
     }
     Ok(())
 }

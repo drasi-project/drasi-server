@@ -40,16 +40,16 @@ const base = '/api/v1/instances/gpu-demo';
 for (const kind of ['sources', 'queries']) {
   const components = await json(`${base}/${kind}`);
   assert.ok(components.length > 0, `No ${kind} found`);
-  for (const component of components.filter(component => !component.id.startsWith('__'))) {
-    const full = await json(`${base}/${kind}/${encodeURIComponent(component.id)}?view=full`);
+  for (const component of components.filter(component => !component.name.startsWith('__'))) {
+    const full = await json(`${base}/${kind}/${encodeURIComponent(component.name)}?view=full`);
     assert.equal(full.id, component.id);
-    assert.ok(full.config, `${component.id}: missing configuration`);
+    assert.ok(full.config, `${component.name}: missing configuration`);
   }
 }
 const results = await json(`${base}/queries/ui-status/results`);
 assert.ok(results.length > 0, 'No live status query results');
 const computation = await json(`${base}/computation`);
-assert.ok(computation.components.some(component => component.id === 'simulator'));
-assert.ok(computation.components.some(component => component.id === 'gpu-demo-ui'
+assert.ok(computation.components.some(component => component.name === 'simulator'));
+assert.ok(computation.components.some(component => component.name === 'gpu-demo-ui'
   && component.role === 'Sink' && component.implementation.name === 'drasi.network/sse-sink'));
 console.log('Drasi admin UI passed: HTML, bundled JS/CSS, live component details, query results and computation inspection; no state mutation.');

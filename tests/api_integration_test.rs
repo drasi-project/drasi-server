@@ -1040,3 +1040,70 @@ async fn test_query_attach_does_not_create_a_reaction_even_if_the_body_is_never_
 
 #[path = "query_plugin/mod.rs"]
 mod query_plugin;
+
+async fn get_json(router: &Router, uri: String) -> (StatusCode, serde_json::Value) {
+    let response = router
+        .clone()
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, serde_json::from_slice(&body).unwrap())
+}
+
+#[tokio::test]
+async fn component_paths_accept_uuid_or_name() {
+    let (router, core, _registry) = create_test_router_with_id("uuid-or-name").await;
+    let base = "/instances/uuid-or-name";
+
+    let (status, by_name) = get_json(&router, format!("{base}/sources/test-source")).await;
+    assert_eq!(status, StatusCode::OK);
+    let source_id = by_name["data"]["id"].as_str().unwrap().to_string();
+    let (status, by_id) = get_json(&router, format!("{base}/sources/{source_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(by_id["data"]["name"], "test-source");
+    assert_eq!(by_id["data"]["id"], source_id.as_str());
+
+    let (status, reaction) = get_json(&router, format!("{base}/reactions/test-reaction")).await;
+    assert_eq!(status, StatusCode::OK);
+    let reaction_id = reaction["data"]["id"].as_str().unwrap().to_string();
+    let (status, by_id) = get_json(&router, format!("{base}/reactions/{reaction_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(by_id["data"]["name"], "test-reaction");
+
+    let query = Query::cypher(ComponentName::try_new("uuid-query").unwrap())
+        .query("MATCH (n:Node) RETURN n")
+        .from_input_by_name(ComponentName::try_new("test-source").unwrap())
+        .auto_start(false)
+        .build()
+        .unwrap();
+    core.add_query(query).await.unwrap();
+    let (status, query) = get_json(&router, format!("{base}/queries/uuid-query")).await;
+    assert_eq!(status, StatusCode::OK);
+    let query_id = query["data"]["id"].as_str().unwrap().to_string();
+    let (status, by_id) = get_json(&router, format!("{base}/queries/{query_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(by_id["data"]["name"], "uuid-query");
+
+    let (status, _) = get_json(
+        &router,
+        format!(
+            "{base}/sources/{}",
+            drasi_lib::ComponentId::generate().as_str()
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    core.add_source_with_handle(
+        ComponentName::try_new(source_id.as_str()).unwrap(),
+        create_mock_source(&source_id),
+    )
+    .await
+    .unwrap();
+    let (status, ambiguous) = get_json(&router, format!("{base}/sources/{source_id}")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{ambiguous}");
+
+    core.shutdown().await.unwrap();
+}

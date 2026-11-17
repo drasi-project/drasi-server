@@ -513,6 +513,13 @@ async fn build_components_with_resources(
         &drasi_lib::management::DesiredInstance::default().topology,
         &config.definition,
     )?;
+    // Managed cores already hold these factories (installed at build, then on
+    // plugin load); supplying fresh copies would conflict with those bindings.
+    let factories = if core.constructs_ordinary_components() {
+        FactoryRegistry::default()
+    } else {
+        factories
+    };
     let mut bindings = TopologyBindings {
         factories,
         deferred_management_validation: true,
@@ -746,11 +753,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             "this server recipe does not accept resource dependencies"
         );
         let handle = match recipe {
-            ComputationResourceConfig::MemoryIndexes {} => ResourceHandle::new(
+            ComputationResourceConfig::MemoryIndexes {} => QueryIndexProviderResource::handle(
                 ResourceRole::IndexBackend,
-                Arc::new(QueryIndexProviderResource(Arc::new(
-                    drasi_core::computation::InMemoryComputationProvider,
-                ))),
+                Arc::new(drasi_core::computation::InMemoryComputationProvider),
             ),
             ComputationResourceConfig::QueryCatalog {} => ResourceHandle::new(
                 ResourceRole::QueryCatalog,

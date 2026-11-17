@@ -11,6 +11,10 @@ use drasi_computation_contracts::{
     ChangeOperation, ComponentDescriptor, InputEnvelope, OutputEnvelope, QueryChangeCodec,
     StreamId, WakeupSource,
 };
+use drasi_computation_plugin_sdk::lifecycle::{
+    nothing_to_do, DisposeContext, InitializeContext, LifecycleResult, PauseContext, ResumeContext,
+    StartContext, StopContext,
+};
 use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeTransformer};
 use drasi_core_types::models::SourceChange;
 use gpu_contracts::*;
@@ -348,8 +352,9 @@ impl Processor {
             });
             self.add(changes, "SchedulingContext", "demo", &context)?;
         }
-        self.add(changes,"RuntimeStatus",&self.descriptor.id().to_string(),&json!({
-            "schema_version":1,"component_id":self.descriptor.id().as_str(),"status":status,"error":error,
+        let component = gpu_contracts::component_label(self.descriptor.id().as_str());
+        self.add(changes,"RuntimeStatus",&component,&json!({
+            "schema_version":1,"component_id":component,"status":status,"error":error,
             "observation_epoch":self.epoch,"scheduling_signature":self.signature,
             "policy_signature":self.solve_input.as_ref().map(|input| &input.policy.policy_signature),
         }))
@@ -1089,45 +1094,66 @@ impl NativeComponent for Processor {
     fn configuration(&self) -> Result<serde_json::Value> {
         Ok(self.configuration.clone())
     }
-    async fn start(&mut self) -> Result<()> {
-        ensure!(
-            !self.stopped,
-            "stopped transformer requires fresh factory construction and bootstrap"
-        );
-        ensure!(self.started.is_none(), "component already started");
-        let started_utc_ms = wire::utc_millis()?;
-        self.started = Some(Instant::now());
-        self.started_utc_ms = Some(started_utc_ms);
-        self.timer.running.store(true, Ordering::Release);
-        self.workers
-            .hub
-            .publish(self.descriptor.id().as_str(), "running", None, self.epoch)
+    async fn initialize(&mut self, _ctx: &InitializeContext) -> LifecycleResult {
+        nothing_to_do()
     }
-    async fn stop(&mut self) -> Result<()> {
-        if self.stopped {
-            return Ok(());
-        }
-        self.timer.running.store(false, Ordering::Release);
-        self.source_ready = false;
-        self.recovering_source = false;
-        if self.initialized {
-            self.simulation
-                .invalidate_source(self.now()?, "component-stopped");
-        }
-        self.started = None;
-        self.started_utc_ms = None;
-        self.stopped = true;
-        if self.kind == Kind::Placement {
+    async fn start(&mut self, _ctx: &mut StartContext) -> LifecycleResult {
+        async {
+            ensure!(
+                !self.stopped,
+                "stopped transformer requires fresh factory construction and bootstrap"
+            );
+            ensure!(self.started.is_none(), "component already started");
+            let started_utc_ms = wire::utc_millis()?;
+            self.started = Some(Instant::now());
+            self.started_utc_ms = Some(started_utc_ms);
+            self.timer.running.store(true, Ordering::Release);
             self.workers
-                .placement_pending
-                .store(false, Ordering::Release);
+                .hub
+                .publish(self.descriptor.id().as_str(), "running", None, self.epoch)
         }
-        if let Some(job) = self.job.take() {
-            job.task.await.context("worker failed during shutdown")??;
+        .await
+        .map_err(Into::into)
+    }
+    // The host pulls work, so paused components produce nothing.
+    async fn pause(&mut self, _ctx: &PauseContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn resume(&mut self, _ctx: &ResumeContext) -> LifecycleResult {
+        nothing_to_do()
+    }
+    async fn stop(&mut self, _ctx: &StopContext) -> LifecycleResult {
+        async {
+            if self.stopped {
+                return Ok(());
+            }
+            self.timer.running.store(false, Ordering::Release);
+            self.source_ready = false;
+            self.recovering_source = false;
+            if self.initialized {
+                self.simulation
+                    .invalidate_source(self.now()?, "component-stopped");
+            }
+            self.started = None;
+            self.started_utc_ms = None;
+            self.stopped = true;
+            if self.kind == Kind::Placement {
+                self.workers
+                    .placement_pending
+                    .store(false, Ordering::Release);
+            }
+            if let Some(job) = self.job.take() {
+                job.task.await.context("worker failed during shutdown")??;
+            }
+            self.workers
+                .hub
+                .publish(self.descriptor.id().as_str(), "stopped", None, self.epoch)
         }
-        self.workers
-            .hub
-            .publish(self.descriptor.id().as_str(), "stopped", None, self.epoch)
+        .await
+        .map_err(Into::into)
+    }
+    async fn dispose(&mut self, _ctx: &DisposeContext) -> LifecycleResult {
+        nothing_to_do()
     }
 }
 #[async_trait]
@@ -1138,15 +1164,24 @@ impl NativeTransformer for Processor {
     async fn transform(&mut self, input: InputEnvelope) -> Result<Vec<OutputEnvelope>> {
         self.now()?;
         let mut changes = Vec::new();
-        let query = QueryChangeCodec::metadata(&input.envelope)?.query_id;
-        if DATABASE_QUERIES.contains(&query.as_str()) {
+        let query_id = QueryChangeCodec::metadata(&input.envelope)?.query_id;
+        let query = gpu_contracts::component_name(
+            query_id.as_str(),
+            &[
+                DATABASE_QUERIES.as_slice(),
+                &["simulation-inputs", "scheduling-inputs"],
+            ]
+            .concat(),
+        )
+        .unwrap_or(query_id.as_str());
+        if DATABASE_QUERIES.contains(&query) {
             ensure!(
                 matches!(self.kind, Kind::Simulator | Kind::Policy),
                 "unexpected database input"
             );
             let projection = QueryChangeCodec::projection(&input.envelope)?;
             self.database.update(
-                &query,
+                query,
                 QueryChangeCodec::query_sequence(&input.envelope)?,
                 input.envelope.changes().operations(),
                 projection.operations(),

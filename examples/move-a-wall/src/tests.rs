@@ -7,6 +7,29 @@ use model::{Entity, Shape};
 use source::{Command, SceneSource, Store};
 use std::{num::NonZeroUsize, sync::Arc};
 
+fn scope() -> OperationScope {
+    OperationScope::new(
+        "test",
+        "component",
+        1,
+        None,
+        tokio_util::sync::CancellationToken::new(),
+    )
+}
+/// A stable UUID standing in for a named component outside a graph.
+pub(crate) fn test_id(name: &str) -> String {
+    let hash = name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("00000000-0000-0000-0000-{:012x}", hash & 0xffff_ffff_ffff)
+}
+pub(crate) fn native_start() -> drasi_computation_plugin_sdk::lifecycle::StartContext {
+    drasi_computation_plugin_sdk::lifecycle::StartContext::new(scope(), None)
+}
+pub(crate) fn native_stop() -> drasi_computation_plugin_sdk::lifecycle::StopContext {
+    drasi_computation_plugin_sdk::lifecycle::StopContext::new(scope(), StopMode::Drain)
+}
+
 struct Harness {
     store: Store,
     source: SceneSource,
@@ -26,7 +49,7 @@ async fn query(id: &str) -> Result<ContinuousQueryTransformer> {
         .as_array()
         .context("static graph components")?
         .iter()
-        .find(|component| component["id"].as_str() == Some(id))
+        .find(|component| component["name"].as_str() == Some(id))
         .with_context(|| format!("static query '{id}'"))?
         .get("config")
         .context("static query config")?;
@@ -44,7 +67,7 @@ async fn query(id: &str) -> Result<ContinuousQueryTransformer> {
     let mut q = ContinuousQueryTransformer::new_configured(
         ContinuousQueryDefinition {
             graph_id: "wall-test".into(),
-            id: ComponentId::try_new(id)?,
+            id: ComponentId::try_new(test_id(id))?,
             query: text.into(),
             language: ComputationQueryLanguage::Cypher,
             output_stream: StreamId::try_new(format!("{id}/out"))?,
@@ -56,7 +79,7 @@ async fn query(id: &str) -> Result<ContinuousQueryTransformer> {
         None,
     )
     .await?;
-    q.start().await?;
+    q.start(&StartContext::new(scope())).await?;
     Ok(q)
 }
 fn input(output: &OutputEnvelope) -> Result<InputEnvelope> {
@@ -68,9 +91,10 @@ fn input(output: &OutputEnvelope) -> Result<InputEnvelope> {
 impl Harness {
     async fn new() -> Result<Self> {
         let (store, mut source) = source::channel()?;
-        source.start().await?;
-        let mut geometry = transformer::Geometry::new(ComponentId::try_new("geometry")?, None)?;
-        geometry.start().await?;
+        source.start(&mut native_start()).await?;
+        let mut geometry =
+            transformer::Geometry::new(ComponentId::try_new(test_id("geometry"))?, None)?;
+        geometry.start(&mut native_start()).await?;
         Ok(Self {
             store,
             source,
@@ -121,10 +145,14 @@ impl Harness {
             .collect()
     }
     async fn close(mut self) -> Result<()> {
-        self.source.stop().await?;
-        self.geometry.stop().await?;
-        self.context.stop().await?;
-        self.impact.stop().await
+        self.source.stop(&native_stop()).await?;
+        self.geometry.stop(&native_stop()).await?;
+        self.context
+            .stop(&StopContext::new(scope(), StopMode::Drain))
+            .await?;
+        self.impact
+            .stop(&StopContext::new(scope(), StopMode::Drain))
+            .await
     }
 }
 fn wall(y: f64) -> Entity {
@@ -154,9 +182,11 @@ async fn derived_outputs_own_volatile_progress_through_real_query_chain() -> Res
     let mut previous_epoch = None;
     for _ in 0..2 {
         let mut h = Harness::new().await?;
-        h.geometry =
-            transformer::Geometry::new(ComponentId::try_new("geometry-worker")?, Some(&scope))?;
-        h.geometry.start().await?;
+        h.geometry = transformer::Geometry::new(
+            ComponentId::try_new(test_id("geometry-worker"))?,
+            Some(&scope),
+        )?;
+        h.geometry.start(&mut native_start()).await?;
         let mut identity = None;
         let mut sequence = 0;
         for (command, expected_rows) in [
@@ -175,8 +205,11 @@ async fn derived_outputs_own_volatile_progress_through_real_query_chain() -> Res
                 let progress = GraphProducerProgress::from_envelope(&output.envelope)?
                     .context("geometry output progress")?;
                 let current = progress.identity();
-                assert_eq!(current.component_id().as_str(), "geometry-worker");
-                assert_eq!(current.stream().as_str(), "geometry/out");
+                assert_eq!(current.component_id().as_str(), test_id("geometry-worker"));
+                assert_eq!(
+                    current.stream().as_str(),
+                    format!("{}/out", test_id("geometry-worker"))
+                );
                 assert_eq!(current.construction_scope(), "wall-test-instance");
                 assert_eq!(current.graph_id(), "wall-test");
                 assert!(!current.persistent());
@@ -365,7 +398,7 @@ async fn sparse_query_delete_clears_cache_and_old_snapshot_cannot_restore_it() -
     let sequence = QueryChangeCodec::query_sequence(&prior.envelope)? + 1;
     let full_delete = QueryChangeCodec::encode_evaluation(
         None,
-        &ComponentId::try_new("geometry-context")?,
+        &ComponentId::try_new(test_id("geometry-context"))?,
         SystemMetadata::new(stream.clone(), sequence),
         &snapshot.projector,
         &[QueryPartEvaluationContext::Removing {

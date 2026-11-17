@@ -25,6 +25,7 @@ fn core_registry() -> PluginRegistry {
 async fn test_unknown_source_kind_returns_helpful_error() {
     let registry = core_registry();
     let config = SourceConfig {
+        component_id: None,
         kind: "nosql-fantasy".to_string(),
         id: "test".to_string(),
         auto_start: true,
@@ -49,6 +50,7 @@ async fn test_unknown_source_kind_returns_helpful_error() {
 async fn test_unknown_reaction_kind_returns_helpful_error() {
     let registry = core_registry();
     let config = ReactionConfig {
+        component_id: None,
         kind: "email-blast".to_string(),
         id: "test".to_string(),
         queries: vec![ComponentReference::by_name(
@@ -96,6 +98,7 @@ async fn test_unknown_bootstrap_kind_returns_helpful_error() {
 async fn test_empty_registry_rejects_all_sources() {
     let registry = PluginRegistry::new();
     let config = SourceConfig {
+        component_id: None,
         kind: "mock".to_string(),
         id: "test".to_string(),
         auto_start: true,
@@ -115,6 +118,7 @@ async fn test_empty_registry_rejects_all_sources() {
 async fn test_empty_registry_rejects_all_reactions() {
     let registry = PluginRegistry::new();
     let config = ReactionConfig {
+        component_id: None,
         kind: "log".to_string(),
         id: "test".to_string(),
         queries: vec![],

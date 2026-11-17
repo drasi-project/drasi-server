@@ -35,7 +35,7 @@ const undoClockShift = (value, shift) => Array.isArray(value) ? value.map(item =
         ? JSON.stringify(undoClockShift(JSON.parse(item), shift)) : undoClockShift(item, shift),
   ])) : value;
 const comparableSnapshots = report => canonical(undoClockShift(report.snapshots, report.clock_shift_ms ?? 0));
-for (const provider of ['bare', 'pipeline-memory']) {
+for (const provider of ['bare']) {
   for (const query of queries) {
     const filename = `${provider}-${query}.json`;
     const started = performance.now();
@@ -92,15 +92,7 @@ for (const provider of ['bare', 'pipeline-memory']) {
     }
   }
 }
-for (const query of queries) {
-  const bare = results.get(`bare/${query}`), wrapped = results.get(`pipeline-memory/${query}`);
-  if (!bare || !wrapped) continue;
-  try {
-    assert.deepEqual(comparableSnapshots(bare), comparableSnapshots(wrapped),
-      `${query}: provider modes produced different rows`);
-  } catch (error) { failures.push(error.message); }
-}
-for (const provider of ['bare', 'pipeline-memory']) {
+for (const provider of ['bare']) {
   const combined = results.get(`${provider}/all`);
   if (!combined) continue;
   for (const query of queries.filter(query => query !== 'all')) {

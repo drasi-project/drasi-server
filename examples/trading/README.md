@@ -191,15 +191,15 @@ This starts PostgreSQL with:
 
 ```bash
 # From the Server root; build matching libraries first.
-export DRASI_PG_POSTGRES_STOCKS_SETTINGS="$(
+eval "$(
   target/release/examples/native-postgres settings \
     examples/trading/server/trading-native-recipe.json postgres-stocks
 )"
-export DRASI_PG_POSTGRES_BROKER_SETTINGS="$(
+eval "$(
   target/release/examples/native-postgres settings \
     examples/trading/server/trading-native-recipe.json postgres-broker
 )"
-export DRASI_HTTP_PRICE_FEED_SETTINGS="$(
+eval "$(
   target/release/examples/native-postgres settings \
     examples/trading/server/trading-native-recipe.json price-feed
 )"

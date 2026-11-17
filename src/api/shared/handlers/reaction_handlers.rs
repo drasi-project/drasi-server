@@ -24,8 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    apply_limit, component_links, parse_component_name, persist_after_operation, sse_event_async,
-    ApiPrefix, ComponentViewQuery, ObservabilityQuery,
+    apply_limit, component_links, parse_component_name, persist_after_operation,
+    resolve_component_name, sse_event_async, ApiPrefix, ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::ReactionConfig;
 use crate::api::models::{ComponentEventDto, LogMessageDto};
@@ -106,7 +106,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let reaction_name = parse_component_name(&reaction_id, "reaction")?;
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         return managed::write_reaction(
             &core,
             &config_persistence,
@@ -120,7 +120,7 @@ pub async fn create_reaction_handler(
 
     let (reaction, plugin_meta) = create_reaction_locked(
         &plugin_registry,
-        drasi_lib::ComponentId::generate(),
+        config.component_id_or_generate(),
         config.clone(),
     )
     .await
@@ -199,7 +199,9 @@ pub async fn upsert_reaction_handler(
         )
     })?;
 
-    if config.id() != path_id {
+    if config.id() != path_id
+        && config.component_id().map(|id| id.as_str()) != Some(path_id.as_str())
+    {
         return Err(ErrorResponse::new(
             error_codes::INVALID_REQUEST,
             format!(
@@ -212,7 +214,7 @@ pub async fn upsert_reaction_handler(
     let reaction_id = config.id().to_string();
     let reaction_name = parse_component_name(&reaction_id, "reaction")?;
 
-    if core.configuration_is_persistent() {
+    if core.constructs_ordinary_components() {
         return managed::write_reaction(
             &core,
             &config_persistence,
@@ -271,7 +273,7 @@ pub async fn upsert_reaction_handler(
 
     let (reaction, plugin_meta) = create_reaction_locked(
         &plugin_registry,
-        drasi_lib::ComponentId::generate(),
+        config.component_id_or_generate(),
         config.clone(),
     )
     .await
@@ -326,7 +328,7 @@ pub async fn get_reaction(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     // Read authoritative graph-backed reaction information.
     let info = core
         .get_reaction_info_by_name(&name)
@@ -378,7 +380,7 @@ pub async fn get_reaction_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -399,7 +401,7 @@ pub async fn stream_reaction_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -429,7 +431,7 @@ pub async fn get_reaction_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -449,7 +451,7 @@ pub async fn stream_reaction_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     core.get_reaction_status_by_name(&name)
         .await
         .map_err(ErrorResponse::from)?;
@@ -488,8 +490,8 @@ pub async fn delete_reaction(
         ));
     }
 
-    let name = parse_component_name(&id, "reaction")?;
-    if core.configuration_is_persistent() {
+    let name = resolve_component_name(&core, &id, "reaction").await?;
+    if core.constructs_ordinary_components() {
         return managed::delete_component(
             &core,
             &config_persistence,
@@ -527,7 +529,7 @@ pub async fn start_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     match core.start_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction started successfully".to_string(),
@@ -542,7 +544,7 @@ pub async fn stop_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
-    let name = parse_component_name(&id, "reaction")?;
+    let name = resolve_component_name(&core, &id, "reaction").await?;
     match core.stop_reaction_by_name(&name).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction stopped successfully".to_string(),

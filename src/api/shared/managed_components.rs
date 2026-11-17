@@ -640,8 +640,12 @@ async fn finish(
         }
         Err(_) => "reconciling".to_string(),
     };
+    // Instances without a store have YAML as their only record, so they write
+    // back after every acceptance; stored instances only after a durable one.
     let write_back_error = match persistence {
-        Some(persistence) if receipt.durable => persistence.write_back().await.err(),
+        Some(persistence) if receipt.durable || !core.configuration_is_persistent() => {
+            persistence.write_back().await.err()
+        }
         _ => None,
     };
     Ok(StatusResponse {

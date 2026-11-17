@@ -138,17 +138,15 @@ pub fn definition_with_mode(
     let transactions = json!({"max_changes":64,"max_bytes":1048576,"max_duration_ms":5000});
     let mut source_configuration = json!({
         "stream":"source/out",
-        "settings":{
-            "path":database,"tables":["items"],"table_keys":[],
-            "output":if paired {"transactions"} else {"changes"},
-            "replay":if paired {json!({"max_transactions":16,"max_bytes":8388608})} else {Value::Null},
-            "transactions":transactions,
-            "max_sql_bytes":65536,"command_capacity":8,"output_capacity":4,"shutdown_timeout_ms":5000
-        },
-        "rest_api":{"host":"127.0.0.1","port":rest_port}
+        "path":database,"tables":["items"],
+        "maxTransactionChanges":64,"maxTransactionBytes":1048576,"maxTransactionDurationMs":5000,
+        "maxSqlBytes":65536,"commandCapacity":8,"outputCapacity":4,"shutdownTimeoutMs":5000,
+        "restApi":true,"restHost":"127.0.0.1","restPort":rest_port,"pageSize":64
     });
     if paired {
-        source_configuration["coordinated_snapshot"] = json!(true);
+        source_configuration["coordinatedSnapshot"] = json!(true);
+        source_configuration["maxJournalTransactions"] = json!(16);
+        source_configuration["maxJournalBytes"] = json!(8388608);
     }
     let mut source_spec = source.specification(id("source")?, source_configuration)?;
     let mut builder = ComponentBatch::builder();
@@ -209,10 +207,17 @@ pub fn definition_with_mode(
     // consumers' bootstrap sessions to it over bootstrap edges.
     let mut provider_configuration = json!({"source":id("source")?,"stream":"source/out"});
     if !paired {
-        provider_configuration["settings"] = json!({
-            "path":database,"tables":["items"],"table_keys":[],"max_tables":8,"max_bytes":1048576,
-            "max_duration_ms":5000,"output_capacity":2,"shutdown_timeout_ms":5000
-        });
+        for (field, value) in [
+            ("path", json!(database)),
+            ("tables", json!(["items"])),
+            ("maxTables", json!(8)),
+            ("maxBytes", json!(1048576)),
+            ("maxDurationMs", json!(5000)),
+            ("outputCapacity", json!(2)),
+            ("shutdownTimeoutMs", json!(5000)),
+        ] {
+            provider_configuration[field] = value;
+        }
     }
     let provider =
         bootstrap.specification_from_config(id("source-bootstrap")?, provider_configuration)?;

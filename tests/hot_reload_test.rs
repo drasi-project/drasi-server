@@ -122,6 +122,7 @@ async fn assert_package_versions_and_component_startup(
             &registry,
             drasi_lib::ComponentId::generate(),
             SourceConfig {
+                component_id: None,
                 kind: "mock".into(),
                 id: "version-source".into(),
                 auto_start: true,
@@ -157,6 +158,7 @@ async fn assert_package_versions_and_component_startup(
             &registry,
             drasi_lib::ComponentId::generate(),
             ReactionConfig {
+                component_id: None,
                 kind: "log".into(),
                 id: "version-reaction".into(),
                 queries: vec![drasi_lib::config::ComponentReference::by_name(

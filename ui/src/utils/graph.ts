@@ -94,7 +94,9 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       data: {
         ...details,
         ...(kind ? { kind } : {}),
-        id: component.id,
+        // REST resources are addressed by name; graph relationships by ID.
+        id: component.name ?? component.id,
+        componentId: component.id,
         role: component.role,
         componentType,
         status: computationStatus(component),
@@ -104,7 +106,7 @@ export function buildFlowGraph(data: PipelineData, showInternal = false): {
       },
     };
   });
-  const byId = new Map(nodes.map((n) => [n.data.id, n]));
+  const byId = new Map(nodes.map((n) => [n.data.componentId, n]));
   const edges: Edge[] = [];
   let unresolvedRelationships = 0;
   for (const relationship of data.computation?.relationships ?? []) {

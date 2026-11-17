@@ -33,6 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 drasi-core = { path = "../../../drasi-core/core" }
 drasi-lib = { path = "../../../drasi-core/lib" }
 serde_yaml = "0.9"
+tokio-util = "0.7"
 
 [profile.dev]
 debug = 0

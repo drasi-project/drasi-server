@@ -232,6 +232,25 @@ pub async fn create_instance(
                     "Configuration store preparation failed",
                 )
             })?;
+    } else {
+        // No declared components yet, so there is nothing to seed.
+        builder = crate::managed_configuration::configure_in_memory(
+            builder,
+            &instance_id,
+            Default::default(),
+            Default::default(),
+            plugins,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            log::error!("Component preparation failed for '{instance_id}': {error:#}");
+            ErrorResponse::new(
+                error_codes::INSTANCE_CREATE_FAILED,
+                "Component preparation failed",
+            )
+        })?
+        .0;
     }
     let core = builder.build().await.map_err(|e| {
         log::error!("Failed to create instance: {e}");
@@ -416,14 +435,14 @@ pub async fn clone_instance(
             format!("Target instance '{target_instance_id}' not found"),
         )
     })?;
-    if target_core.configuration_is_persistent() {
-        if computation.is_some() {
+    if target_core.constructs_ordinary_components() {
+        if computation.is_some() && target_core.configuration_is_persistent() {
             return Err(ErrorResponse::new(
                 error_codes::CONFIGURATION_TRANSITION_REQUIRED,
                 "Native components cannot be cloned into a persisted instance; submit them to computation/desired",
             ));
         }
-        let definitions = if source_core.configuration_is_persistent() {
+        let definitions = if source_core.constructs_ordinary_components() {
             persisted_definitions(&source_core)
         } else {
             snapshot_definitions(&snapshot)
@@ -483,6 +502,29 @@ pub async fn clone_instance(
                 response.success = false;
             }
         }
+        if let Some(config) = computation {
+            let registry = plugin_registry.read().await;
+            let registration =
+                crate::computation::register_components(&config, &target_core, &registry);
+            drop(registry);
+            match registration.await {
+                Ok(_) => response.components_created.extend(
+                    config
+                        .definition
+                        .components
+                        .iter()
+                        .map(|component| component.descriptor.id().to_string()),
+                ),
+                Err(error) => {
+                    log::error!("Clone: failed to add native components: {error:#}");
+                    response
+                        .errors
+                        .push(format!("Failed to add native components: {error:#}"));
+                    response.success = false;
+                }
+            }
+            persist_after_operation(&config_persistence, "cloning instance").await?;
+        }
         return Ok(Json(ApiResponse::success(response)));
     }
 
@@ -522,6 +564,7 @@ pub async fn clone_instance(
         });
 
         let source_config = SourceConfig {
+            component_id: None,
             kind: src_snap.source_type.clone(),
             id: src_snap.name.to_string(),
             auto_start: false,
@@ -638,6 +681,7 @@ pub async fn clone_instance(
             })
             .collect();
         let reaction_config = ReactionConfig {
+            component_id: None,
             kind: rx_snap.reaction_type.clone(),
             id: rx_snap.name.to_string(),
             queries,
@@ -802,6 +846,7 @@ fn snapshot_definitions(
         .filter(|s| !s.name.as_str().starts_with("__"))
     {
         let config = SourceConfig {
+            component_id: None,
             kind: source.source_type.clone(),
             id: source.name.to_string(),
             auto_start: false,
@@ -836,6 +881,7 @@ fn snapshot_definitions(
         .filter(|r| !r.name.as_str().starts_with("__"))
     {
         let config = ReactionConfig {
+            component_id: None,
             kind: reaction.reaction_type.clone(),
             id: reaction.name.to_string(),
             queries: reaction.queries.iter().cloned().map(named).collect(),

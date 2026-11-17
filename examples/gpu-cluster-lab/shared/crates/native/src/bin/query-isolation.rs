@@ -646,10 +646,7 @@ async fn execute(
     output: &Path,
     paced: bool,
 ) -> Result<()> {
-    ensure!(
-        matches!(mode, "bare" | "pipeline-memory"),
-        "provider must be bare or pipeline-memory"
-    );
+    ensure!(mode == "bare", "provider must be bare");
     let loading = Instant::now();
     let corpus = load_corpus(path)?;
     let corpus_load_ns = loading.elapsed().as_nanos();
@@ -672,49 +669,14 @@ async fn execute(
     let ticks_per_second: u64 = std::str::from_utf8(&clock.stdout)?.trim().parse()?;
     ensure!(ticks_per_second > 0, "invalid CPU clock rate");
     let load = std::fs::read_to_string("/proc/loadavg")?;
-    let (source, _handle) = drasi_source_application::ApplicationSource::new(
-        "fixture",
-        drasi_source_application::ApplicationSourceConfig {
-            properties: Default::default(),
-            durability: None,
-        },
-    )?;
     let core = DrasiLib::builder()
         .with_id("query-isolation")
-        .with_source(source)
         .build()
         .await?;
-    let mut batches = Vec::new();
     let mut measured = Vec::new();
     let construction = Instant::now();
     for (id, text, settings) in definitions {
-        let provider: Arc<dyn ComputationIndexProvider> = if mode == "bare" {
-            Arc::new(InMemoryComputationProvider)
-        } else {
-            let config = serde_json::from_value(json!({
-                "id":id, "query":text, "inputs":["fixture"], "joins":settings.joins,
-                "enableBootstrap":false, "auto_start":false,
-            }))?;
-            let batch = core
-                .computation_pipeline()?
-                .source(
-                    core.borrow_computation_source("fixture").await?,
-                    SourceSubscriptionOptions::default(),
-                )?
-                .query(config)
-                .build()?;
-            let provider = batch
-                .bindings
-                .resources
-                .values()
-                .find(|resource| resource.role() == ResourceRole::IndexBackend)
-                .context("pipeline index provider missing")?
-                .get::<QueryIndexProviderResource>()?
-                .0
-                .clone();
-            batches.push(batch);
-            provider
-        };
+        let provider: Arc<dyn ComputationIndexProvider> = Arc::new(InMemoryComputationProvider);
         ensure!(
             provider.is_volatile(),
             "persistent query provider is forbidden in this diagnostic"
@@ -722,7 +684,7 @@ async fn execute(
         let mut query = ContinuousQueryTransformer::new_configured(
             ContinuousQueryDefinition {
                 graph_id: "query-isolation".into(),
-                id: ComponentId::try_new(id.clone())?,
+                id: ComponentId::try_new(gpu_contracts::component_id(&id))?,
                 query: text,
                 language: ComputationQueryLanguage::Cypher,
                 output_stream: StreamId::try_new(format!("{id}/out"))?,
@@ -737,7 +699,12 @@ async fn execute(
             None,
         )
         .await?;
-        query.start().await?;
+        query
+            .initialize(&gpu_native::test_contexts::lib::initialize())
+            .await?;
+        query
+            .start(&gpu_native::test_contexts::lib::start())
+            .await?;
         measured.push(Measured {
             id,
             query,
@@ -883,10 +850,11 @@ async fn execute(
     });
     std::fs::write(output, serde_json::to_vec_pretty(&report)?)?;
     for item in &mut measured {
-        item.query.stop().await?;
+        item.query
+            .stop(&gpu_native::test_contexts::lib::stop())
+            .await?;
     }
     drop(measured);
-    drop(batches);
     core.shutdown().await?;
     println!(
         "{}",
@@ -905,7 +873,10 @@ async fn execute(
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    ensure!(args.len() == 4 || (args.len() == 5 && args[4] == "--paced"), "usage: query-isolation <recording.ndjson> <bare|pipeline-memory> <query-id|all> <report.json> [--paced]");
+    ensure!(
+        args.len() == 4 || (args.len() == 5 && args[4] == "--paced"),
+        "usage: query-isolation <recording.ndjson> <bare> <query-id|all> <report.json> [--paced]"
+    );
     tokio::time::timeout(
         Duration::from_secs(300),
         execute(

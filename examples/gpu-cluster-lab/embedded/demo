@@ -127,7 +127,7 @@ acceptance() (
         snapshot=$(compose run --rm --no-deps checks --restart-snapshot)
         slot_sql="SELECT slot_name FROM pg_replication_slots WHERE database='gpu_demo' AND plugin='pgoutput' ORDER BY slot_name"
         slot=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$slot_sql")
-        printf '%s\n' "$slot" | grep -Eq '^gpu_native_[0-9a-f]{32}$'
+        printf '%s\n' "$slot" | grep -Eq '^drasi_[0-9a-f]{24}_[0-9a-f]{32}$'
         test "$(printf '%s\n' "$slot" | wc -l | tr -d ' ')" = 1
         receipts_sql="SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY operation_kind,request_key),'[]') FROM command_receipts r"
         receipts=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$receipts_sql")

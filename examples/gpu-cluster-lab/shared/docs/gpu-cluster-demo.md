@@ -463,10 +463,11 @@ ALTER TABLE gpu_placements REPLICA IDENTITY FULL;
 
 CREATE PUBLICATION gpu_demo_publication FOR TABLE
   regional_clusters, placement_policies, data_profiles,
-  gpu_inventory, gpu_telemetry, workload_requirements, gpu_placements;
+  gpu_inventory, gpu_telemetry, workload_requirements, gpu_placements
+  WITH (publish = 'insert, update, delete');
 ```
 
-Migrations must be versioned and safe to rerun; the publication creation belongs in a once-applied migration. Use `DELETE`, not `TRUNCATE`, for normal fixture changes. Coordinate initial snapshot with CDC through the source's PostgreSQL bootstrap provider; do not read an unrelated SQL snapshot and hope no changes were missed.
+Migrations must be versioned and safe to rerun; the publication creation belongs in a once-applied migration. Use `DELETE`, not `TRUNCATE`, for normal fixture changes; the source rejects publications that publish `TRUNCATE`. Coordinate initial snapshot with CDC through the source's PostgreSQL bootstrap provider; do not read an unrelated SQL snapshot and hope no changes were missed.
 
 ## 6. Query and event contracts
 

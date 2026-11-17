@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -79,8 +80,7 @@ def main():
     def slot():
         names = sql("SELECT slot_name FROM pg_replication_slots "
                     "WHERE database='gpu_demo' ORDER BY slot_name;").splitlines()
-        assert len(names) == 1 and names[0].startswith("gpu_native_"), names
-        UUID(names[0][len("gpu_native_"):])
+        assert len(names) == 1 and re.fullmatch(r"drasi_[0-9a-f]{24}_[0-9a-f]{32}", names[0]), names
         return names[0]
 
     def pair(drasi, gpu):
@@ -169,7 +169,7 @@ def main():
 
         def missing_history_failed():
             logs = run([*compose, "logs", "--no-color", "--tail=150", "drasi"])
-            if "native PostgreSQL source requires an existing slot in this database" not in logs:
+            if "source position is no longer available" not in logs:
                 return False
             try:
                 return get(drasi, "/health/ready").get("ready") is False

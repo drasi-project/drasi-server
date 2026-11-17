@@ -19,7 +19,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
+                  - component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
                   joins: []
                   middleware: []
               language:
@@ -34,8 +34,6 @@ instances:
                 Literal: all-messages/out
             configuration_version: 1
             dependencies:
-              bootstrap:
-              - all-messages-postgres-bootstrap
               catalog:
               - query-results
               indexes:
@@ -43,7 +41,7 @@ instances:
               source_progress:
               - all-messages-progress
             descriptor:
-              id: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
+              id: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -393,6 +391,352 @@ instances:
                   encoding: drasi-element-msgpack-v2
                   id: drasi.graph-change
                   version: 2
+              - direction: Input
+                id: bootstrap
+                kind: Bootstrap
+                requirements:
+                  required: []
+                schema:
+                  definition:
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 118
+                  - 50
+                  - 59
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 82
+                  - 101
+                  - 102
+                  - 101
+                  - 114
+                  - 101
+                  - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
+                  - 99
+                  - 101
+                  - 45
+                  - 109
+                  - 115
+                  - 103
+                  - 112
+                  - 97
+                  - 99
+                  - 107
+                  - 45
+                  - 107
+                  - 101
+                  - 121
+                  - 59
+                  - 97
+                  - 100
+                  - 100
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 114
+                  - 101
+                  - 112
+                  - 108
+                  - 97
+                  - 99
+                  - 101
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 112
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 80
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 59
+                  - 100
+                  - 101
+                  - 108
+                  - 101
+                  - 116
+                  - 101
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 66
+                  - 101
+                  - 102
+                  - 111
+                  - 114
+                  - 101
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 111
+                  - 114
+                  - 45
+                  - 105
+                  - 100
+                  - 101
+                  - 110
+                  - 116
+                  - 105
+                  - 116
+                  - 121
+                  - 59
+                  - 101
+                  - 118
+                  - 101
+                  - 110
+                  - 116
+                  - 45
+                  - 108
+                  - 111
+                  - 99
+                  - 97
+                  - 108
+                  - 45
+                  - 103
+                  - 114
+                  - 97
+                  - 112
+                  - 104
+                  - 45
+                  - 99
+                  - 111
+                  - 110
+                  - 116
+                  - 114
+                  - 111
+                  - 108
+                  - 115
+                  - 45
+                  - 118
+                  - 49
+                  encoding: drasi-element-msgpack-v2
+                  id: drasi.graph-change
+                  version: 2
+              - direction: Output
+                id: snapshot
+                kind: Bootstrap
+                requirements:
+                  required: []
+                schema:
+                  definition:
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 118
+                  - 50
+                  - 59
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 82
+                  - 101
+                  - 102
+                  - 101
+                  - 114
+                  - 101
+                  - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
+                  - 99
+                  - 101
+                  - 45
+                  - 109
+                  - 115
+                  - 103
+                  - 112
+                  - 97
+                  - 99
+                  - 107
+                  - 45
+                  - 107
+                  - 101
+                  - 121
+                  - 59
+                  - 97
+                  - 100
+                  - 100
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 114
+                  - 101
+                  - 112
+                  - 108
+                  - 97
+                  - 99
+                  - 101
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 112
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 80
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 59
+                  - 100
+                  - 101
+                  - 108
+                  - 101
+                  - 116
+                  - 101
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 66
+                  - 101
+                  - 102
+                  - 111
+                  - 114
+                  - 101
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 111
+                  - 114
+                  - 45
+                  - 105
+                  - 100
+                  - 101
+                  - 110
+                  - 116
+                  - 105
+                  - 116
+                  - 121
+                  - 59
+                  - 101
+                  - 118
+                  - 101
+                  - 110
+                  - 116
+                  - 45
+                  - 108
+                  - 111
+                  - 99
+                  - 97
+                  - 108
+                  - 45
+                  - 103
+                  - 114
+                  - 97
+                  - 112
+                  - 104
+                  - 45
+                  - 99
+                  - 111
+                  - 110
+                  - 116
+                  - 114
+                  - 111
+                  - 108
+                  - 115
+                  - 45
+                  - 118
+                  - 49
+                  encoding: drasi-element-msgpack-v2
+                  id: drasi.graph-change
+                  version: 2
               semantic_kind: Query
             implementation:
               name: drasi.query/continuous
@@ -400,7 +744,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
+          id: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -750,6 +1094,352 @@ instances:
               encoding: drasi-element-msgpack-v2
               id: drasi.graph-change
               version: 2
+          - direction: Input
+            id: bootstrap
+            kind: Bootstrap
+            requirements:
+              required: []
+            schema:
+              definition:
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 118
+              - 50
+              - 59
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 82
+              - 101
+              - 102
+              - 101
+              - 114
+              - 101
+              - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
+              - 99
+              - 101
+              - 45
+              - 109
+              - 115
+              - 103
+              - 112
+              - 97
+              - 99
+              - 107
+              - 45
+              - 107
+              - 101
+              - 121
+              - 59
+              - 97
+              - 100
+              - 100
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 114
+              - 101
+              - 112
+              - 108
+              - 97
+              - 99
+              - 101
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 112
+              - 97
+              - 116
+              - 99
+              - 104
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 80
+              - 97
+              - 116
+              - 99
+              - 104
+              - 59
+              - 100
+              - 101
+              - 108
+              - 101
+              - 116
+              - 101
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 66
+              - 101
+              - 102
+              - 111
+              - 114
+              - 101
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 111
+              - 114
+              - 45
+              - 105
+              - 100
+              - 101
+              - 110
+              - 116
+              - 105
+              - 116
+              - 121
+              - 59
+              - 101
+              - 118
+              - 101
+              - 110
+              - 116
+              - 45
+              - 108
+              - 111
+              - 99
+              - 97
+              - 108
+              - 45
+              - 103
+              - 114
+              - 97
+              - 112
+              - 104
+              - 45
+              - 99
+              - 111
+              - 110
+              - 116
+              - 114
+              - 111
+              - 108
+              - 115
+              - 45
+              - 118
+              - 49
+              encoding: drasi-element-msgpack-v2
+              id: drasi.graph-change
+              version: 2
+          - direction: Output
+            id: snapshot
+            kind: Bootstrap
+            requirements:
+              required: []
+            schema:
+              definition:
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 118
+              - 50
+              - 59
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 82
+              - 101
+              - 102
+              - 101
+              - 114
+              - 101
+              - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
+              - 99
+              - 101
+              - 45
+              - 109
+              - 115
+              - 103
+              - 112
+              - 97
+              - 99
+              - 107
+              - 45
+              - 107
+              - 101
+              - 121
+              - 59
+              - 97
+              - 100
+              - 100
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 114
+              - 101
+              - 112
+              - 108
+              - 97
+              - 99
+              - 101
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 112
+              - 97
+              - 116
+              - 99
+              - 104
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 80
+              - 97
+              - 116
+              - 99
+              - 104
+              - 59
+              - 100
+              - 101
+              - 108
+              - 101
+              - 116
+              - 101
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 66
+              - 101
+              - 102
+              - 111
+              - 114
+              - 101
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 111
+              - 114
+              - 45
+              - 105
+              - 100
+              - 101
+              - 110
+              - 116
+              - 105
+              - 116
+              - 121
+              - 59
+              - 101
+              - 118
+              - 101
+              - 110
+              - 116
+              - 45
+              - 108
+              - 111
+              - 99
+              - 97
+              - 108
+              - 45
+              - 103
+              - 114
+              - 97
+              - 112
+              - 104
+              - 45
+              - 99
+              - 111
+              - 110
+              - 116
+              - 114
+              - 111
+              - 108
+              - 115
+              - 45
+              - 118
+              - 49
+              encoding: drasi-element-msgpack-v2
+              id: drasi.graph-change
+              version: 2
           semantic_kind: Query
         input_merge: Arrival
         lifecycle:
@@ -763,31 +1453,870 @@ instances:
           Factory:
             completion: null
             configuration:
-              auto_create_slot:
-                Literal: false
-              persistent:
-                Literal: false
-              settings:
+              database:
                 Reference:
-                  key: env-json:DRASI_PG_MY_POSTGRES_SETTINGS
+                  key: env:DRASI_PG_MY_POSTGRES_DATABASE
+                  resource: postgres-configuration
+                  secret: false
+              feedbackIntervalMs:
+                Literal: 1000
+              host:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_HOST
+                  resource: postgres-configuration
+                  secret: false
+              ioTimeoutMs:
+                Literal: 10000
+              maxProtocolBytes:
+                Literal: 8388608
+              maxTransactionBytes:
+                Literal: 8388608
+              maxTransactionChanges:
+                Literal: 4096
+              maxTransactionDurationMs:
+                Literal: 30000
+              password:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_PASSWORD
                   resource: postgres-configuration
                   secret: true
-              start_from_slot:
-                Literal: false
+              port:
+                Reference:
+                  key: env-json:DRASI_PG_MY_POSTGRES_PORT
+                  resource: postgres-configuration
+                  secret: false
+              publication:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_PUBLICATION
+                  resource: postgres-configuration
+                  secret: false
+              slotName:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_SLOT_NAME
+                  resource: postgres-configuration
+                  secret: false
+              slotOwnership:
+                Literal: external
+              source:
+                Literal: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+              sslMode:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_SSL_MODE
+                  resource: postgres-configuration
+                  secret: false
               stream:
                 Literal: my-postgres/out
+              tableKeys:
+                Literal:
+                - keyColumns:
+                  - MessageId
+                  table: Message
+              tables:
+                Literal:
+                - Message
+              user:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_USER
+                  resource: postgres-configuration
+                  secret: false
+            configuration_version: 1
+            dependencies:
+              source_progress:
+              - all-messages-progress
+            descriptor:
+              id: b872383e-8e88-4323-be55-6fd99284a41a
+              ports:
+              - direction: Output
+                id: snapshot
+                kind: Bootstrap
+                requirements:
+                  required: []
+                schema:
+                  definition:
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 118
+                  - 50
+                  - 59
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 82
+                  - 101
+                  - 102
+                  - 101
+                  - 114
+                  - 101
+                  - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
+                  - 99
+                  - 101
+                  - 45
+                  - 109
+                  - 115
+                  - 103
+                  - 112
+                  - 97
+                  - 99
+                  - 107
+                  - 45
+                  - 107
+                  - 101
+                  - 121
+                  - 59
+                  - 97
+                  - 100
+                  - 100
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 114
+                  - 101
+                  - 112
+                  - 108
+                  - 97
+                  - 99
+                  - 101
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 112
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 80
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 59
+                  - 100
+                  - 101
+                  - 108
+                  - 101
+                  - 116
+                  - 101
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 66
+                  - 101
+                  - 102
+                  - 111
+                  - 114
+                  - 101
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 111
+                  - 114
+                  - 45
+                  - 105
+                  - 100
+                  - 101
+                  - 110
+                  - 116
+                  - 105
+                  - 116
+                  - 121
+                  - 59
+                  - 101
+                  - 118
+                  - 101
+                  - 110
+                  - 116
+                  - 45
+                  - 108
+                  - 111
+                  - 99
+                  - 97
+                  - 108
+                  - 45
+                  - 103
+                  - 114
+                  - 97
+                  - 112
+                  - 104
+                  - 45
+                  - 99
+                  - 111
+                  - 110
+                  - 116
+                  - 114
+                  - 111
+                  - 108
+                  - 115
+                  - 45
+                  - 118
+                  - 49
+                  encoding: drasi-element-msgpack-v2
+                  id: drasi.graph-change
+                  version: 2
+            implementation:
+              name: drasi.postgres/shared-row-bootstrap
+              plugin:
+                id: drasi-computation-bootstrap-postgres
+                version: 0.11.3
+              version: '1'
+            role: BootstrapProvider
+        descriptor:
+          id: b872383e-8e88-4323-be55-6fd99284a41a
+          ports:
+          - direction: Output
+            id: snapshot
+            kind: Bootstrap
+            requirements:
+              required: []
+            schema:
+              definition:
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 118
+              - 50
+              - 59
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 82
+              - 101
+              - 102
+              - 101
+              - 114
+              - 101
+              - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
+              - 99
+              - 101
+              - 45
+              - 109
+              - 115
+              - 103
+              - 112
+              - 97
+              - 99
+              - 107
+              - 45
+              - 107
+              - 101
+              - 121
+              - 59
+              - 97
+              - 100
+              - 100
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 114
+              - 101
+              - 112
+              - 108
+              - 97
+              - 99
+              - 101
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 112
+              - 97
+              - 116
+              - 99
+              - 104
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 80
+              - 97
+              - 116
+              - 99
+              - 104
+              - 59
+              - 100
+              - 101
+              - 108
+              - 101
+              - 116
+              - 101
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 66
+              - 101
+              - 102
+              - 111
+              - 114
+              - 101
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 111
+              - 114
+              - 45
+              - 105
+              - 100
+              - 101
+              - 110
+              - 116
+              - 105
+              - 116
+              - 121
+              - 59
+              - 101
+              - 118
+              - 101
+              - 110
+              - 116
+              - 45
+              - 108
+              - 111
+              - 99
+              - 97
+              - 108
+              - 45
+              - 103
+              - 114
+              - 97
+              - 112
+              - 104
+              - 45
+              - 99
+              - 111
+              - 110
+              - 116
+              - 114
+              - 111
+              - 108
+              - 115
+              - 45
+              - 118
+              - 49
+              encoding: drasi-element-msgpack-v2
+              id: drasi.graph-change
+              version: 2
+        input_merge: Arrival
+        lifecycle:
+          auto_start: true
+        name: my-postgres-bootstrap
+        role: BootstrapProvider
+        streams: {}
+      - completion: null
+        construction:
+          Factory:
+            completion: null
+            configuration:
+              database:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_DATABASE
+                  resource: postgres-configuration
+                  secret: false
+              feedbackIntervalMs:
+                Literal: 1000
+              host:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_HOST
+                  resource: postgres-configuration
+                  secret: false
+              ioTimeoutMs:
+                Literal: 10000
+              maxProtocolBytes:
+                Literal: 8388608
+              maxTransactionBytes:
+                Literal: 8388608
+              maxTransactionChanges:
+                Literal: 4096
+              maxTransactionDurationMs:
+                Literal: 30000
+              password:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_PASSWORD
+                  resource: postgres-configuration
+                  secret: true
+              persistent:
+                Literal: false
+              port:
+                Reference:
+                  key: env-json:DRASI_PG_MY_POSTGRES_PORT
+                  resource: postgres-configuration
+                  secret: false
+              publication:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_PUBLICATION
+                  resource: postgres-configuration
+                  secret: false
+              slotName:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_SLOT_NAME
+                  resource: postgres-configuration
+                  secret: false
+              slotOwnership:
+                Literal: external
+              sslMode:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_SSL_MODE
+                  resource: postgres-configuration
+                  secret: false
+              stream:
+                Literal: my-postgres/out
+              tableKeys:
+                Literal:
+                - keyColumns:
+                  - MessageId
+                  table: Message
+              tables:
+                Literal:
+                - Message
+              user:
+                Reference:
+                  key: env:DRASI_PG_MY_POSTGRES_USER
+                  resource: postgres-configuration
+                  secret: false
             configuration_version: 1
             dependencies:
               consumer_progress:
               - my-postgres-consumers
             descriptor:
-              id: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
+              id: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
               plugin_identity:
                 id: drasi-computation-source-postgres
                 version: 0.11.3
               ports:
               - direction: Output
                 id: out
+                requirements:
+                  required: []
+                schema:
+                  definition:
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 118
+                  - 50
+                  - 59
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 82
+                  - 101
+                  - 102
+                  - 101
+                  - 114
+                  - 101
+                  - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
+                  - 99
+                  - 101
+                  - 45
+                  - 109
+                  - 115
+                  - 103
+                  - 112
+                  - 97
+                  - 99
+                  - 107
+                  - 45
+                  - 107
+                  - 101
+                  - 121
+                  - 59
+                  - 97
+                  - 100
+                  - 100
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 114
+                  - 101
+                  - 112
+                  - 108
+                  - 97
+                  - 99
+                  - 101
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 112
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 80
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 59
+                  - 100
+                  - 101
+                  - 108
+                  - 101
+                  - 116
+                  - 101
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 66
+                  - 101
+                  - 102
+                  - 111
+                  - 114
+                  - 101
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 111
+                  - 114
+                  - 45
+                  - 105
+                  - 100
+                  - 101
+                  - 110
+                  - 116
+                  - 105
+                  - 116
+                  - 121
+                  - 59
+                  - 101
+                  - 118
+                  - 101
+                  - 110
+                  - 116
+                  - 45
+                  - 108
+                  - 111
+                  - 99
+                  - 97
+                  - 108
+                  - 45
+                  - 103
+                  - 114
+                  - 97
+                  - 112
+                  - 104
+                  - 45
+                  - 99
+                  - 111
+                  - 110
+                  - 116
+                  - 114
+                  - 111
+                  - 108
+                  - 115
+                  - 45
+                  - 118
+                  - 49
+                  encoding: drasi-element-msgpack-v2
+                  id: drasi.graph-change
+                  version: 2
+              - direction: Input
+                id: bootstrap
+                kind: Bootstrap
+                requirements:
+                  required: []
+                schema:
+                  definition:
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 118
+                  - 50
+                  - 59
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 82
+                  - 101
+                  - 102
+                  - 101
+                  - 114
+                  - 101
+                  - 110
+                  - 99
+                  - 101
+                  - 45
+                  - 110
+                  - 97
+                  - 109
+                  - 101
+                  - 115
+                  - 112
+                  - 97
+                  - 99
+                  - 101
+                  - 45
+                  - 109
+                  - 115
+                  - 103
+                  - 112
+                  - 97
+                  - 99
+                  - 107
+                  - 45
+                  - 107
+                  - 101
+                  - 121
+                  - 59
+                  - 97
+                  - 100
+                  - 100
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 114
+                  - 101
+                  - 112
+                  - 108
+                  - 97
+                  - 99
+                  - 101
+                  - 47
+                  - 102
+                  - 117
+                  - 108
+                  - 108
+                  - 59
+                  - 112
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 80
+                  - 97
+                  - 116
+                  - 99
+                  - 104
+                  - 59
+                  - 100
+                  - 101
+                  - 108
+                  - 101
+                  - 116
+                  - 101
+                  - 47
+                  - 69
+                  - 108
+                  - 101
+                  - 109
+                  - 101
+                  - 110
+                  - 116
+                  - 66
+                  - 101
+                  - 102
+                  - 111
+                  - 114
+                  - 101
+                  - 73
+                  - 109
+                  - 97
+                  - 103
+                  - 101
+                  - 45
+                  - 111
+                  - 114
+                  - 45
+                  - 105
+                  - 100
+                  - 101
+                  - 110
+                  - 116
+                  - 105
+                  - 116
+                  - 121
+                  - 59
+                  - 101
+                  - 118
+                  - 101
+                  - 110
+                  - 116
+                  - 45
+                  - 108
+                  - 111
+                  - 99
+                  - 97
+                  - 108
+                  - 45
+                  - 103
+                  - 114
+                  - 97
+                  - 112
+                  - 104
+                  - 45
+                  - 99
+                  - 111
+                  - 110
+                  - 116
+                  - 114
+                  - 111
+                  - 108
+                  - 115
+                  - 45
+                  - 118
+                  - 49
+                  encoding: drasi-element-msgpack-v2
+                  id: drasi.graph-change
+                  version: 2
+              - direction: Output
+                id: snapshot
+                kind: Bootstrap
                 requirements:
                   required: []
                 schema:
@@ -966,13 +2495,359 @@ instances:
               version: '1'
             role: Source
         descriptor:
-          id: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
+          id: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
           plugin_identity:
             id: drasi-computation-source-postgres
             version: 0.11.3
           ports:
           - direction: Output
             id: out
+            requirements:
+              required: []
+            schema:
+              definition:
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 118
+              - 50
+              - 59
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 82
+              - 101
+              - 102
+              - 101
+              - 114
+              - 101
+              - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
+              - 99
+              - 101
+              - 45
+              - 109
+              - 115
+              - 103
+              - 112
+              - 97
+              - 99
+              - 107
+              - 45
+              - 107
+              - 101
+              - 121
+              - 59
+              - 97
+              - 100
+              - 100
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 114
+              - 101
+              - 112
+              - 108
+              - 97
+              - 99
+              - 101
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 112
+              - 97
+              - 116
+              - 99
+              - 104
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 80
+              - 97
+              - 116
+              - 99
+              - 104
+              - 59
+              - 100
+              - 101
+              - 108
+              - 101
+              - 116
+              - 101
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 66
+              - 101
+              - 102
+              - 111
+              - 114
+              - 101
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 111
+              - 114
+              - 45
+              - 105
+              - 100
+              - 101
+              - 110
+              - 116
+              - 105
+              - 116
+              - 121
+              - 59
+              - 101
+              - 118
+              - 101
+              - 110
+              - 116
+              - 45
+              - 108
+              - 111
+              - 99
+              - 97
+              - 108
+              - 45
+              - 103
+              - 114
+              - 97
+              - 112
+              - 104
+              - 45
+              - 99
+              - 111
+              - 110
+              - 116
+              - 114
+              - 111
+              - 108
+              - 115
+              - 45
+              - 118
+              - 49
+              encoding: drasi-element-msgpack-v2
+              id: drasi.graph-change
+              version: 2
+          - direction: Input
+            id: bootstrap
+            kind: Bootstrap
+            requirements:
+              required: []
+            schema:
+              definition:
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 118
+              - 50
+              - 59
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 82
+              - 101
+              - 102
+              - 101
+              - 114
+              - 101
+              - 110
+              - 99
+              - 101
+              - 45
+              - 110
+              - 97
+              - 109
+              - 101
+              - 115
+              - 112
+              - 97
+              - 99
+              - 101
+              - 45
+              - 109
+              - 115
+              - 103
+              - 112
+              - 97
+              - 99
+              - 107
+              - 45
+              - 107
+              - 101
+              - 121
+              - 59
+              - 97
+              - 100
+              - 100
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 114
+              - 101
+              - 112
+              - 108
+              - 97
+              - 99
+              - 101
+              - 47
+              - 102
+              - 117
+              - 108
+              - 108
+              - 59
+              - 112
+              - 97
+              - 116
+              - 99
+              - 104
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 80
+              - 97
+              - 116
+              - 99
+              - 104
+              - 59
+              - 100
+              - 101
+              - 108
+              - 101
+              - 116
+              - 101
+              - 47
+              - 69
+              - 108
+              - 101
+              - 109
+              - 101
+              - 110
+              - 116
+              - 66
+              - 101
+              - 102
+              - 111
+              - 114
+              - 101
+              - 73
+              - 109
+              - 97
+              - 103
+              - 101
+              - 45
+              - 111
+              - 114
+              - 45
+              - 105
+              - 100
+              - 101
+              - 110
+              - 116
+              - 105
+              - 116
+              - 121
+              - 59
+              - 101
+              - 118
+              - 101
+              - 110
+              - 116
+              - 45
+              - 108
+              - 111
+              - 99
+              - 97
+              - 108
+              - 45
+              - 103
+              - 114
+              - 97
+              - 112
+              - 104
+              - 45
+              - 99
+              - 111
+              - 110
+              - 116
+              - 114
+              - 111
+              - 108
+              - 115
+              - 45
+              - 118
+              - 49
+              encoding: drasi-element-msgpack-v2
+              id: drasi.graph-change
+              version: 2
+          - direction: Output
+            id: snapshot
+            kind: Bootstrap
             requirements:
               required: []
             schema:
@@ -1524,10 +3399,10 @@ instances:
       relationships:
       - definition:
           from:
-            component: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
+            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
             port: out
           to:
-            component: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
+            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
             port: in
         pipe:
           Bounded:
@@ -1543,7 +3418,45 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
+            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+            port: snapshot
+          to:
+            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+            port: bootstrap
+        pipe:
+          Bounded:
+            capacity: 8
+        policy:
+          activation: Independent
+          dynamically_replaceable: true
+          fence_producer_on_failure: false
+          orphan_permitted: false
+          propagate_failure: false
+          rebind_on_consumer_replace: false
+          required_for_binding: true
+          required_for_creation: false
+      - definition:
+          from:
+            component: b872383e-8e88-4323-be55-6fd99284a41a
+            port: snapshot
+          to:
+            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+            port: bootstrap
+        pipe:
+          Bounded:
+            capacity: 8
+        policy:
+          activation: Independent
+          dynamically_replaceable: true
+          fence_producer_on_failure: false
+          orphan_permitted: false
+          propagate_failure: false
+          rebind_on_consumer_replace: false
+          required_for_binding: true
+          required_for_creation: false
+      - definition:
+          from:
+            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -1563,35 +3476,14 @@ instances:
       requirements:
         required: []
       resource_configurations:
-        all-messages-postgres-bootstrap:
-          component: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
-          configuration:
-            settings:
-              Reference:
-                key: env-json:DRASI_PG_MY_POSTGRES_SETTINGS
-                resource: postgres-configuration
-                secret: true
-            source:
-              Literal: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
-            stream:
-              Literal: my-postgres/out
-          configurationVersion: 1
-          implementation:
-            name: drasi.postgres/shared-row-bootstrap
-            plugin:
-              id: drasi-computation-bootstrap-postgres
-              version: 0.11.3
-            version: '1'
-          kind: nativeBootstrap
-          sourceProgress: all-messages-progress
         all-messages-progress:
-          component: 7cc78aae-4c52-4cf7-8829-ab71bb48beb7
+          component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
           kind: sourceProgress
         my-postgres-consumers:
           consumers:
-            7cc78aae-4c52-4cf7-8829-ab71bb48beb7: all-messages-progress
+            55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7: all-messages-progress
           kind: consumerProgress
-          producer: 06fff2b7-d94d-419a-bde6-d6246a5fc3c0
+          producer: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
         postgres-configuration:
           kind: configuration
         query-indexes:
@@ -1599,16 +3491,9 @@ instances:
         query-results:
           kind: queryCatalog
       resource_dependencies:
-        all-messages-postgres-bootstrap:
-          all-messages-progress: Checkpoint
-          postgres-configuration: SecretStore
         my-postgres-consumers:
           all-messages-progress: Checkpoint
       resources:
-      - binding: all-messages-postgres-bootstrap
-        id: all-messages-postgres-bootstrap
-        ownership: Graph
-        role: Bootstrap
       - binding: all-messages-progress
         id: all-messages-progress
         ownership: Graph

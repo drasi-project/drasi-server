@@ -177,14 +177,18 @@ describe('app-owned setup using the built package', () => {
     'rejects a changed native %s contract without mutation', async kind => {
       const { run, backend, writes } = setup(true);
       const topology = backend.nativeTopology!;
+      const node = (name: string) => topology.components.find(component => component.name === name)!;
+      const watchlist = node('watchlist-query');
       if (kind === 'source-factory') {
-        topology.components.find(node => node.descriptor.id === 'postgres-stocks')!
-          .construction.Factory.implementation.name = 'drasi.postgres/changes';
+        node('postgres-stocks').construction.Factory!.implementation.name = 'drasi.postgres/changes';
       } else if (kind === 'feedback-owner') {
-        topology.resource_configurations['postgres-stocks-consumers'].consumers['watchlist-query'] =
-          'portfolio-query-progress';
+        const consumers = topology.resource_configurations['postgres-stocks-consumers'].consumers!;
+        (consumers as Record<string, string>)[watchlist.descriptor.id] = 'portfolio-query-progress';
       } else {
-        topology.resource_configurations['watchlist-query-bootstrap'].providers.reverse();
+        const execution = watchlist.construction.Factory!.configuration.execution as {
+          Literal: { inputs: unknown[] };
+        };
+        execution.Literal.inputs.reverse();
       }
       await expect(run()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE' });
       expect(writes()).toEqual([]);
