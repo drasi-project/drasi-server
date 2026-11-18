@@ -301,7 +301,12 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
             builder,
             &progress,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":query_id}),
+            json!({"kind":"sourceProgress","component":query_id,"indexes":"query-indexes"}),
+        )?;
+        builder = builder.resource_dependency(
+            resource(&progress)?,
+            resource("query-indexes")?,
+            ResourceRole::IndexBackend,
         )?;
         for input in &query.inputs {
             let source = input

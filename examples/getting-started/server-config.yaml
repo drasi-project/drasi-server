@@ -6478,12 +6478,15 @@ instances:
       resource_configurations:
         hello-world-from-progress:
           component: 1a879ac5-60e6-4dea-8988-43052b4a365f
+          indexes: query-indexes
           kind: sourceProgress
         inactive-people-progress:
           component: f3a6cefb-5b20-407e-8ca2-350324f3e3ec
+          indexes: query-indexes
           kind: sourceProgress
         message-count-progress:
           component: 2b6efbfa-dc05-48ae-9467-323e55fd0489
+          indexes: query-indexes
           kind: sourceProgress
         postgres-configuration:
           kind: configuration
@@ -6499,6 +6502,12 @@ instances:
         query-results:
           kind: queryCatalog
       resource_dependencies:
+        hello-world-from-progress:
+          query-indexes: IndexBackend
+        inactive-people-progress:
+          query-indexes: IndexBackend
+        message-count-progress:
+          query-indexes: IndexBackend
         postgres-messages-consumers:
           hello-world-from-progress: Checkpoint
           inactive-people-progress: Checkpoint

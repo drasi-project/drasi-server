@@ -1320,7 +1320,7 @@ mod single_runtime_tests {
             vec![("in", PortDirection::Input), ("out", PortDirection::Output)]
         );
         // This disconnected declaration tests registration, not completed port binding.
-        let expected_waits = vec![
+        let expected_waits = [
             DependencyWait::Connection {
                 endpoint: Endpoint::new(definition.id.clone(), PortId::try_new("in").unwrap()),
             },

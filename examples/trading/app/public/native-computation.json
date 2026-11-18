@@ -23506,22 +23506,27 @@
     "resource_configurations": {
       "active-orders-query-progress": {
         "component": "0ed8202c-c3a8-41dc-90cd-bbc932e76d54",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "expiring-orders-query-progress": {
         "component": "9dd26f17-ba3d-4524-99cc-fe356363f7f0",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "high-volume-query-progress": {
         "component": "4ca25b59-8a42-416d-914e-75bb60b1b7aa",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "portfolio-query-progress": {
         "component": "f031efd4-a526-4462-8709-35cee055852f",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "portfolio-summary-query-progress": {
         "component": "16af7131-fac3-4dac-a8a8-9d566dde2023",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "postgres-broker-consumers": {
@@ -23551,6 +23556,7 @@
       },
       "price-ticker-query-progress": {
         "component": "af34c94b-5a51-425c-a499-b1837dda4a79",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "query-indexes": {
@@ -23561,26 +23567,46 @@
       },
       "sector-performance-query-progress": {
         "component": "e82a6556-924a-4196-9d8f-c9fa23a8cefe",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "stale-orders-query-progress": {
         "component": "b85b1d93-6bc9-4bba-a7d0-0c140ec24e45",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "top-gainers-query-progress": {
         "component": "f714ac80-7408-431b-9117-3b78de6d087b",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "top-losers-query-progress": {
         "component": "b942ca36-ebc8-4b78-98b6-152a1a9cff34",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       },
       "watchlist-query-progress": {
         "component": "389081f9-267e-4718-b976-266d8696e9fe",
+        "indexes": "query-indexes",
         "kind": "sourceProgress"
       }
     },
     "resource_dependencies": {
+      "active-orders-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "expiring-orders-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "high-volume-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "portfolio-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "portfolio-summary-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
       "postgres-broker-consumers": {
         "active-orders-query-progress": "Checkpoint",
         "expiring-orders-query-progress": "Checkpoint",
@@ -23594,6 +23620,24 @@
         "top-gainers-query-progress": "Checkpoint",
         "top-losers-query-progress": "Checkpoint",
         "watchlist-query-progress": "Checkpoint"
+      },
+      "price-ticker-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "sector-performance-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "stale-orders-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "top-gainers-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "top-losers-query-progress": {
+        "query-indexes": "IndexBackend"
+      },
+      "watchlist-query-progress": {
+        "query-indexes": "IndexBackend"
       }
     },
     "resources": [

@@ -202,6 +202,8 @@ pub async fn upgrade(
                                     version: resolved.version,
                                     digest: resolved.digest,
                                     sdk_version: resolved.sdk_version,
+                                    abi_family: Some(resolved.abi_family),
+                                    abi_version: Some(resolved.abi_version),
                                     core_version: resolved.core_version,
                                     lib_version: resolved.lib_version,
                                     platform: resolved.platform,

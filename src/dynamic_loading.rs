@@ -263,8 +263,7 @@ pub fn load_plugins(
         let plugin_version = package_version.clone().unwrap_or_default();
         let sdk_version = meta
             .split_whitespace()
-            .find(|s| s.starts_with("sdk="))
-            .and_then(|s| s.strip_prefix("sdk="))
+            .find_map(|s| s.strip_prefix("abi="))
             .unwrap_or("")
             .to_string();
 

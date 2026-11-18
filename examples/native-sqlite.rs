@@ -167,7 +167,12 @@ pub fn definition_with_mode(
                 builder,
                 &progress,
                 ResourceRole::Checkpoint,
-                json!({"kind":"sourceProgress","component":id(name)?}),
+                json!({"kind":"sourceProgress","component":id(name)?,"indexes":"indexes"}),
+            )?;
+            builder = builder.resource_dependency(
+                resource(&progress)?,
+                resource("indexes")?,
+                ResourceRole::IndexBackend,
             )?;
             consumers.insert(id(name)?, progress);
         }

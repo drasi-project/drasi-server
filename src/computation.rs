@@ -94,9 +94,13 @@ pub fn native_factory_registry(
 pub enum ComputationResourceConfig {
     MemoryIndexes {},
     QueryCatalog {},
+    /// Source progress kept with its query's index resource, whose
+    /// durability it declares.
     SourceProgress {
         #[schema(value_type = String)]
         component: ComponentId,
+        #[schema(value_type = String)]
+        indexes: ResourceId,
     },
     RocksdbIndexes {
         path: PathBuf,
@@ -248,6 +252,8 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             config.validate(resource, &dependencies)?;
         } else if let ComputationResourceConfig::NativeIdentity(config) = &recipe {
             config.validate(resource, &dependencies)?;
+        } else if let ComputationResourceConfig::SourceProgress { indexes, .. } = &recipe {
+            validate_source_progress(indexes, &dependencies)?;
         } else {
             anyhow::ensure!(
                 dependencies.is_empty(),
@@ -373,6 +379,18 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         }
     }
     definition.validate_structure()?;
+    Ok(())
+}
+
+/// A `sourceProgress` recipe depends only on its query's index resource.
+fn validate_source_progress(
+    indexes: &ResourceId,
+    dependencies: &BTreeMap<ResourceId, ResourceRole>,
+) -> Result<()> {
+    anyhow::ensure!(
+        dependencies.len() == 1 && dependencies.get(indexes) == Some(&ResourceRole::IndexBackend),
+        "source progress must declare exactly its query's IndexBackend resource `{indexes}` as its dependency"
+    );
     Ok(())
 }
 
@@ -736,6 +754,26 @@ impl ManagementResourceResolver for ServerManagementResources {
         if let ComputationResourceConfig::NativeOutputSnapshots(config) = recipe {
             return config.resolve(resource, dependencies);
         }
+        if let ComputationResourceConfig::SourceProgress { component, indexes } = recipe {
+            validate_source_progress(
+                &indexes,
+                &dependencies
+                    .iter()
+                    .map(|(id, handle)| (id.clone(), handle.role()))
+                    .collect(),
+            )?;
+            let capabilities = dependencies
+                .get(&indexes)
+                .context("source progress index dependency is unavailable")?
+                .capabilities();
+            return Ok(ResourceHandle::new(
+                ResourceRole::Checkpoint,
+                Arc::new(QuerySourceProgressResource(Arc::new(
+                    QuerySourceProgress::new(graph, component)?,
+                ))),
+            )
+            .with_capabilities(capabilities));
+        }
         if let ComputationResourceConfig::ConsumerProgress(config) = recipe {
             return config.resolve(graph, resource, dependencies);
         }
@@ -760,12 +798,6 @@ impl ManagementResourceResolver for ServerManagementResources {
             ComputationResourceConfig::QueryCatalog {} => ResourceHandle::new(
                 ResourceRole::QueryCatalog,
                 Arc::new(QueryResultsCatalog::new(graph)?),
-            ),
-            ComputationResourceConfig::SourceProgress { component } => ResourceHandle::new(
-                ResourceRole::Checkpoint,
-                Arc::new(QuerySourceProgressResource(Arc::new(
-                    QuerySourceProgress::new(graph, component)?,
-                ))),
             ),
             ComputationResourceConfig::RocksdbIndexes { path } => {
                 anyhow::ensure!(
@@ -803,6 +835,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             }
             ComputationResourceConfig::NativeOutputSnapshots(_) => {
                 unreachable!("native output snapshots resolved separately")
+            }
+            ComputationResourceConfig::SourceProgress { .. } => {
+                unreachable!("source progress resolved with dependencies")
             }
             ComputationResourceConfig::ConsumerProgress(_) => {
                 unreachable!("consumer progress resolved with dependencies")

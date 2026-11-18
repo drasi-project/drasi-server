@@ -1736,18 +1736,19 @@ async fn local_auto_install_preserves_declared_abi_without_filename_inference() 
             .await?;
     assert_eq!(resolved.len(), 2);
     assert_eq!(resolved[0].filename, native_filename);
-    assert_eq!(resolved[0].abi_family.as_deref(), Some("computation"));
+    assert_eq!(resolved[0].abi_family, "computation");
     assert_eq!(
-        resolved[0].abi_version.as_deref(),
-        Some(drasi_host_sdk::computation::ABI_VERSION)
+        resolved[0].abi_version,
+        drasi_host_sdk::computation::ABI_VERSION
     );
     assert_eq!(
         resolved[0].sdk_version,
         drasi_host_sdk::computation::ABI_VERSION
     );
     assert_eq!(resolved[1].filename, legacy_filename);
-    assert_eq!(resolved[1].abi_family, None);
-    assert_eq!(resolved[1].abi_version, None);
+    // The ordinary binary's ABI comes from its marker, not its filename.
+    assert_eq!(resolved[1].abi_family, "ordinary");
+    assert_eq!(resolved[1].abi_version, expected_legacy_abi());
     assert_eq!(resolved[1].sdk_version, expected_legacy_abi());
     Ok(())
 }

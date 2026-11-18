@@ -143,6 +143,8 @@ pub async fn auto_install_plugins(
                     version: rp.version.clone(),
                     digest: rp.digest.clone(),
                     sdk_version: rp.sdk_version.clone(),
+                    abi_family: Some(rp.abi_family.clone()),
+                    abi_version: Some(rp.abi_version.clone()),
                     core_version: rp.core_version.clone(),
                     lib_version: rp.lib_version.clone(),
                     platform: rp.platform.clone(),
@@ -224,11 +226,20 @@ fn validate_plugin_metadata(
                 );
             }
         }
+        Some("ordinary") => {
+            let abi_version = metadata.abi_version.as_deref().with_context(|| {
+                format!(
+                    "plugin '{}' declares the ordinary ABI family without a version",
+                    metadata.file_path.display()
+                )
+            })?;
+            validate_legacy_abi(metadata, abi_version)?
+        }
         Some(family) => bail!(
             "plugin '{}' reports unsupported ABI family '{family}'",
             metadata.file_path.display()
         ),
-        None => validate_legacy_abi(metadata)?,
+        None => validate_legacy_abi(metadata, &metadata.sdk_version)?,
     }
     if metadata.target_triple != env!("TARGET_TRIPLE") {
         bail!(
@@ -250,12 +261,12 @@ fn validate_plugin_metadata(
     Ok(())
 }
 
-fn validate_legacy_abi(metadata: &PluginMetadataSummary) -> Result<()> {
-    let plugin_abi = major_minor(&metadata.sdk_version).with_context(|| {
+fn validate_legacy_abi(metadata: &PluginMetadataSummary, plugin_abi_version: &str) -> Result<()> {
+    let plugin_abi = major_minor(plugin_abi_version).with_context(|| {
         format!(
             "plugin '{}' reports invalid ABI version '{}'",
             metadata.file_path.display(),
-            metadata.sdk_version
+            plugin_abi_version
         )
     })?;
     let host_abi_version = drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION;
@@ -264,9 +275,7 @@ fn validate_legacy_abi(metadata: &PluginMetadataSummary) -> Result<()> {
 
     if plugin_abi != host_abi {
         bail!(
-            "plugin ABI mismatch: plugin={}, server={} (major.minor must match)",
-            metadata.sdk_version,
-            host_abi_version
+            "plugin ABI mismatch: plugin={plugin_abi_version}, server={host_abi_version} (major.minor must match)"
         );
     }
     Ok(())
@@ -456,13 +465,22 @@ async fn install_if_missing(
             )
         })?;
 
+        // An ABI is never inferred from the filename or SDK version, so an
+        // entry written without one must be re-resolved without --locked.
+        let (Some(abi_family), Some(abi_version)) =
+            (&locked_entry.abi_family, &locked_entry.abi_version)
+        else {
+            anyhow::bail!(
+                "plugins.lock entry for '{}' declares no plugin ABI; run without --locked to re-resolve it",
+                dep.reference
+            );
+        };
         let resolved = ResolvedPlugin {
             reference: locked_entry.reference.clone(),
             version: locked_entry.version.clone(),
             sdk_version: locked_entry.sdk_version.clone(),
-            // The lockfile has no ABI declaration; do not infer one from its filename or SDK.
-            abi_family: None,
-            abi_version: None,
+            abi_family: abi_family.clone(),
+            abi_version: abi_version.clone(),
             core_version: locked_entry.core_version.clone(),
             lib_version: locked_entry.lib_version.clone(),
             platform: locked_entry.platform.clone(),
@@ -621,11 +639,21 @@ async fn auto_install_from_local_dir(
                     );
                 }
 
+                let (Some(abi_family), Some(abi_version)) =
+                    (info.abi_family.clone(), info.abi_version.clone())
+                else {
+                    anyhow::bail!(
+                        "local plugin '{}' declares no plugin ABI",
+                        plugin_dep.reference
+                    );
+                };
                 let locked_entry = LockedPlugin {
                     reference: format!("file://{}", info.file_path.display()),
                     version: info.version.clone(),
                     digest: String::new(),
                     sdk_version: info.sdk_version.clone(),
+                    abi_family: info.abi_family.clone(),
+                    abi_version: info.abi_version.clone(),
                     core_version: String::new(),
                     lib_version: String::new(),
                     platform: env!("TARGET_TRIPLE").to_string(),
@@ -648,8 +676,8 @@ async fn auto_install_from_local_dir(
                     reference: format!("file://{}", info.file_path.display()),
                     version: info.version,
                     sdk_version: info.sdk_version,
-                    abi_family: info.abi_family,
-                    abi_version: info.abi_version,
+                    abi_family,
+                    abi_version,
                     core_version: String::new(),
                     lib_version: String::new(),
                     platform: env!("TARGET_TRIPLE").to_string(),
@@ -697,8 +725,8 @@ mod tests {
             reference: "ghcr.io/drasi-project/source/http@sha256:abc".to_string(),
             version: "0.2.8".to_string(),
             sdk_version: "0.10.0".to_string(),
-            abi_family: None,
-            abi_version: None,
+            abi_family: "ordinary".to_string(),
+            abi_version: "0.10.0".to_string(),
             core_version: "0.5.8".to_string(),
             lib_version: "0.8.9".to_string(),
             platform: "darwin/arm64".to_string(),
@@ -714,6 +742,8 @@ mod tests {
             version: resolved.version,
             digest: resolved.digest,
             sdk_version: resolved.sdk_version,
+            abi_family: Some(resolved.abi_family),
+            abi_version: Some(resolved.abi_version),
             core_version: resolved.core_version,
             lib_version: resolved.lib_version,
             platform: resolved.platform,

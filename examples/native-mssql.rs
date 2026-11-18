@@ -182,7 +182,12 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
             builder,
             &progress,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":id(name)}),
+            json!({"kind":"sourceProgress","component":id(name),"indexes":"indexes"}),
+        )?
+        .resource_dependency(
+            resource(&progress),
+            resource("indexes"),
+            ResourceRole::IndexBackend,
         )?;
         let mut query = query_factory.specification_from_config(id(name),json!({
             "query":format!("MATCH (n:Items) {} RETURN n.id AS id,n.value AS value",if name=="high" {"WHERE n.value >= 20"} else {""}),

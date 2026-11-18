@@ -210,8 +210,12 @@ fn configuration_with(query_implementation: ImplementationIdentity) -> Result<Co
             "resource_configurations":{
                 "memory":{"kind":"memoryIndexes"},
                 "results":{"kind":"queryCatalog"},
-                "one-progress":{"kind":"sourceProgress","component":id("one")},
-                "two-progress":{"kind":"sourceProgress","component":id("two")}
+                "one-progress":{"kind":"sourceProgress","component":id("one"),"indexes":"memory"},
+                "two-progress":{"kind":"sourceProgress","component":id("two"),"indexes":"memory"}
+            },
+            "resource_dependencies":{
+                "one-progress":{"memory":"IndexBackend"},
+                "two-progress":{"memory":"IndexBackend"}
             },
             "requirements":PipeRequirements::default(), "boundary_relationships":[],
         }))?,
@@ -250,11 +254,11 @@ fn query_catalog_recipe_roundtrips_with_a_shared_outlet() -> Result<()> {
 #[test]
 fn progress_recipes_reject_wrong_roles_and_cannot_restore_live_state() -> Result<()> {
     for recipe in [
-        json!({"kind":"sourceProgress","component":""}),
-        json!({"kind":"sourceProgress","component":"one","persistent":true}),
-        json!({"kind":"sourceProgress","component":"one","ready":true}),
-        json!({"kind":"sourceProgress","component":"one","graph":"other"}),
-        json!({"kind":"sourceProgress","component":"one","checkpoints":{}}),
+        json!({"kind":"sourceProgress","component":"","indexes":"memory"}),
+        json!({"kind":"sourceProgress","component":"one","persistent":true,"indexes":"memory"}),
+        json!({"kind":"sourceProgress","component":"one","ready":true,"indexes":"memory"}),
+        json!({"kind":"sourceProgress","component":"one","graph":"other","indexes":"memory"}),
+        json!({"kind":"sourceProgress","component":"one","checkpoints":{},"indexes":"memory"}),
     ] {
         let mut config = configuration()?;
         config
@@ -382,7 +386,7 @@ async fn progress_recipe_must_name_its_actual_consumer() -> Result<()> {
     config.definition.relationships.clear();
     config.definition.resource_configurations.insert(
         resource("one-progress"),
-        json!({"kind":"sourceProgress","component":id("two")}),
+        json!({"kind":"sourceProgress","component":id("two"),"indexes":"memory"}),
     );
     let core = crate::query_plugin::builder()
         .with_id("invalid-progress-owner")
@@ -530,7 +534,7 @@ async fn instance(
     for query in ["one", "two"] {
         assert_eq!(
             restored.definition.resource_configurations[&resource(&format!("{query}-progress"))],
-            json!({"kind":"sourceProgress","component":id(query)})
+            json!({"kind":"sourceProgress","component":id(query),"indexes":"memory"})
         );
     }
     let control = core.computation_control()?;

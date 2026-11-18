@@ -160,7 +160,8 @@ query/resource IDs must remain isolated. Native-only query dataflow without an
 ordinary subscription outlet remains permitted.
 The same queries now use declarative `sourceProgress` resources. Their recipes
 survive configuration snapshots and YAML roundtrips, cannot supply live
-checkpoints/readiness/durability, and must name their actual consumer. A
+checkpoints/readiness/durability, must name their actual consumer and take
+their durability from the query index resource they depend on. A
 lookalike progress owner is rejected during construction. These checks do not
 claim durable source replay for the fixture's volatile application input.
 

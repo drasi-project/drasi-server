@@ -106,8 +106,12 @@ registry. Each instance's optional `computation` configuration supplies
 factory-only component declarations and explicit resource construction recipes
 for its ComputationGraph.
 
-The `sourceProgress` resource recipe uses `{"kind":"sourceProgress","component":"query"}`
-and the `checkpoint` resource role. Bind the same resource ID to the named
+The `sourceProgress` resource recipe uses
+`{"kind":"sourceProgress","component":"query","indexes":"query-indexes"}` and the
+`checkpoint` resource role. Its only resource dependency is the query's
+`IndexBackend` resource named by `indexes`; the progress resource declares that
+resource's durability, so a source requiring durable progress is refused at
+binding when the query's indexes are volatile. Bind the same resource ID to the named
 consumer and its replayable source under their `source_progress` dependencies.
 Only the actual consumer publishes recovered progress; configuration cannot
 restore checkpoints or assert readiness/durability. Each instance constructs

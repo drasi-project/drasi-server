@@ -6494,9 +6494,11 @@ instances:
           producer: d441aca8-1942-4093-aacf-9203d7f4703a
         high-value-orders-progress:
           component: 21dc5499-60e2-48e4-a016-9cbaa45d8266
+          indexes: query-indexes
           kind: sourceProgress
         low-inventory-progress:
           component: e7da77d5-1ed7-4692-a367-f3b18e38bc6a
+          indexes: query-indexes
           kind: sourceProgress
         postgres-configuration:
           kind: configuration
@@ -6506,8 +6508,15 @@ instances:
           kind: queryCatalog
         user-changes-progress:
           component: 7a06a3d2-2535-44b8-a02b-ab0aad3d9b2d
+          indexes: query-indexes
           kind: sourceProgress
       resource_dependencies:
+        high-value-orders-progress:
+          query-indexes: IndexBackend
+        low-inventory-progress:
+          query-indexes: IndexBackend
+        user-changes-progress:
+          query-indexes: IndexBackend
         app-database-consumers:
           high-value-orders-progress: Checkpoint
           low-inventory-progress: Checkpoint

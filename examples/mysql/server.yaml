@@ -2626,6 +2626,7 @@ instances:
           sourceProgress: all-items-progress
         all-items-progress:
           component: all-items
+          indexes: mysql-indexes
           kind: sourceProgress
         mysql-configuration:
           kind: configuration
@@ -2662,8 +2663,13 @@ instances:
           sourceProgress: selected-items-progress
         selected-items-progress:
           component: selected-items
+          indexes: mysql-indexes
           kind: sourceProgress
       resource_dependencies:
+        all-items-progress:
+          mysql-indexes: IndexBackend
+        selected-items-progress:
+          mysql-indexes: IndexBackend
         all-items-bootstrap:
           all-items-progress: Checkpoint
           mysql-configuration: SecretStore

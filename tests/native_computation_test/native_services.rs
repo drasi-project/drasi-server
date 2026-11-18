@@ -205,12 +205,22 @@ async fn native_output_snapshot_recipe_is_an_immutable_policy_and_roundtrips() -
 #[tokio::test(flavor = "current_thread")]
 async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Result<()> {
     let mut topology = DesiredInstance::default().topology;
+    declare(
+        &mut topology,
+        "indexes",
+        ResourceRole::IndexBackend,
+        json!({"kind":"memoryIndexes"}),
+    );
     for consumer in ["left", "right"] {
         declare(
             &mut topology,
             consumer,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":id(consumer)}),
+            json!({"kind":"sourceProgress","component":id(consumer),"indexes":"indexes"}),
+        );
+        topology.resource_dependencies.insert(
+            resource(consumer),
+            BTreeMap::from([(resource("indexes"), ResourceRole::IndexBackend)]),
         );
     }
     declare(
@@ -242,19 +252,31 @@ async fn consumer_progress_recipe_retains_actual_members_and_roundtrips() -> Res
 
     let resolver = ServerManagementResources::new(&PluginRegistry::new(), None)?;
     let graph = &config.definition.graph_id;
-    let mut dependencies = BTreeMap::new();
-    for specification in &config.definition.resources[..2] {
-        let handle = resolver
+    let indexes = BTreeMap::from([(
+        resource("indexes"),
+        resolver
             .resolve(
+                INSTANCE,
+                graph,
+                &config.definition.resources[0],
+                &config.definition.resource_configurations[&resource("indexes")],
+            )
+            .await?,
+    )]);
+    let mut dependencies = BTreeMap::new();
+    for specification in &config.definition.resources[1..3] {
+        let handle = resolver
+            .resolve_with_dependencies(
                 INSTANCE,
                 graph,
                 specification,
                 &config.definition.resource_configurations[&specification.id],
+                &indexes,
             )
             .await?;
         dependencies.insert(specification.id.clone(), handle);
     }
-    let specification = &config.definition.resources[2];
+    let specification = &config.definition.resources[3];
     let recipe = &config.definition.resource_configurations[&specification.id];
     let handle = resolver
         .resolve_with_dependencies(INSTANCE, graph, specification, recipe, &dependencies)
@@ -398,7 +420,11 @@ fn bootstrap_topology(index_recipe: Value) -> Result<DesiredTopology> {
         &mut topology,
         "progress",
         ResourceRole::Checkpoint,
-        json!({"kind":"sourceProgress","component":id("query")}),
+        json!({"kind":"sourceProgress","component":id("query"),"indexes":"indexes"}),
+    );
+    topology.resource_dependencies.insert(
+        resource("progress"),
+        BTreeMap::from([(resource("indexes"), ResourceRole::IndexBackend)]),
     );
     Ok(topology)
 }

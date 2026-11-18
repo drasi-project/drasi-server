@@ -168,7 +168,12 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
             builder,
             &progress,
             ResourceRole::Checkpoint,
-            json!({"kind":"sourceProgress","component":query.id}),
+            json!({"kind":"sourceProgress","component":query.id,"indexes":"mysql-indexes"}),
+        )?;
+        builder = builder.resource_dependency(
+            resource(&progress)?,
+            resource("mysql-indexes")?,
+            ResourceRole::IndexBackend,
         )?;
         let mut specification = query_factory.specification_from_config(
             query.id.clone(),
