@@ -2,6 +2,9 @@ pub mod bootstrap;
 mod evidence;
 pub mod inputs;
 pub mod lifecycle;
+mod planner;
+#[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
+pub mod plugins;
 #[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
 pub mod postgres;
 mod processor;
@@ -24,44 +27,26 @@ use drasi_computation_plugin_sdk::{
     wire::DescribeRequest, Capabilities, Component, ConfigField, ConfigSchema, ConfigType,
     ControlSender, CreateRequest, CreatedComponent, Factory, FactoryMetadata, PluginDefinition,
 };
-use std::{
-    collections::BTreeMap,
-    sync::{atomic::AtomicBool, Arc},
-};
-use tokio::sync::Semaphore;
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Simulator,
-    Policy,
+    Configuration,
     Placement,
-    Resilience,
 }
 impl Kind {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Simulator => "gpu.lab/telemetry-simulator",
-            Self::Policy => "gpu.lab/regorus-policy",
-            Self::Placement => "gpu.lab/placement-solver",
-            Self::Resilience => "gpu.lab/resilience-assessor",
+            Self::Configuration => "gpu.lab/configuration",
+            Self::Placement => "gpu.lab/placement-planner",
         }
     }
 }
+#[derive(Default)]
 pub struct Workers {
-    solver: Arc<Semaphore>,
-    policy: Arc<Semaphore>,
-    placement_pending: AtomicBool,
     hub: Arc<status::Hub>,
-}
-impl Default for Workers {
-    fn default() -> Self {
-        Self {
-            solver: Arc::new(Semaphore::new(1)),
-            policy: Arc::new(Semaphore::new(1)),
-            placement_pending: AtomicBool::new(false),
-            hub: Arc::new(status::Hub::default()),
-        }
-    }
 }
 impl Workers {
     pub fn observe_runtime(&self, observation: RuntimeObservation) -> Result<()> {
@@ -137,20 +122,16 @@ impl Factory for NativeFactory {
 }
 pub fn plugin() -> Result<PluginDefinition> {
     let workers = Arc::new(Workers::default());
-    let mut factories: Vec<Arc<dyn Factory>> = [
-        Kind::Simulator,
-        Kind::Policy,
-        Kind::Placement,
-        Kind::Resilience,
-    ]
-    .into_iter()
-    .map(|kind| {
-        Arc::new(NativeFactory {
-            kind,
-            workers: workers.clone(),
-        }) as Arc<dyn Factory>
-    })
-    .collect();
+    let mut factories: Vec<Arc<dyn Factory>> =
+        [Kind::Simulator, Kind::Configuration, Kind::Placement]
+            .into_iter()
+            .map(|kind| {
+                Arc::new(NativeFactory {
+                    kind,
+                    workers: workers.clone(),
+                }) as Arc<dyn Factory>
+            })
+            .collect();
     factories.push(Arc::new(AuxiliaryFactory {
         reaction: false,
         hub: workers.hub.clone(),

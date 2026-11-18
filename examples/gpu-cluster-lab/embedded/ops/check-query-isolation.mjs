@@ -18,7 +18,7 @@ await mkdir(directory, { recursive: true });
 const manifest = { image, corpus, corpus_sha256: createHash('sha256').update(await readFile(corpus)).digest('hex'),
   paced, started_at: new Date().toISOString(), runs: [] };
 await writeFile(`${directory}/manifest.json`, JSON.stringify(manifest, null, 2));
-const queries = paced ? ['all'] : ['ui-workloads', 'ui-placements', 'scheduling-inputs', 'simulation-inputs',
+const queries = paced ? ['all'] : ['ui-workloads', 'ui-placements', 'placement-pairs', 'placement-gpus', 'simulation-inputs',
   ...queryIds.filter(id => !['ui-workloads', 'ui-placements'].includes(id)), 'plan-output', 'runtime-context',
   'input-configuration', 'all'];
 const results = new Map();

@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn query_logging_is_opt_in_and_uses_the_real_query_inventory() -> Result<()> {
         assert!(log_queries(None)?.is_empty());
-        assert_eq!(log_queries(Some("*"))?.len(), 14);
+        assert_eq!(log_queries(Some("*"))?.len(), 19);
         assert_eq!(
             log_queries(Some("input-configuration, ui-gpus"))?,
             ["input-configuration", "ui-gpus"]

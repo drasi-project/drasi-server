@@ -37,7 +37,7 @@ export function replicaReady(a: ResultRow, { placement: p, status, workloads, gp
     && a.memory_mib === w.memory_mib_per_replica && a.compute_units === w.compute_units_per_replica
     && ['profile_id', 'data_profile_id', 'purpose'].every(k => a[k] === w[k])
     && ['gpu_id', 'workload_id', 'replica_index', 'profile_id', 'data_profile_id', 'purpose', 'memory_mib', 'compute_units'].every(k => a[k] === desired[k])
-    && auth.authorization === 'allow' && auth.current === true && auth.policy_signature === status.policy_signature
+    && auth.authorization === 'allow' && auth.current === true && typeof auth.policy_hash === 'string' && auth.policy_hash === status.policy_hash
     && auth.observation_epoch === status.observation_epoch
     && auth.data_profile_id === w.data_profile_id && auth.purpose === w.purpose && a.input_fingerprint === auth.input_fingerprint
     && g.scheduling_enabled === true
@@ -93,7 +93,8 @@ export function PlacementEvidence({ row, views, onDecision }: { row: ResultRow; 
     correlated(decision, views['ui-status'].data?.[0]) && decision.outcome === 'infeasible');
   const denied = synced && views['ui-policy'].data?.some(policy =>
     policy.current === true && policy.authorization === 'deny'
-    && policy.observation_epoch === row.observation_epoch && policy.policy_signature === row.policy_signature
+    && policy.observation_epoch === row.observation_epoch
+    && typeof policy.policy_hash === 'string' && policy.policy_hash === views['ui-status'].data?.[0]?.policy_hash
     && records(row, 'desired').some(assignment => assignment.workload_id === policy.workload_id
       && views['ui-gpus'].data?.some(gpu => gpu.gpu_id === assignment.gpu_id && gpu.cluster_id === policy.cluster_id)));
   return <div className="evidence">
@@ -133,6 +134,7 @@ export function ResilienceEvidence({ row, views }: { row: ResultRow; views: View
     <details className="technical-details"><summary>Technical details: are the inputs up to date?</summary>
       <p>Placement input signatures (analyzed / current): {text(row, 'scheduling_signature')} / {status ? text(status, 'scheduling_signature') : 'unknown'}</p>
       <p>Policy input signatures (analyzed / current): {text(row, 'policy_signature')} / {status ? text(status, 'policy_signature') : 'unknown'}</p>
+      <p>Policy-constrained placement: {nullableText(row, 'placement_status') ?? 'not current'}</p>
     </details>
     <p><strong>Would everything fit without the policy restriction? </strong>{!current ? 'Not current' : row.capacity_only_feasible === null ? 'Not evaluated' : row.capacity_only_feasible ? 'Yes' : 'No'}</p>
     <p className="muted">{text(row, 'capacity_only_detail')} This comparison never places workloads or bypasses policy.</p>
@@ -145,7 +147,8 @@ export function policyCurrent(row: ResultRow, views: Views, stale = false): bool
   return !stale && currentFeeds(views) && row.current === true && row.error === null
     && (status?.policy_rules_current === undefined || status.policy_rules_current === true)
     && row.policy_revision !== null && !!row.input_fingerprint
-    && row.policy_signature === status?.policy_signature && row.observation_epoch === status?.observation_epoch
+    && typeof row.policy_hash === 'string' && row.policy_hash === status?.policy_hash
+    && row.observation_epoch === status?.observation_epoch
     && !!workload && row.data_profile_id === workload.data_profile_id && row.purpose === workload.purpose
     && !!cluster && row.region === cluster.region;
 }

@@ -102,7 +102,7 @@ impl RuntimeObservation {
             || assessment["status"] != "current"
             || (required_replicas > 0 && policies.is_empty())
             || !policies.iter().all(|row| {
-                same_policy(row)
+                row["observation_epoch"].as_str() == Some(epoch.as_str())
                     && row["current"] == true
                     && matches!(row["authorization"].as_str(), Some("allow" | "deny"))
             })

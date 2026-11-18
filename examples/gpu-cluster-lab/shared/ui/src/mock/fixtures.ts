@@ -8,6 +8,7 @@ export const snapshotTime = Date.UTC(2026, 8, 27, 12, 0);
 export const signatures = {
   observation_epoch: epoch, scheduling_signature: 'mock-scheduling-initial', policy_signature: 'mock-policy-initial',
 };
+export const policyHash = 'mock-policy-hash-initial';
 export const profiles: Record<string, { name: string; memory: number; demand: number }> = {
   'assistant-v1': { name: 'Qwen2.5-32B assistant', memory: 76 * 1024, demand: 55 },
   'chat-v1': { name: 'Llama3.1-8B chat', memory: 24 * 1024, demand: 30 },
@@ -89,7 +90,7 @@ export function fixture(name: string): MockRows {
       confirmed_plan_version: '1', decision_id: 'mock-initial-layout', config_fingerprint: 'mock-config-initial',
     }],
     'ui-resilience': [{
-      fleet_id: 'demo', ...signatures, status: 'current',
+      fleet_id: 'demo', ...signatures, status: 'current', placement_status: 'optimal',
       workers: topology.flatMap(c => c.hosts.map(excluded => ({ excluded, feasible: true, detail: 'All required replicas can run again in allowed regions after this VM fails.' }))),
       regions: topology.map(c => ({ excluded: c.region, feasible: regional,
         detail: regional ? 'A permitted region has enough capacity for all required replicas.' : 'Loss of the only region leaves no capacity.' })),
@@ -103,9 +104,9 @@ export function fixture(name: string): MockRows {
       pre_plan_free_memory_mib: gpus.length * 81920, pre_plan_largest_gap_mib: 81920,
     }],
     'ui-status': [{
-      fleet_id: 'demo', ...signatures, scenario_ready: true, inputs_ready: true, scenario: name, state: 'ready',
+      fleet_id: 'demo', ...signatures, policy_hash: policyHash, scenario_ready: true, inputs_ready: true, scenario: name, state: 'ready',
       detail: 'Prepared example of component status, not activity observed from a running system.',
-      components: ['postgres-source', 'telemetry-simulator', 'regorus-policy', 'placement-solver', 'resilience-assessor', 'plan-writer']
+      components: ['configuration', 'simulator', 'policy', 'solver', 'capacity-check', 'placement', 'plan-writer']
         .map(component_id => ({ component_id, status: 'ready', error: null })),
       policy_rules_current: true,
       policy_rules: Object.fromEntries([true, false].map(eu => {
@@ -132,7 +133,7 @@ export function fixture(name: string): MockRows {
       reasons: regional && c.region === 'eastus' ? ['region-not-permitted'] : ['policy-permitted'],
       error: null, authority_ref: regional ? 'customer-eu-contract-v1' : 'demo-fixture',
       allowed_regions: regional ? ['westeurope', 'northeurope'] : ['*'],
-      input_fingerprint: `mock-input-${w.workload_id}-${c.id}`, policy_signature: signatures.policy_signature,
+      input_fingerprint: `mock-input-${w.workload_id}-${c.id}`, policy_hash: policyHash,
       data_profile_id: w.data_profile_id,
     }))),
   };
@@ -148,6 +149,7 @@ export function invalidateEvidence(rows: MockRows, path: string, method: string)
   rows['ui-status'][0].state = 'unevaluated';
   rows['ui-status'][0].scheduling_signature = 'mock-scheduling-unevaluated';
   rows['ui-status'][0].policy_signature = 'mock-policy-unevaluated';
+  rows['ui-status'][0].policy_hash = null;
   rows['ui-status'][0].detail = 'Preview settings changed. Replica activity, GPU measurements and placement decisions have not been recalculated.';
   rows['ui-status'][0].components = records(rows['ui-status'][0], 'components').map(c => ({ ...c, status: 'not evaluated' }));
   for (const g of rows['ui-gpus']) {
@@ -158,7 +160,7 @@ export function invalidateEvidence(rows: MockRows, path: string, method: string)
   }
   Object.assign(rows['ui-placements'][0], { status: 'unknown', actual: [], confirmed_plan_version: null, applied_plan_version: null,
     reason: 'The previous saved plan is shown for reference only. No new plan or replica activity has been evaluated after this preview edit.' });
-  Object.assign(rows['ui-resilience'][0], { status: 'unknown', workers: [], regions: [], capacity_only_feasible: null, capacity_only_detail: 'Not evaluated' });
+  Object.assign(rows['ui-resilience'][0], { status: 'unknown', placement_status: null, workers: [], regions: [], capacity_only_feasible: null, capacity_only_detail: 'Not evaluated' });
   rows['ui-policy'] = rows['ui-workloads'].flatMap(w => rows['ui-clusters'].map(c => {
     const old = rows['ui-policy'].find(p => p.workload_id === w.workload_id && p.cluster_id === c.cluster_id && p.data_profile_id === w.data_profile_id)
       ?? rows['ui-policy'].find(p => p.data_profile_id === w.data_profile_id);
@@ -166,7 +168,7 @@ export function invalidateEvidence(rows: MockRows, path: string, method: string)
       observation_epoch: rows['ui-status'][0].observation_epoch,
       region: c.region, data_profile_id: w.data_profile_id, purpose: w.purpose, policy_id: old?.policy_id ?? 'unresolved',
       policy_revision: old?.policy_revision ?? null, authority_ref: old?.authority_ref ?? 'unresolved',
-      allowed_regions: old?.allowed_regions ?? [], policy_signature: 'mock-policy-unevaluated',
+      allowed_regions: old?.allowed_regions ?? [], policy_hash: 'mock-policy-hash-unevaluated',
       input_fingerprint: 'mock-input-unevaluated', authorization: 'unknown', current: false,
       reasons: ['preview-not-evaluated'], error: 'No policy evaluator is connected.' };
   }));

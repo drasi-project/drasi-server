@@ -7,41 +7,10 @@ use drasi_computation_plugin_sdk::wire::Scope;
 use drasi_core_types::models::{
     Element, ElementMetadata, ElementPropertyMap, ElementReference, ElementValue, SourceChange,
 };
-use gpu_contracts::{Capacity, Configuration, Plan, Settings};
-use gpu_policy::Assessment;
+use gpu_contracts::{policy::Assessment, Configuration, Plan, Settings};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
 use uuid::Uuid;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SolveInput {
-    pub configuration: Configuration,
-    pub policy: Assessment,
-    pub capacities: BTreeMap<Uuid, Capacity>,
-    pub plan: Plan,
-}
-impl SolveInput {
-    pub fn signature(&self) -> Result<String> {
-        gpu_placement::signature(&self.configuration, &self.policy, &self.capacities)
-    }
-    pub fn validate(&self) -> Result<()> {
-        self.configuration.validate()?;
-        self.policy.validate_current(&self.configuration)?;
-        ensure!(
-            self.capacities.len() == self.configuration.gpus.len(),
-            "incomplete capacity snapshot"
-        );
-        ensure!(
-            self.capacities
-                .iter()
-                .all(|(id, c)| id == &c.gpu_id && self.configuration.gpus.contains_key(id)),
-            "invalid capacity identities"
-        );
-        ensure!(self.plan.fleet_id == "demo", "unexpected fleet");
-        Ok(())
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -68,10 +37,6 @@ pub enum Message {
         epoch: Uuid,
         plan: Plan,
     },
-    Schedule {
-        epoch: Uuid,
-        input: SolveInput,
-    },
     Unavailable {
         epoch: Uuid,
         reason: String,
@@ -84,7 +49,6 @@ impl Message {
             | Self::Configuration { epoch, .. }
             | Self::Policy { epoch, .. }
             | Self::Allocation { epoch, .. }
-            | Self::Schedule { epoch, .. }
             | Self::Unavailable { epoch, .. } => *epoch,
         }
     }

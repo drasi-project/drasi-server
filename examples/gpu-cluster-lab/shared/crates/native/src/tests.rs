@@ -1,14 +1,13 @@
 use super::*;
 use crate::{
     processor::Processor,
-    wire::{Emitter, Message, SolveInput},
+    wire::{Emitter, Message},
 };
 use anyhow::{Context, Result};
 use drasi_computation_plugin_sdk::{NativeComponent, NativeSink, NativeSource, NativeTransformer};
 use drasi_core::{computation::InMemoryComputationProvider, models::SourceChange};
 use drasi_lib::computation::v1::*;
 use gpu_contracts::*;
-use gpu_policy::Evaluator;
 use std::{
     num::NonZeroUsize,
     time::{Duration, Instant},
@@ -26,6 +25,9 @@ mod bootstrap_transport;
 
 #[path = "producer_tests.rs"]
 mod producer_progress;
+
+#[path = "lab_tests.rs"]
+mod lab;
 
 fn processor(kind: Kind, workers: Arc<Workers>) -> Result<Processor> {
     let factory = NativeFactory {
@@ -154,7 +156,7 @@ fn payloads(outputs: &[OutputEnvelope], label: &str) -> Result<Vec<serde_json::V
     Ok(values)
 }
 fn bootstrap(f: &fixtures::Fixture, epoch: Uuid) -> Result<Message> {
-    let policy = Evaluator::new()?.evaluate(&f.configuration)?;
+    let policy = policy::reference_assessment(&f.configuration)?;
     Ok(Message::Bootstrap {
         epoch,
         commit: "bootstrap-complete".into(),
@@ -172,32 +174,13 @@ fn bootstrap(f: &fixtures::Fixture, epoch: Uuid) -> Result<Message> {
         },
     })
 }
-async fn poll_until(p: &mut Processor, label: &str) -> Result<Vec<OutputEnvelope>> {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let mut collected = Vec::new();
-        loop {
-            let outputs = p.on_wakeup().await?;
-            let found = !payloads(&outputs, label)?.is_empty();
-            collected.extend(outputs);
-            if found {
-                return Ok(collected);
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await?
-}
 
 #[tokio::test]
 async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result<()> {
     let f = fixtures::load("baseline")?;
     let epoch = Uuid::new_v4();
     let workers = Arc::new(Workers::default());
-    let mut policy = processor(Kind::Policy, workers.clone())?;
     let mut simulator = processor(Kind::Simulator, workers)?;
-    policy
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
     simulator
         .start(&mut crate::test_contexts::sdk::start())
         .await?;
@@ -208,24 +191,20 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
         None,
     )?;
     let bootstrap = bootstrap(&f, epoch)?;
-    for row in send(&mut inputs, &mut source, "bootstrap", &bootstrap).await? {
-        let input = InputEnvelope {
-            port: PortId::try_new("in")?,
-            envelope: row.envelope,
-        };
-        policy.transform(input.clone()).await?;
-        simulator.transform(input).await?;
-    }
-    let assessment = poll_until(&mut policy, "PolicyAssessment").await?;
-    let message: Message =
-        serde_json::from_value(payloads(&assessment, "PolicyAssessment")?.remove(0))?;
-    for row in send(&mut inputs, &mut source, "policy", &message).await? {
-        simulator
-            .transform(InputEnvelope {
-                port: PortId::try_new("in")?,
-                envelope: row.envelope,
-            })
-            .await?;
+    let message = Message::Policy {
+        epoch,
+        config_fingerprint: f.configuration.fingerprint()?,
+        assessment: policy::reference_assessment(&f.configuration)?,
+    };
+    for (key, message) in [("bootstrap", &bootstrap), ("policy", &message)] {
+        for row in send(&mut inputs, &mut source, key, message).await? {
+            simulator
+                .transform(InputEnvelope {
+                    port: PortId::try_new("in")?,
+                    envelope: row.envelope,
+                })
+                .await?;
+        }
     }
     let samples = simulator.on_wakeup().await?;
     assert_eq!(payloads(&samples, "GpuSample")?.len(), 6);
@@ -328,7 +307,7 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
     let fresh_policy = Message::Policy {
         epoch,
         config_fingerprint: f.configuration.fingerprint()?,
-        assessment: Evaluator::new()?.evaluate(&f.configuration)?,
+        assessment: policy::reference_assessment(&f.configuration)?,
     };
     for row in send(&mut inputs, &mut source, "delayed-policy", &fresh_policy).await? {
         let output = simulator
@@ -363,7 +342,6 @@ async fn actual_cq_native_policy_simulator_and_five_second_non_event() -> Result
     assert_eq!(resumed.len(), 8);
     assert!(resumed.iter().all(|e| e["state"] == "running"));
     simulator.stop(&crate::test_contexts::sdk::stop()).await?;
-    policy.stop(&crate::test_contexts::sdk::stop()).await?;
     inputs.stop(&crate::test_contexts::lib::stop()).await?;
     heartbeat.stop(&crate::test_contexts::lib::stop()).await?;
     Ok(())
@@ -381,7 +359,7 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
     let policy = Message::Policy {
         epoch,
         config_fingerprint: f.configuration.fingerprint()?,
-        assessment: Evaluator::new()?.evaluate(&f.configuration)?,
+        assessment: policy::reference_assessment(&f.configuration)?,
     };
     let mut simulator = processor(Kind::Simulator, Arc::new(Workers::default()))?;
     simulator
@@ -486,67 +464,63 @@ async fn simulator_recovery_requires_a_bootstrap_after_the_latest_invalidation()
 }
 
 #[tokio::test]
-async fn native_placement_and_resilience_keep_hypothetical_allocations_read_only() -> Result<()> {
+async fn configured_plugins_plan_the_fragmented_fleet_and_assess_losses() -> Result<()> {
     let mut f = fixtures::load("fragmentation")?;
-    let Message::Bootstrap { plan, .. } = bootstrap(&f, Uuid::new_v4())? else {
-        unreachable!();
-    };
     let w = Workload::from_profile("assistant", "assistant-v1", 1, "demo-open", "demo")?;
     f.configuration.workloads.insert(w.workload_id, w);
-    let input = SolveInput {
-        policy: Evaluator::new()?.evaluate(&f.configuration)?,
-        capacities: fixtures::baseline_capacities(&f.configuration),
-        configuration: f.configuration,
-        plan,
-    };
-    let workers = Arc::new(Workers::default());
-    let mut placement = processor(Kind::Placement, workers.clone())?;
-    let mut resilience = processor(Kind::Resilience, workers)?;
-    placement
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    resilience
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    let mut inputs = query("scheduling", "MATCH (m:Input) RETURN m.payload AS payload").await?;
-    let mut source = Emitter::new(
-        StreamId::try_new("test-scheduling")?,
-        crate::test_contexts::component_id("scheduling-fixture")?,
-        None,
-    )?;
-    for row in send(
-        &mut inputs,
-        &mut source,
-        "schedule",
-        &Message::Schedule {
-            epoch: Uuid::new_v4(),
-            input,
-        },
+    let mut lab = lab::Lab::new(&[]).await?;
+    lab.probe(
+        "scenarios",
+        "MATCH (s:PlacementScenario) RETURN s.scenario AS scenario, s.value AS value, s.status AS status, s.feasible AS feasible",
+        &["solver"],
     )
-    .await?
-    {
-        let input = InputEnvelope {
-            port: PortId::try_new("in")?,
-            envelope: row.envelope,
-        };
-        placement.transform(input.clone()).await?;
-        resilience.transform(input).await?;
-    }
-
-    let outputs = poll_until(&mut placement, "CandidatePlan").await?;
-    let candidate: Candidate =
-        serde_json::from_value(payloads(&outputs, "CandidatePlan")?.remove(0))?;
+    .await?;
+    lab.probe(
+        "capacity",
+        "MATCH (s:CapacityStatus) RETURN s.status AS status",
+        &["capacity-check"],
+    )
+    .await?;
+    lab.bootstrap(&f, Uuid::new_v4()).await?;
+    lab.until("a candidate plan", |lab| {
+        Ok(!lab.payloads("placement", "CandidatePlan")?.is_empty())
+    })
+    .await?;
+    let candidate: Candidate = serde_json::from_value(
+        lab.payloads("placement", "CandidatePlan")?
+            .pop()
+            .context("candidate")?,
+    )?;
     assert_eq!(candidate.assignments.len(), 7);
     assert_eq!(candidate.decision_details["moved_replicas"], 1);
-    let assessment = poll_until(&mut resilience, "ResilienceAssessment").await?;
-    assert!(payloads(&assessment, "CandidatePlan")?.is_empty());
-    assert!(payloads(&assessment, "ResilienceAssessment")?[0]
-        .get("assignments")
-        .is_none());
-    placement.stop(&crate::test_contexts::sdk::stop()).await?;
-    resilience.stop(&crate::test_contexts::sdk::stop()).await?;
-    inputs.stop(&crate::test_contexts::lib::stop()).await?;
-    Ok(())
+    let hosts: std::collections::BTreeSet<_> = f
+        .configuration
+        .gpus
+        .values()
+        .map(|gpu| gpu.host_id.clone())
+        .collect();
+    lab.until("worker and region scenarios", |lab| {
+        let rows = lab.rows("scenarios")?;
+        Ok(rows
+            .iter()
+            .filter(|row| row["scenario"] == "worker")
+            .count()
+            == hosts.len()
+            && rows.iter().any(|row| row["scenario"] == "region"))
+    })
+    .await?;
+    assert!(lab
+        .rows("scenarios")?
+        .iter()
+        .all(|row| row["feasible"].is_boolean()));
+    lab.until("capacity status", |lab| {
+        Ok(lab
+            .rows("capacity")?
+            .first()
+            .is_some_and(|row| row["status"] == "optimal"))
+    })
+    .await?;
+    lab.stop().await
 }
 
 #[tokio::test]
@@ -651,68 +625,56 @@ async fn managed_plan_reaction_reports_real_receipts_via_status_producer() -> Re
 }
 
 #[tokio::test]
-async fn policy_infeasibility_gets_only_a_read_only_capacity_diagnostic() -> Result<()> {
-    let mut f = fixtures::load("regional-boundary")?;
-    let epoch = Uuid::new_v4();
-    let Message::Bootstrap { plan, .. } = bootstrap(&f, epoch)? else {
-        unreachable!();
-    };
-    let policy = f
-        .configuration
+async fn policy_infeasibility_withdraws_the_candidate_and_reports_capacity() -> Result<()> {
+    let f = fixtures::load("regional-boundary")?;
+    let mut lab = lab::Lab::new(&[]).await?;
+    lab.probe(
+        "placement-status",
+        "MATCH (s:PlacementStatus) RETURN s.status AS status, s.provenance.config_fingerprint AS config_fingerprint",
+        &["solver"],
+    )
+    .await?;
+    lab.probe(
+        "capacity",
+        "MATCH (s:CapacityStatus) RETURN s.status AS status",
+        &["capacity-check"],
+    )
+    .await?;
+    lab.bootstrap(&f, Uuid::new_v4()).await?;
+    lab.until("an optimal placement", |lab| {
+        Ok(lab
+            .rows("placement-status")?
+            .first()
+            .is_some_and(|row| row["status"] == "optimal"))
+    })
+    .await?;
+    let mark = lab.log.len();
+    lab.update(
+        "placement_policies",
+        |policy| policy["policy_id"] == "customer-eu-processing",
+        |policy| policy["allowed_regions"] = serde_json::json!([]),
+    )
+    .await?;
+    let mut blocked = f.configuration.clone();
+    let policy = blocked
         .policies
         .get_mut("customer-eu-processing")
         .context("fixture policy missing")?;
     policy.allowed_regions.clear();
     policy.revision += 1;
-    let input = SolveInput {
-        policy: Evaluator::new()?.evaluate(&f.configuration)?,
-        capacities: fixtures::baseline_capacities(&f.configuration),
-        configuration: f.configuration,
-        plan,
-    };
-    let mut placement = processor(Kind::Placement, Arc::new(Workers::default()))?;
-    placement
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    let mut inputs = query(
-        "blocked-scheduling",
-        "MATCH (m:Input) RETURN m.payload AS payload",
-    )
-    .await?;
-    let mut source = Emitter::new(
-        StreamId::try_new("blocked-source")?,
-        crate::test_contexts::component_id("blocked-fixture")?,
-        None,
-    )?;
-    for row in send(
-        &mut inputs,
-        &mut source,
-        "schedule",
-        &Message::Schedule { epoch, input },
-    )
-    .await?
-    {
-        placement
-            .transform(InputEnvelope {
-                port: PortId::try_new("in")?,
-                envelope: row.envelope,
-            })
-            .await?;
-    }
-    let diagnostic = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let output = placement.on_wakeup().await?;
-            assert!(payloads(&output, "CandidatePlan")?.is_empty());
-            if let Some(diagnostic) = payloads(&output, "CapacityDiagnostic")?.into_iter().next() {
-                return Ok::<_, anyhow::Error>(diagnostic);
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+    let fingerprint = serde_json::json!(blocked.fingerprint()?);
+    lab.until("an infeasible placement", |lab| {
+        Ok(lab.rows("placement-status")?.first().is_some_and(|row| {
+            row["status"] == "infeasible" && row["config_fingerprint"] == fingerprint
+        }) && lab
+            .payloads_since(mark, "placement", "RuntimeStatus")?
+            .iter()
+            .any(|status| status["status"] == "infeasible"))
     })
-    .await??;
-    assert_eq!(diagnostic["diagnostic"]["feasible"], true);
-    assert!(diagnostic["diagnostic"].get("assignments").is_none());
-    placement.stop(&crate::test_contexts::sdk::stop()).await?;
-    inputs.stop(&crate::test_contexts::lib::stop()).await?;
-    Ok(())
+    .await?;
+    assert!(lab
+        .payloads_since(mark, "placement", "CandidatePlan")?
+        .is_empty());
+    assert_eq!(lab.rows("capacity")?[0]["status"], "optimal");
+    lab.stop().await
 }

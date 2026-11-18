@@ -12,10 +12,8 @@ function assertSceneFields(value) {
   if (Array.isArray(value)) { value.forEach(assertSceneFields); return; }
   if (!value || typeof value !== 'object') return;
   assert.equal(Object.hasOwn(value,'floor'),false,'Query and SSE records must not retain the removed field');
-  for (const [key,child] of Object.entries(value)) {
-    if (key === 'objects' && Array.isArray(child)) child.forEach(payload => assertSceneFields(JSON.parse(payload)));
-    else assertSceneFields(child);
-  }
+  assert.equal(Object.hasOwn(value,'payload'),false,'Scene records must be plain typed properties');
+  for (const child of Object.values(value)) assertSceneFields(child);
 }
 async function rows(query) {
   const result = await get(`/queries/${query}/results`);
@@ -37,10 +35,15 @@ async function assertNativeSnapshot(query) {
   const ordered = values => values.map(value => JSON.stringify(value)).sort();
   assert.deepEqual(ordered(actual),ordered(expected),`${query}: SSE and Server must read the same query catalogue`);
 }
+const shapeFields = {cart:['radius','clearance'],journey:['cart_id','destination_id','points'],destination:['point'],obstacle:['vertices']};
+function entity(row) {
+  const fields = shapeFields[row.kind];
+  assert.ok(fields,`unknown scene kind ${row.kind}`);
+  return {id:row.id,name:row.name,active:row.active,shape:{kind:row.kind,...Object.fromEntries(fields.map(key => [key,row[key]]))}};
+}
 async function state() {
-  const input = await rows('scene-inputs');
-  const records = input.flatMap(row => row.objects.map(JSON.parse));
-  return {clock:records.find(r => r.type === 'clock'),entities:records.filter(r => r.type === 'entity').map(r => r.entity)};
+  const [clock] = await rows('scene-status');
+  return {clock,entities:(await rows('scene-inputs')).map(entity)};
 }
 async function until(predicate,description) {
   for (let n=0;n<100;n++) {
@@ -58,8 +61,10 @@ async function command(command) {
   });
   const body = await response.json();
   assert.ok(response.ok,JSON.stringify(body));
-  await until(async () => (await state()).clock?.revision === body.accepted_revision &&
-    (await rows('geometry-status')).some(r => r.revision === body.accepted_revision),`input and geometry revision ${body.accepted_revision}`);
+  await until(async () => {
+    const {clock,entities} = await state();
+    return clock?.revision === body.accepted_revision && entities.length === clock.objects;
+  },`scene revision ${body.accepted_revision}`);
   return body.accepted_revision;
 }
 const stop = new AbortController();
@@ -96,13 +101,15 @@ try {
   // Components have UUIDs; relationships refer to them by ID, people by name.
   const id = Object.fromEntries(graph.components.map(c => [c.name, c.id]));
   const edge = (from,to) => graph.relationships.some(r => r.from.component === id[from] && r.to.component === id[to]);
-  assert.ok(graph.components.some(c => c.name === 'geometry' && c.role === 'Transformer'),'actual topology must contain the geometry transformer');
+  assert.ok(graph.components.some(c => c.name === 'geometry' && c.role === 'Transformer' &&
+    c.implementation?.name === 'drasi.standard/geometry'),'actual topology must contain the standard geometry transformer');
   assert.ok(graph.components.some(c => c.name === 'wall-ui' && c.role === 'Sink' &&
     c.implementation?.name === 'drasi.network/sse-sink'),'UI delivery must be the native SSE sink');
-  for (const [from,to] of [['scene','geometry-context'],['geometry-context','geometry'],['geometry','affected-journeys']]) {
+  for (const [from,to] of [['scene','journey-footprints'],['scene','obstacle-footprints'],['journey-footprints','geometry'],
+    ['obstacle-footprints','geometry'],['geometry','obstructions'],['geometry','affected-journeys'],['scene','affected-journeys'],['scene','scene-status']]) {
     assert.ok(edge(from,to),`missing actual graph edge ${from} -> ${to}`);
   }
-  for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
+  for (const query of ['scene-inputs','journey-footprints','obstacle-footprints','affected-journeys','obstructions','scene-status']) {
     assert.ok(edge(query,'wall-ui'),
       `missing direct native SSE edge ${query} -> wall-ui`);
   }
@@ -139,8 +146,8 @@ try {
   await command({action:'put',entity:{...moved,id:'wall-two',name:'Second barrier',active:false}});
   await until(async () => (await rows('affected-journeys')).length === 0,'inactive obstacle filtered');
   await assertNativeSnapshot('affected-journeys');
-  const context = (await rows('geometry-context')).flatMap(row => row.objects.map(JSON.parse));
-  assert.ok(!context.some(r => r.entity?.id === 'wall-two'),'upstream CQ must exclude inactive obstacle');
+  const footprints = await rows('obstacle-footprints');
+  assert.ok(footprints.some(r => r.obstacle_id === 'pallet') && !footprints.some(r => r.obstacle_id === 'wall-two'),'upstream CQ must exclude inactive obstacle');
   await command({action:'reset'});
   const path = baseline.entities.find(e => e.id === 'journey-ada');
   await command({action:'put',entity:{...path,shape:{...path.shape,points:[[2,6.5],[21,6.5]]}}});
@@ -148,8 +155,8 @@ try {
   await command({action:'delete',id:'cart-ada'});
   await until(async () => (await rows('affected-journeys')).length === 0,'cart delete retracts');
   await command({action:'clear'});
-  assert.equal((await rows('geometry-status'))[0].objects,0);
-  assert.equal((await rows('obstructions')).length,0);
+  assert.equal((await rows('scene-status'))[0].objects,0);
+  await until(async () => (await rows('obstructions')).length === 0 && (await rows('journey-footprints')).length === 0,'clear retracts every obstruction');
   await command({action:'reset'});
   const impactChanges = () => messages.filter(message =>
     message.output?.alias === 'affected-journeys' && message.output.component === id['affected-journeys'] && message.output.port === 'out').flatMap(message => {
@@ -168,11 +175,11 @@ try {
     assert.deepEqual(deleted.identity,added.identity,'deletion must name that same result identity');
     return true;
   },'actual native SSE ADD, stable-key REPLACE and DELETE with enriched rows');
-  for (const query of ['scene-inputs','geometry-context','affected-journeys','obstructions','geometry-status']) {
+  for (const query of ['scene-inputs','journey-footprints','obstacle-footprints','affected-journeys','obstructions','scene-status']) {
     await assertNativeSnapshot(query);
   }
   await mkdir(new URL('../artifacts/',import.meta.url),{recursive:true});
   await writeFile(new URL('../artifacts/sse-changes.json',import.meta.url),JSON.stringify(impactChanges(),null,2));
-  console.log('PASS: stock server topology, input revisions, actual context filtering, native geometry, enriched query results, SSE, scoped native snapshots, retract/reset, malformed and stale commands.');
+  console.log('PASS: stock server topology, input revisions, actual footprint filtering, drasi.standard/geometry, enriched query results, SSE, scoped native snapshots, retract/reset, malformed and stale commands.');
   console.log(`Captured ${events.length} bytes from the actual SSE reaction; fixture restored.`);
 } finally { stop.abort(); await consume; if (streamFailure) throw streamFailure; }

@@ -28,7 +28,7 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
     configuration.data_profiles.extend(baseline.data_profiles);
     configuration.validate()?;
     let epoch = Uuid::new_v4();
-    let assessment = Evaluator::new()?.evaluate(&configuration)?;
+    let assessment = policy::reference_assessment(&configuration)?;
     let mut source = Emitter::new(
         StreamId::try_new("shared-policy-projection")?,
         crate::test_contexts::component_id("policy-projection-fixture")?,
@@ -57,11 +57,12 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
         }),
     )?);
     changes.extend(source.record(
-        "PolicyAssessment",
+        "SchedulingContext",
         "demo",
         &json!({
-            "epoch":epoch, "config_fingerprint":configuration.fingerprint()?,
-            "assessment":assessment,
+            "fleet_id":"demo", "observation_epoch":epoch, "current":true,
+            "config_fingerprint":configuration.fingerprint()?,
+            "policy_signature":assessment.policy_signature,
         }),
     )?);
     let rows = project(&mut query, &source.emit(changes, None)?).await?;
@@ -89,7 +90,7 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
         .unwrap();
     rule.allowed_regions = ["northeurope".into()].into_iter().collect();
     rule.revision += 1;
-    let assessment = Evaluator::new()?.evaluate(&configuration)?;
+    let assessment = policy::reference_assessment(&configuration)?;
     let mut changes = Vec::new();
     changes.extend(source.record(
         "FleetConfiguration",
@@ -112,11 +113,12 @@ async fn shared_data_policy_rules_are_projected_from_configuration_with_currentn
     let mut changes = Vec::new();
     changes.extend(source.record("DemoReadiness", "demo", &ready)?);
     changes.extend(source.record(
-        "PolicyAssessment",
+        "SchedulingContext",
         "demo",
         &json!({
-            "epoch":epoch, "config_fingerprint":configuration.fingerprint()?,
-            "assessment":assessment,
+            "fleet_id":"demo", "observation_epoch":epoch, "current":true,
+            "config_fingerprint":configuration.fingerprint()?,
+            "policy_signature":assessment.policy_signature,
         }),
     )?);
     let rows = project(&mut query, &source.emit(changes, None)?).await?;
@@ -508,7 +510,7 @@ fn readiness_requires_current_query_outcomes_not_only_running_components() -> Re
         ("ui-workloads", "fencing_pending_replicas", json!(1)),
         ("ui-workloads", "suspended_replicas", json!(1)),
         ("ui-policy", "authorization", json!("unknown")),
-        ("ui-policy", "policy_signature", json!("old-policy")),
+        ("ui-policy", "current", json!(false)),
         ("ui-resilience", "status", json!("checking")),
         ("ui-resilience", "observation_epoch", json!(Uuid::new_v4())),
     ] {
@@ -610,7 +612,7 @@ async fn simulator_activity_names_actual_moves_without_inventing_moves_on_bootst
         &Message::Policy {
             epoch,
             config_fingerprint: fixture.configuration.fingerprint()?,
-            assessment: Evaluator::new()?.evaluate(&fixture.configuration)?,
+            assessment: policy::reference_assessment(&fixture.configuration)?,
         },
     )
     .await?;
@@ -1022,7 +1024,7 @@ async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()
             &bootstrap(&fixture, epoch)?,
         )
         .await?;
-        let assessment = Evaluator::new()?.evaluate(&fixture.configuration)?;
+        let assessment = policy::reference_assessment(&fixture.configuration)?;
         deliver(
             &mut simulator,
             &mut input_query,
@@ -1109,25 +1111,13 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
     let fixture = fixtures::load("baseline")?;
     let epoch = Uuid::new_v4();
     let configuration = &fixture.configuration;
-    let fingerprint = configuration.fingerprint()?;
     let Message::Bootstrap { plan, .. } = bootstrap(&fixture, epoch)? else {
         unreachable!()
     };
-    let mut settings = views::cluster_settings();
-    settings.joins.push(drasi_lib::config::QueryJoinConfig {
-        id: "POLICY_CONFIG".into(),
-        keys: ["FleetConfiguration", "PolicyAssessment"]
-            .into_iter()
-            .map(|label| drasi_lib::config::QueryJoinKeyConfig {
-                label: label.into(),
-                property: "config_fingerprint".into(),
-            })
-            .collect(),
-    });
     let mut query = configured_query(
-        "simultaneous-heartbeat-expiry",
-        crate::inputs::SCHEDULING_QUERY,
-        settings,
+        "placement-gpus",
+        crate::inputs::GPUS_QUERY,
+        views::cluster_settings(),
     )
     .await?;
     let mut database = Emitter::new(
@@ -1141,30 +1131,18 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
     )
     .await?;
     let mut context = Emitter::new(
-        StreamId::try_new("expiry-policy")?,
-        crate::test_contexts::component_id("expiry-policy-fixture")?,
+        StreamId::try_new("expiry-context")?,
+        crate::test_contexts::component_id("expiry-context-fixture")?,
         None,
     )?;
-    let mut snapshot = json!({
+    let snapshot = json!({
         "epoch":epoch, "configuration":configuration, "plan":plan,
-        "settings":fixture.settings, "config_fingerprint":fingerprint,
+        "settings":fixture.settings, "config_fingerprint":configuration.fingerprint()?,
     });
-    let changes = vec![
-        context
-            .record("FleetConfiguration", "demo", &snapshot)?
-            .unwrap(),
-        context
-            .record(
-                "PolicyAssessment",
-                "demo",
-                &json!({
-                    "epoch":epoch, "config_fingerprint":fingerprint,
-                    "assessment":Evaluator::new()?.evaluate(configuration)?,
-                }),
-            )?
-            .unwrap(),
-    ];
-    project(&mut query, &context.emit(changes, None)?).await?;
+    let change = context
+        .record("FleetConfiguration", "demo", &snapshot)?
+        .unwrap();
+    project(&mut query, &context.emit(vec![change], None)?).await?;
     let mut reports = Emitter::new(
         StreamId::try_new("expiry-simulator")?,
         crate::test_contexts::component_id("expiry-simulator-fixture")?,
@@ -1184,19 +1162,12 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
         )?);
     }
     let rows = project(&mut query, &reports.emit(changes, None)?).await?;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["capacities"].as_array().unwrap().len(), 6);
-    for gpu in configuration
-        .gpus
-        .values()
-        .filter(|g| g.host_id == "inference-a")
-    {
-        snapshot["settings"][gpu.gpu_id.to_string()]["powered_on"] = json!(false);
-        let change = context
-            .record("FleetConfiguration", "demo", &snapshot)?
-            .unwrap();
-        project(&mut query, &context.emit(vec![change], None)?).await?;
-    }
+    assert_eq!(rows.len(), 6);
+    assert!(rows.iter().all(|row| row["eligible"] == true), "{rows:?}");
+    assert!(
+        rows.iter().all(|row| row["compute_units"] == 75),
+        "{rows:?}"
+    );
     tokio::time::sleep(Duration::from_millis(400)).await;
     let now = wire::utc_millis()?;
     let mut changes = Vec::new();
@@ -1219,25 +1190,25 @@ async fn simultaneous_heartbeat_expiry_preserves_one_capacity_per_gpu() -> Resul
         loop {
             query
                 .wakeup_source()
-                .context("scheduling timer missing")?
+                .context("capacity timer missing")?
                 .wait()
                 .await?;
             let changes = query.on_wakeup().await?;
             query.delivery_completed(&changes).await?;
             let rows = project(&mut query, &[]).await?;
-            assert_eq!(rows.len(), 1);
-            let capacities = rows[0]["capacities"].as_array().unwrap();
             assert_eq!(
-                capacities.len(),
+                rows.len(),
                 6,
-                "expired GPU must not be appended twice: {capacities:?}"
+                "expired GPU must not be duplicated: {rows:?}"
             );
-            let identities: std::collections::BTreeSet<_> = capacities
-                .iter()
-                .map(|c| c["gpu_id"].as_str().unwrap())
-                .collect();
+            let identities: std::collections::BTreeSet<_> =
+                rows.iter().map(|c| c["gpu_id"].as_str().unwrap()).collect();
             assert_eq!(identities.len(), 6);
-            if capacities.iter().filter(|c| c["fresh"] == false).count() == 2 {
+            let expired: Vec<_> = rows.iter().filter(|c| c["eligible"] == false).collect();
+            if expired.len() == 2 {
+                assert!(expired
+                    .iter()
+                    .all(|c| c["host_id"] == "inference-a" && c["compute_units"] == 0));
                 break Ok::<_, anyhow::Error>(());
             }
         }
@@ -1294,7 +1265,7 @@ async fn inventory_views_preserve_reports_until_the_real_deadline() -> Result<()
         &Message::Policy {
             epoch,
             config_fingerprint: fixture.configuration.fingerprint()?,
-            assessment: Evaluator::new()?.evaluate(&fixture.configuration)?,
+            assessment: policy::reference_assessment(&fixture.configuration)?,
         },
     )
     .await?;
@@ -1637,7 +1608,8 @@ async fn aggregate_count_equals_integer_list_size() -> Result<()> {
 #[tokio::test]
 async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     let before = wire::utc_millis()?;
-    let workers = Arc::new(Workers::default());
+    let mut lab = super::lab::Lab::new(&gpu_contracts::UI_QUERIES).await?;
+    let workers = lab.workers.clone();
     let factory = AuxiliaryFactory {
         reaction: false,
         hub: workers.hub.clone(),
@@ -1653,74 +1625,15 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     runtime
         .start(&mut crate::test_contexts::sdk::start())
         .await?;
-    let mut policy = processor(Kind::Policy, workers.clone())?;
-    let mut simulator = processor(Kind::Simulator, workers.clone())?;
-    let mut placement = processor(Kind::Placement, workers.clone())?;
-    let mut resilience = processor(Kind::Resilience, workers.clone())?;
-    policy
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    simulator
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    placement
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    resilience
-        .start(&mut crate::test_contexts::sdk::start())
-        .await?;
-    let mut input_query = query(
-        "projection-input",
-        "MATCH (i:Input) RETURN i.payload AS payload",
-    )
-    .await?;
-    let mut source = Emitter::new(
-        StreamId::try_new("projection-source")?,
-        crate::test_contexts::component_id("projection-fixture")?,
-        None,
-    )?;
-    let mut policy_query = query("ui-policy", views::POLICY).await?;
-    let mut decision_query =
-        configured_query("ui-decisions", views::DECISIONS, views::decision_settings()).await?;
-    let mut timeline_query = query("ui-timeline", views::TIMELINE).await?;
-    let mut resilience_query = configured_query(
-        "ui-resilience",
-        views::RESILIENCE,
-        views::resilience_settings(),
-    )
-    .await?;
-    let mut gpu_query = configured_query("ui-gpus", views::GPUS, views::gpu_settings()).await?;
-    let mut cluster_query =
-        configured_query("ui-clusters", views::CLUSTERS, views::cluster_settings()).await?;
-    let mut workload_query = configured_query(
-        "ui-workloads",
-        views::WORKLOADS,
-        views::execution_settings(),
-    )
-    .await?;
-    let mut placement_query = configured_query(
-        "ui-placements",
-        views::PLACEMENTS,
-        views::execution_settings(),
-    )
-    .await?;
-    let mut status_query = query("ui-status", views::STATUS).await?;
     let mut batches = Vec::new();
     let epoch = Uuid::new_v4();
     let fixture = fixtures::load("baseline")?;
-    let database = database_configuration(&mut source, &fixture)?;
-    let rows = project(&mut workload_query, &database).await?;
-    assert_eq!(rows.len(), 4);
-    assert!(rows
-        .iter()
-        .all(|row| row["running_replicas"].is_null() && row["ready_replicas"].is_null()));
-    batches.push(json!({"query":"ui-workloads","rows":rows}));
-    project(&mut placement_query, &database).await?;
-    let initial_runtime = runtime
+    let initial = runtime
         .next()
         .await?
         .context("initial runtime output missing")?;
-    let rows = project(&mut status_query, std::slice::from_ref(&initial_runtime)).await?;
+    lab.deliver("runtime-status", vec![initial]).await?;
+    let rows = lab.rows("ui-status")?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["scenario_ready"], false);
     assert_eq!(
@@ -1728,100 +1641,36 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         "unknown epoch must not be invented"
     );
     batches.push(json!({"query":"ui-status","rows":rows}));
-    project(&mut workload_query, std::slice::from_ref(&initial_runtime)).await?;
-    project(&mut placement_query, std::slice::from_ref(&initial_runtime)).await?;
-    let rows = project(&mut gpu_query, &database).await?;
-    assert_eq!(rows.len(), fixture.configuration.gpus.len());
-    assert!(rows
-        .iter()
-        .all(|row| row["health"] == "unknown" && row["report_time_ms"].is_null()));
-    batches.push(json!({"query":"ui-gpus","rows":rows}));
-    let rows = project(&mut cluster_query, &database).await?;
+
+    lab.bootstrap(&fixture, epoch).await?;
+    let rows = lab.rows("ui-placements")?;
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    assert_eq!(rows[0]["desired_plan_version"], "1");
+    batches.push(json!({"query":"ui-placements","rows":rows}));
+    let rows = lab.rows("ui-clusters")?;
     assert_eq!(rows.len(), fixture.configuration.clusters.len());
     assert_eq!(rows[0]["registered_workers"], 3);
-    assert!(
-        rows[0]["healthy_gpus"].is_null(),
-        "absent reports are not a measured zero"
-    );
     batches.push(json!({"query":"ui-clusters","rows":rows}));
-    let bootstrap = bootstrap(&fixture, epoch)?;
-    let Message::Bootstrap {
-        plan: baseline_plan,
-        ..
-    } = &bootstrap
-    else {
-        unreachable!()
-    };
-    let saved = source
-        .record("gpu_placements", "demo", baseline_plan)?
-        .context("saved plan missing")?;
-    let saved = source.emit(vec![saved], None)?;
-    project(&mut workload_query, &saved).await?;
-    let rows = project(&mut placement_query, &saved).await?;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["desired_plan_version"], "1");
-    assert!(rows[0]["applied_plan_version"].is_null());
-    batches.push(json!({"query":"ui-placements","rows":rows}));
-    let pending = deliver(
-        &mut policy,
-        &mut input_query,
-        &mut source,
-        "policy-bootstrap",
-        &bootstrap,
-    )
+
+    lab.until("decided policy rows", |lab| {
+        let rows = lab.rows("ui-policy")?;
+        Ok(rows.len() == 4 && rows.iter().all(|row| row["current"] == true))
+    })
     .await?;
-    let rows = project(&mut policy_query, &pending).await?;
-    assert_eq!(rows.len(), 4);
-    assert!(rows
-        .iter()
-        .all(|row| row["authorization"] == "unknown" && row["current"] == false));
-    batches.push(json!({"query":"ui-policy","rows":rows}));
-    deliver(
-        &mut simulator,
-        &mut input_query,
-        &mut source,
-        "simulator-bootstrap",
-        &bootstrap,
-    )
-    .await?;
-    let evaluated = poll_until(&mut policy, "PolicyAssessment").await?;
-    let configuration = source.record(
-        "FleetConfiguration",
-        "demo",
-        &json!({
-            "epoch":epoch, "configuration":fixture.configuration,
-            "config_fingerprint":fixture.configuration.fingerprint()?,
-        }),
-    )?;
-    project(
-        &mut status_query,
-        &source.emit(configuration.into_iter().collect(), None)?,
-    )
-    .await?;
-    project(&mut status_query, &pending).await?;
-    project(&mut status_query, &evaluated).await?;
-    project(&mut workload_query, &evaluated).await?;
-    project(&mut placement_query, &evaluated).await?;
-    let rows = project(&mut policy_query, &evaluated).await?;
-    assert_eq!(rows.len(), 4);
+    let rows = lab.rows("ui-policy")?;
     assert!(rows.iter().all(|row| row["authorization"] == "allow"
         && row["policy_revision"] == "1"
         && row["allowed_regions"] == json!(["*"])
-        && row["observation_epoch"] == epoch.to_string()));
+        && row["observation_epoch"] == epoch.to_string()
+        && row["policy_hash"] == json!(policy::bundle_hash())));
     batches.push(json!({"query":"ui-policy","rows":rows}));
-    let message: Message =
-        serde_json::from_value(payloads(&evaluated, "PolicyAssessment")?.remove(0))?;
-    let applied = deliver(
-        &mut simulator,
-        &mut input_query,
-        &mut source,
-        "apply-policy",
-        &message,
-    )
+
+    lab.until("policy enforcement", |lab| {
+        Ok(lab.payloads("simulator", "PolicyEnforcement")?.len() >= 8)
+    })
     .await?;
-    let actual = payloads(&applied, "PolicyEnforcement")?;
-    assert_eq!(actual.len(), 8);
-    assert!(actual
+    let enforced = lab.payloads("simulator", "PolicyEnforcement")?;
+    assert!(enforced
         .iter()
         .all(|row| row["observation_epoch"] == epoch.to_string()
             && row["acknowledged_at_ms"]
@@ -1829,51 +1678,54 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
                 .is_some_and(|time| time >= before)
             && row["workload_id"].is_string()
             && row["replica_index"].is_number()));
-    assert!(payloads(&applied, "GpuSample")?.is_empty());
-    let rows = project(&mut workload_query, &applied).await?;
-    assert_eq!(rows.len(), 4);
-    assert!(rows.iter().all(
-        |row| row["running_replicas"].as_f64() == Some(2.0) && row["ready_replicas"].is_null()
-    ));
-    batches.push(json!({"query":"ui-workloads","rows":rows}));
-    project(&mut placement_query, &applied).await?;
-    let baseline_input = SolveInput {
-        configuration: fixture.configuration.clone(),
-        policy: Evaluator::new()?.evaluate(&fixture.configuration)?,
-        capacities: fixtures::baseline_capacities(&fixture.configuration),
-        plan: baseline_plan.clone(),
-    };
-    let baseline_context = deliver(
-        &mut placement,
-        &mut input_query,
-        &mut source,
-        "baseline-context",
-        &Message::Schedule {
-            epoch,
-            input: baseline_input.clone(),
-        },
-    )
+    lab.until("healthy GPU reports", |lab| {
+        let rows = lab.rows("ui-gpus")?;
+        Ok(rows.len() == 6 && rows.iter().all(|row| row["health"] == "healthy"))
+    })
     .await?;
-    project(&mut workload_query, &baseline_context).await?;
-    project(&mut placement_query, &baseline_context).await?;
+    let rows = lab.rows("ui-gpus")?;
+    assert!(rows
+        .iter()
+        .all(|row| row["sample_plan_version"] == "1"
+            && row["observation_epoch"] == epoch.to_string()));
+    batches.push(json!({"query":"ui-gpus","rows":rows}));
+    let rows = lab.rows("ui-clusters")?;
+    assert_eq!(rows[0]["healthy_gpus"].as_f64(), Some(6.0));
+    batches.push(json!({"query":"ui-clusters","rows":rows}));
+
+    lab.until("the current scheduling context", |lab| {
+        Ok(lab
+            .payloads("placement", "RuntimeStatus")?
+            .last()
+            .is_some_and(|status| status["status"] == "plan-current"))
+    })
+    .await?;
+    let context = lab
+        .payloads("placement", "SchedulingContext")?
+        .pop()
+        .context("scheduling context missing")?;
+    assert_eq!(context["current"], true);
     let component_ids: Vec<_> = gpu_contracts::UI_QUERIES
         .into_iter()
         .map(str::to_owned)
         .chain(
             [
-                policy.descriptor(),
-                simulator.descriptor(),
-                placement.descriptor(),
-                resilience.descriptor(),
-                runtime.descriptor(),
+                "configuration",
+                "simulator",
+                "placement",
+                "policy",
+                "solver",
+                "capacity-check",
+                "runtime-status",
             ]
             .into_iter()
-            .map(|descriptor| descriptor.id().to_string()),
+            .map(gpu_contracts::component_id),
         )
         .collect();
     let mut observation = RuntimeObservation {
         sequence: 1, observation_epoch: epoch, scenario: "baseline".into(),
-        scheduling_signature: baseline_input.signature()?, policy_signature: baseline_input.policy.policy_signature.clone(),
+        scheduling_signature: context["scheduling_signature"].as_str().context("signature")?.into(),
+        policy_signature: context["policy_signature"].as_str().context("policy signature")?.into(),
         source_bootstrap_complete: true, query_bootstrap_complete: true, query_results_current: false, reset_in_progress: false,
         detail: "Explicit fixture bootstrap delivered to started test queries; not PostgreSQL acceptance.".into(),
         required_components: component_ids.iter().cloned().collect(),
@@ -1886,141 +1738,45 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         .next()
         .await?
         .context("runtime observation missing")?;
-    let rows = project(&mut status_query, std::slice::from_ref(&observed)).await?;
+    lab.deliver("runtime-status", vec![observed]).await?;
+    let rows = lab.rows("ui-status")?;
     assert_eq!(rows[0]["scenario_ready"], false);
+    assert_eq!(rows[0]["policy_rules_current"], true);
     batches.push(json!({"query":"ui-status","rows":rows}));
-    let rows = project(&mut workload_query, std::slice::from_ref(&observed)).await?;
-    assert!(
-        rows.iter()
-            .all(|row| row["ready_replicas"].as_f64() == Some(0.0)),
-        "application is not a fresh report"
-    );
-    let waiting = project(&mut placement_query, std::slice::from_ref(&observed)).await?;
-    assert_eq!(waiting[0]["status"], "awaiting-measurements");
-    assert_eq!(
-        waiting[0]["reason"],
-        "Waiting for fleet confirmation: 0 confirmed, 8 active, 8 saved, 8 required replicas."
-    );
-    let report_started = wire::utc_millis()?;
-    let reports = simulator.on_wakeup().await?;
-    let report_finished = wire::utc_millis()?;
-    let samples = payloads(&reports, "GpuSample")?;
-    assert!(
-        samples.iter().all(|sample| sample["report_time_ms"]
-            .as_u64()
-            .is_some_and(|time| (report_started..=report_finished).contains(&time))),
-        "reports must carry their actual UTC generation time"
-    );
-    let rows = project(&mut gpu_query, &reports).await?;
-    assert_eq!(rows.len(), 6);
-    assert!(rows.iter().all(|row| row["health"] == "healthy"
-        && row["sample_plan_version"] == "1"
-        && row["observation_epoch"] == epoch.to_string()));
-    batches.push(json!({"query":"ui-gpus","rows":rows}));
-    let rows = project(&mut cluster_query, &reports).await?;
-    assert_eq!(rows[0]["healthy_gpus"].as_f64(), Some(6.0));
-    batches.push(json!({"query":"ui-clusters","rows":rows}));
-    let rows = project(&mut workload_query, &reports).await?;
-    if !rows
-        .iter()
-        .all(|row| row["ready_replicas"].as_f64() == Some(2.0))
-    {
-        let prefix = views::WORKLOADS
-            .split("WITH w, a, r, e, epoch_current")
-            .next()
-            .context("confirmation query prefix missing")?;
-        let mut diagnostic = configured_query("confirmation-diagnostic", &format!(
-            "{prefix} RETURN w.workload_id AS workload_id, e.id AS execution_id, epoch_current AS epoch_current, inputs_current AS inputs_current, plan_applied AS plan_applied, workload_matches AS workload_matches, policy_current AS policy_current, report_current AS report_current, assignment_matches AS assignment_matches"
-        ), views::execution_settings()).await?;
-        for output in [
-            &database,
-            &vec![initial_runtime],
-            &saved,
-            &pending,
-            &evaluated,
-            &applied,
-            &baseline_context,
-            &vec![observed],
-            &reports,
-        ] {
-            project(&mut diagnostic, output).await?;
-        }
-        let diagnostics = project(&mut diagnostic, &[]).await?;
-        diagnostic.stop(&crate::test_contexts::lib::stop()).await?;
-        anyhow::bail!(
-            "Fresh confirmation counts are incorrect: {}; predicate diagnostics: {}",
-            serde_json::to_string(&rows)?,
-            serde_json::to_string(&diagnostics)?
-        );
-    }
-    assert!(rows
-        .iter()
-        .all(|row| row["ready_replicas"].as_f64() == Some(2.0)));
-    batches.push(json!({"query":"ui-workloads","rows":rows}));
-    let rows = project(&mut placement_query, &reports).await?;
-    assert_eq!(rows.len(), 1);
-    if rows[0]["status"] != "confirmed" {
-        let prefix = views::PLACEMENTS
-            .split("WITH p, a, c, confirmed_count, active_count,\n")
-            .next()
-            .context("placement count prefix missing")?;
-        let mut diagnostic = configured_query("placement-count-diagnostic", &format!(
-            "{prefix} RETURN confirmed_count AS confirmed_count, active_count AS active_count, size(p.assignments) AS expected_count, c.required_replicas AS required_count, confirmed_count = size(p.assignments) AS confirmed_equal, active_count = size(p.assignments) AS active_equal, c.required_replicas = size(p.assignments) AS required_equal"
-        ), views::execution_settings()).await?;
-        for output in [
-            database.as_slice(),
-            std::slice::from_ref(&initial_runtime),
-            &saved,
-            &pending,
-            &evaluated,
-            &applied,
-            &baseline_context,
-            std::slice::from_ref(&observed),
-            &reports,
-        ] {
-            project(&mut diagnostic, output).await?;
-        }
-        let diagnostics = project(&mut diagnostic, &[]).await?;
-        diagnostic.stop(&crate::test_contexts::lib::stop()).await?;
-        anyhow::bail!(
-            "Placement confirmation is missing; count diagnostics: {}",
-            serde_json::to_string(&diagnostics)?
-        );
-    }
-    assert_eq!(rows[0]["status"], "confirmed");
+
+    lab.until("confirmed placements", |lab| {
+        let workloads = lab.rows("ui-workloads")?;
+        let placements = lab.rows("ui-placements")?;
+        Ok(workloads.len() == 4
+            && workloads
+                .iter()
+                .all(|row| row["ready_replicas"].as_f64() == Some(2.0))
+            && placements[0]["status"] == "confirmed")
+    })
+    .await?;
+    batches.push(json!({"query":"ui-workloads","rows":lab.rows("ui-workloads")?}));
+    let rows = lab.rows("ui-placements")?;
     assert_eq!(rows[0]["confirmed_plan_version"], "1");
     batches.push(json!({"query":"ui-placements","rows":rows}));
-    assert_eq!(samples.len(), 6);
-    for execution in &actual {
-        let sample = samples
-            .iter()
-            .find(|sample| sample["gpu_id"] == execution["gpu_id"])
-            .context("sample missing")?;
-        assert_eq!(sample["observation_epoch"], execution["observation_epoch"]);
-        assert!(sample["report_time_ms"].as_u64() >= execution["acknowledged_at_ms"].as_u64());
-    }
 
-    poll_until(&mut placement, "RuntimeStatus").await?;
-    deliver(
-        &mut resilience,
-        &mut input_query,
-        &mut source,
-        "baseline-resilience",
-        &Message::Schedule {
-            epoch,
-            input: baseline_input.clone(),
-        },
-    )
+    lab.until("current resilience", |lab| {
+        Ok(lab.rows("ui-resilience")?.first().is_some_and(|row| {
+            row["status"] == "current" && row["workers"].as_array().is_some_and(|w| w.len() == 3)
+        }))
+    })
     .await?;
-    let assessed = poll_until(&mut resilience, "ResilienceAssessment").await?;
-    let rows = project(&mut resilience_query, &assessed).await?;
+    let rows = lab.rows("ui-resilience")?;
+    assert_eq!(rows[0]["observation_epoch"], epoch.to_string());
+    assert_eq!(rows[0]["placement_status"], "optimal");
+    assert!(rows[0]["capacity_only_feasible"].is_null());
+    assert!(rows[0]["regions"].as_array().is_some_and(|r| !r.is_empty()));
     batches.push(json!({"query":"ui-resilience","rows":rows}));
     let snapshots = std::collections::BTreeMap::from([
-        ("ui-placements", project(&mut placement_query, &[]).await?),
-        ("ui-policy", project(&mut policy_query, &[]).await?),
-        ("ui-workloads", project(&mut workload_query, &[]).await?),
-        ("ui-decisions", project(&mut decision_query, &[]).await?),
-        ("ui-resilience", project(&mut resilience_query, &[]).await?),
+        ("ui-placements", lab.rows("ui-placements")?),
+        ("ui-policy", lab.rows("ui-policy")?),
+        ("ui-workloads", lab.rows("ui-workloads")?),
+        ("ui-decisions", lab.rows("ui-decisions")?),
+        ("ui-resilience", lab.rows("ui-resilience")?),
     ]);
     observation.sequence += 1;
     observation.query_results_current = observation.projections_current(8, &snapshots)?;
@@ -2033,95 +1789,47 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         .next()
         .await?
         .context("current query readiness output missing")?;
-    let rows = project(&mut status_query, &[ready]).await?;
+    lab.deliver("runtime-status", vec![ready]).await?;
+    let rows = lab.rows("ui-status")?;
     assert_eq!(rows[0]["scenario_ready"], true);
     batches.push(json!({"query":"ui-status","rows":rows}));
 
-    let unchanged = deliver(
-        &mut simulator,
-        &mut input_query,
-        &mut source,
-        "unchanged-config",
-        &Message::Configuration {
-            epoch,
-            commit: "unchanged-complete-config".into(),
-            configuration: fixture.configuration.clone(),
-            settings: fixture.settings.clone(),
-        },
-    )
-    .await?;
-    assert!(
-        payloads(&unchanged, "PolicyEnforcement")?.is_empty(),
-        "unchanged input cannot refresh acknowledgements"
-    );
-    assert!(
-        payloads(&unchanged, "GpuSample")?.is_empty(),
-        "settings are not GPU reports"
-    );
-
-    let mut fragmented = fixtures::load("fragmentation")?;
-    let Message::Bootstrap { plan, .. } = super::bootstrap(&fragmented, epoch)? else {
-        unreachable!()
-    };
     let workload = Workload::from_profile("new-assistant", "assistant-v1", 1, "demo-open", "demo")?;
-    fragmented
-        .configuration
-        .workloads
-        .insert(workload.workload_id, workload);
-    let mut input = SolveInput {
-        policy: Evaluator::new()?.evaluate(&fragmented.configuration)?,
-        capacities: fixtures::baseline_capacities(&fragmented.configuration),
-        configuration: fragmented.configuration.clone(),
-        plan,
-    };
-    let scheduled = deliver(
-        &mut placement,
-        &mut input_query,
-        &mut source,
-        "schedule",
-        &Message::Schedule {
-            epoch,
-            input: input.clone(),
-        },
-    )
+    lab.insert("workload_requirements", serde_json::to_value(&workload)?)
+        .await?;
+    lab.until("a candidate plan", |lab| {
+        Ok(!lab.payloads("placement", "CandidatePlan")?.is_empty())
+    })
     .await?;
-    project(&mut decision_query, &scheduled).await?;
-    let proposed = poll_until(&mut placement, "CandidatePlan").await?;
-    let candidate: Candidate =
-        serde_json::from_value(payloads(&proposed, "CandidatePlan")?.remove(0))?;
-    let rows = project(&mut decision_query, &proposed).await?;
-    let decision = row(&rows, "decision_id", &candidate.decision_id.to_string())?;
+    let candidate: Candidate = serde_json::from_value(
+        lab.payloads("placement", "CandidatePlan")?
+            .pop()
+            .context("candidate missing")?,
+    )?;
+    assert_eq!(candidate.assignments.len(), 9);
+    let rows = lab.rows("ui-decisions")?;
+    let decision = row(&rows, "decision_id", &candidate.decision_id.to_string())?.clone();
     assert_eq!(decision["stage"], "candidate");
-    assert_eq!(decision["moved_replicas"], 1);
     assert_eq!(decision["new_replicas"], 1);
-    assert_eq!(
-        decision["moves"]
-            .as_array()
-            .context("moves not projected as array")?
-            .len(),
-        2
-    );
-    assert_eq!(decision["pre_plan_free_memory_mib"], 336 * 1024);
-    assert_eq!(decision["pre_plan_largest_gap_mib"], 56 * 1024);
+    assert!(decision["moves"].is_array());
     batches.push(json!({"query":"ui-decisions","rows":rows}));
 
     workers
         .hub
         .write_outcome(&candidate, "receipt", "HTTP receipt received")?;
     let update = runtime.next().await?.context("runtime output missing")?;
-    let rows = project(&mut decision_query, std::slice::from_ref(&update)).await?;
+    lab.deliver("runtime-status", vec![update]).await?;
+    let rows = lab.rows("ui-decisions")?;
     assert_eq!(
         row(&rows, "decision_id", &candidate.decision_id.to_string())?["stage"],
         "candidate",
         "a receipt alone must not promote a decision to committed"
     );
-    let events = project(&mut timeline_query, &[update]).await?;
+    let events = lab.rows("ui-timeline")?;
     assert!(!events.is_empty());
     assert!(events
         .iter()
-        .all(|event| event["observation_epoch"] == epoch.to_string()
-            && event["message"].is_string()
-            && event["kind"].is_string()));
+        .all(|event| event["message"].is_string() && event["kind"].is_string()));
     batches.push(json!({"query":"ui-timeline","rows":events}));
 
     let mut stale = candidate.clone();
@@ -2130,7 +1838,8 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         .hub
         .write_outcome(&stale, "rejected", "Previous run rejected")?;
     let update = runtime.next().await?.context("runtime output missing")?;
-    let rows = project(&mut decision_query, &[update]).await?;
+    lab.deliver("runtime-status", vec![update]).await?;
+    let rows = lab.rows("ui-decisions")?;
     assert_eq!(
         row(&rows, "decision_id", &candidate.decision_id.to_string())?["stage"],
         "candidate"
@@ -2139,14 +1848,15 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         .hub
         .write_outcome(&candidate, "rejected", "Candidate rejected with 409")?;
     let update = runtime.next().await?.context("runtime output missing")?;
-    let rows = project(&mut decision_query, &[update]).await?;
+    lab.deliver("runtime-status", vec![update]).await?;
+    let rows = lab.rows("ui-decisions")?;
     assert_eq!(
         row(&rows, "decision_id", &candidate.decision_id.to_string())?["stage"],
         "rejected"
     );
     batches.push(json!({"query":"ui-decisions","rows":rows}));
 
-    input.plan = Plan {
+    let plan = Plan {
         fleet_id: "demo".into(),
         plan_version: 2,
         decision_id: candidate.decision_id,
@@ -2156,147 +1866,70 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
         assignments: candidate.assignments.clone(),
         decision_details: candidate.decision_details.clone(),
     };
-    let committed = deliver(
-        &mut placement,
-        &mut input_query,
-        &mut source,
-        "committed-schedule",
-        &Message::Schedule {
-            epoch,
-            input: input.clone(),
-        },
-    )
+    let plan = serde_json::to_value(&plan)?;
+    lab.update("gpu_placements", |_| true, |value| *value = plan)
+        .await?;
+    lab.until("the committed decision", |lab| {
+        let rows = lab.rows("ui-decisions")?;
+        Ok(
+            row(&rows, "decision_id", &candidate.decision_id.to_string())
+                .is_ok_and(|row| row["stage"] == "committed"),
+        )
+    })
     .await?;
-    let rows = project(&mut decision_query, &committed).await?;
+    let rows = lab.rows("ui-decisions")?;
     let saved = row(&rows, "decision_id", &candidate.decision_id.to_string())?;
-    assert_eq!(saved["stage"], "committed");
     assert_eq!(saved["plan_version"], "2");
     assert_eq!(saved["moves"], decision["moves"]);
     batches.push(json!({"query":"ui-decisions","rows":rows}));
 
-    input
-        .configuration
-        .policies
-        .get_mut("demo-permissive")
-        .context("fixture policy missing")?
-        .allowed_regions
-        .clear();
-    input.policy = Evaluator::new()?.evaluate(&input.configuration)?;
-    let blocked = Message::Schedule {
-        epoch,
-        input: input.clone(),
-    };
-    let output = deliver(
-        &mut placement,
-        &mut input_query,
-        &mut source,
-        "blocked-schedule",
-        &blocked,
+    lab.update(
+        "placement_policies",
+        |policy| policy["policy_id"] == "demo-permissive",
+        |policy| policy["allowed_regions"] = json!([]),
     )
     .await?;
-    project(&mut decision_query, &output).await?;
-    let invalidated = deliver(
-        &mut resilience,
-        &mut input_query,
-        &mut source,
-        "assess-blocked-schedule",
-        &blocked,
-    )
+    lab.until("an infeasible diagnostic", |lab| {
+        Ok(lab
+            .rows("ui-decisions")?
+            .iter()
+            .any(|row| row["outcome"] == "infeasible" && row["stage"] == "diagnostic"))
+    })
     .await?;
-    assert!(project(&mut resilience_query, &invalidated)
-        .await?
-        .is_empty());
-    let diagnostic = poll_until(&mut placement, "CapacityDiagnostic").await?;
-    assert!(payloads(&diagnostic, "CandidatePlan")?.is_empty());
-    let rows = project(&mut decision_query, &diagnostic).await?;
+    let rows = lab.rows("ui-decisions")?;
     assert!(rows.iter().any(|row| row["outcome"] == "infeasible"
         && row["stage"] == "diagnostic"
         && row["plan_version"].is_null()
         && row["moved_replicas"].is_null()));
     batches.push(json!({"query":"ui-decisions","rows":rows}));
-    project(&mut resilience_query, &diagnostic).await?;
-    let assessment = poll_until(&mut resilience, "ResilienceAssessment").await?;
-    let rows = project(&mut resilience_query, &assessment).await?;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["capacity_only_feasible"], true);
-    assert_eq!(rows[0]["observation_epoch"], epoch.to_string());
-    assert_eq!(
-        rows[0]["workers"]
-            .as_array()
-            .context("worker scenarios not an array")?
-            .len(),
-        3
-    );
-    assert!(rows[0]["workers"]
+    lab.until("capacity-only resilience", |lab| {
+        Ok(lab
+            .rows("ui-resilience")?
+            .first()
+            .is_some_and(|row| row["status"] == "current" && row["capacity_only_feasible"] == true))
+    })
+    .await?;
+    let rows = lab.rows("ui-resilience")?;
+    assert_eq!(rows[0]["placement_status"], "infeasible");
+    let workers_rows = rows[0]["workers"]
         .as_array()
-        .unwrap()
+        .context("worker scenarios not an array")?;
+    assert_eq!(workers_rows.len(), 3);
+    assert!(workers_rows
         .iter()
         .all(|scenario| scenario["feasible"] == false));
     batches.push(json!({"query":"ui-resilience","rows":rows}));
-
-    let mut invalid = fixture.configuration.clone();
-    invalid.policies.clear();
-    let pending = deliver(
-        &mut policy,
-        &mut input_query,
-        &mut source,
-        "invalid-context",
-        &Message::Configuration {
-            epoch,
-            commit: "invalid-policy-context-commit".into(),
-            configuration: invalid,
-            settings: fixture.settings,
-        },
-    )
-    .await?;
-    project(&mut policy_query, &pending).await?;
-    let evaluated = poll_until(&mut policy, "PolicyAssessment").await?;
-    let rows = project(&mut policy_query, &evaluated).await?;
-    assert_eq!(
-        rows.len(),
-        4,
-        "invalid policy must not silently remove pairs"
-    );
-    assert!(rows.iter().all(|row| row["authorization"] == "unknown"
-        && row["policy_revision"].is_null()
-        && row["error"].is_string()));
+    let rows = lab.rows("ui-policy")?;
+    assert!(rows
+        .iter()
+        .all(|row| row["current"] == true && row["authorization"] == "deny"));
     batches.push(json!({"query":"ui-policy","rows":rows}));
 
     if let Some(path) = std::env::var_os("GPU_LAB_NATIVE_ROWS") {
         std::fs::write(path, serde_json::to_vec_pretty(&batches)?)?;
     }
-    policy.stop(&crate::test_contexts::sdk::stop()).await?;
-    simulator.stop(&crate::test_contexts::sdk::stop()).await?;
-    placement.stop(&crate::test_contexts::sdk::stop()).await?;
-    resilience.stop(&crate::test_contexts::sdk::stop()).await?;
     runtime.stop(&crate::test_contexts::sdk::stop()).await?;
-    input_query.stop(&crate::test_contexts::lib::stop()).await?;
-    policy_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    decision_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    timeline_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    resilience_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    gpu_query.stop(&crate::test_contexts::lib::stop()).await?;
-    cluster_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    workload_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    placement_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    status_query
-        .stop(&crate::test_contexts::lib::stop())
-        .await?;
-    Ok(())
+    lab.stop().await
 }
 
 #[test]

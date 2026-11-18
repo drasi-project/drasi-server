@@ -25,7 +25,11 @@ pub fn definitions() -> Vec<(&'static str, &'static str, QueryExecutionSettings)
         ("ui-policy", POLICY, QueryExecutionSettings::default()),
         ("ui-decisions", DECISIONS, decision_settings()),
         ("ui-timeline", TIMELINE, QueryExecutionSettings::default()),
-        ("ui-resilience", RESILIENCE, resilience_settings()),
+        (
+            "ui-resilience",
+            RESILIENCE,
+            QueryExecutionSettings::default(),
+        ),
     ]
 }
 
@@ -89,12 +93,22 @@ pub fn decision_settings() -> QueryExecutionSettings {
     )
 }
 
-pub fn resilience_settings() -> QueryExecutionSettings {
-    join_settings(
-        "RESILIENCE_DIAGNOSTIC",
-        ["ResilienceAssessment", "CapacityDiagnostic"],
-        "scheduling_signature",
-    )
+pub fn pair_settings() -> QueryExecutionSettings {
+    QueryExecutionSettings {
+        joins: vec![
+            join(
+                "WORKLOAD_PROFILE",
+                ["workload_requirements", "data_profiles"],
+                "data_profile_id",
+            ),
+            join(
+                "PROFILE_POLICY",
+                ["data_profiles", "placement_policies"],
+                "policy_id",
+            ),
+        ],
+        ..Default::default()
+    }
 }
 
 fn join_settings(id: &str, labels: [&str; 2], property: &str) -> QueryExecutionSettings {

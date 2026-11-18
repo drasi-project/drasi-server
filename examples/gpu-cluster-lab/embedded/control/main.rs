@@ -8,9 +8,9 @@ use axum::{
     Json, Router,
 };
 use futures_util::StreamExt;
+use gpu_contracts::policy::Assessment;
 use gpu_contracts::*;
 use gpu_control::db::{self, Table};
-use gpu_policy::Evaluator;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -533,10 +533,13 @@ async fn write_plan(
     {
         return Err(ApiError::conflict("Plan or configuration changed"));
     }
-    let policy = Evaluator::new()?.evaluate(&config)?;
-    policy.validate_current(&config)?;
+    // Decisions come from the policy transformer; the writer checks that the
+    // carried assessment is intact, complete and current for this configuration.
+    let policy: Assessment = serde_json::from_value(c.decision_details["policy"].clone())
+        .map_err(|e| ApiError::invalid(format!("candidate policy evidence: {e}")))?;
     if c.policy_signature != policy.policy_signature
         || c.policy_bundle_hash != policy.policy_bundle_hash
+        || policy.validate_current(&config).is_err()
     {
         return Err(ApiError::conflict("Policy changed"));
     }
@@ -1232,7 +1235,7 @@ mod tests {
         );
 
         let config = db::configuration(&mut conn).await?;
-        let policy = Evaluator::new()?.evaluate(&config)?;
+        let policy = gpu_contracts::policy::reference_assessment(&config)?;
         let candidate = Candidate {
             decision_id: Uuid::new_v4(),
             expected_plan_version: original.plan_version,
@@ -1241,7 +1244,7 @@ mod tests {
             policy_bundle_hash: policy.policy_bundle_hash.clone(),
             scheduling_signature: "test-observation".into(),
             assignments: original.assignments.clone(),
-            decision_details: json!({"reason_codes":["test-complete-plan"]}),
+            decision_details: json!({"reason_codes":["test-complete-plan"], "policy":policy}),
         };
         let mut invalid = candidate.clone();
         invalid.assignments.pop();

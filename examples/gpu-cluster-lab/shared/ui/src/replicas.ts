@@ -94,7 +94,7 @@ export function buildReplicaView(views: Views, disconnected = false): ReplicaVie
       replica.detail = replica.planned ? 'Planned location has not been applied.' : 'No saved allocation for this requested replica.';
       const pairs = input.policies.filter(pair => pair.workload_id === identity.workloadId);
       if (pairs.length && pairs.every(pair => pair.current === true && pair.authorization === 'deny'
-        && pair.observation_epoch === epoch && pair.policy_signature === status?.policy_signature)) {
+        && pair.observation_epoch === epoch && typeof pair.policy_hash === 'string' && pair.policy_hash === status?.policy_hash)) {
         replica.status = 'Blocked by policy';
         replica.detail = 'Not running; all observed destinations are denied. This does not imply a previously running replica was stopped.';
       } else if (placement?.status === 'blocked') replica.detail = reasonText(text(placement, 'reason'));

@@ -106,7 +106,7 @@ it('introduces the scenario, Drasi composition and the implementation and role o
   for (const [index, terms] of [
     ['Regorus', 'Rego', 'regional clusters'],
     ['good_lp', 'microlp', 'workload replicas'],
-    ['placement solver', 'loss of each VM or region', 'remaining GPUs'],
+    ['optimization model', 'loss of each VM or region', 'remaining GPUs'],
     ['timer-driven Rust', 'generates telemetry', 'saved allocations'],
   ].entries()) {
     for (const term of terms) expect(cards[index].textContent).toContain(term);

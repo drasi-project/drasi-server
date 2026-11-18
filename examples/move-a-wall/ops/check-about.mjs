@@ -77,9 +77,9 @@ try {
   const nodes = page.locator('.architecture-node');
   assert.equal(await nodes.count(), 9);
   assert.equal(await page.getByRole('tooltip').count(), 0, 'Details stay out of the initial overview');
-  assert.equal(await page.locator('.architecture-edge-line').count(), 13);
-  assert.equal(await page.locator('.architecture-edge-target').count(), 13);
-  assert.equal(await page.getByRole('group', { name: 'Dataflow connection schemas' }).getByRole('button').count(), 13);
+  assert.equal(await page.locator('.architecture-edge-line').count(), 14);
+  assert.equal(await page.locator('.architecture-edge-target').count(), 14);
+  assert.equal(await page.getByRole('group', { name: 'Dataflow connection schemas' }).getByRole('button').count(), 14);
   const graph = page.locator('.architecture-server'), client = nodes.filter({ hasText: 'React UI' });
   assert.equal(await graph.textContent(), 'DRASI SERVER', 'No subtitle after the host name');
   assert.equal(await page.locator('footer,.architecture-takeaway').count(), 0, 'No bottom-of-page text');
@@ -137,14 +137,15 @@ try {
   }
   const contracts = {
     commands: [/expected_revision: u64/, /accepted_revision: u64/, /kind: "journey"/],
-    'scene-context': [/SceneObject node properties/, /JSON-encoded InputRecord/, /members: Map<string, u64>/],
-    'context-geometry': [/objects: string\[\]/, /revision: u64/, /shape: Shape/],
-    'geometry-impact': [/Obstruction \{/, /GeometryStatus \{/, /Cart \{/, /required_m: number/],
-    'scene-inspection': [/SceneObject node properties/, /active: boolean/],
-    'geometry-inspection': [/Obstruction \{/, /GeometryStatus \{/, /Destination \{/],
-    'context-results': [/Query: geometry-context/, /objects: string\[\]/],
+    'scene-context': [/Typed scene nodes/, /SceneStatus \{/, /radius: number; clearance: number/],
+    'context-geometry': [/Query: journey-footprints/, /ObstacleFootprint \{/, /vertices: Point\[\]/],
+    'geometry-impact': [/Obstruction \{/, /\["relation","obstruction"/, /required_m: number/],
+    'scene-impact': [/Typed scene nodes/, /Destination \{/],
+    'scene-inspection': [/Typed scene nodes/, /active: boolean/],
+    'geometry-inspection': [/Obstruction \{/, /distance_m: number/],
+    'context-results': [/Query: journey-footprints/, /Query: obstacle-footprints/],
     'impact-results': [/AffectedJourney Result node properties/, /task: string/, /destination: string/, /obstacle: string/],
-    'inspection-results': [/scene-inputs Result node properties/, /obstructions Result node properties/, /geometry-status Result node properties/],
+    'inspection-results': [/scene-inputs Result node properties/, /obstructions Result node properties/, /scene-status Result node properties/],
     'catalog-api': [/Row values, selected by query ID/, /affected-journeys:/],
     'catalog-sse': [/same graph-change v1 schema/, /Result node/, /scoped to that query output/, /generation, sequence and snapshot markers/],
     'api-browser': [/success: true/, /data: Row\[\]/, /error: null/],
@@ -164,7 +165,7 @@ try {
     assert.equal(await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.classList.contains('architecture-edge-target'), point), true, `${id} popup must not cover its clicked arrow`);
     if (id === 'catalog-api') assert.match(await tooltip.innerText(), /not a graph pipe/);
     if (id === 'catalog-sse') {
-      assert.match(await tooltip.innerText(), /Five independent bounded graph pipes/);
+      assert.match(await tooltip.innerText(), /Six independent bounded graph pipes/);
       assert.match(await tooltip.innerText(), /without catalog subscriptions or a reaction queue/);
     }
     if (id === 'sse-browser') assert.doesNotMatch(schema, /\bsequence\s*:/, 'Default SSE must not promise a query sequence');
@@ -267,7 +268,7 @@ try {
     } else {
       const list = page.locator('.architecture-flow-list');
       await list.locator('summary').click();
-      assert.equal(await list.getByRole('button').count(), 13);
+      assert.equal(await list.getByRole('button').count(), 14);
       for (const link of await list.getByRole('button').all()) {
         await link.focus();
         assert.equal(await page.getByRole('tooltip').count(), 0, 'Focus only highlights a connection link');
@@ -321,7 +322,7 @@ try {
   assert.equal(infoBounds.width, infoBounds.height);
   assert.equal(await info.evaluate(element => getComputedStyle(element).borderRadius), '50%');
   assert.equal(await page.getByRole('link', { name: 'About', exact: true }).count(), 0);
-  const stage = page.getByRole('button', { name: 'Context query geometry-context', exact: true });
+  const stage = page.getByRole('button', { name: 'Journey footprints journey-footprints', exact: true });
   await stage.click();
   const sceneElement = await page.locator('svg.scene').elementHandle();
   const navigations = [];
@@ -407,7 +408,7 @@ try {
   await page.locator('#architecture-overlay').waitFor({ state: 'detached' });
   assert.deepEqual(navigations, [], 'Opening and closing never navigates away from the demo');
   assert.deepEqual(errors, []);
-  console.log('PASS: nodes and all 13 arrows highlight without hover/focus popups; click/tap/Enter/Space open details; the next click or Escape dismisses; schemas, responsive layouts and modal behavior remain correct.');
+  console.log('PASS: nodes and all 14 arrows highlight without hover/focus popups; click/tap/Enter/Space open details; the next click or Escape dismisses; schemas, responsive layouts and modal behavior remain correct.');
 } finally {
   if (browser) await browser.close();
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

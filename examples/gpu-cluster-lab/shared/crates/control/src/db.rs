@@ -1,6 +1,6 @@
 use anyhow::{ensure, Context, Result};
+use gpu_contracts::policy::reference_assessment;
 use gpu_contracts::*;
-use gpu_policy::Evaluator;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use sqlx::{PgConnection, PgPool};
@@ -295,7 +295,7 @@ pub async fn load_fixture(conn: &mut PgConnection, name: &str) -> Result<Plan> {
         config == fixture.configuration,
         "fixture database representation differs"
     );
-    let policy = Evaluator::new()?.evaluate(&config)?;
+    let policy = reference_assessment(&config)?;
     policy.validate_plan(&config, &fixture.assignments)?;
     let p = Plan {
         fleet_id: "demo".into(),
@@ -327,7 +327,7 @@ pub async fn initialize(pool: &PgPool) -> Result<()> {
             config == Configuration::default(),
             "refusing to seed a nonempty uninitialized database"
         );
-        let p = Evaluator::new()?.evaluate(&config)?;
+        let p = reference_assessment(&config)?;
         put_plan(
             &mut tx,
             &Plan {

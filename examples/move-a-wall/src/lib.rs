@@ -1,20 +1,20 @@
-pub mod geometry;
 pub mod model;
 mod plugin;
 pub mod source;
-pub mod transformer;
 pub mod wire;
 pub use plugin::plugin;
 #[cfg(test)]
 mod tests;
 
 pub const INSTANCE: &str = "move-a-wall";
-pub const QUERIES: [&str; 5] = [
+/// The query outputs the UI reads through the native SSE sink.
+pub const QUERIES: [&str; 6] = [
     "scene-inputs",
-    "geometry-context",
+    "scene-status",
+    "journey-footprints",
+    "obstacle-footprints",
     "obstructions",
     "affected-journeys",
-    "geometry-status",
 ];
 
 #[cfg(feature = "dynamic-plugin")]

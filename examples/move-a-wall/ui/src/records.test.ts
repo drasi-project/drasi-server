@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { graphRow, graphRowKey } from '@drasi/react/client';
-import { entity, inputs, translate, validate } from './records';
+import { entity, sceneEntity, status, translate, validate } from './records';
 describe('query-backed scene records',() => {
   const wall = entity({id:'wall',name:'Wall',active:true,shape:{kind:'obstacle',vertices:[[1,1],[2,1],[2,2],[1,2]]}});
   it('uses only scene entity fields in query records and commands',() => {
     expect(Object.keys(wall).sort()).toEqual(['active','id','name','shape']);
-    expect(inputs({objects:[JSON.stringify({type:'entity',revision:1,entity:wall})]}))
-      .toEqual([{type:'entity',revision:1,entity:wall}]);
+    const row = {id:'wall',kind:'obstacle',name:'Wall',active:true,vertices:[[1,1],[2,1],[2,2],[1,2]],
+      cart_id:null,destination_id:null,points:null,point:null,radius:null,clearance:null};
+    expect(sceneEntity(row)).toEqual(wall);
     expect(Object.keys(translate(wall,.5,0)).sort()).toEqual(['active','id','name','shape']);
   });
   it('keys rows by canonical element identity, not by a row signature or domain field',() => {
@@ -19,7 +20,9 @@ describe('query-backed scene records',() => {
     expect(() => graphRowKey({id:'journey/wall',row_signature:18446744073709551615})).toThrow();
   });
   it('rejects malformed query data instead of rendering clear state',() => {
-    expect(() => inputs({objects:['not JSON']})).toThrow();
+    expect(() => sceneEntity({id:'wall',kind:'obstacle',name:'Wall',active:true,vertices:null})).toThrow();
+    expect(() => validate('scene-status',{id:'current',revision:1,command:'reset',objects:0})).toThrow();
+    expect(() => validate('journey-footprints',{journey_id:'j',cart_id:'c',points:[[0,0]],radius:'1',clearance:0})).toThrow();
     expect(() => validate('affected-journeys',{id:'j/w'})).toThrow();
     expect(() => entity({...wall,shape:{kind:'circle',radius:1}})).toThrow();
   });
@@ -29,7 +32,7 @@ describe('query-backed scene records',() => {
     expect(wall.shape).toEqual({kind:'obstacle',vertices:[[1,1],[2,1],[2,2],[1,2]]});
   });
   it('parses explicit source revisions, including empty scenes',() => {
-    expect(inputs({objects:[JSON.stringify({type:'clock',revision:2,members:{},changed:['wall'],command:'clear'})]}))
-      .toEqual([{type:'clock',revision:2,members:{},changed:['wall'],command:'clear'}]);
+    expect(status({id:'current',revision:2,command:'clear',changed:['wall'],objects:0}))
+      .toEqual({revision:2,command:'clear',changed:['wall'],objects:0});
   });
 });

@@ -33,14 +33,18 @@ pub fn component_id(name: &str) -> String {
         .to_string()
 }
 
-/// The GPU lab's named native components.
-pub const COMPONENTS: [&str; 6] = [
-    "policy",
+/// The GPU lab's named graph components: native lab components and the
+/// `drasi.standard/policy` (`policy`) and `drasi.standard/optimization`
+/// (`solver`, `capacity-check`) instances.
+pub const COMPONENTS: [&str; 8] = [
+    "configuration",
     "simulator",
     "placement",
-    "resilience",
     "plan-writer",
     "runtime-status",
+    "policy",
+    "solver",
+    "capacity-check",
 ];
 
 /// The readable name of a native lab component, else its ID.
@@ -666,6 +670,8 @@ fn validate_assignment_set(
 }
 
 pub mod fixtures;
+pub mod planning;
+pub mod policy;
 
 pub fn require_schema_version(value: u32) -> Result<()> {
     if value != 1 {

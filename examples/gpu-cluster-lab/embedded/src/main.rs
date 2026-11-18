@@ -39,13 +39,22 @@ mod database;
 mod diagnostics;
 
 const INSTANCE: &str = "gpu-demo";
-const NATIVE: [(&str, &str); 6] = [
-    ("policy", "gpu.lab/regorus-policy"),
+const NATIVE: [(&str, &str); 5] = [
+    ("configuration", "gpu.lab/configuration"),
     ("simulator", "gpu.lab/telemetry-simulator"),
-    ("placement", "gpu.lab/placement-solver"),
-    ("resilience", "gpu.lab/resilience-assessor"),
+    ("placement", "gpu.lab/placement-planner"),
     ("plan-writer", "gpu.lab/plan-writer"),
     ("runtime-status", "gpu.lab/runtime-status"),
+];
+/// Native components whose graph changes feed the UI and diagnostic queries.
+const PRODUCERS: [&str; 7] = [
+    "configuration",
+    "simulator",
+    "placement",
+    "runtime-status",
+    "policy",
+    "solver",
+    "capacity-check",
 ];
 
 fn env(name: &str) -> Result<String> {
@@ -119,6 +128,8 @@ struct Runtime {
     plugins: Arc<RwLock<PluginRegistry>>,
     native: Arc<NativePlugin>,
     network: Arc<NativePlugin>,
+    policy: Arc<NativePlugin>,
+    optimization: Arc<NativePlugin>,
     active: Mutex<Option<Active>>,
     view: RwLock<Value>,
     sequence: AtomicU64,
@@ -133,7 +144,10 @@ struct Runtime {
 
 impl Runtime {
     fn factory(&self, name: &str) -> Result<Arc<NativeFactory>> {
-        self.native
+        Self::find(&self.native, name)
+    }
+    fn find(plugin: &NativePlugin, name: &str) -> Result<Arc<NativeFactory>> {
+        plugin
             .factories()
             .iter()
             .find(|factory| factory.metadata().implementation.name.as_ref() == name)
@@ -228,6 +242,37 @@ impl Runtime {
                 );
             }
         }
+        // The drasi-core policy and optimization transformers, configured for the lab.
+        for (component, plugin, implementation, configuration) in [
+            (
+                "policy",
+                &self.policy,
+                gpu_native::plugins::POLICY_IMPLEMENTATION,
+                gpu_native::plugins::policy(),
+            ),
+            (
+                "solver",
+                &self.optimization,
+                gpu_native::plugins::OPTIMIZATION_IMPLEMENTATION,
+                gpu_native::plugins::solver(),
+            ),
+            (
+                "capacity-check",
+                &self.optimization,
+                gpu_native::plugins::OPTIMIZATION_IMPLEMENTATION,
+                gpu_native::plugins::capacity_check(),
+            ),
+        ] {
+            let factory = Self::find(plugin, implementation)?;
+            let stream = configuration["stream"]
+                .as_str()
+                .context("plugin stream missing")?
+                .to_owned();
+            let spec = factory.specification(id(component)?, configuration)?;
+            components = components
+                .component(name(component)?, spec, factory)
+                .bind_stream(endpoint(component, "out")?, StreamId::try_new(stream)?);
+        }
         let sse = self
             .network
             .factories()
@@ -301,13 +346,11 @@ impl Runtime {
                 name(diagnostics::SINK)?,
                 Box::new(diagnostics::Recorder::new()?),
             );
-            for producer in [
-                "policy",
-                "simulator",
-                "placement",
-                "resilience",
-                "runtime-status",
-            ] {
+            for producer in NATIVE
+                .iter()
+                .map(|(component, _)| *component)
+                .filter(|component| *component != "plan-writer")
+            {
                 for query in diagnostics::QUERIES {
                     relationships.push(relationship(producer, query, 64)?);
                 }
@@ -336,28 +379,12 @@ impl Runtime {
             }
         }
         for query in DATABASE_QUERIES {
-            relationships.push(relationship(query, "policy", 32)?);
+            relationships.push(relationship(query, "configuration", 32)?);
         }
-        for (from, to) in [
-            ("policy", "simulation-inputs"),
-            ("policy", "scheduling-inputs"),
-            ("simulation-inputs", "simulator"),
-            ("simulator", "scheduling-inputs"),
-            ("scheduling-inputs", "placement"),
-            ("scheduling-inputs", "resilience"),
-            ("placement", "plan-output"),
-            ("plan-output", "plan-writer"),
-            ("placement", "runtime-context"),
-        ] {
+        for (from, to) in gpu_native::plugins::EDGES {
             relationships.push(relationship(from, to, 32)?);
         }
-        for producer in [
-            "policy",
-            "simulator",
-            "placement",
-            "resilience",
-            "runtime-status",
-        ] {
+        for producer in PRODUCERS {
             for query in gpu_contracts::UI_QUERIES {
                 relationships.push(relationship(producer, query, 64)?);
             }
@@ -585,7 +612,9 @@ impl Runtime {
         let scenario = scenario.context("starting scenario was not observed")?;
         for query in gpu_contracts::UI_QUERIES.into_iter().chain([
             "simulation-inputs",
-            "scheduling-inputs",
+            "placement-pairs",
+            "placement-gpus",
+            "planner-status",
             "plan-output",
             "runtime-context",
         ]) {
@@ -628,7 +657,7 @@ impl Runtime {
             max_wire_bytes,
             "GPU database bootstrap transport prepared"
         );
-        let target = id("policy")?;
+        let target = id("configuration")?;
         tokio::time::timeout(Duration::from_secs(10), async {
             for (kind, payload) in notifications {
                 loop {
@@ -853,7 +882,7 @@ mod tests {
             .await?;
         let catalog = QueryResultsCatalog::new("__drasi_lib_runtime__")?;
         let batch = queries(catalog.clone(), false)?;
-        assert_eq!(batch.definition.components.len(), 14);
+        assert_eq!(batch.definition.components.len(), 19);
         assert!(batch.definition.components.iter().all(|component| matches!(
             component.role,
             ComponentRole::Transformer | ComponentRole::Sink
@@ -979,15 +1008,20 @@ async fn main() -> Result<()> {
     );
     let native = drasi_host_sdk::computation::load(env("GPU_NATIVE_PLUGIN")?)?;
     let network = drasi_host_sdk::computation::load(env("GPU_NETWORK_PLUGIN")?)?;
+    let policy = drasi_host_sdk::computation::load(env("GPU_POLICY_PLUGIN")?)?;
+    let optimization = drasi_host_sdk::computation::load(env("GPU_OPTIMIZATION_PLUGIN")?)?;
     let mut plugins = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugins);
-    plugins.register_computation_plugin(native.clone())?;
-    plugins.register_computation_plugin(network.clone())?;
+    for plugin in [&native, &network, &policy, &optimization] {
+        plugins.register_computation_plugin(plugin.clone())?;
+    }
     let runtime = Arc::new(Runtime {
         registry: InstanceRegistry::new(),
         plugins: Arc::new(RwLock::new(plugins)),
         native,
         network,
+        policy,
+        optimization,
         active: Mutex::new(None),
         view: RwLock::new(json!({"ready":false,"state":"starting"})),
         sequence: AtomicU64::new(0),

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Replay real PostgreSQL changes in an isolated copy, retaining query logs and failures."""
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -10,7 +11,7 @@ import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 EXAMPLE = Path(__file__).resolve().parents[1]
 INPUTS = {
@@ -29,8 +30,9 @@ UI_KEYS = {
     "ui-decisions": "decision_id", "ui-status": "fleet_id",
     "ui-timeline": "event_id", "ui-clusters": "cluster_id", "ui-policy": "id",
 }
-QUERIES = [DATABASE_QUERY, "simulation-inputs", "scheduling-inputs", "plan-output",
-           "runtime-context", *UI_KEYS]
+QUERIES = [DATABASE_QUERY, "simulation-inputs", "placement-pairs", "placement-gpus",
+           "placement-candidates", "planner-policy", "planner-solution", "planner-status",
+           "plan-output", "runtime-context", *UI_KEYS]
 TABLES = [*INPUTS.values(), "command_receipts", "demo_reset_state"]
 PREFIX = "/api/v1/instances/gpu-demo"
 ROLLBACK_NAME = "query-mutation-rollback-must-not-appear"
@@ -41,9 +43,19 @@ def same_rows(actual, expected):
         return sorted(json.dumps(row, sort_keys=True, separators=(",", ":")) for row in rows)
     return ordered(actual) == ordered(expected)
 
+def component_id(name):
+    # Mirrors gpu_contracts::component_id: a version 4 UUID from a SHA-256 of the name.
+    raw = bytearray(hashlib.sha256(b"gpu-cluster-lab.component.v1:" + name.encode()).digest()[:16])
+    raw[6] = (raw[6] & 0x0F) | 0x40
+    raw[8] = (raw[8] & 0x3F) | 0x80
+    return str(UUID(bytes=bytes(raw)))
+
+
 def logged_queries(text):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-    return set(re.findall(r"GPU query result\s+query=([a-z0-9-]+)\s+result=", text))
+    names = {component_id(query): query for query in QUERIES}
+    found = re.findall(r"GPU query result\s+query=([a-z0-9-]+)\s+result=", text)
+    return {names.get(query, query) for query in found}
 
 
 def unique_rows(query, rows):
@@ -258,7 +270,7 @@ class Probe:
             except URLError as error:
                 self.event("startup-connection", error=str(error))
                 return False
-            return status == 200 and any(row["id"] == "gpu-query-log"
+            return status == 200 and any(row.get("name") == "gpu-query-log"
                                         and row["lifecycle"] == "Running"
                                         for row in (body.get("data") or {}).get("components", []))
         self.until("native gpu-query-log sink is running", started, timeout=120)

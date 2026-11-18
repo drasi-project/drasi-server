@@ -37,7 +37,8 @@ def loopback_ports(count):
 class Qualification:
     def __init__(self, args):
         self.args = args
-        for path in (args.runtime, args.control, args.native_plugin, args.sse_plugin):
+        for path in (args.runtime, args.control, args.native_plugin, args.sse_plugin, args.policy_plugin,
+                     args.optimization_plugin):
             if not path.resolve().is_file():
                 raise ValueError(f"Required local artifact is missing: {path}")
         if args.full_acceptance:
@@ -194,7 +195,8 @@ class Qualification:
             assert self.volume == name
             storage = ["--volume", f"{self.volume}:/var/lib/postgresql/data"]
             shutil.copytree(self.args.ui_dist, self.work / "ui" / "dist")
-            artifacts = [self.args.runtime, self.args.control, self.args.native_plugin, self.args.sse_plugin]
+            artifacts = [self.args.runtime, self.args.control, self.args.native_plugin, self.args.sse_plugin,
+                         self.args.policy_plugin, self.args.optimization_plugin]
             artifacts.extend(sorted(self.args.ui_dist.rglob("*")))
             digests = {}
             for path in artifacts:
@@ -247,6 +249,8 @@ class Qualification:
             "GPU_STATE_DIR": str(self.state),
             "GPU_NATIVE_PLUGIN": str(self.args.native_plugin.resolve()),
             "GPU_NETWORK_PLUGIN": str(self.args.sse_plugin.resolve()),
+            "GPU_POLICY_PLUGIN": str(self.args.policy_plugin.resolve()),
+            "GPU_OPTIMIZATION_PLUGIN": str(self.args.optimization_plugin.resolve()),
             "LISTEN_ADDRESS": f"127.0.0.1:{self.api_port}",
             "GPU_SSE_HOST": "127.0.0.1", "GPU_SSE_PORT": str(self.sse_port),
         }
@@ -408,6 +412,8 @@ def main():
     parser.add_argument("--control", type=Path, required=True)
     parser.add_argument("--native-plugin", type=Path, required=True)
     parser.add_argument("--sse-plugin", type=Path, required=True)
+    parser.add_argument("--policy-plugin", type=Path, required=True)
+    parser.add_argument("--optimization-plugin", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True,
                         help="New directory; existing paths are never overwritten")
     parser.add_argument("--full-acceptance", action="store_true",

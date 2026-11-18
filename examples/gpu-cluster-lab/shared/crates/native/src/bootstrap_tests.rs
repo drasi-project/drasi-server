@@ -73,11 +73,11 @@ fn roundtrip(boundary: &BootstrapBoundary) -> Result<BootstrapBoundary> {
 }
 
 #[tokio::test]
-async fn bootstrap_transport_policy_stays_uninitialized_until_commit_and_reports_timeout(
+async fn bootstrap_transport_configuration_stays_uninitialized_until_commit_and_reports_timeout(
 ) -> Result<()> {
     let parts = notifications(&boundary(24_000)?)?;
     for timeout in [false, true] {
-        let mut policy = processor(Kind::Policy, Arc::new(Workers::default()))?;
+        let mut policy = processor(Kind::Configuration, Arc::new(Workers::default()))?;
         policy
             .start(&mut crate::test_contexts::sdk::start())
             .await?;
@@ -103,8 +103,8 @@ async fn bootstrap_transport_policy_stays_uninitialized_until_commit_and_reports
                 usize::from(!timeout && index + 1 == parts.len())
             );
             assert!(
-                payloads(&outputs, "PolicyAssessment")?.is_empty(),
-                "partial input launched a policy decision"
+                payloads(&outputs, "workload_requirements")?.is_empty() || index + 1 == parts.len(),
+                "partial input published configuration rows"
             );
             if timeout {
                 let status = serde_json::to_string(&payloads(&outputs, "RuntimeStatus")?)?;

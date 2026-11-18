@@ -32,7 +32,7 @@ export const scenarios = [
 ] as const;
 
 function setChecking(rows: MockRows) {
-  Object.assign(rows['ui-resilience'][0], { status: 'checking', workers: [], regions: [] });
+  Object.assign(rows['ui-resilience'][0], { status: 'checking', placement_status: null, workers: [], regions: [] });
 }
 function event(rows: MockRows, kind: string, message: string, decision: string | null, version: string | null, earliest = 0) {
   const previous = rows['ui-timeline'][0];
@@ -198,20 +198,21 @@ export function snapshot(id: string): MockRows {
     const unknown = id === 'policy-unknown' || id === 'bootstrap';
     for (const pair of rows['ui-policy']) Object.assign(pair, { authorization: unknown ? 'unknown' : 'deny',
       current: !unknown, error: unknown ? 'Policy input unavailable' : null, reasons: [unknown ? 'policy-input-unavailable' : 'region-not-permitted'],
-      policy_revision: '2', allowed_regions: unknown ? pair.allowed_regions : [], policy_signature: 'mock-policy-updated' });
+      policy_revision: '2', allowed_regions: unknown ? pair.allowed_regions : [], policy_hash: unknown ? pair.policy_hash : 'mock-policy-hash-updated' });
     p.actual = records(p, 'actual').map(a => ({ ...a,
       state: unknown ? 'suspended' : id === 'fencing-pending' ? 'fencing-pending' : 'fenced',
       acknowledged_at_ms: id === 'fencing-pending' ? null : snapshotTime + 2000,
       reason: unknown ? 'policy-unavailable' : 'region-not-permitted', input_fingerprint: unknown ? null : 'mock-denied-input',
     }));
     Object.assign(p, { status: 'blocked', confirmed_plan_version: null, reason: scene.detail });
-    Object.assign(r, { status: unknown ? 'unknown' : 'current', workers: [], regions: [], capacity_only_feasible: unknown ? null : true,
+    Object.assign(r, { status: unknown ? 'unknown' : 'current', placement_status: unknown ? null : 'infeasible', workers: [], regions: [], capacity_only_feasible: unknown ? null : true,
       capacity_only_detail: unknown ? 'Missing policy information is different from a policy that prohibits processing.' : 'All replicas would fit without the policy restriction, but that does not give permission to run them.' });
     if (!unknown) {
       r.workers = rows['ui-gpus'].filter(g => g.slot === 0).map(g => ({ excluded: g.host_id, feasible: false, detail: 'Current policy allows no region.' }));
       r.regions = rows['ui-clusters'].map(c => ({ excluded: c.region, feasible: false, detail: 'Current policy allows no region.' }));
     }
     status.policy_signature = 'mock-policy-updated';
+    status.policy_hash = unknown ? null : 'mock-policy-hash-updated';
     const rules = recordMap(status, 'policy_rules', 'policy_id');
     if (!rules) throw new Error('Preview scenario requires shared rules');
     for (const rule of rules) Object.assign(rule, {
@@ -219,7 +220,7 @@ export function snapshot(id: string): MockRows {
     });
     status.policy_rules = Object.fromEntries(rules.map(rule => [text(rule, 'policy_id'), rule]));
     status.policy_rules_current = !unknown;
-    status.components = records(status, 'components').map(c => c.component_id === 'regorus-policy'
+    status.components = records(status, 'components').map(c => c.component_id === 'policy'
       ? { ...c, status: unknown ? 'unavailable' : 'current', error: unknown ? 'Policy input unavailable' : null } : c);
     event(rows, id === 'fencing-pending' ? 'fencing-requested' : unknown ? 'suspended' : 'fenced', scene.detail, null, '1');
     rows['ui-decisions'].unshift({ ...rows['ui-decisions'][0], decision_id: `mock-${id}`, stage: 'diagnostic',
@@ -240,7 +241,7 @@ export function snapshot(id: string): MockRows {
   }
   if (id === 'solver-timeout') {
     Object.assign(p, { status: 'unknown', confirmed_plan_version: null, reason: scene.detail });
-    Object.assign(r, { status: 'unknown', workers: [], regions: [], capacity_only_detail: 'No capacity-only comparison completed after the time limit.' });
+    Object.assign(r, { status: 'unknown', placement_status: null, workers: [], regions: [], capacity_only_detail: 'No capacity-only comparison completed after the time limit.' });
     rows['ui-decisions'].unshift({ ...rows['ui-decisions'][0], decision_id: 'mock-timeout', stage: 'diagnostic',
       outcome: 'unknown', plan_version: null, summary: scene.detail, reason_codes: ['solver-timeout'],
       moved_replicas: null, new_replicas: null, retained_replicas: null, pre_plan_free_memory_mib: null, pre_plan_largest_gap_mib: null });
@@ -250,7 +251,6 @@ export function snapshot(id: string): MockRows {
     result.scheduling_signature = ['healthy', 'fragmented', 'regional'].includes(id) ? 'mock-scheduling-initial' : `mock-scheduling-${id}`;
     result.policy_signature = text(status, 'policy_signature');
   }
-  for (const pair of rows['ui-policy']) pair.policy_signature = status.policy_signature;
   for (const d of rows['ui-decisions'].slice(0, 1).filter(d => d.decision_id !== 'mock-initial-layout')) {
     d.scheduling_signature = status.scheduling_signature; d.policy_signature = status.policy_signature;
   }

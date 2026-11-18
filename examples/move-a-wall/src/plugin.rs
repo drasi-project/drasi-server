@@ -1,4 +1,4 @@
-use crate::{source::SceneSource, transformer::Geometry, wire};
+use crate::{source::SceneSource, wire};
 use anyhow::Result;
 use drasi_computation_contracts::*;
 use drasi_computation_plugin_sdk::{
@@ -7,49 +7,27 @@ use drasi_computation_plugin_sdk::{
 };
 use std::sync::Arc;
 
-struct NativeFactory {
-    source: bool,
-}
-impl Factory for NativeFactory {
+/// The demo's only native component: the volatile scene source. Geometry is
+/// computed by the standard `drasi.standard/geometry` transformer.
+struct SceneFactory;
+impl Factory for SceneFactory {
     fn describe(
         &self,
         request: &drasi_computation_plugin_sdk::wire::DescribeRequest,
     ) -> Result<ComponentDescription> {
-        Ok(if self.source {
-            request.source_description(
-                OutputDescription::VOLATILE,
-                drasi_computation_plugin_sdk::ProgressPersistence::Undeclared,
-            )
-        } else {
-            request.volatile_transformer()
-        })
+        Ok(request.source_description(
+            OutputDescription::VOLATILE,
+            drasi_computation_plugin_sdk::ProgressPersistence::Undeclared,
+        ))
     }
     fn metadata(&self) -> FactoryMetadata {
         FactoryMetadata {
-            implementation: ImplementationIdentity::try_new(
-                if self.source {
-                    "move-a-wall/scene"
-                } else {
-                    "move-a-wall/geometry"
-                },
-                "1",
-            )
-            .expect("constant identity"),
-            role: if self.source {
-                ComponentRole::Source
-            } else {
-                ComponentRole::Transformer
-            },
+            implementation: ImplementationIdentity::try_new("move-a-wall/scene", "1")
+                .expect("constant identity"),
+            role: ComponentRole::Source,
             configuration_version: 1,
             configuration: ConfigSchema::default(),
-            ports: if self.source {
-                vec![wire::port("out", PortDirection::Output, false).expect("source port")]
-            } else {
-                vec![
-                    wire::port("in", PortDirection::Input, true).expect("input port"),
-                    wire::port("out", PortDirection::Output, false).expect("output port"),
-                ]
-            },
+            ports: vec![wire::port("out", PortDirection::Output).expect("source port")],
             completion: None,
             capabilities: Capabilities::default(),
         }
@@ -58,29 +36,18 @@ impl Factory for NativeFactory {
         self.metadata()
             .configuration
             .validate(&request.configuration)?;
-        Ok(if self.source {
-            Component::Source(Box::new(SceneSource::hosted(
-                self.metadata().descriptor(request.id.clone())?,
-                request.scope.as_ref(),
-            )?))
-            .into()
-        } else {
-            Component::Transformer(Box::new(Geometry::new(
-                request.id.clone(),
-                request.scope.as_ref(),
-            )?))
-            .into()
-        })
+        Ok(Component::Source(Box::new(SceneSource::hosted(
+            self.metadata().descriptor(request.id.clone())?,
+            request.scope.as_ref(),
+        )?))
+        .into())
     }
 }
 pub fn plugin() -> Result<PluginDefinition> {
     PluginDefinition::new(
         "move-a-wall",
         env!("CARGO_PKG_VERSION"),
-        vec![
-            Arc::new(NativeFactory { source: true }),
-            Arc::new(NativeFactory { source: false }),
-        ],
+        vec![Arc::new(SceneFactory)],
         vec![GraphChangeCodec::schema()],
     )
 }

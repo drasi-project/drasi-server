@@ -1,6 +1,6 @@
 use crate::{
     model::{self, Entity, Scene},
-    wire::{self, Emitter, Records},
+    wire::{self, Emitter, Record, Records},
 };
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
@@ -20,27 +20,16 @@ use drasi_computation_plugin_sdk::{
     wire::Scope,
     NativeComponent, NativeSource,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::{oneshot, Mutex};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum InputRecord {
-    Entity {
-        revision: u64,
-        entity: Entity,
-    },
-    Clock {
-        revision: u64,
-        members: BTreeMap<String, u64>,
-        changed: Vec<String>,
-        command: String,
-    },
-}
+/// Every scene entity is published with its kind label and this label.
+pub const SCENE_OBJECT: &str = "SceneObject";
+/// The single node describing the last accepted command.
+pub const SCENE_STATUS: &str = "SceneStatus";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
@@ -54,7 +43,6 @@ pub enum Command {
 pub struct Store {
     pub revision: u64,
     scene: Scene,
-    versions: BTreeMap<String, u64>,
     emitter: Emitter,
     sender: mpsc::Sender<OutputEnvelope>,
 }
@@ -76,7 +64,7 @@ pub fn channel() -> Result<(Store, SceneSource)> {
     channel_with_descriptor(
         ComponentDescriptor::try_new(
             ComponentId::try_new(SCENE_TEST_ID)?,
-            vec![wire::port("out", PortDirection::Output, false)?],
+            vec![wire::port("out", PortDirection::Output)?],
         )?,
         None,
     )
@@ -90,7 +78,6 @@ fn channel_with_descriptor(
         Store {
             revision: 0,
             scene: Scene::new(),
-            versions: BTreeMap::new(),
             emitter: Emitter::new(
                 &format!("{}/out", descriptor.id()),
                 descriptor.id().clone(),
@@ -127,7 +114,7 @@ mod identity_tests {
         };
         let descriptor = ComponentDescriptor::try_new(
             ComponentId::try_new(crate::tests::test_id("scene-worker"))?,
-            vec![wire::port("out", PortDirection::Output, false)?],
+            vec![wire::port("out", PortDirection::Output)?],
         )?;
         let (mut store, mut source) = channel_with_descriptor(descriptor, Some(&scope))?;
         source.start(&mut crate::tests::native_start()).await?;
@@ -201,38 +188,28 @@ impl Store {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let mut versions = self.versions.clone();
-        versions.retain(|id, _| next.contains_key(id));
-        for id in &changed {
-            if next.contains_key(id) {
-                versions.insert(id.clone(), revision);
-            }
-        }
         let mut records = Records::new();
         for entity in next.values() {
-            let record = InputRecord::Entity {
-                revision: versions[&entity.id],
-                entity: entity.clone(),
-            };
-            records.insert(("SceneObject".into(), entity.id.clone()), json!({
-                "id":entity.id, "active":entity.active, "payload":serde_json::to_string(&record)?
-            }));
+            records.insert(
+                format!("{}/{}", entity.label(), entity.id),
+                Record {
+                    labels: vec![entity.label(), SCENE_OBJECT],
+                    properties: entity.properties(),
+                },
+            );
         }
-        let clock = InputRecord::Clock {
-            revision,
-            members: versions
-                .iter()
-                .filter(|(id, _)| next[*id].active)
-                .map(|(id, v)| (id.clone(), *v))
-                .collect(),
-            changed,
-            command: label.into(),
-        };
         records.insert(
-            ("SceneObject".into(), "__clock".into()),
-            json!({
-                "id":"__clock","active":true,"payload":serde_json::to_string(&clock)?
-            }),
+            format!("{SCENE_STATUS}/current"),
+            Record {
+                labels: vec![SCENE_STATUS],
+                properties: json!({
+                    "id": "current",
+                    "revision": revision,
+                    "command": label,
+                    "changed": changed,
+                    "objects": next.len(),
+                }),
+            },
         );
         // Reserve capacity before mutating the source's published state.
         let permit = tokio::time::timeout(
@@ -242,13 +219,12 @@ impl Store {
         .await
         .context("source backpressure: command was not accepted")?
         .context("scene source is stopped")?;
-        let mut output = self.emitter.replace(records, None)?;
+        let mut output = self.emitter.replace(records)?;
         ensure!(
             output.len() == 1,
             "a command must produce one input envelope"
         );
         self.scene = next;
-        self.versions = versions;
         self.revision = revision;
         permit.send(output.remove(0));
         Ok(revision)

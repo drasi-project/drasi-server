@@ -2,8 +2,9 @@
 
 A small **geometry computation graph running inside the stock `drasi-server`
 executable**. Drag a maintenance barrier across a planned cart
-path; a native geometry transformer creates an `Obstruction`; a continuous
-query joins the affected cart, task and destination. Move it away and the
+path; Drasi's standard native geometry transformer (`drasi.standard/geometry`)
+creates an `Obstruction`; a continuous query joins the affected cart, task and
+destination. Move it away and the
 results retract.
 
 The display name is **Obstacle Impact**; the example directory and graph instance
@@ -37,7 +38,8 @@ Use `127.0.0.1`, not `localhost`, because the command endpoint checks the origin
 **Ctrl-C stops the example.** On subsequent runs, use `./demo start`.
 
 Setup builds the current in-tree React SDK, both UIs, the standard Server and the
-two native plugins. There is no separate UI preparation, historical Git fetch,
+three native plugins (this example's scene source, and Core's SSE sink and
+geometry transformer). There is no separate UI preparation, historical Git fetch,
 vendored SDK, or generated configuration step. The first native build can take
 many minutes; later builds reuse the Server's Cargo cache. See
 [Detailed setup and development](#detailed-setup-and-development) for prerequisites,
@@ -93,12 +95,15 @@ running backend, and does not change the live scene.
    packaging / Packing station / Movable wall** from the real impact query.
 3. **Explain the computation.** In **Follow the change**, directly below the
    scene, click the flow's
-   **Source**, **Context query**, **Geometry transformer**, and **Impact query**
-   stages. The selected stage is highlighted and its query ID is shown.
-   The records directly below show actual input revisions, the filtered context, the stable
-   `journey-ada/wall` obstruction, and the enriched result. This transformer is
-   geometry; the same event/query plumbing is not inherently about scheduling.
-   **SSE / UI** shows the geometry-status query result, not a transport event log.
+   **Source**, **Journey footprints**, **Obstacle footprints**, **Geometry
+   transformer**, and **Impact query** stages. The selected stage is highlighted
+   and its query ID is shown. The records directly below show the actual typed
+   scene nodes, the filtered footprints the geometry transformer reads, the
+   stable `journey-ada/wall` obstruction, and the enriched result. The
+   transformer is a general, configured planar-geometry component; the same
+   event/query plumbing is not inherently about scheduling. **SSE / UI** shows
+   the scene-status query result (source revision and last command), not a
+   transport event log.
 4. **Retract.** Drag the wall back to its original area, or remove it. The
    obstruction and impact disappear without a cart event. Grace is unaffected.
 5. **Show flexibility.** Reset. Choose **Deliver
@@ -120,31 +125,38 @@ produce visible errors.
 
 ## What actually runs
 
-The scene and geometry plugin uses the native SDK and shared message contracts;
-it does not include the query engine or `drasi-lib`. Drasi Server owns the graph
-and queries. The example's Rust tests select the runtime as a test dependency.
-The Quick Start and checked-in configuration are unchanged.
+The scene plugin uses the native SDK and shared message contracts; it does not
+include the query engine, `drasi-lib` or any geometry code. The geometry is
+Drasi Core's standard `drasi.standard/geometry` transformer
+(`drasi-computation-transformer-geometry`), configured entirely in
+[`server.yaml`](server.yaml). Drasi Server owns the graph and queries. The
+example's Rust tests select the runtime and the geometry crate as test
+dependencies.
 
 ```text
 React input command (no geometry)
     |
     v
 native scene source / authoritative in-memory store
-    | graph ChangeEnvelope: SceneObject inserts/updates/sparse deletes
-    +------> scene-inputs CQ ------------------------------+
-    |                                                     |
-    v                                                     |
-geometry-context CQ (WHERE active = true, collect payloads) |
-    | graph-change envelope (Result nodes)                |
-    v                                                     |
-native Geometry Transformer                               |
-    | graph ChangeEnvelope: Obstruction +/- and context    |
-    +------> obstructions CQ ------------------------------+
-    +------> geometry-status CQ ---------------------------+
-    v                                                     |
-affected-journeys CQ (cart + journey + destination + cause) |
-    |                                                     |
-    +----------> native SSE sink + real query snapshots ----+
+    | graph ChangeEnvelope: typed Cart/Journey/Destination/Obstacle nodes
+    | (plus SceneObject label) and one SceneStatus node
+    +------> scene-inputs CQ, scene-status CQ ---------------+
+    +------> affected-journeys CQ (names)                    |
+    |                                                        |
+    v                                                        |
+journey-footprints CQ (active journey JOIN active cart)      |
+obstacle-footprints CQ (active obstacles)                    |
+    | graph-change envelopes (JourneyFootprint /             |
+    | ObstacleFootprint Result nodes)                        |
+    v                                                        |
+drasi.standard/geometry (withinDistance: path vs polygon,    |
+                         threshold = radius + clearance)     |
+    | graph ChangeEnvelope: Obstruction +/~/-                |
+    +------> obstructions CQ --------------------------------+
+    v                                                        |
+affected-journeys CQ (cart + journey + destination + cause)  |
+    |                                                        |
+    +----------> native SSE sink + real query snapshots -----+
                                   |
                                   v
                      @drasi/react headless hooks / React
@@ -153,16 +165,16 @@ affected-journeys CQ (cart + journey + destination + cause) |
 All sources, CQs, the transformer and SSE execute **inside `drasi-server`**.
 There is no runnable custom host, alternate query API, synthetic SSE producer,
 browser geometry calculation, or derived-state polling service. The native
-plugin uses the real computation-plugin SDK ABI, factory metadata, schema
-validators, lifecycle and `GraphChangeCodec` / `QueryChangeCodec`.
+plugins use the real computation-plugin SDK ABI, factory metadata, schema
+validators, lifecycle and `GraphChangeCodec`.
 The Server uses its built-in `drasi/continuous-query` factories, declared
 `memoryIndexes` and `queryCatalog` resources, and one stock
 `drasi/query-results-outlet` sink. Every CQ and the outlet share the same catalog;
-each query's `out` port also connects to the outlet's `in` port. The example's
-`geo` dependency supplies the geometry calculation.
+each query's `out` port also connects to the outlet's `in` port. The geometry
+transformer uses the `geo` crate for distance.
 
 The `wall-output-snapshots` resource is an immutable allow-list and limits policy
-for the five declared query output ports (`component` plus `port`), with at most
+for the six declared query output ports (`component` plus `port`), with at most
 16 concurrent readers and a five-second readiness timeout. The host combines it
 with the graph's actual output catalogue when it constructs the SSE sink. For
 example, `http://127.0.0.1:8422/snapshot/affected-journeys` streams the current
@@ -176,15 +188,16 @@ existing Server snapshot/subscription flow is unchanged.
 
 | Component | Input | Output / role |
 | --- | --- | --- |
-| `scene` (`move-a-wall/scene`) | HTTP `POST /commands`, not a graph input port | `out`: graph-change schema; authoritative input changes only |
-| `scene-inputs` | `in`: graph-change schema from `scene` | `out`: graph-change schema carrying scoped query result nodes; all editable records, including inactive objects, revision and changed IDs |
-| `geometry-context` | `in`: graph-change schema from `scene` | `out`: graph-change schema carrying scoped query result nodes; only active objects plus explicit source manifest |
-| `geometry` (`move-a-wall/geometry`) | `in`: graph-change schema carrying query result nodes from `geometry-context` only | `out`: graph-change schema; diffed obstructions, projected metadata and revision status |
-| `obstructions` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; exact transformer results for inspector/path highlighting |
-| `affected-journeys` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; synthetic joins `CART_TASK`, `TO_DESTINATION`, `BLOCKS`, `CAUSED_BY` enrich each obstruction |
-| `geometry-status` | `in`: geometry graph changes | `out`: graph-change schema carrying scoped query result nodes; last computed input revision and result count |
-| `query-results` | `in`: graph-change envelopes with query result nodes from all five CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
-| `wall-ui` | `in`: direct graph-change envelopes with query result nodes from all five CQs | Native SSE on `/events`; the sink writes truthful graph changes (`ADD`/`REPLACE`/`PATCH`/`DELETE` with canonical identity); `@drasi/react` loads the canonical snapshot and applies live changes to its identity-keyed rows |
+| `scene` (`move-a-wall/scene`) | HTTP `POST /commands`, not a graph input port | `out`: graph-change schema; typed scene nodes and the `SceneStatus` node, changed records only |
+| `scene-inputs` | `in`: graph changes from `scene` | `out`: one Result node per scene entity (plain columns), including inactive objects |
+| `scene-status` | `in`: graph changes from `scene` | `out`: the source revision, last command, changed IDs and entity count |
+| `journey-footprints` | `in`: graph changes from `scene` | `out`: `JourneyFootprint` Result nodes; active journeys joined (`USES`) to their active cart: `journey_id`, `cart_id`, `points`, `radius`, `clearance` |
+| `obstacle-footprints` | `in`: graph changes from `scene` | `out`: `ObstacleFootprint` Result nodes; active obstacles: `obstacle_id`, `vertices` |
+| `geometry` (`drasi.standard/geometry`) | `in`: Result nodes from both footprint queries | `out`: graph-change schema; incrementally inserted/updated/deleted `Obstruction` relation records |
+| `obstructions` | `in`: geometry graph changes | `out`: exact transformer results for inspector/path highlighting |
+| `affected-journeys` | `in`: geometry and scene graph changes | `out`: synthetic joins `CART_TASK`, `TO_DESTINATION`, `BLOCKS`, `CAUSED_BY` enrich each obstruction with active cart, journey, destination and obstacle names |
+| `query-results` | `in`: Result nodes from all six CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
+| `wall-ui` | `in`: direct graph-change envelopes with Result nodes from all six CQs | Native SSE on `/events`; the sink writes truthful graph changes (`ADD`/`REPLACE`/`PATCH`/`DELETE` with canonical identity); `@drasi/react` loads the canonical snapshot and applies live changes to its identity-keyed rows |
 
 Every pipe in this table uses the same graph-change v1 schema. A query's `RETURN`
 aliases are properties of its Result nodes, whose identities are scoped to that
@@ -204,38 +217,38 @@ not fabricate a legacy resource, bypass readiness checks or replace the SDK's
 snapshot/reconnection and result-reconciliation behavior.
 
 The obstruction is a stable graph record representing the relationship
-`(journey_id, obstacle_id)`, not a newly minted event ID on each drag. One journey
-can have several obstruction causes. Removing one cause cannot erase another.
-The geometry output also projects active cart/task/destination/obstacle metadata
-so the impact query is the only place that assembles the human-readable effect.
+`(journey_id, obstacle_id)` (element ID `["relation","obstruction",journey_id,obstacle_id]`,
+`id` property `journey_id/obstacle_id`), not a newly minted event ID on each
+drag. One journey can have several obstruction causes. Removing one cause cannot
+erase another. The impact query reads names directly from the scene's typed
+nodes, so a rename updates the impact without recomputing geometry.
+
+The geometry configuration in `server.yaml` declares two sets (`journeys`: label
+`JourneyFootprint`, key `journey_id`, line string `points`; `obstacles`: label
+`ObstacleFootprint`, key `obstacle_id`, polygon `vertices`) and one
+`withinDistance` relation whose threshold is the journey row's
+`radius + clearance`. It emits `distance_m`, `required_m` and copies `cart_id`
+from the journey row. See the transformer's README in `drasi-core` for the full
+configuration reference.
 
 Scene and geometry output each carry their immediate component's logical producer
 progress. One volatile output epoch lasts for the constructed component's lifetime;
 reconstruction starts a new epoch because the example has no durable state owner.
-Geometry preserves the context query's producer-sequence ordering, lineage and
-timestamps while assigning its own increasing output progress, not the query's
-identity. Native construction supplies the actual component and instance/graph
-scope; each emits on its default stream, `<component-id>/out`.
+Geometry preserves the input's lineage and timestamps while assigning its own
+increasing output progress on its configured stream, which must be the stream
+the host binds to its output port (`<component id>/out`).
 
 The source accepts `put`, `delete`, `reset`, and `clear` commands with an
 `expected_revision`. One mutex serializes mutations; stale revisions are rejected.
 A bounded graph channel is reserved before committing an input mutation. Each
-accepted command emits one real graph envelope with only changed entity records
-and a revision/active-membership manifest. Identical commands are no-ops.
+accepted command emits one real graph envelope with only changed entity nodes and
+the updated `SceneStatus` node. Identical commands are no-ops.
 
-The context CQ really filters and aggregates those records. The transformer
-caches decoded query results, current scene objects and its last emitted graph records. It
-requires the CQ's entity versions to match the explicit source manifest before
-publishing a new revision. This is **not** an inferred time/quiet-period boundary
-or a claim about external database transactions. A full initial fixture or empty
-scene has an explicit manifest too. Sparse input/query deletes use stable
-identities. Duplicate/older query generations/sequences and obsolete input
-revisions cannot revive removed obstruction records.
-
-Only this transformer's event handler invokes `geo`; it recomputes the tiny
-scene synchronously and diffs the result. Metadata-only changes do not invent
-new obstruction IDs. Its pure constructor does not start background geometry
-work. Source lifecycle owns and closes its command listener.
+The footprint CQs really filter and join those records. The geometry transformer
+keeps each footprint by element identity and re-evaluates only the pairs a changed
+footprint touches, emitting inserts, updates and deletes of `Obstruction` records.
+Queries and geometry settle independently after each source revision; there is
+no end-to-end "geometry completed revision N" marker (see the UI notes below).
 
 ### Geometry contract
 
@@ -249,21 +262,24 @@ work. Source lifecycle owns and closes its command listener.
   repeated closing vertex. Rectangles and convex angled shapes are supported.
   Concave, self-crossing, duplicate/collinear or degenerate rings are rejected,
   not treated as clear. No holes, curves or unsupported shape variants.
-- `geo` computes the Euclidean distance between the whole polyline and the
-  closed polygon. A crossing or segment inside the polygon has distance zero.
+- The geometry transformer (via `geo`) computes the Euclidean distance between
+  the whole polyline and the closed polygon. A crossing or segment inside the polygon has distance zero.
   An obstruction exists when the distance is at most radius + clearance +
-  **1e-7**. Tangency/contact therefore counts as obstruction. Polygon validity
+  **1e-7** (the transformer's default `epsilon`). Tangency/contact therefore counts as obstruction. Polygon validity
   also rejects edge lengths and cross products at/below 1e-7.
 - Only active carts, journeys and obstacles interact.
   Deleting a cart or journey removes its obstructions. Orphaned journeys can be
   edited or repaired; they do not fabricate a cart. Deleting destination
   metadata retracts the enriched impact, not a still-existing geometric cause.
   The obstruction inspector remains independent of enrichment.
-- Maximum 64 scene entities. Whole-scene recomputation is intentional at this
-  scale; there is no claim of a spatial index, simulation or production safety.
+- Maximum 64 scene entities (a source limit; the transformer has its own
+  configurable `limits`). There is no claim of simulation or production safety.
 
 Query feeds are delivered independently, not as an atomic multi-query UI
-snapshot. Source and geometry revisions remain visible; pending, stale,
+snapshot. The source revision (from `scene-status`) remains visible; the UI
+treats a command as settled once `scene-status` reaches the accepted revision and
+`scene-inputs` has that many entities. Obstruction and impact rows then follow
+asynchronously as the footprint queries and geometry settle. Pending, stale,
 disconnected and query-local errors are not labeled current/clear. A reload or
 Reconnect resubscribes through the SDK and reads actual current query snapshots.
 Explicit Reconnect discards pending previews without resubmitting commands,
@@ -328,9 +344,10 @@ Run `./demo setup` with the example stopped. It:
 2. Installs the example UI's locked dependencies with local packages linked to
    their source, then type-checks and builds the UI.
 3. Runs the Server's standard `make build`, including its administration UI.
-4. Builds the scene/geometry plugin and Core's individual
-   `drasi-computation-sink-sse` plugin, then stages those two libraries in
-   `.build/plugins`. No other Core network component is built or loaded.
+4. Builds the scene plugin and Core's individual `drasi-computation-sink-sse`
+   and `drasi-computation-transformer-geometry` plugins, then stages those three
+   libraries in `.build/plugins`. No other Core network component is built or
+   loaded.
 5. Validates the checked-in `server.yaml`, including its nine native components.
 
 Wait for **`Ready: ./demo start`**. A failure stops setup; fix the reported error
@@ -344,7 +361,7 @@ native-build memory use. Native debug information is disabled, but symbols are
 not stripped. A clean build can take many minutes, particularly for RocksDB.
 
 The launcher starts the stock Server binary, waits for the initial
-`geometry-status` query result, checks the administration UI, then starts the
+`scene-status` query result, checks the administration UI, then starts the
 Vite frontend/proxy. It copies the standard administration UI bundle into the
 isolated `.build/ui/dist` runtime directory. Server logs are in
 `.build/server.log`. The footer's **Drasi Server Web UI** link opens
@@ -392,7 +409,7 @@ For a direct snapshot, use another terminal:
 
 ```sh
 curl --fail --silent --show-error \
-  http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/geometry-status/results
+  http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/scene-status/results
 ```
 
 Before edits, the response's `data` array contains `id: "current"`,
@@ -425,7 +442,7 @@ Complete setup first. For the Rust/UI checks, run this with the demo stopped:
 
 ```sh
 # From examples/move-a-wall:
-./demo test                  # geometry/real-Cypher tests, Rust fmt/Clippy, UI tests/build
+./demo test                  # scene/geometry real-Cypher tests, Rust fmt/Clippy, UI tests/build
 ```
 
 For live acceptance, run `./demo start` in one terminal. In a **second terminal**:
@@ -481,7 +498,7 @@ curl -N http://127.0.0.1:8422/events
 | `EADDRINUSE` | Stop the launcher that owns the conflicting port, or resolve the other service's ownership first. Do not kill unrelated processes. The fixed ports are listed above. |
 | Commands fail origin checks | Open `http://127.0.0.1:5421`, not `localhost`, a file URL, or a different port. |
 | Chromium executable is missing | Run `(cd ui && npx playwright install chromium)` after setup. |
-| Native resource/ABI error or no initial `geometry-status` result | Check the matching source checkouts and `.build/server.log`; stop and rebuild the host and both plugins together with setup. Do not mix downloaded binaries with these local plugins. |
+| Native resource/ABI error or no initial `scene-status` result | Check the matching source checkouts and `.build/server.log`; stop and rebuild the host and all three plugins together with setup. Do not mix downloaded binaries with these local plugins. |
 
 If startup fails, inspect `.build/server.log` rather than substituting a local
 result model. Port conflicts fail without touching another service. If a native
@@ -535,7 +552,7 @@ resources:
 
 Each CQ has `resources.catalog: wall-query-catalog` as well as its index
 dependency. The shared stock outlet has the same catalog dependency and handled
-completion; all five query output ports connect to it. Descriptors and schemas
+completion; all six query output ports connect to it. Descriptors and schemas
 come from the actual factory implementations, not hand-written equivalents.
 
 The readable `computation.graph` format requires the shared loader and factory
@@ -546,12 +563,14 @@ do not understand the new format; rebuild the current host with `./demo setup`.
 Verified locally on macOS (Apple Silicon); the Linux prerequisites above are
 provided for Linux source builds, not a claim of a Linux validation run:
 
-- Ten Rust geometry/transformer tests using actual Cypher queries, including
-  active filtering, scene-only records and task/destination enrichment; ten UI
-  record/native-topology tests; formatting, Clippy, TypeScript and production UI build.
-- Actual stock Server bootstrap: `geometry-status` returns revision 1,
-  nine objects and zero obstructions.
-- Real source commands through the native geometry transformer into query
+- Nine Rust tests driving the scene source, the actual footprint/impact Cypher
+  queries and Core's `drasi.standard/geometry` transformer configured from
+  `server.yaml`, including a distance-threshold parity sweep, active filtering,
+  deletes and task/destination enrichment; eleven UI record/native-topology
+  tests; formatting, Clippy, TypeScript and production UI build.
+- Actual stock Server bootstrap: `scene-status` returns revision 1 and nine
+  objects, with zero obstructions.
+- Real source commands through the standard geometry transformer into query
   snapshots and native SSE, including exact enriched `ADD`, same-key rename
   `UPDATE`, and `DELETE` records.
 - Chromium drag-to-impact and retraction, path-only edits, CRUD for all four

@@ -1,8 +1,9 @@
 use crate::{
-    evidence::{self, Decision, DecisionOutcome, DecisionStage},
-    inputs::{DatabaseInputs, DatabaseSnapshot, SchedulingRow, SimulationRow, DATABASE_QUERIES},
+    evidence::{Decision, DecisionOutcome, DecisionStage},
+    inputs::{DatabaseInputs, DatabaseSnapshot, SimulationRow, DATABASE_QUERIES},
     lifecycle::Signals,
-    wire::{self, Emitter, Message, SolveInput},
+    planner::{self, Outcome, Planner, QueryRows},
+    wire::{self, Emitter, Message},
     Kind, Workers,
 };
 use anyhow::{ensure, Context, Result};
@@ -17,9 +18,7 @@ use drasi_computation_plugin_sdk::lifecycle::{
 };
 use drasi_computation_plugin_sdk::{wire::Scope, NativeComponent, NativeTransformer};
 use drasi_core_types::models::SourceChange;
-use gpu_contracts::*;
-use gpu_placement::{LossKind, Outcome, Resilience, Scenario};
-use gpu_policy::{Assessment, Evaluator};
+use gpu_contracts::{policy::Assessment, *};
 use gpu_simulator::Simulator;
 use serde::Deserialize;
 use serde_json::json;
@@ -31,7 +30,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 struct Timer {
@@ -47,17 +45,6 @@ impl WakeupSource for Timer {
     async fn has_pending(&self) -> Result<bool> {
         Ok(false)
     }
-}
-enum Job {
-    Policy(Assessment),
-    Placement(Outcome),
-    Scenario(LossKind, Scenario),
-    CapacityOnly(Scenario),
-}
-struct Active {
-    signature: String,
-    generation: u64,
-    task: JoinHandle<Result<Job>>,
 }
 #[derive(Clone)]
 struct SimulationInputs {
@@ -85,18 +72,11 @@ pub struct Processor {
     initialized: bool,
     source_ready: bool,
     recovering_source: bool,
-    policy_input: Option<Configuration>,
-    policy_signature: Option<String>,
-    solve_input: Option<SolveInput>,
-    signature: Option<String>,
-    job: Option<Active>,
-    due: Instant,
-    scenarios: VecDeque<(LossKind, String)>,
-    assessment: Option<Resilience>,
-    completed: Option<String>,
-    generation: u64,
+    configured: bool,
+    planner: Planner,
+    policy_rows: QueryRows,
+    policy_due: Option<Instant>,
     decisions: VecDeque<String>,
-    diagnostic_pending: bool,
     published_plan: Option<String>,
     published_locations: BTreeMap<String, (Uuid, String)>,
 }
@@ -135,18 +115,11 @@ impl Processor {
             initialized: false,
             source_ready: false,
             recovering_source: false,
-            policy_input: None,
-            policy_signature: None,
-            solve_input: None,
-            signature: None,
-            job: None,
-            due: Instant::now(),
-            scenarios: VecDeque::new(),
-            assessment: None,
-            completed: None,
-            generation: 0,
+            configured: false,
+            planner: Planner::default(),
+            policy_rows: QueryRows::default(),
+            policy_due: None,
             decisions: VecDeque::new(),
-            diagnostic_pending: false,
             published_plan: None,
             published_locations: BTreeMap::new(),
         })
@@ -195,7 +168,7 @@ impl Processor {
         let epoch = snapshot.epoch;
         let bootstrap = !self.source_ready
             || match self.kind {
-                Kind::Policy => self.policy_input.is_none(),
+                Kind::Configuration => !self.configured,
                 _ => self.simulation_inputs.is_none(),
             };
         let message = if bootstrap {
@@ -224,11 +197,13 @@ impl Processor {
                 changes,
             )?;
         }
-        if self.kind == Kind::Policy {
+        if self.kind == Kind::Configuration {
             self.publish_database(&snapshot, changes)?;
             let mut value = serde_json::to_value(&snapshot)?;
             value["config_fingerprint"] = json!(snapshot.configuration.fingerprint()?);
+            value["plan_version"] = json!(snapshot.plan.plan_version.to_string());
             self.add(changes, "FleetConfiguration", "demo", &value)?;
+            self.status(changes, "configuration-current", None)?;
         }
         Ok(())
     }
@@ -260,7 +235,26 @@ impl Processor {
                 self.add(changes, label, key, row)?;
             }
         }
-        self.add(changes, "gpu_placements", "demo", &snapshot.plan)
+        self.add(changes, "gpu_placements", "demo", &snapshot.plan)?;
+        let assignments: BTreeMap<String, _> = snapshot
+            .plan
+            .assignments
+            .iter()
+            .map(|a| {
+                (
+                    format!("{}/{}", a.workload_id, a.replica_index),
+                    json!({"workload_id":a.workload_id,"replica_index":a.replica_index,"gpu_id":a.gpu_id}),
+                )
+            })
+            .collect();
+        changes.extend(
+            self.emitter
+                .retain("PlanAssignment", &assignments.keys().cloned().collect())?,
+        );
+        for (key, row) in &assignments {
+            self.add(changes, "PlanAssignment", key, row)?;
+        }
+        Ok(())
     }
     fn utc_at(&self, monotonic_ms: u64) -> Result<u64> {
         self.started_utc_ms
@@ -297,25 +291,6 @@ impl Processor {
         }
         Ok(())
     }
-    fn policy_rows(
-        &mut self,
-        changes: &mut Vec<SourceChange>,
-        assessment: Option<&Assessment>,
-    ) -> Result<()> {
-        let rows = evidence::policy_rows(
-            self.policy_input.as_ref().context("policy input missing")?,
-            assessment,
-            self.epoch.context("missing epoch")?,
-        )?;
-        changes.extend(self.emitter.retain(
-            "PlacementEligibility",
-            &rows.iter().map(|row| row.id.clone()).collect(),
-        )?);
-        for row in rows {
-            self.add(changes, "PlacementEligibility", &row.id, &row)?;
-        }
-        Ok(())
-    }
     fn add<T: serde::Serialize>(
         &mut self,
         changes: &mut Vec<SourceChange>,
@@ -340,76 +315,46 @@ impl Processor {
             error.clone(),
             self.epoch,
         )?;
+        let context = self.planner.context.clone();
         if self.kind == Kind::Placement {
-            let input = self.solve_input.as_ref();
-            let context = json!({
+            let value = json!({
                 "fleet_id":"demo", "observation_epoch":self.epoch,
-                "scheduling_signature":self.signature,
-                "policy_signature":input.map(|input| &input.policy.policy_signature),
-                "config_fingerprint":input.map(|input| input.configuration.fingerprint()).transpose()?,
-                "required_replicas":input.map(|input| input.configuration.workloads.values().map(|w| u64::from(w.replicas)).sum::<u64>()),
-                "current":self.source_ready && input.is_some(),
+                "scheduling_signature":context.as_ref().map(|c| &c.scheduling_signature),
+                "policy_signature":context.as_ref().map(|c| &c.policy_signature),
+                "policy_bundle_hash":context.as_ref().map(|c| &c.policy_bundle_hash),
+                "config_fingerprint":context.as_ref().map(|c| &c.config_fingerprint),
+                "required_replicas":context.as_ref().map(|c| c.required_replicas),
+                "current":self.source_ready && context.is_some(),
             });
-            self.add(changes, "SchedulingContext", "demo", &context)?;
+            self.add(changes, "SchedulingContext", "demo", &value)?;
         }
         let component = gpu_contracts::component_label(self.descriptor.id().as_str());
-        self.add(changes,"RuntimeStatus",&component,&json!({
-            "schema_version":1,"component_id":component,"status":status,"error":error,
-            "observation_epoch":self.epoch,"scheduling_signature":self.signature,
-            "policy_signature":self.solve_input.as_ref().map(|input| &input.policy.policy_signature),
-        }))
+        self.add(
+            changes,
+            "RuntimeStatus",
+            &component,
+            &json!({
+                "schema_version":1,"component_id":component,"status":status,"error":error,
+                "observation_epoch":self.epoch,
+                "scheduling_signature":context.as_ref().map(|c| &c.scheduling_signature),
+                "policy_signature":context.as_ref().map(|c| &c.policy_signature),
+            }),
+        )
     }
     fn invalidate(&mut self, reason: &str, changes: &mut Vec<SourceChange>) -> Result<()> {
-        self.generation = self
-            .generation
-            .checked_add(1)
-            .context("input generation exhausted")?;
         self.source_ready = false;
         self.recovering_source = false;
-        self.policy_input = None;
-        self.policy_signature = None;
-        self.solve_input = None;
-        self.signature = None;
-        self.completed = None;
-        self.diagnostic_pending = false;
-        self.scenarios.clear();
-        self.assessment = None;
+        self.configured = false;
         if self.kind == Kind::Placement {
-            self.workers
-                .placement_pending
-                .store(false, Ordering::Release);
+            self.planner.invalidate();
         }
         if self.initialized {
             self.simulation.invalidate_source(self.now()?, reason);
         }
-        for label in [
-            "CandidatePlan",
-            "CapacityDiagnostic",
-            "ResilienceAssessment",
-        ] {
+        for label in ["CandidatePlan", "FleetConfiguration"] {
             if let Some(change) = self.emitter.remove(label, "demo")? {
                 changes.push(change);
             }
-        }
-        if self.kind == Kind::Policy {
-            if let Some(change) = self.emitter.remove("FleetConfiguration", "demo")? {
-                changes.push(change);
-            }
-            if let Some(epoch) = self.epoch {
-                self.add(
-                    changes,
-                    "PolicyAssessment",
-                    "demo",
-                    &Message::Unavailable {
-                        epoch,
-                        reason: reason.into(),
-                    },
-                )?;
-            }
-            changes.extend(
-                self.emitter
-                    .retain("PlacementEligibility", &BTreeSet::new())?,
-            );
         }
         self.status(changes, "unavailable", Some(reason.into()))?;
         if self.kind == Kind::Simulator && self.initialized {
@@ -434,36 +379,11 @@ impl Processor {
             return self.invalidate(&reason, changes);
         }
         match (self.kind, message) {
-            (
-                Kind::Policy,
-                Message::Bootstrap {
-                    commit,
-                    configuration,
-                    ..
-                },
-            )
-            | (
-                Kind::Policy,
-                Message::Configuration {
-                    commit,
-                    configuration,
-                    ..
-                },
-            ) => {
+            (Kind::Configuration, Message::Bootstrap { commit, .. })
+            | (Kind::Configuration, Message::Configuration { commit, .. }) => {
                 nonempty(&commit)?;
-                let signature = configuration.fingerprint()?;
-                if self.policy_signature.as_ref() != Some(&signature) {
-                    self.generation = self
-                        .generation
-                        .checked_add(1)
-                        .context("input generation exhausted")?;
-                    self.policy_signature = Some(signature);
-                    self.policy_input = Some(configuration);
-                    self.source_ready = true;
-                    self.completed = None;
-                    self.policy_rows(changes, None)?;
-                    self.status(changes, "policy-pending", None)?;
-                }
+                self.configured = true;
+                self.source_ready = true;
             }
             (
                 Kind::Simulator,
@@ -562,49 +482,6 @@ impl Processor {
                     if let Err(error) = self.simulation.accept_plan(plan, self.now()?) {
                         self.status(changes, "application-rejected", Some(format!("{error:#}")))?;
                     }
-                }
-            }
-            (Kind::Placement | Kind::Resilience, Message::Schedule { input, .. }) => {
-                input.validate()?;
-                let signature = input.signature()?;
-                if self.kind == Kind::Placement {
-                    let decision =
-                        Decision::committed(&input.plan, self.epoch.context("missing epoch")?)?;
-                    self.decision(changes, &decision)?;
-                }
-                let unchanged = self.signature.as_ref() == Some(&signature)
-                    && self
-                        .solve_input
-                        .as_ref()
-                        .is_some_and(|old| old.plan.plan_version == input.plan.plan_version);
-                if !unchanged {
-                    self.generation = self
-                        .generation
-                        .checked_add(1)
-                        .context("input generation exhausted")?;
-                    self.solve_input = Some(input.clone());
-                    self.signature = Some(signature.clone());
-                    self.source_ready = true;
-                    self.completed = None;
-                    self.due = Instant::now() + Duration::from_millis(100);
-                    self.diagnostic_pending = false;
-                    if let Some(change) = self.emitter.remove("CapacityDiagnostic", "demo")? {
-                        changes.push(change);
-                    }
-                    if self.kind == Kind::Placement {
-                        self.workers
-                            .placement_pending
-                            .store(true, Ordering::Release);
-                        if let Some(change) = self.emitter.remove("CandidatePlan", "demo")? {
-                            changes.push(change);
-                        }
-                    } else {
-                        if let Some(change) = self.emitter.remove("ResilienceAssessment", "demo")? {
-                            changes.push(change);
-                        }
-                        self.prepare_scenarios(&input, signature)?;
-                    }
-                    self.status(changes, "pending", None)?;
                 }
             }
             _ => anyhow::bail!("message is incompatible with this transformer"),
@@ -809,282 +686,6 @@ impl Processor {
         }
         Ok(())
     }
-    fn prepare_scenarios(&mut self, input: &SolveInput, signature: String) -> Result<()> {
-        let mut workers = BTreeSet::new();
-        let mut regions = BTreeSet::new();
-        for g in input
-            .configuration
-            .gpus
-            .values()
-            .filter(|g| input.capacities[&g.gpu_id].eligible)
-        {
-            workers.insert(g.host_id.clone());
-            regions.insert(input.configuration.clusters[&g.cluster_id].region.clone());
-        }
-        self.scenarios = workers
-            .into_iter()
-            .map(|s| (LossKind::Worker, s))
-            .chain(regions.into_iter().map(|s| (LossKind::Region, s)))
-            .collect();
-        self.assessment = Some(Resilience {
-            scheduling_signature: signature,
-            policy_signature: input.policy.policy_signature.clone(),
-            workers: vec![],
-            regions: vec![],
-        });
-        Ok(())
-    }
-    async fn finish_job(&mut self, changes: &mut Vec<SourceChange>) -> Result<()> {
-        if !self.job.as_ref().is_some_and(|job| job.task.is_finished()) {
-            return Ok(());
-        }
-        let active = self.job.take().context("worker disappeared")?;
-        let result = active.task.await.context("native worker panicked")?;
-        let current = if self.kind == Kind::Policy {
-            self.policy_signature.as_ref()
-        } else {
-            self.signature.as_ref()
-        };
-        if current != Some(&active.signature)
-            || active.generation != self.generation
-            || !self.source_ready
-        {
-            return Ok(());
-        }
-        if self.kind == Kind::Placement {
-            self.workers
-                .placement_pending
-                .store(false, Ordering::Release);
-        }
-        let job = match result {
-            Ok(job) => job,
-            Err(error) => {
-                self.completed = Some(active.signature);
-                return self.invalidate(&format!("worker failed: {error:#}"), changes);
-            }
-        };
-        match job {
-            Job::Policy(assessment) => {
-                self.completed = Some(active.signature.clone());
-                let message = Message::Policy {
-                    epoch: self.epoch.context("missing epoch")?,
-                    config_fingerprint: active.signature,
-                    assessment: assessment.clone(),
-                };
-                self.add(changes, "PolicyAssessment", "demo", &message)?;
-                self.policy_rows(changes, Some(&assessment))?;
-                if assessment
-                    .pairs
-                    .values()
-                    .any(|p| p.authorization == gpu_policy::Authorization::Unknown)
-                {
-                    self.status(
-                        changes,
-                        "policy-unknown",
-                        Some("One or more policy contexts are unknown".into()),
-                    )?;
-                } else {
-                    self.status(changes, "policy-current", None)?;
-                }
-            }
-            Job::Placement(outcome) => {
-                self.workers
-                    .placement_pending
-                    .store(false, Ordering::Release);
-                self.completed = Some(active.signature);
-                let input = self
-                    .solve_input
-                    .clone()
-                    .context("placement input missing")?;
-                match outcome {
-                    Outcome::Feasible {
-                        ref assignments, ..
-                    } if assignments == &input.plan.assignments
-                        && input.plan.config_fingerprint
-                            == input.configuration.fingerprint()?
-                        && input.plan.policy_signature == input.policy.policy_signature =>
-                    {
-                        self.status(changes, "plan-current", None)?;
-                    }
-                    feasible @ Outcome::Feasible { .. } => {
-                        let mut candidate = gpu_placement::candidate(
-                            &input.configuration,
-                            &input.policy,
-                            &input.capacities,
-                            &input.plan,
-                            feasible,
-                            vec!["scheduling-input-changed".into()],
-                        )?;
-                        let epoch = self.epoch.context("missing epoch")?;
-                        candidate.decision_details["observation_epoch"] = json!(epoch);
-                        let decision = Decision::candidate(&candidate, epoch)?;
-                        self.add(changes, "CandidatePlan", "demo", &candidate)?;
-                        self.decision(changes, &decision)?;
-                        self.workers.hub.event(
-                            epoch,
-                            self.descriptor.id().as_str(),
-                            "candidate",
-                            decision.summary,
-                            Some(candidate.decision_id),
-                            None,
-                        )?;
-                        self.status(changes, "candidate-produced", None)?;
-                    }
-                    Outcome::Infeasible { reason } => {
-                        self.diagnostic_pending = true;
-                        let epoch = self.epoch.context("missing epoch")?;
-                        let decision = Decision::diagnostic(
-                            epoch,
-                            &input,
-                            DecisionOutcome::Infeasible,
-                            reason.clone(),
-                            "no-complete-plan",
-                        )?;
-                        self.decision(changes, &decision)?;
-                        self.workers.hub.event(
-                            epoch,
-                            self.descriptor.id().as_str(),
-                            "infeasible",
-                            reason.clone(),
-                            Some(decision.decision_id),
-                            None,
-                        )?;
-                        self.status(changes, "infeasible", Some(reason))?
-                    }
-                    Outcome::Unknown { error } => {
-                        let epoch = self.epoch.context("missing epoch")?;
-                        let decision = Decision::diagnostic(
-                            epoch,
-                            &input,
-                            DecisionOutcome::Unknown,
-                            error.clone(),
-                            "solver-unknown",
-                        )?;
-                        self.decision(changes, &decision)?;
-                        self.workers.hub.event(
-                            epoch,
-                            self.descriptor.id().as_str(),
-                            "solver-unknown",
-                            error.clone(),
-                            Some(decision.decision_id),
-                            None,
-                        )?;
-                        self.status(changes, "unknown", Some(error))?;
-                    }
-                }
-            }
-            Job::Scenario(kind, scenario) => {
-                let assessment = self
-                    .assessment
-                    .as_mut()
-                    .context("resilience batch missing")?;
-                match kind {
-                    LossKind::Worker => assessment.workers.push(scenario),
-                    LossKind::Region => assessment.regions.push(scenario),
-                }
-            }
-            Job::CapacityOnly(scenario) => {
-                self.add(
-                    changes,
-                    "CapacityDiagnostic",
-                    "demo",
-                    &json!({"schema_version":1,
-                    "observation_epoch":self.epoch,
-                    "policy_signature":self.solve_input.as_ref().map(|input| &input.policy.policy_signature),
-                    "scheduling_signature":self.signature,"diagnostic":scenario}),
-                )?;
-            }
-        }
-        Ok(())
-    }
-    fn launch_job(&mut self) -> Result<()> {
-        if self.job.is_some() || !self.source_ready || Instant::now() < self.due {
-            return Ok(());
-        }
-        let signature = if self.kind == Kind::Policy {
-            self.policy_signature.clone()
-        } else {
-            self.signature.clone()
-        };
-        let Some(signature) = signature else {
-            return Ok(());
-        };
-        if self.completed.as_ref() == Some(&signature) && !self.diagnostic_pending {
-            return Ok(());
-        }
-        if self.kind == Kind::Policy {
-            let Ok(permit) = self.workers.policy.clone().try_acquire_owned() else {
-                return Ok(());
-            };
-            let config = self.policy_input.clone().context("policy input missing")?;
-            self.job = Some(Active {
-                signature,
-                generation: self.generation,
-                task: tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    Ok(Job::Policy(Evaluator::new()?.evaluate(&config)?))
-                }),
-            });
-        } else if self.kind == Kind::Placement || self.kind == Kind::Resilience {
-            if self.kind == Kind::Resilience
-                && self.workers.placement_pending.load(Ordering::Acquire)
-            {
-                return Ok(());
-            }
-            let Ok(permit) = self.workers.solver.clone().try_acquire_owned() else {
-                return Ok(());
-            };
-            let input = self
-                .solve_input
-                .clone()
-                .context("scheduling input missing")?;
-            let diagnostic = self.kind == Kind::Placement && self.diagnostic_pending;
-            self.diagnostic_pending = false;
-            let scenario = if self.kind == Kind::Resilience {
-                match self.scenarios.pop_front() {
-                    Some(s) => Some(s),
-                    None => return Ok(()),
-                }
-            } else {
-                None
-            };
-            self.job = Some(Active {
-                signature,
-                generation: self.generation,
-                task: tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    Ok(if diagnostic {
-                        Job::CapacityOnly(gpu_placement::capacity_only(
-                            &input.configuration,
-                            &input.capacities,
-                            Duration::from_secs(2),
-                        )?)
-                    } else if let Some((kind, excluded)) = scenario {
-                        Job::Scenario(
-                            kind,
-                            gpu_placement::assess_loss(
-                                &input.configuration,
-                                &input.policy,
-                                &input.capacities,
-                                kind,
-                                &excluded,
-                                Duration::from_secs(2),
-                            )?,
-                        )
-                    } else {
-                        Job::Placement(gpu_placement::solve(
-                            &input.configuration,
-                            &input.policy,
-                            &input.capacities,
-                            &input.plan.assignments,
-                            Duration::from_secs(2),
-                        )?)
-                    })
-                }),
-            });
-        }
-        Ok(())
-    }
 }
 #[async_trait]
 impl NativeComponent for Processor {
@@ -1137,14 +738,6 @@ impl NativeComponent for Processor {
             self.started = None;
             self.started_utc_ms = None;
             self.stopped = true;
-            if self.kind == Kind::Placement {
-                self.workers
-                    .placement_pending
-                    .store(false, Ordering::Release);
-            }
-            if let Some(job) = self.job.take() {
-                job.task.await.context("worker failed during shutdown")??;
-            }
             self.workers
                 .hub
                 .publish(self.descriptor.id().as_str(), "stopped", None, self.epoch)
@@ -1167,16 +760,12 @@ impl NativeTransformer for Processor {
         let query_id = QueryChangeCodec::metadata(&input.envelope)?.query_id;
         let query = gpu_contracts::component_name(
             query_id.as_str(),
-            &[
-                DATABASE_QUERIES.as_slice(),
-                &["simulation-inputs", "scheduling-inputs"],
-            ]
-            .concat(),
+            &[DATABASE_QUERIES.as_slice(), &PROCESSING_INPUTS].concat(),
         )
         .unwrap_or(query_id.as_str());
         if DATABASE_QUERIES.contains(&query) {
             ensure!(
-                matches!(self.kind, Kind::Simulator | Kind::Policy),
+                matches!(self.kind, Kind::Simulator | Kind::Configuration),
                 "unexpected database input"
             );
             let projection = QueryChangeCodec::projection(&input.envelope)?;
@@ -1187,117 +776,269 @@ impl NativeTransformer for Processor {
                 projection.operations(),
             )?;
             self.observe_inputs(&mut changes)?;
-            self.launch_job()?;
             return self.emitter.emit(changes, Some(&input.envelope));
         }
-        if query == "simulation-inputs" || query == "scheduling-inputs" {
-            for operation in input.envelope.changes().operations() {
-                let image = match operation {
-                    ChangeOperation::Added { after, .. }
-                    | ChangeOperation::Updated { after, .. } => after,
-                    ChangeOperation::Deleted { .. } => {
-                        self.invalidate("Current input query context was removed", &mut changes)?;
-                        continue;
+        let result = match query {
+            "simulation-inputs" => self.simulation_input(&input, &mut changes),
+            "planner-policy" => (|| -> Result<()> {
+                ensure!(
+                    matches!(self.kind, Kind::Simulator | Kind::Placement),
+                    "policy decisions sent to another transformer"
+                );
+                if self.kind == Kind::Placement {
+                    if self.planner.policy.apply(&input.envelope)? {
+                        self.planner.touch(false);
                     }
-                };
-                let row = QueryChangeCodec::decode_row(image)?;
-                let result = (|| -> Result<()> {
-                    let value = serde_json::to_value(row.values)?;
-                    if query == "scheduling-inputs" {
-                        let row: SchedulingRow = serde_json::from_value(value)?;
-                        self.accept(row.message()?, &mut changes)
-                    } else {
-                        ensure!(
-                            self.kind == Kind::Simulator,
-                            "simulation input sent to another transformer"
-                        );
-                        let row: SimulationRow = serde_json::from_value(value)?;
-                        let epoch = row.snapshot.epoch;
-                        self.accept_database(row.snapshot, &mut changes)?;
-                        if let Some(assessment) = row.policy {
-                            ensure!(row.policy_epoch == Some(epoch), "policy epoch is stale");
-                            let config_fingerprint = self
-                                .simulation_inputs
-                                .as_ref()
-                                .context("simulation input missing")?
-                                .configuration
-                                .fingerprint()?;
-                            self.accept(
-                                Message::Policy {
-                                    epoch,
-                                    config_fingerprint,
-                                    assessment,
-                                },
-                                &mut changes,
-                            )?;
-                        } else {
-                            ensure!(row.policy_epoch.is_none(), "policy context is incomplete");
-                            if let Some(inputs) = &mut self.simulation_inputs {
-                                inputs.policy = None;
-                            }
-                            if self.initialized {
-                                self.simulation.invalidate_policy(self.now()?)?;
-                                self.emit_simulation(&mut changes)?;
-                            }
-                            self.status(&mut changes, "awaiting-policy", None)?;
-                        }
-                        Ok(())
-                    }
-                })();
-                if let Err(error) = result {
-                    self.invalidate(&format!("{error:#}"), &mut changes)?;
+                } else if self.policy_rows.apply(&input.envelope)? {
+                    self.policy_due = Some(Instant::now() + POLICY_SETTLE);
                 }
-            }
-            self.launch_job()?;
-            return self.emitter.emit(changes, Some(&input.envelope));
-        }
-        let messages = match wire::decode(&input) {
-            Ok(messages) => messages,
-            Err(error) => {
-                self.invalidate(&format!("{error:#}"), &mut changes)?;
-                return self.emitter.emit(changes, Some(&input.envelope));
-            }
+                Ok(())
+            })(),
+            "placement-gpus" | "planner-solution" | "planner-status" => (|| -> Result<()> {
+                ensure!(
+                    self.kind == Kind::Placement,
+                    "planner input sent to another transformer"
+                );
+                let (rows, solver) = match query {
+                    "placement-gpus" => (&mut self.planner.gpus, false),
+                    "planner-solution" => (&mut self.planner.solution, true),
+                    _ => (&mut self.planner.status, true),
+                };
+                if rows.apply(&input.envelope)? {
+                    self.planner.touch(solver);
+                }
+                Ok(())
+            })(),
+            _ => match wire::decode(&input) {
+                Ok(messages) => {
+                    for message in messages {
+                        if let Err(error) = self.accept(message, &mut changes) {
+                            self.invalidate(&format!("{error:#}"), &mut changes)?;
+                        }
+                    }
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            },
         };
-        for message in messages {
-            if let Err(error) = self.accept(message, &mut changes) {
-                self.invalidate(&format!("{error:#}"), &mut changes)?;
-            }
+        if let Err(error) = result {
+            self.invalidate(&format!("{error:#}"), &mut changes)?;
         }
-        self.launch_job()?;
         self.emitter.emit(changes, Some(&input.envelope))
     }
     async fn on_wakeup(&mut self) -> Result<Vec<OutputEnvelope>> {
         let now = self.now()?;
         let mut changes = Vec::new();
         self.observe_inputs(&mut changes)?;
-        self.finish_job(&mut changes).await?;
-        if self.kind == Kind::Simulator && self.initialized {
-            for sample in self.simulation.tick(now, wire::utc_millis()?)? {
-                self.add(
-                    &mut changes,
-                    "GpuSample",
-                    &sample.gpu_id.to_string(),
-                    &sample,
-                )?;
+        if self.kind == Kind::Simulator {
+            if self.policy_due.is_some_and(|due| Instant::now() >= due) {
+                self.policy_due = None;
+                if let Err(error) = self.observe_policy(&mut changes) {
+                    self.invalidate(&format!("{error:#}"), &mut changes)?;
+                }
             }
-            self.emit_simulation(&mut changes)?;
-        }
-        if self.kind == Kind::Resilience
-            && self.job.is_none()
-            && self.scenarios.is_empty()
-            && self.source_ready
-            && self.completed != self.signature
-        {
-            if let Some(assessment) = self.assessment.clone() {
-                let mut value = serde_json::to_value(assessment)?;
-                value["observation_epoch"] = json!(self.epoch);
-                value["status"] = json!("current");
-                self.add(&mut changes, "ResilienceAssessment", "demo", &value)?;
-                self.completed = self.signature.clone();
-                self.status(&mut changes, "resilience-current", None)?;
+            if self.initialized {
+                for sample in self.simulation.tick(now, wire::utc_millis()?)? {
+                    self.add(
+                        &mut changes,
+                        "GpuSample",
+                        &sample.gpu_id.to_string(),
+                        &sample,
+                    )?;
+                }
+                self.emit_simulation(&mut changes)?;
             }
         }
-        self.launch_job()?;
+        if self.kind == Kind::Placement && self.source_ready {
+            if let Err(error) = self.plan(&mut changes) {
+                self.invalidate(&format!("{error:#}"), &mut changes)?;
+            }
+        }
         self.emitter.emit(changes, None)
+    }
+}
+
+const PROCESSING_INPUTS: [&str; 5] = [
+    "simulation-inputs",
+    "placement-gpus",
+    "planner-policy",
+    "planner-solution",
+    "planner-status",
+];
+const POLICY_SETTLE: Duration = Duration::from_millis(100);
+
+impl Processor {
+    fn simulation_input(
+        &mut self,
+        input: &InputEnvelope,
+        changes: &mut Vec<SourceChange>,
+    ) -> Result<()> {
+        ensure!(
+            matches!(self.kind, Kind::Simulator | Kind::Placement),
+            "simulation input sent to another transformer"
+        );
+        for operation in input.envelope.changes().operations() {
+            let image = match operation {
+                ChangeOperation::Added { after, .. } | ChangeOperation::Updated { after, .. } => {
+                    after
+                }
+                ChangeOperation::Deleted { .. } => {
+                    self.invalidate("Current input query context was removed", changes)?;
+                    continue;
+                }
+            };
+            let row: SimulationRow = serde_json::from_value(serde_json::to_value(
+                QueryChangeCodec::decode_row(image)?.values,
+            )?)?;
+            if self.kind == Kind::Placement {
+                self.accept_plan_inputs(row.snapshot, changes)?;
+            } else {
+                self.accept_database(row.snapshot, changes)?;
+                self.policy_due = Some(Instant::now() + POLICY_SETTLE);
+            }
+        }
+        Ok(())
+    }
+
+    /// Re-derives the simulator's policy view from the current decisions.
+    fn observe_policy(&mut self, changes: &mut Vec<SourceChange>) -> Result<()> {
+        let Some(inputs) = &self.simulation_inputs else {
+            return Ok(());
+        };
+        let epoch = self.epoch.context("missing epoch")?;
+        match planner::assessment(&inputs.configuration, &self.policy_rows) {
+            Ok(assessment) => {
+                if inputs.policy.as_ref().map(|p| &p.policy_signature)
+                    != Some(&assessment.policy_signature)
+                {
+                    let config_fingerprint = inputs.configuration.fingerprint()?;
+                    self.accept(
+                        Message::Policy {
+                            epoch,
+                            config_fingerprint,
+                            assessment,
+                        },
+                        changes,
+                    )?;
+                }
+            }
+            Err(_) => {
+                if let Some(inputs) = &mut self.simulation_inputs {
+                    inputs.policy = None;
+                }
+                if self.initialized {
+                    self.simulation.invalidate_policy(self.now()?)?;
+                    self.emit_simulation(changes)?;
+                }
+                self.status(changes, "awaiting-policy", None)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn accept_plan_inputs(
+        &mut self,
+        snapshot: DatabaseSnapshot,
+        changes: &mut Vec<SourceChange>,
+    ) -> Result<()> {
+        if let Some(epoch) = self.epoch {
+            ensure!(
+                epoch == snapshot.epoch,
+                "new observation epoch requires fresh component construction"
+            );
+        } else {
+            self.epoch = Some(snapshot.epoch);
+        }
+        snapshot.configuration.validate()?;
+        let decision = Decision::committed(&snapshot.plan, snapshot.epoch)?;
+        self.decision(changes, &decision)?;
+        self.planner.snapshot = Some(snapshot);
+        self.planner.touch(false);
+        if !self.source_ready {
+            self.source_ready = true;
+            self.status(changes, "pending", None)?;
+        }
+        Ok(())
+    }
+
+    fn plan(&mut self, changes: &mut Vec<SourceChange>) -> Result<()> {
+        let Some(outcome) = self.planner.evaluate()? else {
+            return Ok(());
+        };
+        let epoch = self.epoch.context("missing epoch")?;
+        if !matches!(outcome, Outcome::Candidate(_) | Outcome::Waiting(..)) {
+            if let Some(change) = self.emitter.remove("CandidatePlan", "demo")? {
+                changes.push(change);
+            }
+        }
+        match outcome {
+            Outcome::Waiting(status, error) => self.status(changes, status, error),
+            Outcome::Current => self.status(changes, "plan-current", None),
+            Outcome::Candidate(candidate) => {
+                let mut candidate = *candidate;
+                candidate.decision_details["observation_epoch"] = json!(epoch);
+                let decision = Decision::candidate(&candidate, epoch)?;
+                self.add(changes, "CandidatePlan", "demo", &candidate)?;
+                self.decision(changes, &decision)?;
+                self.workers.hub.event(
+                    epoch,
+                    self.descriptor.id().as_str(),
+                    "candidate",
+                    decision.summary,
+                    Some(candidate.decision_id),
+                    None,
+                )?;
+                self.status(changes, "candidate-produced", None)
+            }
+            Outcome::Infeasible(reason) | Outcome::Unknown(reason) => {
+                let infeasible = reason == planner::INFEASIBLE;
+                let context = self
+                    .planner
+                    .context
+                    .clone()
+                    .context("scheduling context missing")?;
+                let configuration = &self
+                    .planner
+                    .snapshot
+                    .as_ref()
+                    .context("configuration missing")?
+                    .configuration;
+                let decision = Decision::diagnostic(
+                    epoch,
+                    configuration,
+                    &context.policy_signature,
+                    &context.scheduling_signature,
+                    if infeasible {
+                        DecisionOutcome::Infeasible
+                    } else {
+                        DecisionOutcome::Unknown
+                    },
+                    reason.clone(),
+                    if infeasible {
+                        "no-complete-plan"
+                    } else {
+                        "solver-unknown"
+                    },
+                )?;
+                self.decision(changes, &decision)?;
+                self.workers.hub.event(
+                    epoch,
+                    self.descriptor.id().as_str(),
+                    if infeasible {
+                        "infeasible"
+                    } else {
+                        "solver-unknown"
+                    },
+                    reason.clone(),
+                    Some(decision.decision_id),
+                    None,
+                )?;
+                self.status(
+                    changes,
+                    if infeasible { "infeasible" } else { "unknown" },
+                    Some(reason),
+                )
+            }
+        }
     }
 }

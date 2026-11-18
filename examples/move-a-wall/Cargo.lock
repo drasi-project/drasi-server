@@ -466,6 +466,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-transformer-geometry"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core-types",
+ "geo",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "drasi-core"
 version = "0.5.10"
 dependencies = [
@@ -1425,10 +1439,10 @@ dependencies = [
  "chrono",
  "drasi-computation-contracts",
  "drasi-computation-plugin-sdk",
+ "drasi-computation-transformer-geometry",
  "drasi-core",
  "drasi-core-types",
  "drasi-lib",
- "geo",
  "serde",
  "serde_json",
  "serde_yaml",

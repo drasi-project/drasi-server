@@ -6,8 +6,7 @@ the future [Drasi Server-hosted demo](../server/README.md).
 | Path | Contents |
 |---|---|
 | `crates/contracts/` | Domain types, validation, profiles, fingerprints and starting fixtures. |
-| `crates/policy/`, `policies/` | Policy evaluation and the shared Rego bundle. |
-| `crates/placement/` | Placement and resilience solver. |
+| `policies/` | Rego bundle evaluated by Core's `drasi.standard/policy` plugin. Placement and resilience use Core's `drasi.standard/optimization` plugin, configured in `crates/native/src/plugins.rs`. |
 | `crates/simulator/` | Simulated execution and telemetry. |
 | `crates/native/` | Native computation plugin, query definitions/projections and diagnostic tools. |
 | `crates/control/` | Shared database operations and plan-writing client library. |
@@ -25,7 +24,8 @@ The existing binary names are retained without duplicating library packages:
 `crates/control/Cargo.toml` points its `gpu-control` binary at
 `../embedded/control/main.rs` (relative to this directory), and
 `crates/native/Cargo.toml` points its optional `gpu-runtime` binary at
-`../embedded/src/main.rs`. Their source code and deployment scripts belong to the
+`../embedded/src/main.rs`, which loads the Core policy and optimization plugin
+libraries named by `GPU_POLICY_PLUGIN` and `GPU_OPTIMIZATION_PLUGIN`. Their source code and deployment scripts belong to the
 embedded version; the native plugin remains independently buildable with
 `--features dynamic-plugin --lib`.
 

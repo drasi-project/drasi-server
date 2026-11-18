@@ -1,7 +1,5 @@
 use anyhow::{ensure, Context, Result};
-use gpu_contracts::{Candidate, Configuration, Plan};
-use gpu_placement::ReplicaMove;
-use gpu_policy::{pair_key, Assessment, Authorization};
+use gpu_contracts::{planning::ReplicaMove, Candidate, Configuration, Plan};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -123,7 +121,9 @@ impl Decision {
 
     pub fn diagnostic(
         epoch: Uuid,
-        input: &crate::wire::SolveInput,
+        configuration: &Configuration,
+        policy_signature: &str,
+        scheduling_signature: &str,
         outcome: DecisionOutcome,
         summary: String,
         reason: &str,
@@ -131,9 +131,9 @@ impl Decision {
         Ok(Self {
             decision_id: Uuid::new_v4(),
             observation_epoch: epoch,
-            scheduling_signature: input.signature()?,
-            policy_signature: input.policy.policy_signature.clone(),
-            config_fingerprint: input.configuration.fingerprint()?,
+            scheduling_signature: scheduling_signature.into(),
+            policy_signature: policy_signature.into(),
+            config_fingerprint: configuration.fingerprint()?,
             outcome,
             stage: DecisionStage::Diagnostic,
             plan_version: None,
@@ -142,80 +142,4 @@ impl Decision {
             facts: Facts::default(),
         })
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct PolicyRow {
-    pub id: String,
-    pub workload_id: Uuid,
-    pub cluster_id: String,
-    pub region: String,
-    pub data_profile_id: String,
-    pub purpose: String,
-    pub policy_id: String,
-    pub authority_ref: String,
-    pub policy_revision: Option<String>,
-    pub allowed_regions: Vec<String>,
-    pub observation_epoch: Uuid,
-    pub input_fingerprint: String,
-    pub policy_signature: String,
-    pub authorization: Authorization,
-    pub reasons: Vec<String>,
-    pub current: bool,
-    pub error: Option<String>,
-}
-
-pub fn policy_rows(
-    configuration: &Configuration,
-    assessment: Option<&Assessment>,
-    epoch: Uuid,
-) -> Result<Vec<PolicyRow>> {
-    if let Some(assessment) = assessment {
-        assessment.validate_batch(configuration)?;
-    }
-    let mut rows = Vec::new();
-    for workload in configuration.workloads.values() {
-        let data = configuration.data_profiles.get(&workload.data_profile_id);
-        let policy = data.and_then(|data| configuration.policies.get(&data.policy_id));
-        for cluster in configuration.clusters.values() {
-            let id = pair_key(workload.workload_id, &cluster.cluster_id);
-            let pair = assessment.and_then(|assessment| assessment.pairs.get(&id));
-            rows.push(PolicyRow {
-                id,
-                workload_id: workload.workload_id,
-                cluster_id: cluster.cluster_id.clone(),
-                region: cluster.region.clone(),
-                data_profile_id: workload.data_profile_id.clone(),
-                purpose: workload.purpose.clone(),
-                policy_id: data
-                    .map(|data| data.policy_id.clone())
-                    .unwrap_or_else(|| "unresolved".into()),
-                authority_ref: policy
-                    .map(|policy| policy.authority_ref.clone())
-                    .unwrap_or_default(),
-                policy_revision: policy.map(|policy| policy.revision.to_string()),
-                allowed_regions: policy
-                    .map(|policy| policy.allowed_regions.iter().cloned().collect())
-                    .unwrap_or_default(),
-                observation_epoch: epoch,
-                input_fingerprint: pair
-                    .map(|pair| pair.input_fingerprint.clone())
-                    .unwrap_or_default(),
-                policy_signature: assessment
-                    .map(|assessment| assessment.policy_signature.clone())
-                    .unwrap_or_default(),
-                authorization: pair
-                    .map(|pair| pair.authorization.clone())
-                    .unwrap_or(Authorization::Unknown),
-                reasons: pair
-                    .map(|pair| pair.reasons.clone())
-                    .unwrap_or_else(|| vec!["policy-input-pending".into()]),
-                current: pair.is_some_and(|pair| pair.error.is_none()),
-                error: pair.map(|pair| pair.error.clone()).unwrap_or_else(|| {
-                    Some("Waiting for a complete current policy assessment".into())
-                }),
-            });
-        }
-    }
-    Ok(rows)
 }

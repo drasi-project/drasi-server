@@ -69,12 +69,12 @@ export function ArchitectureOverlay({ onClose, returnFocus }: { onClose: () => v
           and dashboard views, and reactions save placement plans and stream results to the UI.
           Four native Rust transformers provide the policy, optimization and simulation logic:</p>
         <div className="gpu-transformer-cards">
-          <div><h2>Policy evaluator</h2><p>Uses Regorus to evaluate Rego policies in Rust.
+          <div><h2>Policy evaluator</h2><p>The drasi-core policy plugin uses Regorus to evaluate Rego policies in Rust.
             It determines which regional clusters may host each workload based on customer, data and processing-purpose rules.</p></div>
-          <div><h2>Placement solver</h2><p>Uses the good_lp Rust library with the microlp mixed-integer solver to assign workload replicas to GPUs.
-            It respects memory, compute, policy and VM-spread constraints, minimizing moves and balancing demand when replanning.</p></div>
-          <div><h2>Resilience assessor</h2><p>Reuses the placement solver in Rust to evaluate the loss of each VM or region.
-            It shows whether the remaining GPUs could accommodate the workloads under the same capacity and policy constraints.</p></div>
+          <div><h2>Placement solver</h2><p>The drasi-core optimization plugin uses good_lp with the microlp mixed-integer solver to assign workload replicas to GPUs.
+            Its configured model respects memory, compute, policy and VM-spread constraints, minimizing moves and balancing demand when replanning.</p></div>
+          <div><h2>Resilience assessor</h2><p>Scenarios of the same optimization model re-solve after the loss of each VM or region.
+            They show whether the remaining GPUs could accommodate the workloads under the same capacity and policy constraints.</p></div>
           <div><h2>Telemetry simulator</h2><p>A timer-driven Rust transformer models GPU execution and generates telemetry.
             It applies saved allocations and models background load, power state and reporting interruptions, feeding new measurements back into Drasi.</p></div>
         </div>

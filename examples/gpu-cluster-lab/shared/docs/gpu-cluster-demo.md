@@ -278,12 +278,13 @@ Policy invalidation/fencing is an additional safety input to the simulator, not 
 |---|---|
 | PostgreSQL source and PostgreSQL bootstrap provider | Database schema, validators, command service |
 | Continuous-query transformer and future-time query functions | Telemetry simulator |
-| SSE Reaction and `@drasi/react` package | Shared placement model and placement transformer |
-| HTTP reaction infrastructure, if it exposes required responses | Read-only resilience transformer |
+| SSE Reaction and `@drasi/react` package | Placement planner that turns solutions into versioned, explained candidate plans |
+| drasi-core `drasi.standard/optimization` plugin (`good_lp` + `microlp`) | Declarative placement model, worker/region scenarios and capacity-only check, configured in `crates/native/src/plugins.rs` |
 | Computation graph lifecycle, codecs and timer hooks | Structured explanations, UI views, fixtures, launcher |
-| Microsoft Regorus Rust library | One policy transformer, policy input/output contracts, and simulator enforcement gate |
+| drasi-core `drasi.standard/policy` plugin (Microsoft Regorus) | Rego bundle, `placement-pairs` query, policy input/output mapping, and simulator enforcement gate |
 
-Use one pure scheduling model for placement and hypothetical checks, and one policy-evaluation library/bundle shared with plan-write validation. Rechecking a decision at the write boundary is not a second policy implementation. Do not duplicate schemas, queries, components, or UI pages for the regional fixture.
+Use one declarative scheduling model for placement and hypothetical checks (scenarios of the same optimization instance), and one Rego bundle shared by the policy plugin and the tests of the plan-write reference check.
+ Do not duplicate schemas, queries, components, or UI pages for the regional fixture.
 
 ### 4.3 OpenTelemetry decision
 
@@ -480,7 +481,7 @@ Use database column names as snake_case fields throughout demo records and JSON.
 | `RegionalCluster` | Cluster ID | Region, display name, revision |
 | `PolicyContext` | Workload UUID + cluster ID | Workload data/purpose, catalog facts, policy parameters, input fingerprint |
 | `PlacementEligibility` | Workload UUID + cluster ID | `allow`, `deny`, or `unknown`; determining rules, revisions, input fingerprint |
-| `PolicyAssessment` | `demo` | Complete eligibility batch, input/policy signatures, bundle hash, completion/error status |
+| `PlacementPair` | Workload UUID + cluster ID | Policy plugin input row from `placement-pairs`: pair facts, workload/data-profile/policy/cluster objects, `context_key` fingerprint |
 | `PolicyEnforcement` | Replica identity | Current authorization fingerprint, running/suspended/fenced/pending status, acknowledgement time/reason |
 | `GpuInventoryFact` | GPU UUID | All scheduling inventory fields and database revision |
 | `GpuSimulationSpec` | GPU UUID | Hardware budget, generation settings, both row revisions |
@@ -490,9 +491,11 @@ Use database column names as snake_case fields throughout demo records and JSON.
 | `GpuCapacity` | GPU UUID | Eligibility and background-adjusted budgets |
 | `CandidatePlan` | `demo` | Decision ID, expected plan version, fingerprints, assignments, explanation |
 | `AppliedPlan` | `demo` | Last fully applied version, attempted version, actual assignments, error |
-| `PlacementStatus` | `demo` | Current signature, feasible/pending/infeasible/error, diagnostics |
+| `PlacementGpu` / `PlacementCandidate` | GPU UUID / workload + GPU | Optimization inputs: observed headroom and eligibility; compatible pairs with demand and spread |
+| `PlacementAssignment` | Workload + replica | One selected `assign` variable of the `solver` optimization instance |
+| `PlacementStatus` / `CapacityStatus` | Model signature | Optimal/infeasible/unbounded/limit/error, objective, detail, input provenance |
 | `DecisionExplanation` | Decision UUID | Immutable evidence for that decision |
-| `ResilienceAssessment` | `demo` | Input/policy signatures and separate complete worker-loss and region-loss result lists |
+| `PlacementScenario` | Scenario + excluded value | One worker-loss or region-loss re-solve: feasibility, detail, input provenance |
 | `RuntimeStatus` / `DemoEvent` | Component ID / epoch and event sequence | Operational status / bounded timeline |
 
 Native computation ports carry `ChangeEnvelope`/`ChangeEvent`, not arbitrary JSON messages. Register schemas and validators once; query outputs use the same graph-change schema, so use the public graph/query codecs to cross graph-node and query-result boundaries. A generator output consumed by Cypher must become a labeled graph node through `GraphChangeCodec`; query outputs are ordinary result nodes in an explicit output scope, and query-only metadata (query ID, row kind) comes from the scoped envelope via `QueryChangeCodec::metadata`/`projection`, not from the record. Do not treat bytes from a custom schema as automatically queryable.
@@ -644,6 +647,8 @@ Stop cancels timers and waits for owned work. Do not launch detached background 
 
 ### 7.2 Placement solver
 
+**Implementation:** the `solver` instance of the drasi-core `drasi.standard/optimization` plugin, with the model below declared in `crates/native/src/plugins.rs`, and the lab's `placement` planner, which validates its solution and emits candidates. It debounces changes for 250 ms (2 s maximum) and solves on a background worker with a two-second limit; outputs carry configuration/plan-version/epoch provenance so the planner discards stale results.
+
 Use `good_lp` with default features disabled and the `microlp` backend. It is a small mixed-integer allocation problem; the demo recomputes it, rather than claiming an incremental optimization algorithm.
 
 Create a binary choice only for compatible replica/GPU pairs with a current policy allowance for the workload and the GPU's cluster. Enforce:
@@ -685,7 +690,7 @@ The worker question is **"Could the required placement be recovered, within poli
 
 Capture one immutable scheduling/policy snapshot per batch. Check up to eight worker scenarios and three region scenarios, giving real placement priority between checks. Allow five seconds for a complete assessment batch; show `checking` while running. Publish only a complete batch for current input. Timeout/error is `unknown`; zero scenarios in a result list is `not-assessable`, not a pass. The original single-region fixture passes worker-loss checks but fails loss of its only region; do not merge those into one misleading green badge.
 
-Emit only `ResilienceAssessment`, never `CandidatePlan`. There must be no edge from hypothetical output to the plan writer.
+The implementation expresses each loss as a scenario of the `solver` optimization instance, which emits only `PlacementScenario` rows, never assignments. There must be no edge from hypothetical output to the plan writer; `ui-resilience` accepts only scenarios whose provenance matches the current `SchedulingContext`.
 
 ### 7.5 Explanations and timeline
 
@@ -700,6 +705,8 @@ Keep the accepted explanation with the database plan. Retain at most 50 recent n
 Implement runtime status as a lifecycle-owned producer observing component control/status notifications and bounded reporting channels from the demo components. Plan-writer errors and reset state use this same path. It is observability, not an alternative source of placement inputs or a second browser event service. When the graph itself is unavailable, show the HTTP command failure and stale/disconnected query state instead of manufacturing a CQ success row.
 
 ### 7.6 Regorus policy transformer and execution gate
+
+**Implementation:** the `policy` instance of the drasi-core `drasi.standard/policy` plugin, evaluating `policies/eligibility.rego` (which imports the rules in `placement.rego`) once per `placement-pairs` row with a 50-ms limit.
 
 Embed the Rust `regorus` library; do not run a separate OPA server or duplicate a policy-aware graph. Pin the tested crate/features and hash the checked-in Rego bundle with its input/output schema version. Regorus does not discover PII, infer purpose, or automatically make policy evaluation incremental.
 
@@ -740,7 +747,7 @@ Implement determining-rule/reason output in this same bundle. Required denial co
 
 Cache by pair input fingerprint and reevaluate only changed contexts. Region/health changes do not mutate policy code. Changing a policy parameter reevaluates every pair referencing it, even without inventory or telemetry changes. Include zero-replica workload contexts for inspection; bound the fleet to 32 workload records, eight clusters, and 32 rows each for data profiles/policies. These bounds supplement the replica/GPU limits.
 
-Publish individual pair changes for enforcement and a complete `PolicyAssessment` for placement/resilience. A complete batch covers every current workload/cluster pair, including denies and unknowns, and names its input signature. Discard obsolete evaluations. Retracting a pair invalidates it; deletion never means allow.
+Publish individual pair decisions (`PlacementEligibility`). The drasi-core policy plugin has no aggregate output, so the simulator and planner derive the complete assessment and its signature themselves from the configuration and `planner-policy`: it is complete only when every current workload/cluster pair, including denies, has a decided result for its current `context_key`. Discard obsolete evaluations. Retracting a pair invalidates it; deletion never means allow.
 
 Use a dedicated bounded policy worker, separate from the potentially slow optimization worker. Bound evaluation time and pending work; on timeout report an error and keep affected permissions closed. Validate the chosen Regorus execution-limit facilities during the compatibility stage. Do not launch unlimited replacement jobs for a stalled evaluator.
 

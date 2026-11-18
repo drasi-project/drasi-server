@@ -61,9 +61,9 @@ class PostgresMutationChecks(unittest.TestCase):
         self.assertEqual(calls[0][1]["data"], b"SELECT :'value';")
         self.assertIn("value=" + value, calls[0][0])
 
-    def test_inventory_covers_all_fourteen_queries(self):
-        self.assertEqual(len(probe.QUERIES), 14)
-        self.assertEqual(len(set(probe.QUERIES)), 14)
+    def test_inventory_covers_all_nineteen_queries(self):
+        self.assertEqual(len(probe.QUERIES), 19)
+        self.assertEqual(len(set(probe.QUERIES)), 19)
         self.assertEqual(len(probe.INPUTS), 7)
         self.assertEqual(len(probe.UI_KEYS), 9)
 

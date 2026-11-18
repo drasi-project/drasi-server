@@ -24,6 +24,7 @@ instances:
             outputs:
               - {component: 00000000-0000-4000-8000-000000000003, port: out}
               - {component: 00000000-0000-4000-8000-000000000004, port: out}
+              - {component: 00000000-0000-4000-8000-00000000000a, port: out}
               - {component: 00000000-0000-4000-8000-000000000005, port: out}
               - {component: 00000000-0000-4000-8000-000000000006, port: out}
               - {component: 00000000-0000-4000-8000-000000000007, port: out}
@@ -36,10 +37,38 @@ instances:
             kind: move-a-wall/scene
             version: "1"
 
+          # The standard planar geometry transformer: journey paths within
+          # cart radius + clearance of an obstacle polygon are obstructions.
           - id: 00000000-0000-4000-8000-000000000002
             name: geometry
-            kind: move-a-wall/geometry
+            kind: drasi.standard/geometry
             version: "1"
+            config:
+              # The host binds each output port to the stream `<component id>/<port>`.
+              stream: 00000000-0000-4000-8000-000000000002/out
+              sets:
+                - name: journeys
+                  label: JourneyFootprint
+                  key: journey_id
+                  geometry: {type: lineString, property: points}
+                - name: obstacles
+                  label: ObstacleFootprint
+                  key: obstacle_id
+                  geometry: {type: polygon, property: vertices}
+              relations:
+                - name: obstruction
+                  left: journeys
+                  right: obstacles
+                  predicate: withinDistance
+                  threshold: {left: [radius, clearance]}
+                  label: Obstruction
+                  properties:
+                    id: id
+                    leftKey: journey_id
+                    rightKey: obstacle_id
+                    distance: distance_m
+                    threshold: required_m
+                  copyLeft: {cart_id: cart_id}
 
           - id: 00000000-0000-4000-8000-000000000003
             name: scene-inputs
@@ -52,10 +81,16 @@ instances:
               outbox_capacity: 128
               query: |
                 MATCH (n:SceneObject)
-                RETURN collect(n.payload) AS objects
+                RETURN n.id AS id, n.kind AS kind, n.name AS name,
+                       n.active AS active, n.cart_id AS cart_id,
+                       n.destination_id AS destination_id, n.points AS points,
+                       n.point AS point, n.vertices AS vertices,
+                       n.radius AS radius, n.clearance AS clearance
 
+          # Footprint queries: active journeys with their cart's reach, and
+          # active obstacle polygons, as geometry input records.
           - id: 00000000-0000-4000-8000-000000000004
-            name: geometry-context
+            name: journey-footprints
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -63,10 +98,34 @@ instances:
               catalog: wall-query-catalog
             config:
               outbox_capacity: 128
+              execution:
+                result: {label: JourneyFootprint}
+                joins:
+                  - id: USES
+                    keys:
+                      - {label: Journey, property: cart_id}
+                      - {label: Cart, property: id}
               query: |
-                MATCH (n:SceneObject)
-                WHERE n.active = true
-                RETURN collect(n.payload) AS objects
+                MATCH (j:Journey)-[:USES]->(c:Cart)
+                WHERE j.active = true AND c.active = true
+                RETURN j.id AS journey_id, c.id AS cart_id, j.points AS points,
+                       c.radius AS radius, c.clearance AS clearance
+
+          - id: 00000000-0000-4000-8000-00000000000a
+            name: obstacle-footprints
+            kind: drasi/continuous-query
+            version: "1"
+            resources:
+              indexes: wall-memory-indexes
+              catalog: wall-query-catalog
+            config:
+              outbox_capacity: 128
+              execution:
+                result: {label: ObstacleFootprint}
+              query: |
+                MATCH (o:Obstacle)
+                WHERE o.active = true
+                RETURN o.id AS obstacle_id, o.vertices AS vertices
 
           - id: 00000000-0000-4000-8000-000000000005
             name: obstructions
@@ -83,6 +142,7 @@ instances:
                        o.cart_id AS cart_id, o.obstacle_id AS obstacle_id,
                        o.distance_m AS distance_m, o.required_m AS required_m
 
+          # Joins geometry's Obstruction nodes back to the scene's typed nodes.
           - id: 00000000-0000-4000-8000-000000000006
             name: affected-journeys
             kind: drasi/continuous-query
@@ -96,32 +156,35 @@ instances:
                 joins:
                   - id: CART_TASK
                     keys:
-                      - {label: Cart, property: cart_id}
+                      - {label: Cart, property: id}
                       - {label: Journey, property: cart_id}
                   - id: TO_DESTINATION
                     keys:
                       - {label: Journey, property: destination_id}
-                      - {label: Destination, property: destination_id}
+                      - {label: Destination, property: id}
                   - id: BLOCKS
                     keys:
                       - {label: Obstruction, property: journey_id}
-                      - {label: Journey, property: journey_id}
+                      - {label: Journey, property: id}
                   - id: CAUSED_BY
                     keys:
                       - {label: Obstruction, property: obstacle_id}
-                      - {label: Obstacle, property: obstacle_id}
+                      - {label: Obstacle, property: id}
               query: |
                 MATCH (c:Cart)-[:CART_TASK]->(j:Journey)-[:TO_DESTINATION]->(d:Destination),
                       (o:Obstruction)-[:BLOCKS]->(j),
                       (o)-[:CAUSED_BY]->(b:Obstacle)
+                WHERE c.active = true AND j.active = true
+                  AND d.active = true AND b.active = true
                 RETURN o.id AS id, c.id AS cart_id, c.name AS cart,
                        j.id AS journey_id, j.name AS task,
                        d.id AS destination_id, d.name AS destination,
                        b.id AS obstacle_id, b.name AS obstacle,
                        o.distance_m AS distance_m, o.required_m AS required_m
 
+          # The source's last accepted command and revision.
           - id: 00000000-0000-4000-8000-000000000007
-            name: geometry-status
+            name: scene-status
             kind: drasi/continuous-query
             version: "1"
             resources:
@@ -130,9 +193,9 @@ instances:
             config:
               outbox_capacity: 128
               query: |
-                MATCH (s:GeometryStatus)
-                RETURN s.id AS id, s.revision AS revision,
-                       s.objects AS objects, s.obstructions AS obstructions
+                MATCH (s:SceneStatus)
+                RETURN s.id AS id, s.revision AS revision, s.command AS command,
+                       s.changed AS changed, s.objects AS objects
 
       # Publish the same query results to the stock Server snapshot API.
           - id: 00000000-0000-4000-8000-000000000008
@@ -156,29 +219,35 @@ instances:
               # Name each query's output for SSE events and snapshot URLs.
               outputs:
                 scene-inputs: {component: 00000000-0000-4000-8000-000000000003}
-                geometry-context: {component: 00000000-0000-4000-8000-000000000004}
+                journey-footprints: {component: 00000000-0000-4000-8000-000000000004}
+                obstacle-footprints: {component: 00000000-0000-4000-8000-00000000000a}
                 obstructions: {component: 00000000-0000-4000-8000-000000000005}
                 affected-journeys: {component: 00000000-0000-4000-8000-000000000006}
-                geometry-status: {component: 00000000-0000-4000-8000-000000000007}
+                scene-status: {component: 00000000-0000-4000-8000-000000000007}
               heartbeatIntervalMs: 5000
 
     # A component name selects its single output/input port.
         connections:
           - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000003}
           - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000004}
+          - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-00000000000a}
+          - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000006}
+          - {from: 00000000-0000-4000-8000-000000000001, to: 00000000-0000-4000-8000-000000000007}
           - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000002}
+          - {from: 00000000-0000-4000-8000-00000000000a, to: 00000000-0000-4000-8000-000000000002}
           - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000005}
           - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000006}
-          - {from: 00000000-0000-4000-8000-000000000002, to: 00000000-0000-4000-8000-000000000007}
 
           - {from: 00000000-0000-4000-8000-000000000003, to: 00000000-0000-4000-8000-000000000008}
           - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000008}
+          - {from: 00000000-0000-4000-8000-00000000000a, to: 00000000-0000-4000-8000-000000000008}
           - {from: 00000000-0000-4000-8000-000000000005, to: 00000000-0000-4000-8000-000000000008}
           - {from: 00000000-0000-4000-8000-000000000006, to: 00000000-0000-4000-8000-000000000008}
           - {from: 00000000-0000-4000-8000-000000000007, to: 00000000-0000-4000-8000-000000000008}
 
           - {from: 00000000-0000-4000-8000-000000000003, to: 00000000-0000-4000-8000-000000000009}
           - {from: 00000000-0000-4000-8000-000000000004, to: 00000000-0000-4000-8000-000000000009}
+          - {from: 00000000-0000-4000-8000-00000000000a, to: 00000000-0000-4000-8000-000000000009}
           - {from: 00000000-0000-4000-8000-000000000005, to: 00000000-0000-4000-8000-000000000009}
           - {from: 00000000-0000-4000-8000-000000000006, to: 00000000-0000-4000-8000-000000000009}
           - {from: 00000000-0000-4000-8000-000000000007, to: 00000000-0000-4000-8000-000000000009}

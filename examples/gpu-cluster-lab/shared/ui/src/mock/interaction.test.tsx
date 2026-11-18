@@ -802,7 +802,7 @@ describe('mock controls and evidence interactions', () => {
     ['future-status', 'Unknown'], ['empty', 'Unknown'], ['query-error', 'Unknown'], ['disconnected', 'Unknown'],
   ])('shows %s runtime status honestly in the header and read-only details', async (state, note) => {
     const rows = snapshot('healthy'), send = vi.fn(async () => {}), retry = vi.fn();
-    rows['ui-status'][0].components = state === 'empty' ? [] : [{ component_id: 'placement-solver',
+    rows['ui-status'][0].components = state === 'empty' ? [] : [{ component_id: 'solver',
       status: ['query-error', 'disconnected'].includes(state) ? 'ready' : state, error: state === 'failed' ? 'Worker failed' : null }];
     const views = mockViews(rows, 'healthy', retry);
     if (state === 'query-error') views['ui-status'].error = new Error('Status unavailable');

@@ -128,14 +128,15 @@ export function validateRow(query: QueryId, row: Readonly<ResultRow>): ResultRow
       break;
     case 'ui-policy':
       for (const key of ['workload_id', 'cluster_id', 'region', 'data_profile_id', 'purpose',
-        'policy_id', 'authority_ref', 'input_fingerprint', 'policy_signature', 'observation_epoch']) text(row, key);
+        'policy_id', 'authority_ref', 'input_fingerprint', 'policy_hash', 'observation_epoch']) text(row, key);
       if (row.id !== `${row.workload_id}/${row.cluster_id}`) throw new Error('Policy identity must be workload/cluster');
       version(row, 'policy_revision', true); boolean(row, 'current'); nullableText(row, 'error');
       choice(row, 'authorization', ['allow', 'deny', 'unknown']);
       strings(row, 'reasons'); strings(row, 'allowed_regions');
-      if (row.current && row.authorization !== 'unknown' && (row.policy_revision === null || row.error !== null)) {
-        throw new Error('Current policy decision requires policy metadata without an error');
+      if (row.current && (row.authorization === 'unknown' || row.error !== null)) {
+        throw new Error('A current policy decision must allow or deny without an error');
       }
+      if (row.authorization === 'allow' && row.policy_revision === null) throw new Error('An allowed pair requires policy metadata');
       break;
     case 'ui-resilience':
       signature(row);
@@ -144,6 +145,7 @@ export function validateRow(query: QueryId, row: Readonly<ResultRow>): ResultRow
         text(scenario, 'excluded'); text(scenario, 'detail');
         if (scenario.feasible !== null) boolean(scenario, 'feasible');
       }
+      nullableText(row, 'placement_status');
       if (row.capacity_only_feasible !== null) boolean(row, 'capacity_only_feasible');
       text(row, 'capacity_only_detail');
       break;
@@ -160,6 +162,7 @@ export function validateRow(query: QueryId, row: Readonly<ResultRow>): ResultRow
       break;
     case 'ui-status':
       signature(row);
+      if ('policy_hash' in row) nullableText(row, 'policy_hash');
       if ('policy_rules' in row || 'data_profiles' in row || 'policy_rules_current' in row) {
         boolean(row, 'policy_rules_current');
         const policies = recordMap(row, 'policy_rules', 'policy_id'), profiles = recordMap(row, 'data_profiles', 'data_profile_id');

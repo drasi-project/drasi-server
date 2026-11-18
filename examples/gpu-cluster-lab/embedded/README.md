@@ -194,12 +194,17 @@ cargo build --locked --manifest-path examples/gpu-cluster-lab/shared/Cargo.toml 
   -p gpu-control --bin gpu-control
 cargo build --locked --manifest-path examples/gpu-cluster-lab/shared/crates/native/Cargo.toml \
   --lib --no-default-features --features dynamic-plugin
-cargo build --locked --manifest-path ../drasi-core/Cargo.toml \
-  -p drasi-computation-sink-sse --lib --features dynamic-plugin
+for plugin in drasi-computation-sink-sse drasi-computation-transformer-policy \
+  drasi-computation-transformer-optimization; do
+  cargo build --locked --manifest-path ../drasi-core/Cargo.toml \
+    -p "$plugin" --lib --features dynamic-plugin
+done
 python3 examples/gpu-cluster-lab/embedded/ops/qualify-native-postgres.py \
   --runtime target/debug/gpu-runtime --control target/debug/gpu-control \
   --native-plugin target/debug/libgpu_native.dylib \
   --sse-plugin target/debug/libdrasi_computation_sink_sse.dylib \
+  --policy-plugin target/debug/libdrasi_computation_transformer_policy.dylib \
+  --optimization-plugin target/debug/libdrasi_computation_transformer_optimization.dylib \
   --evidence ./gpu-native-postgres-proof
 ```
 
@@ -284,29 +289,36 @@ flowchart LR
 
 ### Components in the graph
 
-The normal application-level topology contains **two explicit sources, fourteen
-continuous queries, four transformer nodes, and two sinks**. Drasi also
+The normal application-level topology contains **two explicit sources, nineteen
+continuous queries, six transformer nodes, and two sinks**. Drasi also
 creates query-result outlets and its built-in `__component_graph__` observability
 source. Native queries own their future-queue wakeups directly.
 
-There are **three primary domain engines**: the simulator, optimizer, and policy
-engine. The optimizer is used by two independently scheduled transformers:
-`placement` makes executable plans; `resilience` performs read-only what-if
-analysis. This is why the graph has four transformer nodes rather than three.
+Policy and optimization are **generic drasi-core plugins**, configured for this
+demo rather than written for it: `drasi.standard/policy` evaluates
+[eligibility.rego](../shared/policies/eligibility.rego) once per workload/cluster
+pair, and `drasi.standard/optimization` solves a declarative mixed-integer model.
+Two optimization instances run the same resource model: `solver` includes policy
+and also re-solves VM/region loss scenarios; `capacity-check` omits policy and only
+explains whether capacity alone would suffice. Only the configuration projector,
+the simulator, the placement planner, the runtime-status source and the plan writer
+are demo-specific native code.
 
 | Instance ID | Kind / implementation | Purpose |
 |---|---|---|
 | `postgres` | Native source: `drasi/postgres-transactions` with coordinated `PostgresSnapshot` | Delivers complete committed transactions from seven published tables to one persistent query owner. |
 | `runtime-status` | Native source: `gpu.lab/runtime-status` | Publishes observed readiness, component status, write outcomes, and semantic timeline events. |
-| `policy` | Transformer: `gpu.lab/regorus-policy` | Assembles database inputs and evaluates workload/cluster authorization with Regorus. |
-| `simulator` | Transformer: `gpu.lab/telemetry-simulator` | Applies saved plans, enforces policy, and produces actual simulated GPU reports and execution acknowledgements. |
-| `placement` | Transformer: `gpu.lab/placement-solver` | Computes a complete minimum-movement placement and explains the decision. |
-| `resilience` | Transformer: `gpu.lab/resilience-assessor` | Uses the same placement library to assess additional VM/region losses without changing the plan. |
+| `configuration` | Transformer: `gpu.lab/configuration` | Projects the committed database records into graph changes, adding the `FleetConfiguration` context and the saved `PlanAssignment` rows. |
+| `policy` | Transformer: `drasi.standard/policy` | Evaluates every `PlacementPair` row with Regorus and emits one `PlacementEligibility` decision per workload/cluster pair. |
+| `simulator` | Transformer: `gpu.lab/telemetry-simulator` | Applies saved plans, enforces policy decisions, and produces simulated GPU reports and execution acknowledgements. |
+| `solver` | Transformer: `drasi.standard/optimization` | Solves the policy-filtered placement model (minimum movement, then minimum peak utilization) and its worker/region loss scenarios. |
+| `capacity-check` | Transformer: `drasi.standard/optimization` | Solves the same model without policy, as a read-only capacity-only diagnostic. |
+| `placement` | Transformer: `gpu.lab/placement-planner` | Correlates the solution with its inputs, assigns plan versions, explains decisions and emits candidate plans. |
 | `plan-writer` | Native reaction/sink: `gpu.lab/plan-writer` | Submits candidate plans to the control service and reports their write outcome. |
 | `gpu-demo-ui` | Native sink: `drasi.network/sse-sink` | Receives nine direct query-output edges and streams their result changes. |
 | `gpu-query-log` | Optional native query-log sink | Logs selected existing query outputs when explicitly enabled; absent from the normal topology. |
 
-The fourteen queries are listed individually in
+The nineteen queries are listed individually in
 [sources and continuous queries](#sources-and-continuous-queries).
 This diagram groups the nine UI queries for
 readability. Solid arrows show the main data dependencies; dotted arrows show
@@ -317,12 +329,18 @@ flowchart TD
     DB[("PostgreSQL")]
     PG["source: postgres"]
     Inputs["atomic query: input-configuration"]
-    Policy["transformer: policy"]
+    Configuration["transformer: configuration"]
+    PairQuery["query: placement-pairs"]
+    Policy["transformer: policy (drasi.standard/policy)"]
     SimulationQuery["query: simulation-inputs"]
+    PolicyQuery["query: planner-policy"]
     Simulator["transformer: simulator"]
-    SchedulingQuery["query: scheduling-inputs"]
+    GpuQuery["query: placement-gpus"]
+    CandidateQuery["query: placement-candidates"]
+    Solver["transformer: solver (drasi.standard/optimization)"]
+    Capacity["transformer: capacity-check (drasi.standard/optimization)"]
+    SolutionQueries["queries: planner-solution, planner-status"]
     Placement["transformer: placement"]
-    Resilience["transformer: resilience"]
     PlanQuery["query: plan-output"]
     Writer["sink: plan-writer"]
     Control["control: guarded plan commit"]
@@ -335,13 +353,26 @@ flowchart TD
 
     DB --> PG
     PG --> Inputs
-    Inputs --> Policy
-    Policy --> SimulationQuery
+    Inputs --> Configuration
+    Configuration --> PairQuery
+    PairQuery --> Policy
+    Policy --> PolicyQuery
+    Configuration --> SimulationQuery
     SimulationQuery --> Simulator
-    Policy --> SchedulingQuery
-    Simulator --> SchedulingQuery
-    SchedulingQuery --> Placement
-    SchedulingQuery --> Resilience
+    PolicyQuery --> Simulator
+    Simulator --> GpuQuery
+    Configuration --> GpuQuery
+    Configuration --> CandidateQuery
+    Policy --> Solver
+    GpuQuery --> Solver
+    CandidateQuery --> Solver
+    GpuQuery --> Capacity
+    CandidateQuery --> Capacity
+    Solver --> SolutionQueries
+    SolutionQueries --> Placement
+    PolicyQuery --> Placement
+    GpuQuery --> Placement
+    SimulationQuery --> Placement
     Placement --> PlanQuery
     PlanQuery --> Writer
     Writer --> Control
@@ -350,13 +381,15 @@ flowchart TD
     ContextQuery -.-> Observer
     Inputs -.-> Observer
     Views -.-> Observer
-    Observer -.->|"bootstrap completion"| Policy
+    Observer -.->|"bootstrap completion"| Configuration
     Observer -.->|"runtime observations"| Status
     Writer -.->|"write outcome"| Status
+    Configuration --> Views
     Policy --> Views
     Simulator --> Views
+    Solver --> Views
+    Capacity --> Views
     Placement --> Views
-    Resilience --> Views
     Status --> Views
     Views --> SSE
     SSE --> Browser
@@ -364,25 +397,29 @@ flowchart TD
 ```
 
 The PostgreSQL source has exactly one immediate owner: the persistent atomic
-`input-configuration` query. Policy projects its complete committed records into
-graph changes for downstream joins, including deletions and empty tables.
-All five native graph producers
-(`policy`, `simulator`, `placement`, `resilience`, and `runtime-status`) also feed
-the UI query group.
+`input-configuration` query. The configuration projector publishes its complete
+committed records as graph changes for downstream joins, including deletions and
+empty tables. All seven graph producers (`configuration`, `simulator`, `policy`,
+`solver`, `capacity-check`, `placement`, and `runtime-status`) also feed the UI
+query group. The processing relationships are declared once in
+[plugins.rs](../shared/crates/native/src/plugins.rs) (`EDGES`), together with the
+policy and optimization instance configurations.
 
 ### Where construction and configuration happen
 
 [gpu-runtime.rs](src/main.rs) is the composition root.
 There is no demo-specific `server.yaml` containing this topology. Startup:
 
-1. Loads matching `libgpu_native` and the individual
+1. Loads matching `libgpu_native`, the drasi-core
+   `libdrasi_computation_transformer_policy` and
+   `libdrasi_computation_transformer_optimization` plugins, and the individual
    `libdrasi_computation_sink_sse` plugin; no other native network component is
    loaded. `GPU_NETWORK_PLUGIN` retains its existing environment-variable name
    but now points to that SSE-only library.
    PostgreSQL uses the existing in-process Rust native factory, not a legacy
    adapter or a new PostgreSQL cdylib.
 2. Builds `DrasiLib` with instance ID `gpu-demo` and the native component factories.
-3. Builds the fourteen queries with middleware, synthetic joins and one paired
+3. Builds the nineteen queries with middleware, synthetic joins and one paired
    RocksDB/source-progress/coordinated-snapshot owner in [database.rs](src/database.rs),
    admitting its component batch with automatic activation disabled.
 4. Adds the native components and bounded relationships, then starts the selected
@@ -410,11 +447,18 @@ factory configuration is:
 {"stream": "simulator/out"}
 ```
 
-The other transformer streams are `policy/out`, `placement/out`, and
-`resilience/out`; the status source uses `runtime-status/out`. These objects are
-passed by the runtime, not loaded from additional JSON files. They configure
-stream identity, **not** GPU behavior, workload demand, or policy parameters.
-Those come from PostgreSQL.
+The other lab transformer streams are `configuration/out` and `placement/out`;
+the status source uses `runtime-status/out`. These objects are passed by the
+runtime, not loaded from additional JSON files. They configure stream identity,
+**not** GPU behavior, workload demand, or policy parameters. Those come from
+PostgreSQL.
+
+The drasi-core plugin instances receive larger, declarative configurations from
+[plugins.rs](../shared/crates/native/src/plugins.rs): the policy instance gets the
+Rego bundle, the `PlacementPair` input mapping and the `PlacementEligibility`
+output mapping; the two optimization instances get their index sets, variables,
+constraints, objectives, scenarios and debounce/time limits. These describe the
+model, not the data: all workload, GPU and policy values still come from PostgreSQL.
 
 The plan writer instead receives an `endpoint` and a secret `token` reference.
 The runtime resolves `internal-token` through its `gpu-runtime-secrets` resource
@@ -539,16 +583,18 @@ the [native wrapper](../shared/crates/native/src/processor.rs) connects it to th
 The simulator supplies the part that would normally be a real GPU/serving
 platform: execution state, resource measurements, application acknowledgements,
 and periodic heartbeats. It is a transformer rather than a disconnected mock
-source because it consumes the current configuration, policy, and saved plan
-through `simulation-inputs`.
+source because it consumes the current configuration, policy decisions, and saved
+plan through `simulation-inputs` and `planner-policy`.
 
 ### Inputs and configurable behavior
 
-`simulation-inputs` joins `FleetConfiguration` with its matching
-`PolicyAssessment`. Its output includes the observation epoch, inventory,
-workloads, generation settings, saved plan, and policy batch. An optional policy
-match allows the simulator to distinguish "configuration observed, policy still
-pending" from an absent configuration.
+`simulation-inputs` returns the `FleetConfiguration` snapshot: the observation
+epoch, inventory, workloads, generation settings and saved plan.
+`planner-policy` returns every current `PlacementEligibility` decision from the
+policy plugin. The simulator correlates the decisions with the configuration
+itself: only a complete, decided set covering every workload/cluster pair with
+matching input fingerprints counts as current policy, so it can distinguish
+"configuration observed, policy still pending" from an absent configuration.
 
 | `gpu_telemetry` field | Default | Effect |
 |---|---|---|
@@ -609,45 +655,69 @@ until that deadline; power state and report health are different facts.
 
 ## Transformer: the optimizer
 
-**Nodes:** `placement` (`gpu.lab/placement-solver`) and read-only `resilience`
-(`gpu.lab/resilience-assessor`), using the
-[shared optimizer library](../shared/crates/placement/src/lib.rs).
+**Nodes:** `solver` and read-only `capacity-check`, two instances of the generic
+drasi-core `drasi.standard/optimization` plugin, and the lab-specific `placement`
+planner (`gpu.lab/placement-planner`, [planner.rs](../shared/crates/native/src/planner.rs)).
+Their models are declared in [plugins.rs](../shared/crates/native/src/plugins.rs);
+no lab code builds or solves an optimization problem.
 
-Both nodes consume `scheduling-inputs`. That query combines configuration,
-matching policy, the previous saved plan, and capacities derived from current
-GPU reports. Missing, old-epoch, or five-second-expired reports do not supply
-eligible capacity.
+The optimization instances read three queries:
+
+- `placement-gpus`: one row per GPU with installed memory, observed memory and
+  compute headroom derived from the current epoch's fresh report, and `eligible`
+  (scheduling enabled and a report younger than five seconds). Missing,
+  old-epoch, or expired reports do not supply eligible capacity.
+- `placement-candidates`: one row per workload × GPU pair whose GPU model the
+  workload allows, carrying the per-replica demand, spread flag and failure domain.
+- The `FleetConfiguration`, saved `PlanAssignment` rows and `PlacementEligibility`
+  decisions emitted by the configuration projector and the policy plugin.
 
 ### Placement constraints and objectives
 
-The optimizer uses `good_lp` with the `microlp` mixed-integer solver. Candidate
-replica-to-GPU assignments must satisfy all of the following:
+The plugin uses `good_lp` with the `microlp` mixed-integer solver. Its index sets
+expand each workload into replicas and each allowed workload/GPU pair into
+replica/GPU edges. A binary `assign` variable per edge must satisfy:
 
 - Every requested replica is assigned exactly once.
 - Each replica fits entirely on one GPU.
-- Total managed memory fits after the reported background memory request.
+- Total managed memory fits within the observed headroom and the installed memory.
 - Total managed compute fits within 85 minus reported background demand.
-- The GPU model is allowed and scheduling is enabled.
-- Current policy explicitly permits that workload in the GPU's cluster.
+- The GPU model is allowed and the GPU is eligible.
+- For `solver` only: the policy plugin's current decision explicitly allows that
+  workload in the GPU's cluster.
 - A spread-enabled workload has at most one replica per VM/failure domain.
 
-The previous complete placement is retained immediately if it is still valid.
-Otherwise, optimization first minimizes **moves of existing replicas**, then
-minimizes **peak demand relative to available compute capacity** while preserving
-that minimum move count. Newly requested replicas are counted separately from
-moves. Healthy work is not shuffled merely to return to a fixture layout or fill
-newly added spare capacity.
+Objectives are lexicographic: first minimize **moves of existing replicas**
+(assignments in the saved plan that change GPU), then minimize **peak demand
+relative to available compute capacity** while preserving that minimum move
+count. Newly requested replicas are not moves, so healthy work is not shuffled
+merely to return to a fixture layout or fill newly added spare capacity.
 
-The MILP scales memory constraints to GiB for numerical conditioning; final
-assignment validation still uses exact integer MiB. A timeout or solver error is
-`unknown`, not proof of infeasibility. An infeasible result publishes an
-explanation, not a partial replacement plan.
+The model scales memory constraints to GiB for numerical conditioning; the
+planner still validates the final assignment with exact integer MiB. A timeout or
+solver error is `unknown`, not proof of infeasibility. An infeasible result
+publishes an explanation, not a partial replacement plan.
 
-The native scheduler uses one shared solver worker for placement and resilience,
-with placement taking priority between resilience scenarios. Each solve gets a
-two-second budget. Input changes are coalesced with a 100-ms scheduling delay;
-completed work is checked against its input signature/generation before
-publication. These are implementation constants, not exposed factory settings.
+Each instance debounces input changes by 250 ms (at most 2 s under continuous
+change), solves in the background with a two-second time limit, and publishes
+a `PlacementStatus`/`CapacityStatus` row plus, for `solver`, one
+`PlacementAssignment` row per selected edge. Each output carries provenance (the
+configuration fingerprint, saved plan version and epoch) so consumers reject
+solutions computed from older inputs.
+
+### Turning solutions into plans
+
+`placement` reads `planner-solution` and `planner-status` (the solver's
+assignments and status), `planner-policy`, `placement-gpus` and
+`simulation-inputs`. After a 250-ms settle period it accepts a solution only when
+its provenance matches the current configuration and saved plan version and it
+covers every required replica. It then validates the assignment against the
+current capacities and policy, and emits `SchedulingContext`, `CandidatePlan`,
+and `DecisionExplanation`. An unchanged valid plan is reported as current
+instead of producing a new candidate. Explanations include existing/new/retained
+counts, actual moves, reason codes, input fingerprints, and pre-plan
+free-memory/largest-gap facts. `plan-output` extracts the candidate payload for
+the writer.
 
 ### Configuration that drives optimization
 
@@ -670,18 +740,14 @@ one 24-GiB chat replica beside another chat frees a whole 80-GiB GPU. Multiple
 equally good destinations can exist; the demo reports the actual solution rather
 than expecting one hard-coded destination.
 
-`placement` emits `SchedulingContext`, `CandidatePlan`, and `DecisionExplanation`.
-Explanations include existing/new/retained counts, actual moves, reason codes,
-input fingerprints, and pre-plan free-memory/largest-gap facts.
-`plan-output` extracts the candidate payload for the writer.
-
 ### Read-only resilience analysis
 
-`resilience` asks whether the **same complete requirements** could be placed after
-losing each currently eligible VM or region. Each scenario removes those
-destinations from a copy of the capacity input and runs the same constraints,
-including policy. It emits a correlated `ResilienceAssessment`; it never sends
-an executable plan to the writer.
+Resilience is configuration of the same `solver` instance: two **scenarios**,
+`worker` (grouped by `host_id`) and `region` (grouped by `region`), each re-solve
+the **same complete requirements** after removing one eligible VM or region from
+the GPU and candidate sets, including policy. The plugin emits one
+`PlacementScenario` row per excluded value with its feasibility; scenarios never
+produce assignments and nothing in them reaches the writer.
 
 Current success and resilience are independent. Adding two chat replicas to
 baseline yields ten replicas consuming 320 managed units, which fit now. Losing
@@ -689,23 +755,27 @@ one VM leaves four GPUs with only 300 baseline assignable units, so recovery is
 infeasible. Adding another ready VM can restore recovery capacity without
 moving existing healthy work.
 
-When permitted placement is infeasible, the optimizer can also emit a separate
-`CapacityDiagnostic` asking whether capacity alone would suffice without the
-policy restriction. This is explanatory evidence only, never permission to
-execute a policy-bypassing plan. Unknown or empty analysis is not displayed as a
-passing resilience result.
+`capacity-check` solves the same resource model without the policy filter. When
+permitted placement is infeasible, `ui-resilience` shows whether capacity alone
+would suffice. This is explanatory evidence only, never permission to execute a
+policy-bypassing plan. `ui-resilience` only reports results whose provenance
+matches the current `SchedulingContext`; unknown or empty analysis is not
+displayed as a passing resilience result.
 
 ## Transformer: the policy engine
 
-**Node:** `policy` (`gpu.lab/regorus-policy`), implemented by
-[the policy library](../shared/crates/policy/src/lib.rs) and
-[the Rego module](../shared/policies/placement.rego).
+**Node:** `policy`, an instance of the generic drasi-core `drasi.standard/policy`
+plugin, configured in [plugins.rs](../shared/crates/native/src/plugins.rs) with
+[the Rego module](../shared/policies/eligibility.rego).
 
-The policy node has two related jobs. First, it reconstructs the current domain
-input from `input-configuration` and its explicit keyed bootstrap snapshot.
-It publishes `FleetConfiguration`, including generation settings and the saved
-plan. Second, it evaluates processing authorization with the actual Regorus Rego
-engine and publishes `PolicyAssessment` plus per-pair `PlacementEligibility`.
+The `configuration` projector (`gpu.lab/configuration`) reconstructs the current
+domain input from `input-configuration` and its explicit keyed bootstrap snapshot
+and publishes `FleetConfiguration`, the saved `PlanAssignment` rows, and the
+database records as graph nodes. `placement-pairs` joins them into one
+`PlacementPair` row per workload × cluster. The policy plugin evaluates each row
+with the Regorus Rego engine and emits one `PlacementEligibility` node carrying
+the pair facts, `authorization` (`allow`/`deny`), `reasons`, `status`, `error`,
+and the bundle's `policy_hash`.
 
 The input to a policy decision follows this chain:
 
@@ -719,9 +789,10 @@ workload_requirements.data_profile_id
 
 ### Rules and policy parameters
 
-The Rego module is compiled into the policy crate using `include_str!`; changing
-the rule text requires rebuilding the code. Its **parameters are database rows**
-and can change at runtime without rebuilding the plugin.
+The Rego module is compiled into the lab's contracts crate using `include_str!`
+and passed to the plugin as configuration; changing the rule text requires
+rebuilding the lab. Its **parameters are database rows** and can change at
+runtime without rebuilding anything.
 
 The rule allows a workload/cluster pair only when the region, processing purpose,
 classification, and customer relationship are all permitted. It returns explicit
@@ -752,21 +823,24 @@ authority by the program.
 
 ### Evaluation and failure semantics
 
-Each batch covers every workload/cluster pair, not just the currently selected
-destinations. It carries a policy-bundle hash, assessment signature, and
-per-pair input fingerprints. Queries join the result back to its matching
-configuration, and consumers reject stale or incomplete batches.
+The plugin decides each pair independently and incrementally: a changed pair row
+is re-evaluated, a removed pair retracts its decision. Every decision carries the
+pair's input fingerprint (`context_key`) and the bundle hash. The simulator and
+planner derive the aggregate policy signature locally from the configuration and
+the complete set of decisions, and treat a missing, stale, or failed decision as
+unknown. The UI correlates pair decisions with `ui-status` through `policy_hash`.
 
-One policy worker runs bounded background jobs. Regorus has a 50-ms execution
-limit per pair evaluation. Missing or
-invalid context, evaluation failure, or stale authorization is **unknown**, never
-an implicit allow. Unknown policy suspends simulator processing; a current deny
+Regorus has a 50-ms execution limit per pair evaluation. Missing or invalid
+context, evaluation failure, or stale authorization is **unknown**, never an
+implicit allow. Unknown policy suspends simulator processing; a current deny
 fences it.
 
-Authorization is checked at three boundaries: the optimizer filters candidate
+Authorization is checked at three boundaries: the optimizer only offers allowed
 destinations, the control service re-evaluates policy before committing a plan,
-and the simulator enforces it during application and continued execution.
-The shared policy library and Rego bundle keep those checks consistent.
+and the simulator enforces it during application and continued execution. The
+control service uses `gpu_contracts::policy::reference_assessment`, a small Rust
+model of the same rules; the native end-to-end tests commit plans only when it
+agrees with the plugin's Regorus decisions.
 
 ## Sources and continuous queries
 
@@ -844,7 +918,7 @@ applied, the status is `application-rejected` with the error retained; that does
 not itself close the corrective-input gate. Actual source/bootstrap failures
 still do.
 
-### All fourteen registered queries
+### All nineteen registered queries
 
 The registration sources are
 [inputs.rs](../shared/crates/native/src/inputs.rs) and
@@ -855,8 +929,8 @@ IDs in instance `gpu-demo`.
 
 `input-configuration` is generated from the table contracts. It maintains one
 aggregate row containing `{table, value}` records from every published table.
-The policy node consumes whole-configuration deltas and the keyed bootstrap
-watermark. It never assembles seven independent query feeds.
+The configuration projector consumes whole-configuration deltas and the keyed
+bootstrap watermark. It never assembles seven independent query feeds.
 
 | Table | Downstream use |
 |---|---|
@@ -868,18 +942,25 @@ watermark. It never assembles seven independent query feeds.
 | `workload_requirements` | Desired replicas and their complete requirements. |
 | `gpu_placements` | Complete saved plan, version, and decision evidence; closes the plan-write feedback loop. |
 
-#### Four processing queries
+#### Nine processing queries
 
 | Query | Inputs and result | Consumer |
 |---|---|---|
-| [`simulation-inputs`](../shared/queries/simulation-inputs.cypher) | `FleetConfiguration` with optional matching `PolicyAssessment`; returns the configuration/settings/plan snapshot plus policy and epoch. | `simulator` |
-| [`scheduling-inputs`](../shared/queries/scheduling-inputs.cypher) | Matching fleet/policy context plus inventory and fresh `GpuSample` evidence; collects per-GPU observed capacity inputs. | `placement` and `resilience` |
+| [`simulation-inputs`](../shared/queries/simulation-inputs.cypher) | `FleetConfiguration`; returns the configuration/settings/plan snapshot and epoch. | `simulator` and `placement` |
+| [`placement-pairs`](../shared/queries/placement-pairs.cypher) | Every workload × cluster with its optional data profile and policy; one `PlacementPair` row per pair with the policy input and a `context_key` fingerprint. | `policy` |
+| [`planner-policy`](../shared/queries/planner-policy.cypher) | Every `PlacementEligibility` decision. | `simulator` and `placement` |
+| [`placement-gpus`](../shared/queries/placement-gpus.cypher) | Inventory, cluster and fresh current-epoch `GpuSample`; one `PlacementGpu` row per GPU with observed headroom and eligibility. | `solver`, `capacity-check` and `placement` |
+| [`placement-candidates`](../shared/queries/placement-candidates.cypher) | Workloads × GPUs whose model the workload allows; one `PlacementCandidate` row per pair with demand, spread and failure domain. | `solver` and `capacity-check` |
+| `planner-solution` | `PlacementAssignment` rows (workload, replica, GPU). | `placement` |
+| `planner-status` | `PlacementStatus`: status, detail, model signature and provenance. | `placement` |
 | `plan-output` | `MATCH (p:CandidatePlan) RETURN p.payload AS payload` | `plan-writer` |
 | `runtime-context` | `SchedulingContext` projected to scheduling/policy signatures, required replicas, and currentness. | Host readiness observer |
 
-`plan-output` and `runtime-context` are defined inline in `inputs.rs`.
-The other `.cypher` files in `queries/` include reference/test queries;
-placing a file there does not register another running query.
+`planner-solution`, `planner-status`, `plan-output` and `runtime-context` are
+defined inline in `inputs.rs`. `placement-pairs`, `placement-gpus` and
+`placement-candidates` set a result label, so their rows reach the plugins as
+graph nodes. The other `.cypher` files in `queries/` include reference/test
+queries; placing a file there does not register another running query.
 
 #### Nine UI queries
 
@@ -890,7 +971,7 @@ placing a file there does not register another running query.
 | [`ui-workloads`](../shared/queries/ui-workloads.cypher) | `workload_id` | Combines requirements, saved/applied plans, scheduling/readiness context, execution, policy, and samples into running/confirmed/suspended/fenced counts. |
 | [`ui-placements`](../shared/queries/ui-placements.cypher) | `fleet_id` | Correlates the saved plan with actual execution and confirmation evidence; reports desired/applied/confirmed versions, assignments, status, and reason. |
 | [`ui-policy`](../shared/queries/ui-policy.cypher) | `id`, a workload/cluster pair | Projects `PlacementEligibility`: allow/deny/unknown, reasons, revisions, authority, regions, fingerprints, and errors. |
-| [`ui-resilience`](../shared/queries/ui-resilience.cypher) | `fleet_id` | Joins `ResilienceAssessment` to any matching `CapacityDiagnostic`; separates permitted recovery from capacity-only analysis. |
+| [`ui-resilience`](../shared/queries/ui-resilience.cypher) | `fleet_id` | Joins `SchedulingContext` with the solver's `PlacementStatus` and `PlacementScenario` rows and the capacity check's `CapacityStatus`, accepting only results whose provenance matches the current context; separates permitted recovery from capacity-only analysis. |
 | [`ui-decisions`](../shared/queries/ui-decisions.cypher) | `decision_id` | Joins `DecisionExplanation` to writer outcomes; exposes proposed/committed/rejected/diagnostic stages, moves, and pre-plan memory evidence. |
 | [`ui-status`](../shared/queries/ui-status.cypher) | `fleet_id` | Projects `DemoReadiness`, including scenario, epoch, signatures, input readiness, and nested component status. |
 | [`ui-timeline`](../shared/queries/ui-timeline.cypher) | `event_id` | Projects semantic `DemoEvent` records with decision/plan links; identity includes epoch and event sequence. |
@@ -902,7 +983,6 @@ joins that relate records by their keys:
 
 | Relationship | Labels and matching property |
 |---|---|
-| `POLICY_CONFIG` | `FleetConfiguration` and `PolicyAssessment` by `config_fingerprint` |
 | `GPU_CLUSTER` | `gpu_inventory` and `regional_clusters` by `cluster_id` |
 | `GPU_SETTINGS` | `gpu_inventory` and `gpu_telemetry` by `gpu_id` |
 | `GPU_SAMPLE` | `gpu_inventory` and `GpuSample` by `gpu_id` |
@@ -911,14 +991,15 @@ joins that relate records by their keys:
 | `EXECUTION_SAMPLE` | `PolicyEnforcement` and `GpuSample` by `gpu_id` |
 | `EXECUTION_POLICY` | `PolicyEnforcement` and `PlacementEligibility` by `input_fingerprint` |
 | `DECISION_WRITE` | `DecisionExplanation` and `PlanWriteOutcome` by `decision_id` |
-| `RESILIENCE_DIAGNOSTIC` | `ResilienceAssessment` and `CapacityDiagnostic` by `scheduling_signature` |
+| `WORKLOAD_PROFILE` | `workload_requirements` and `data_profiles` by `data_profile_id` (`placement-pairs`) |
+| `PROFILE_POLICY` | `data_profiles` and `placement_policies` by `policy_id` (`placement-pairs`) |
 
 These join settings are part of a query's configuration; copying only its Cypher
 text is not enough to reconstruct it. Optional/disconnected matches let queries
 retain a workload or cluster before its corresponding execution/report/context
 exists.
 
-The scheduling, GPU, cluster, workload, and placement queries use
+The `placement-gpus`, GPU, cluster, workload, and placement queries use
 `drasi.trueNowOrLater` with a deadline at `report_time_ms + 5000`. Drasi schedules
 the future reevaluation, so a result can change because a report is *absent*,
 without another database update or GPU event. Transport SSE keepalives do not
@@ -961,20 +1042,21 @@ Consider increasing background demand on the GPU hosting an assistant:
 1. The UI issues a revision-checked settings command; control commits
    `gpu_telemetry` and acknowledges the write.
 2. PostgreSQL CDC commits the complete `input-configuration` update to the
-   policy/input assembler, whose `FleetConfiguration` updates
+   configuration projector, whose `FleetConfiguration` updates
    `simulation-inputs`.
 3. The simulator produces its next real report with the new background demand.
-   `scheduling-inputs` derives reduced observed headroom.
-4. The optimizer emits a candidate and explanation. `plan-output` delivers the
-   candidate to the plan writer.
+   `placement-gpus` derives reduced observed headroom.
+4. The `solver` optimization instance re-solves after its debounce and emits a new
+   assignment and status; the `placement` planner turns it into a candidate and
+   explanation. `plan-output` delivers the candidate to the plan writer.
 5. Control validates and commits the plan. CDC carries the saved row back through
    `input-configuration` and the input assembly path; an HTTP receipt alone does not do this.
 6. The simulator observes that saved plan, applies valid assignments, and emits
    application/execution acknowledgements.
 7. Fresh GPU samples reflect the applied version. `ui-workloads` and
    `ui-placements` then promote matching replicas/the whole plan to confirmed.
-8. The native SSE sink delivers these query changes to React; the resilience node
-   publishes its separate analysis for the new scheduling signature.
+8. The native SSE sink delivers these query changes to React; the solver's
+   worker/region scenarios publish their separate analysis for the new inputs.
 
 Whole-plan confirmation requires matching versions, observation epochs,
 configuration/policy/scheduling context, exact assignments and resource
@@ -1230,17 +1312,17 @@ preconditions, recovery steps, and expected outcomes for each scenario.
 | [ops/runtime.Dockerfile](ops/runtime.Dockerfile), [ops/control.Dockerfile](ops/control.Dockerfile) | Release builds and runtime packaging. |
 | [ops/export-runtime.py](ops/export-runtime.py) | Exports current Core/Server/example sources and content hashes without switching branches. |
 | [crates/contracts](../shared/crates/contracts) | Domain types, hardware/serving catalogs, validation, fingerprints, and shared fixtures. |
-| [crates/policy](../shared/crates/policy), [policies/placement.rego](../shared/policies/placement.rego) | Regorus evaluation and policy rules. |
+| [policies](../shared/policies) | Rego rules (`placement.rego`) and the per-pair entry point (`eligibility.rego`) loaded by the drasi-core policy plugin. |
 | [crates/simulator](../shared/crates/simulator) | Execution/application/report-generation model. |
-| [crates/placement](../shared/crates/placement) | Placement optimization, resilience, and capacity-only analysis. |
-| [crates/native](../shared/crates/native) | Shared SDK factories, envelopes, input assembly, lifecycle, scheduled work and evidence. |
+| [crates/native](../shared/crates/native) | Shared SDK factories, envelopes, input assembly, the placement planner, lifecycle, scheduled work and evidence; [plugins.rs](../shared/crates/native/src/plugins.rs) configures the drasi-core policy and optimization instances. |
+| `drasi-core/components/computation-plugins/transformers/{policy,optimization}` | The generic `drasi.standard/policy` and `drasi.standard/optimization` plugins the runtime loads. |
 | [src/main.rs](src/main.rs), [src/diagnostics](src/diagnostics) | Embedded runtime composition and host diagnostics. |
 | [control/main.rs](control/main.rs) | Embedded HTTP commands/proxies and runtime-reset coordination. |
 | [crates/control](../shared/crates/control), [migrations](../shared/migrations) | Shared SQL validation, receipts, plan writer, roles and publication. |
 | [queries](../shared/queries) | Checked-in processing/UI Cypher and supporting query examples/tests. |
 | [ui/src](../shared/ui/src) | Provider/hooks, row validation, display components, command dialogs, labels, and styles. |
 
-The `../shared/` Cargo workspace contains the five domain/control crates.
+The `../shared/` Cargo workspace contains the three domain/control crates.
 `../shared/crates/native` is a separate workspace because it also depends on the
 sibling Core and parent Server source trees. Its lockfile is separate. The Cargo
 manifests reference the embedded executable sources explicitly, preserving the
@@ -1279,6 +1361,7 @@ discard the credential file while retaining a database whose roles use it.
 | `PGHOST` | Runtime, `postgres` in Compose. |
 | `PLAN_ENDPOINT` | Runtime, `http://control:5400/internal/placement-plans`. |
 | `GPU_NATIVE_PLUGIN` | Runtime image, `/app/libgpu_native.so`; standalone runs must load a matching native library. |
+| `GPU_POLICY_PLUGIN`, `GPU_OPTIMIZATION_PLUGIN` | Runtime image, `/app/libdrasi_computation_transformer_policy.so` and `/app/libdrasi_computation_transformer_optimization.so`, built from the sibling drasi-core checkout. |
 | `DATABASE_URL`, `PLAN_DATABASE_URL`, `RESET_DATABASE_URL` | Control's role-specific PostgreSQL connections, assembled by Compose. |
 | `DEMO_OWNER_URL` | Migration job's owner connection only. |
 | `DRASI_API_URL`, `DRASI_SSE_URL` | Control proxy destinations, `http://drasi:8080` and `http://drasi:8081/events`. |
@@ -1356,7 +1439,7 @@ writer retry/exhaustion, full stack restart, five-second non-events, fragmentati
 worker failure, regional policy and reset scenarios. Chromium loaded all nine
 native feeds and passed offline/reconnect, reload and desktop/mobile checks.
 The SQL mutation suite passed all nine cases, seven-table aggregate parity and
-all fourteen native query logs against a separate disposable baseline fixture.
+all fourteen native query logs (the pre-migration corpus) against a separate disposable baseline fixture.
 The admin UI check passed bundled assets, live component details and native graph
 inspection; it also runs as part of the native-input qualification.
 All temporary projects were removed; the running deployment was not changed.
@@ -1373,7 +1456,7 @@ GPU_LAB_LOG_QUERIES=input-configuration,ui-gpus ./demo up
 ./demo logs drasi
 ```
 
-Use `GPU_LAB_LOG_QUERIES='*'` for all fourteen, or unset the variable and run
+Use `GPU_LAB_LOG_QUERIES='*'` for all nineteen, or unset the variable and run
 `./demo up` to remove the optional sink. Unknown/duplicate IDs fail startup.
 The native log sink prints actual ADD/UPDATE/DELETE values, including
 before/after images; it does not run another evaluator. Full-result logging adds
@@ -1385,7 +1468,7 @@ For experiments that preserve the running presenter:
 ./demo check --postgres-mutations
 ```
 
-The checker copies the database, logs all fourteen queries, partitions the single
+The checker copies the database, logs all nineteen queries, partitions the single
 input aggregate and compares all seven tables with actual PostgreSQL rows, exercising nine groups:
 current-state power recovery, no-op/rollback, workload lifecycle, metadata edits,
 report expiry, background load, power cycles, infeasible-plan restart, and policy
@@ -1425,13 +1508,13 @@ queue-depth measurement.
 
 [check-query-isolation.mjs](ops/check-query-isolation.mjs) and
 [query-isolation.Dockerfile](ops/query-isolation.Dockerfile) replay the exact
-fourteen-query corpus individually and together against a new native recording,
+nineteen-query corpus individually and together against a new native recording,
 using a bare in-memory index. An optional paced mode
 preserves input intervals and checks final timer expiry. Run performance
 diagnostics after compilation has finished; a replay is not the live feedback
 loop or a cross-platform throughput guarantee. Its synthesized graph input measures
 the configuration query's evaluation cost, not native transaction/persistence cost.
-Pre-migration recordings do not contain policy's authoritative table projections
+Pre-migration recordings do not contain the configuration projector's authoritative table projections
 and cannot qualify the current topology.
 
 ### Host-side development

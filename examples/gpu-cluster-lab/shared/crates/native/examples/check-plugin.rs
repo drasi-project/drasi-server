@@ -13,15 +13,14 @@ fn main() -> Result<()> {
     anyhow::ensure!(
         names
             == [
-                "gpu.lab/placement-solver",
+                "gpu.lab/configuration",
+                "gpu.lab/placement-planner",
                 "gpu.lab/plan-writer",
-                "gpu.lab/regorus-policy",
-                "gpu.lab/resilience-assessor",
                 "gpu.lab/runtime-status",
                 "gpu.lab/telemetry-simulator",
             ],
         "native plugin factory catalog mismatch"
     );
-    println!("Native host loaded all six GPU lab components through the public ABI.");
+    println!("Native host loaded all five GPU lab components through the public ABI.");
     Ok(())
 }

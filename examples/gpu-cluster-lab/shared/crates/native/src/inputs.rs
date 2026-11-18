@@ -10,35 +10,31 @@ use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 pub const SIMULATION_QUERY: &str = include_str!("../../../queries/simulation-inputs.cypher");
-pub const SCHEDULING_QUERY: &str = include_str!("../../../queries/scheduling-inputs.cypher");
+pub const PAIRS_QUERY: &str = include_str!("../../../queries/placement-pairs.cypher");
+pub const GPUS_QUERY: &str = include_str!("../../../queries/placement-gpus.cypher");
+pub const CANDIDATES_QUERY: &str = include_str!("../../../queries/placement-candidates.cypher");
+pub const PLANNER_POLICY_QUERY: &str = include_str!("../../../queries/planner-policy.cypher");
 
+/// Continuous queries feeding the native, policy and optimization transformers.
 #[cfg(any(test, feature = "runtime", feature = "query-isolation"))]
 pub fn processing_queries() -> Vec<(
     &'static str,
     &'static str,
     drasi_lib::computation::v1::QueryExecutionSettings,
 )> {
-    use drasi_lib::{
-        computation::v1::QueryExecutionSettings,
-        config::{QueryJoinConfig, QueryJoinKeyConfig},
+    use drasi_lib::computation::v1::QueryExecutionSettings;
+    let labelled = |label: &str, mut settings: QueryExecutionSettings| {
+        settings.result.label = Some(label.into());
+        settings
     };
-    let policy_join = QueryJoinConfig {
-        id: "POLICY_CONFIG".into(),
-        keys: ["FleetConfiguration", "PolicyAssessment"]
-            .into_iter()
-            .map(|label| QueryJoinKeyConfig {
-                label: label.into(),
-                property: "config_fingerprint".into(),
-            })
-            .collect(),
-    };
-    let mut scheduling = crate::projections::cluster_settings();
-    scheduling.joins.push(policy_join.clone());
     vec![
-        ("simulation-inputs", SIMULATION_QUERY, QueryExecutionSettings {
-            joins: vec![policy_join], ..Default::default()
-        }),
-        ("scheduling-inputs", SCHEDULING_QUERY, scheduling),
+        ("simulation-inputs", SIMULATION_QUERY, QueryExecutionSettings::default()),
+        ("placement-pairs", PAIRS_QUERY, labelled("PlacementPair", crate::projections::pair_settings())),
+        ("placement-gpus", GPUS_QUERY, labelled("PlacementGpu", crate::projections::cluster_settings())),
+        ("placement-candidates", CANDIDATES_QUERY, labelled("PlacementCandidate", crate::projections::cluster_settings())),
+        ("planner-policy", PLANNER_POLICY_QUERY, QueryExecutionSettings::default()),
+        ("planner-solution", "MATCH (a:PlacementAssignment) RETURN a.workload_id AS workload_id, a.replica_index AS replica_index, a.gpu_id AS gpu_id", QueryExecutionSettings::default()),
+        ("planner-status", "MATCH (s:PlacementStatus) RETURN s.status AS status, s.detail AS detail, s.signature AS signature, s.provenance AS provenance", QueryExecutionSettings::default()),
         ("plan-output", "MATCH (p:CandidatePlan) RETURN p.payload AS payload", QueryExecutionSettings::default()),
         ("runtime-context", "MATCH (c:SchedulingContext) RETURN c.scheduling_signature AS scheduling_signature, c.policy_signature AS policy_signature, c.required_replicas AS required_replicas, c.current AS current", QueryExecutionSettings::default()),
     ]
@@ -150,72 +146,6 @@ pub struct DatabaseSnapshot {
 #[serde(deny_unknown_fields)]
 pub(crate) struct SimulationRow {
     pub snapshot: DatabaseSnapshot,
-    pub policy: Option<gpu_policy::Assessment>,
-    pub policy_epoch: Option<Uuid>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SchedulingRow {
-    pub epoch: Uuid,
-    pub configuration: Configuration,
-    pub plan: Plan,
-    pub policy: gpu_policy::Assessment,
-    pub policy_epoch: Uuid,
-    pub capacities: Vec<Option<ObservedCapacity>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ObservedCapacity {
-    gpu_id: Uuid,
-    fresh: bool,
-    background_memory_mib: Option<u32>,
-    background_compute_units: Option<u32>,
-}
-
-impl SchedulingRow {
-    pub fn message(self) -> Result<crate::wire::Message> {
-        ensure!(self.epoch == self.policy_epoch, "policy epoch is stale");
-        let mut capacities = BTreeMap::new();
-        for observed in self.capacities.into_iter().flatten() {
-            let gpu = self
-                .configuration
-                .gpus
-                .get(&observed.gpu_id)
-                .context("capacity references unknown inventory")?;
-            let capacity = match (
-                observed.background_memory_mib,
-                observed.background_compute_units,
-            ) {
-                (Some(memory), Some(demand)) => {
-                    gpu_contracts::Capacity::from_observation(gpu, observed.fresh, memory, demand)
-                }
-                (None, None) if !observed.fresh => gpu_contracts::Capacity {
-                    gpu_id: gpu.gpu_id,
-                    eligible: false,
-                    memory_mib: 0,
-                    compute_units: 0,
-                },
-                _ => anyhow::bail!("incomplete reported capacity"),
-            };
-            ensure!(
-                capacities.insert(gpu.gpu_id, capacity).is_none(),
-                "duplicate GPU capacity"
-            );
-        }
-        let input = crate::wire::SolveInput {
-            configuration: self.configuration,
-            policy: self.policy,
-            plan: self.plan,
-            capacities,
-        };
-        input.validate()?;
-        Ok(crate::wire::Message::Schedule {
-            epoch: self.epoch,
-            input,
-        })
-    }
 }
 
 pub fn partition_records(records: &[Value]) -> Result<BTreeMap<&'static str, Vec<Value>>> {

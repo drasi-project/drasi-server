@@ -59,7 +59,7 @@ try {
   let ready = false;
   for (let n=0;n<120 && !stopping;n++) {
     try {
-      const response = await fetch('http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/geometry-status/results',{signal:AbortSignal.timeout(1500)});
+      const response = await fetch('http://127.0.0.1:8421/api/v1/instances/move-a-wall/queries/scene-status/results',{signal:AbortSignal.timeout(1500)});
       if (response.ok) {
         const body = await response.json();
         if (body.success && body.data?.some(row => row.revision === 1)) { ready = true; break; }
@@ -69,7 +69,7 @@ try {
     }
     await new Promise(resolve => setTimeout(resolve,500));
   }
-  if (!ready) throw new Error('Stock drasi-server did not produce the initial geometry-status query result. See .build/server.log.');
+  if (!ready) throw new Error('Stock drasi-server did not produce the initial scene-status query result. See .build/server.log.');
   const uiResponse = await fetch('http://127.0.0.1:8421/ui/',{signal:AbortSignal.timeout(1500)});
   if (!uiResponse.ok || !uiResponse.headers.get('content-type')?.includes('text/html')) throw new Error('Stock Server Web UI is unavailable. See .build/server.log.');
   run(process.execPath,['ui/node_modules/vite/bin/vite.js','--config','ui/vite.config.ts','--host','127.0.0.1','--port','5421','--strictPort','ui'],{stdio:'inherit'});

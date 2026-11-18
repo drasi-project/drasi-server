@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, type PointerEvent, type FormEvent } from 'react';
 import { graphRowKey } from '@drasi/react/client';
 import { useDrasiClient, useDrasiConnectionStatus, useDrasiOutput } from '@drasi/react/react';
-import { entity, inputs, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
+import { entity, number, object, queryIds, sceneEntity, status, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
 import { ArchitectureOverlay } from './Architecture';
 
 const inspectionStages: Record<QueryId,{label:string;description:string}> = {
-  'scene-inputs': {label:'Source',description:'Current scene inputs before filtering.'},
-  'geometry-context': {label:'Context query',description:'Active inputs passed to the geometry transformer.'},
-  obstructions: {label:'Geometry transformer',description:'Obstruction records emitted by the geometry transformer.'},
+  'scene-inputs': {label:'Source',description:'Current typed scene nodes before filtering, one row per entity.'},
+  'journey-footprints': {label:'Journey footprints',description:'Active journeys joined to their active cart: path, radius and clearance passed to the geometry transformer.'},
+  'obstacle-footprints': {label:'Obstacle footprints',description:'Active obstacle polygons passed to the geometry transformer.'},
+  obstructions: {label:'Geometry transformer',description:'Obstruction records emitted by drasi.standard/geometry.'},
   'affected-journeys': {label:'Impact query',description:'Affected journeys enriched with cart, destination and obstacle names.'},
-  'geometry-status': {label:'SSE / UI',description:'Geometry revision and counts delivered to the UI. This is a query result, not an SSE event log.'},
+  'scene-status': {label:'SSE / UI',description:'The source revision and last command delivered to the UI. This is a query result, not an SSE event log.'},
 };
 
 function useView(id: QueryId) {
@@ -17,9 +18,9 @@ function useView(id: QueryId) {
   return useDrasiOutput(id, { getKey: graphRowKey, transform: row => validate(id,row) });
 }
 export function App() {
-  const source = useView('scene-inputs'), context = useView('geometry-context'), obstructions = useView('obstructions');
-  const impacts = useView('affected-journeys'), geometry = useView('geometry-status');
-  const views = { 'scene-inputs':source, 'geometry-context':context, obstructions, 'affected-journeys':impacts, 'geometry-status':geometry };
+  const source = useView('scene-inputs'), journeys = useView('journey-footprints'), obstacles = useView('obstacle-footprints');
+  const obstructions = useView('obstructions'), impacts = useView('affected-journeys'), scene = useView('scene-status');
+  const views = { 'scene-inputs':source, 'journey-footprints':journeys, 'obstacle-footprints':obstacles, obstructions, 'affected-journeys':impacts, 'scene-status':scene };
   const client = useDrasiClient(), transport = useDrasiConnectionStatus();
   const [online,setOnline] = useState(navigator.onLine);
   const [infoOpen,setInfoOpen] = useState(false);
@@ -28,10 +29,9 @@ export function App() {
     window.addEventListener('offline',offline); window.addEventListener('online',reconnect);
     return () => { window.removeEventListener('offline',offline); window.removeEventListener('online',reconnect); };
   },[client.retry]);
-  const records = (source.data ?? []).flatMap(inputs);
-  const clock = records.find(r => r.type === 'clock');
+  const entities = (source.data ?? []).map(sceneEntity).sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const clock = scene.data?.[0] ? status(scene.data[0]) : null;
   const revision = clock?.revision ?? 0;
-  const entities = records.flatMap(r => r.type === 'entity' ? [r.entity] : []);
   const [selected,setSelected] = useState('wall');
   const [inspect,setInspect] = useState<QueryId>('affected-journeys');
   const [draft,setDraft] = useState<Entity | null>(null), [adding,setAdding] = useState(false);
@@ -39,16 +39,16 @@ export function App() {
   const [error,setError] = useState<string | null>(null);
   const busyRef = useRef(false);
   const current = entities.find(e => e.id === selected);
-  const observed = geometry.data?.[0] ? number(geometry.data[0].revision) : 0;
   const stale = !online || !transport.connected || !client.initialized || Object.values(views).some(v => v.loading || v.stale || v.error);
-  const unsettled = revision === 0 || observed !== revision || (accepted !== null && observed < accepted);
+  // The source's status revision gates commands; queries downstream of it settle asynchronously.
+  const unsettled = revision === 0 || entities.length !== clock?.objects || (accepted !== null && revision < accepted);
   const pending = sending || accepted !== null;
   const disabled = stale || pending || unsettled;
   useEffect(() => {
-    if (accepted !== null && observed >= accepted && revision >= accepted) {
+    if (accepted !== null && revision >= accepted) {
       setAccepted(null); setDraft(null); setAdding(false);
     }
-  },[accepted,observed,revision]);
+  },[accepted,revision]);
   useEffect(() => {
     if (accepted === null) return;
     const timer = window.setTimeout(() => setError(`Revision ${accepted} was accepted, but query confirmation has not arrived. Results are not current; inspect the graph or reconnect.`),10000);
@@ -121,7 +121,7 @@ export function App() {
             obstructed={obstructed} affectedDestinations={affectedDestinations} disabled={disabled}
             pending={pending} draft={draft} preview={setDraft} commit={e => void send({action:'put',entity:e})}/>
         </section>
-        <section className="inspector" aria-labelledby="inspector-heading"><div className="panel-heading"><h2 id="inspector-heading">Follow the change</h2><span className="revision">Input r{revision} / geometry r{observed}</span></div>
+        <section className="inspector" aria-labelledby="inspector-heading"><div className="panel-heading"><h2 id="inspector-heading">Follow the change</h2><span className="revision">Scene r{revision}</span></div>
           <p className="muted">Choose a stage to inspect its query results below.</p>
           <nav className="pipeline" aria-label="Computation graph">
             {queryIds.map((id,i) => <button key={id} aria-pressed={inspect === id} aria-controls="query-records" onClick={() => setInspect(id)}>
@@ -129,10 +129,10 @@ export function App() {
             </button>)}
           </nav>
           <p className="muted" id="record-description">{inspectionStages[inspect].description}</p>
-          {clock?.type === 'clock' && <p className="changed">Last command: <b>{clock.command}</b> · Changed: {clock.changed.join(', ') || '(empty bootstrap)'}</p>}
+          {clock && <p className="changed">Last command: <b>{clock.command}</b> · Changed: {clock.changed.join(', ') || '(empty bootstrap)'}</p>}
           <p className="query-state">{views[inspect].status}{views[inspect].stale ? ' · stale' : ''} · {views[inspect].data?.length ?? 0} rows <button onClick={() => views[inspect].retry()}>Retry query</button></p>
           {Object.entries(views).filter(([,v]) => v.error).map(([id,v]) => <p role="alert" className="error" key={id}>{id}: {v.error?.message}</p>)}
-          <pre id="query-records" data-testid="query-records" aria-describedby="record-description">{JSON.stringify(inspect === 'scene-inputs' || inspect === 'geometry-context' ? (views[inspect].data ?? []).flatMap(inputs) : views[inspect].data, null,2)}</pre>
+          <pre id="query-records" data-testid="query-records" aria-describedby="record-description">{JSON.stringify(views[inspect].data, null,2)}</pre>
         </section>
       </div>
       <aside>

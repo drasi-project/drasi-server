@@ -27,7 +27,7 @@ describe('CQ row identity and validation', () => {
   it.skipIf(!process.env.GPU_LAB_NATIVE_ROWS)('accepts real native-query payloads including complete shared-rule criteria', () => {
     const batches: unknown = JSON.parse(readFileSync(process.env.GPU_LAB_NATIVE_ROWS!, 'utf8'));
     if (!Array.isArray(batches)) throw new Error('Expected native row batches');
-    expect(batches.map(batch => batch.query).sort()).toEqual([...queryIds].sort());
+    expect([...new Set(batches.map(batch => batch.query))].sort()).toEqual([...queryIds].sort());
     let completeRules = 0;
     for (const batch of batches) {
       const query = queryIds.find(id => id === batch.query);

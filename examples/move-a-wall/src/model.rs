@@ -1,5 +1,6 @@
 use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 pub type Point = [f64; 2];
@@ -61,7 +62,6 @@ fn point(p: Point) -> Result<()> {
 impl Entity {
     pub fn validate(&self) -> Result<()> {
         identifier(&self.id)?;
-        ensure!(self.id != "__clock", "__clock is reserved by the source");
         ensure!(
             !self.name.trim().is_empty() && self.name.len() <= 100,
             "name must be 1-100 bytes"
@@ -133,6 +133,38 @@ impl Entity {
             }
         }
         Ok(())
+    }
+    /// The plain node properties published by the source: identity, kind,
+    /// name, active flag and the shape's fields, with no nested payload.
+    pub fn properties(&self) -> Value {
+        let mut properties = json!({
+            "id": self.id,
+            "kind": self.kind(),
+            "name": self.name,
+            "active": self.active,
+        });
+        let fields = match &self.shape {
+            Shape::Cart { radius, clearance } => json!({"radius": radius, "clearance": clearance}),
+            Shape::Journey {
+                cart_id,
+                destination_id,
+                points,
+            } => json!({"cart_id": cart_id, "destination_id": destination_id, "points": points}),
+            Shape::Destination { point } => json!({"point": point}),
+            Shape::Obstacle { vertices } => json!({"vertices": vertices}),
+        };
+        for (key, value) in fields.as_object().into_iter().flatten() {
+            properties[key] = value.clone();
+        }
+        properties
+    }
+    pub fn kind(&self) -> &'static str {
+        match self.shape {
+            Shape::Cart { .. } => "cart",
+            Shape::Journey { .. } => "journey",
+            Shape::Destination { .. } => "destination",
+            Shape::Obstacle { .. } => "obstacle",
+        }
     }
     pub fn label(&self) -> &'static str {
         match self.shape {

@@ -36,41 +36,46 @@ describe('embedded architecture inventory and contracts', () => {
     }
   });
 
-  it('covers all fourteen real queries once and the nine UI subscriptions', () => {
+  it('covers all nineteen real queries once and the nine UI subscriptions', () => {
     const inputs = source('../../crates/native/src/inputs.rs');
     const declared = nodes.flatMap(n => n.queryIds ?? []);
-    const expected = ['input-configuration', ...queryIds,
-      'simulation-inputs', 'scheduling-inputs', 'plan-output', 'runtime-context'];
-    expect(declared).toHaveLength(14);
-    expect(new Set(declared).size).toBe(14);
+    const expected = ['input-configuration', ...queryIds, 'simulation-inputs', 'placement-pairs', 'placement-gpus',
+      'placement-candidates', 'planner-policy', 'planner-solution', 'planner-status', 'plan-output', 'runtime-context'];
+    expect(declared).toHaveLength(19);
+    expect(new Set(declared).size).toBe(19);
     expect([...declared].sort()).toEqual(expected.sort());
     expect(node('views').queryIds).toEqual(queryIds);
+    for (const id of expected.filter(id => !queryIds.includes(id as never))) expect(inputs).toContain(`"${id}"`);
     for (const [id, table] of databaseInputs) {
       expect(inputs).toContain(`"${id}"`);
       expect(source('../../../embedded/src/database.rs')).toContain(`"${table}"`);
     }
-    for (const id of ['simulation-inputs', 'scheduling-inputs']) {
-      const detail = nodes.find(n => n.queryIds?.includes(id));
-      expect(detail?.schema).toBe(source(`../../queries/${id}.cypher`));
-    }
+    expect(node('simulator').schema).toBe(source('../../queries/simulation-inputs.cypher'));
+    expect(node('scheduling').schema).toBe(source('../../queries/placement-gpus.cypher'));
   });
 
-  it('matches native implementations and meaningful assembly connections without a hypothetical writer path', () => {
+  it('matches native and plugin implementations and meaningful connections without a hypothetical writer path', () => {
     const assembly = source('../../../embedded/src/main.rs');
-    const processors = ['policy', 'simulator', 'placement', 'resilience'];
-    for (const id of processors) {
+    const plugins = source('../../crates/native/src/plugins.rs');
+    for (const id of ['configuration', 'simulator', 'placement']) {
       const implementation = node(id).implementation.match(/gpu\.lab\/[\w-]+/)?.[0];
       expect(implementation).toBeDefined();
       expect(assembly).toContain(`("${id}", "${implementation}")`);
     }
+    expect(node('policy').implementation).toContain('drasi.standard/policy');
+    expect(node('optimization').implementation).toContain('drasi.standard/optimization');
+    expect(plugins).toContain('"drasi.standard/policy"');
+    expect(plugins).toContain('"drasi.standard/optimization"');
     for (const [from, to] of [
-      ['policy', 'simulation-inputs'], ['policy', 'scheduling-inputs'],
-      ['simulation-inputs', 'simulator'], ['simulator', 'scheduling-inputs'],
-      ['scheduling-inputs', 'placement'], ['scheduling-inputs', 'resilience'],
+      ['configuration', 'simulation-inputs'], ['configuration', 'placement-pairs'], ['placement-pairs', 'policy'],
+      ['policy', 'planner-policy'], ['policy', 'solver'], ['simulator', 'placement-gpus'],
+      ['placement-gpus', 'solver'], ['placement-gpus', 'capacity-check'], ['placement-candidates', 'solver'],
+      ['solver', 'planner-solution'], ['solver', 'planner-status'], ['planner-solution', 'placement'],
+      ['simulation-inputs', 'simulator'], ['planner-policy', 'simulator'],
       ['placement', 'plan-output'], ['plan-output', 'plan-writer'], ['placement', 'runtime-context'],
-    ]) expect(assembly).toContain(`("${from}", "${to}")`);
-    expect(edges.find(e => e.id === 'evidence')?.sources).toEqual([...processors, 'status']);
-    expect(edges.filter(e => e.sources.includes('resilience')).every(e => e.targets.includes('views'))).toBe(true);
+    ]) expect(plugins).toContain(`("${from}", "${to}")`);
+    expect(edges.find(e => e.id === 'evidence')?.sources).toEqual(['simulator', 'placement', 'policy', 'optimization', 'status']);
+    expect(edges.filter(e => e.sources.includes('optimization') && e.targets.includes('writer'))).toEqual([]);
     expect(edges.filter(e => e.targets.includes('writer')).map(e => e.id)).toEqual(['candidate']);
     expect(edges.find(e => e.id === 'write-outcomes')?.kind).toBe('lifecycle');
   });

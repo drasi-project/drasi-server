@@ -90,7 +90,7 @@ acceptance() (
                 if [ "${GPU_LAB_DIAGNOSTICS:-0}" = "1" ]; then
                     diagnostic_queries="diagnostic-contexts diagnostic-workload-predicates diagnostic-placement-predicates"
                 fi
-                for query in ui-gpus ui-workloads ui-placements ui-policy ui-resilience ui-decisions ui-status ui-timeline ui-clusters scheduling-inputs simulation-inputs runtime-context $diagnostic_queries; do
+                for query in ui-gpus ui-workloads ui-placements ui-policy ui-resilience ui-decisions ui-status ui-timeline ui-clusters placement-pairs placement-gpus planner-status simulation-inputs runtime-context $diagnostic_queries; do
                     compose exec -T control curl --silent --show-error --max-time 10 \
                         "http://drasi:8080/api/v1/instances/gpu-demo/queries/$query/results" \
                         > "$evidence/$query.json" 2> "$evidence/$query.stderr" ||

@@ -7,32 +7,45 @@ use drasi_core_types::models::{
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 
-pub type Records = BTreeMap<(String, String), Value>;
+/// One published node: its labels and complete plain properties.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Record {
+    pub labels: Vec<&'static str>,
+    pub properties: Value,
+}
 
-pub fn metadata(stream: &str, label: &str, id: &str, effective_from: u64) -> ElementMetadata {
+/// The source's complete current view, keyed by element ID.
+pub type Records = BTreeMap<String, Record>;
+
+pub fn metadata(
+    stream: &str,
+    element_id: &str,
+    labels: &[&'static str],
+    effective_from: u64,
+) -> ElementMetadata {
     ElementMetadata {
-        reference: ElementReference::new(stream, &format!("{label}/{id}")),
-        labels: Arc::from([Arc::from(label)]),
+        reference: ElementReference::new(stream, element_id),
+        labels: labels.iter().map(|label| Arc::from(*label)).collect(),
         effective_from,
     }
 }
 
 pub fn diff(stream: &str, before: &Records, after: &Records, revision: u64) -> Vec<SourceChange> {
     let mut changes = Vec::new();
-    for (label, id) in before.keys().filter(|key| !after.contains_key(*key)) {
+    for (id, record) in before.iter().filter(|(id, _)| !after.contains_key(*id)) {
         changes.push(SourceChange::Delete {
-            metadata: metadata(stream, label, id, revision),
+            metadata: metadata(stream, id, &record.labels, revision),
         });
     }
-    for ((label, id), value) in after {
-        if before.get(&(label.clone(), id.clone())) == Some(value) {
+    for (id, record) in after {
+        if before.get(id) == Some(record) {
             continue;
         }
         let element = Element::Node {
-            metadata: metadata(stream, label, id, revision),
-            properties: ElementPropertyMap::from(value.clone()),
+            metadata: metadata(stream, id, &record.labels, revision),
+            properties: ElementPropertyMap::from(record.properties.clone()),
         };
-        changes.push(if before.contains_key(&(label.clone(), id.clone())) {
+        changes.push(if before.contains_key(id) {
             SourceChange::Replace { element }
         } else {
             SourceChange::Insert { element }
@@ -67,11 +80,7 @@ impl Emitter {
             records: Records::new(),
         })
     }
-    pub fn replace(
-        &mut self,
-        records: Records,
-        input: Option<&ChangeEnvelope>,
-    ) -> Result<Vec<OutputEnvelope>> {
+    pub fn replace(&mut self, records: Records) -> Result<Vec<OutputEnvelope>> {
         let next = self
             .sequence
             .checked_add(1)
@@ -87,11 +96,8 @@ impl Emitter {
         if changes.is_empty() {
             return Ok(vec![]);
         }
-        let mut envelope = if let Some(input) = input {
-            GraphChangeCodec::derive_changes(input, &changes, self.stream.clone(), next)?
-        } else {
-            GraphChangeCodec::encode_changes(&changes, self.stream.clone(), next, Some(now))?
-        };
+        let mut envelope =
+            GraphChangeCodec::encode_changes(&changes, self.stream.clone(), next, Some(now))?;
         GraphProducerProgress::annotate(&mut envelope, &self.identity, next)?;
         self.records = records;
         self.sequence = next;
@@ -102,17 +108,11 @@ impl Emitter {
     }
 }
 
-pub fn port(name: &str, direction: PortDirection, query: bool) -> Result<PortDescriptor> {
+pub fn port(name: &str, direction: PortDirection) -> Result<PortDescriptor> {
     Ok(PortDescriptor::new(
         PortId::try_new(name)?,
         direction,
-        if query {
-            QueryChangeCodec::schema()
-        } else {
-            GraphChangeCodec::schema()
-        }
-        .descriptor()
-        .clone(),
+        GraphChangeCodec::schema().descriptor().clone(),
         PipeRequirements::default(),
     ))
 }
@@ -123,9 +123,16 @@ mod replacement_tests {
 
     #[test]
     fn complete_views_replace_fields_instead_of_leaving_omitted_properties() {
-        let key = ("Room".to_string(), "one".to_string());
-        let before = Records::from([(key.clone(), serde_json::json!({"kept":1,"removed":2}))]);
-        let after = Records::from([(key, serde_json::json!({"kept":1}))]);
+        let record = |properties| Record {
+            labels: vec!["Room"],
+            properties,
+        };
+        let key = "Room/one".to_string();
+        let before = Records::from([(
+            key.clone(),
+            record(serde_json::json!({"kept":1,"removed":2})),
+        )]);
+        let after = Records::from([(key, record(serde_json::json!({"kept":1})))]);
         let changes = diff("rooms/out", &before, &after, 2);
         let [SourceChange::Replace { element }] = changes.as_slice() else {
             panic!("a changed complete view must produce one full replacement");

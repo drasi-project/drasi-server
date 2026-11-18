@@ -30,11 +30,9 @@ const labels = {
     'component-status': 'Component status changed',
   },
   component: {
-    postgres: 'Database change feed', simulator: 'GPU simulator', policy: 'Policy evaluator (Regorus)',
-    placement: 'Placement optimizer', resilience: 'Failure recovery analysis', 'runtime-status': 'Runtime status and activity',
-    'postgres-source': 'Database change feed', 'telemetry-simulator': 'GPU simulator',
-    'regorus-policy': 'Policy evaluator (Regorus)', 'placement-solver': 'Placement optimizer',
-    'resilience-assessor': 'Failure recovery analysis', 'plan-writer': 'Plan saving',
+    postgres: 'Database change feed', configuration: 'Configuration projector', simulator: 'GPU simulator',
+    policy: 'Policy evaluator (Regorus)', solver: 'Placement optimizer', 'capacity-check': 'Failure recovery analysis',
+    placement: 'Placement planner', 'runtime-status': 'Runtime status and activity', 'plan-writer': 'Plan saving',
   },
   componentStatus: {
     ready: 'Ready', current: 'Up to date', unavailable: 'Unavailable', 'not evaluated': 'Not evaluated',

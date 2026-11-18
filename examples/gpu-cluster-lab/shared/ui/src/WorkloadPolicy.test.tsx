@@ -122,7 +122,7 @@ it.each(['stale', 'disconnected', 'purpose', 'epoch', 'signature', 'rules-changi
   const rows = snapshot('regional');
   if (state === 'purpose') rows['ui-workloads'][0].purpose = 'demo';
   if (state === 'epoch') rows['ui-policy'].forEach(row => { row.observation_epoch = 'previous-run'; });
-  if (state === 'signature') rows['ui-policy'].forEach(row => { row.policy_signature = 'previous-policy'; });
+  if (state === 'signature') rows['ui-policy'].forEach(row => { row.policy_hash = 'previous-policy'; });
   if (state === 'rules-changing') rows['ui-status'][0].policy_rules_current = false;
   if (state === 'missing') rows['ui-policy'] = rows['ui-policy'].filter(row => row.workload_id !== 'mock-assistant');
   await act(async () => root.render(render(rows, state === 'stale', state === 'disconnected')));

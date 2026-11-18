@@ -1,6 +1,6 @@
 use anyhow::{ensure, Context, Result};
+use gpu_contracts::policy::{context_key, pair_key, Assessment, Authorization};
 use gpu_contracts::*;
-use gpu_policy::{input_fingerprint, pair_key, Assessment, Authorization};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -245,16 +245,8 @@ impl Simulator {
                 .clusters
                 .get(&g.cluster_id)
                 .context("execution cluster disappeared")?;
-            let expected = match input_fingerprint(&self.config, w, c) {
-                Ok(value) => {
-                    e.policy_error = None;
-                    Some(value)
-                }
-                Err(error) => {
-                    e.policy_error = Some(format!("{error:#}"));
-                    None
-                }
-            };
+            let expected = Some(context_key(&self.config, w, c));
+            e.policy_error = None;
             let current = self
                 .policy
                 .as_ref()
@@ -436,7 +428,7 @@ impl Simulator {
         for a in &plan.assignments {
             let w = &self.config.workloads[&a.workload_id];
             let c = &self.config.clusters[&self.config.gpus[&a.gpu_id].cluster_id];
-            let fingerprint = input_fingerprint(&self.config, w, c)?;
+            let fingerprint = context_key(&self.config, w, c);
             if let Some(previous) = self.execution.get(&a.key()).filter(|previous| {
                 already_applied
                     && previous.assignment == *a
@@ -525,10 +517,10 @@ impl Simulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpu_policy::Evaluator;
+    use gpu_contracts::policy::reference_assessment;
     fn setup(name: &str) -> Result<(Simulator, fixtures::Fixture)> {
         let fixture = fixtures::load(name)?;
-        let p = Evaluator::new()?.evaluate(&fixture.configuration)?;
+        let p = reference_assessment(&fixture.configuration)?;
         let plan = Plan {
             fleet_id: "demo".into(),
             plan_version: 1,
@@ -614,7 +606,7 @@ mod tests {
             .values()
             .all(|e| e.state == Execution::Suspended));
         assert!(sim.samples.values().all(|s| s.report_time_ms == 100));
-        sim.observe_policy(Evaluator::new()?.evaluate(&f.configuration)?, 210)?;
+        sim.observe_policy(reference_assessment(&f.configuration)?, 210)?;
         assert!(sim.execution.values().all(|e| e.state == Execution::Fenced));
         assert!(sim.retry_desired(220).is_err());
         let reports = sim.tick(1000, 1100)?;
@@ -653,7 +645,7 @@ mod tests {
     #[test]
     fn delayed_policy_cannot_clear_a_source_failure() -> Result<()> {
         let (mut sim, f) = setup("baseline")?;
-        let delayed = Evaluator::new()?.evaluate(&f.configuration)?;
+        let delayed = reference_assessment(&f.configuration)?;
         sim.invalidate_source(20, "source-unavailable");
         sim.observe_policy(delayed, 30)?;
         assert!(sim
@@ -685,7 +677,7 @@ mod tests {
             .execution
             .values()
             .all(|e| e.state == Execution::Suspended));
-        sim.observe_policy(Evaluator::new()?.evaluate(&f.configuration)?, 30)?;
+        sim.observe_policy(reference_assessment(&f.configuration)?, 30)?;
         assert!(sim.retry_desired(40).is_err());
         for e in sim.execution.values() {
             assert_eq!(
@@ -705,7 +697,7 @@ mod tests {
         policy.allowed_purposes.insert("customer-support".into());
         policy.revision += 1;
         sim.observe_configuration(f.configuration.clone(), f.settings, 50)?;
-        sim.observe_policy(Evaluator::new()?.evaluate(&f.configuration)?, 60)?;
+        sim.observe_policy(reference_assessment(&f.configuration)?, 60)?;
         assert!(
             sim.execution
                 .values()
@@ -729,7 +721,7 @@ mod tests {
         sim.invalidate_policy(10)?;
         f.settings.get_mut(&gpu).unwrap().background_memory_mib = 4097;
         sim.observe_configuration(f.configuration.clone(), f.settings, 20)?;
-        sim.observe_policy(Evaluator::new()?.evaluate(&f.configuration)?, 30)?;
+        sim.observe_policy(reference_assessment(&f.configuration)?, 30)?;
         assert!(sim
             .execution
             .values()
@@ -759,7 +751,7 @@ mod tests {
             settings.background_compute_units = 55;
             settings.background_memory_mib = memory;
             sim.observe_configuration(f.configuration.clone(), f.settings, 20)?;
-            let mut policy = Evaluator::new()?.evaluate(&f.configuration)?;
+            let mut policy = reference_assessment(&f.configuration)?;
             let embeddings = f
                 .configuration
                 .workloads
@@ -773,10 +765,7 @@ mod tests {
                 .unwrap();
             pair.authorization = Authorization::Unknown;
             pair.error = Some("evaluation unavailable".into());
-            policy.policy_signature = hash(
-                "gpu-policy-assessment-v1",
-                &(&policy.policy_bundle_hash, &policy.pairs),
-            )?;
+            policy.resign()?;
             sim.observe_policy(policy, 30)?;
             let resident: Vec<_> = sim
                 .execution
@@ -801,15 +790,12 @@ mod tests {
     #[test]
     fn partial_unknown_batch_does_not_suspend_unaffected_pairs() -> Result<()> {
         let (mut sim, f) = setup("baseline")?;
-        let mut policy = Evaluator::new()?.evaluate(&f.configuration)?;
+        let mut policy = reference_assessment(&f.configuration)?;
         let pair = policy.pairs.values_mut().next().unwrap();
         let affected = pair.workload_id;
         pair.authorization = Authorization::Unknown;
         pair.error = Some("evaluation deadline exceeded".into());
-        policy.policy_signature = hash(
-            "gpu-policy-assessment-v1",
-            &(&policy.policy_bundle_hash, &policy.pairs),
-        )?;
+        policy.resign()?;
         sim.observe_policy(policy, 30)?;
         for e in sim.execution.values() {
             assert_eq!(
@@ -827,7 +813,7 @@ mod tests {
     #[test]
     fn rejected_bootstrap_plan_does_not_prevent_fresh_device_reports() -> Result<()> {
         let f = fixtures::load("baseline")?;
-        let policy = Evaluator::new()?.evaluate(&f.configuration)?;
+        let policy = reference_assessment(&f.configuration)?;
         let plan = Plan {
             fleet_id: "demo".into(),
             plan_version: 1,

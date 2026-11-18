@@ -61,7 +61,7 @@ try {
   assert.equal(admin.url(),'http://127.0.0.1:8421/ui/');
   assert.equal(await admin.title(),'Drasi Server');
   await admin.getByText('move-a-wall',{exact:true}).first().waitFor({timeout:30000});
-  await admin.locator('.react-flow__node').filter({hasText:/geometry/}).first().waitFor({timeout:30000});
+  await admin.locator('.react-flow__node').filter({hasText:/00000000-0000-4000-8000-000000000002\s*Transformer/i}).first().waitFor({timeout:30000});
   await admin.close();
   await page.bringToFront();
   await page.evaluate(() => window.scrollTo(0,0));
@@ -116,8 +116,8 @@ try {
   assert.ok(expandedImpact.height > initialImpact.height,'The impact panel must actually expand during this check');
   assert.equal(stableInspector.y,inspectorPosition.y,'An expanding impact panel must not push the inspector down');
   for (const [label,id] of [
-    ['Source','scene-inputs'],['Context query','geometry-context'],['Geometry transformer','obstructions'],
-    ['Impact query','affected-journeys'],['SSE / UI','geometry-status'],
+    ['Source','scene-inputs'],['Journey footprints','journey-footprints'],['Obstacle footprints','obstacle-footprints'],
+    ['Geometry transformer','obstructions'],['Impact query','affected-journeys'],['SSE / UI','scene-status'],
   ]) {
     const stage = flow.getByRole('button',{name:`${label} ${id}`,exact:true});
     await stage.click();
@@ -128,18 +128,19 @@ try {
     assert.equal(response.ok(),true);
     const body = await response.json();
     assert.equal(body.success,true);
-    const expected = id === 'scene-inputs' || id === 'geometry-context'
-      ? body.data.flatMap(row => row.objects.map(payload => JSON.parse(payload))) : body.data;
+    const expected = body.data;
     for (const row of expected) {
       assert.equal(Object.hasOwn(row,'floor'),false,`${id} must not return the removed field`);
-      if (row.type === 'entity') assert.equal(Object.hasOwn(row.entity,'floor'),false);
+      assert.equal(Object.hasOwn(row,'payload'),false,`${id} must return plain columns`);
     }
-    assert.deepEqual(JSON.parse(await inspector.getByTestId('query-records').textContent()),expected,`${label} must display its actual query records`);
+    // Query results are unordered sets; the SDK and REST snapshot may order rows differently.
+    const ordered = rows => rows.map(row => JSON.stringify(row)).sort();
+    assert.deepEqual(ordered(JSON.parse(await inspector.getByTestId('query-records').textContent())),ordered(expected),`${label} must display its actual query records`);
   }
   await flow.getByRole('button',{name:'Source scene-inputs',exact:true}).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
-  assert.equal(await flow.getByRole('button',{name:'Context query geometry-context',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.equal(await flow.getByRole('button',{name:'Journey footprints journey-footprints',exact:true}).getAttribute('aria-pressed'),'true');
   await flow.getByRole('button',{name:'Impact query affected-journeys',exact:true}).click();
   await page.screenshot({path:`${artifacts}/obstructed.png`,fullPage:true});
   await page.reload();
@@ -207,8 +208,8 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),true,`No horizontal overflow at ${width}px`);
     await selection.selectOption('journey-ada');
     await editor.getByRole('heading',{name:'Deliver packaging',exact:true}).waitFor();
-    await flow.getByRole('button',{name:'SSE / UI geometry-status',exact:true}).click();
-    assert.equal(await flow.getByRole('button',{name:'SSE / UI geometry-status',exact:true}).getAttribute('aria-pressed'),'true');
+    await flow.getByRole('button',{name:'SSE / UI scene-status',exact:true}).click();
+    assert.equal(await flow.getByRole('button',{name:'SSE / UI scene-status',exact:true}).getAttribute('aria-pressed'),'true');
   }
   await page.screenshot({path:`${artifacts}/mobile.png`,fullPage:true});
   console.log('PASS: independently sized scene/inspector column, integrated flow inspector with real query records and keyboard selection, compact scene UI, adjacent object editor, responsive layout, real drag/retraction and path-only query impacts, reload, offline/reconnect, keyboard command, visible validation errors, CRUD for all four entity kinds, cancel/rejected draft preservation, reset. Screenshots in artifacts/.');

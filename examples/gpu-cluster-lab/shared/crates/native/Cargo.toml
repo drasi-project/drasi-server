@@ -35,8 +35,6 @@ required-features = ["query-isolation"]
 
 [dependencies]
 gpu-contracts = { path = "../contracts" }
-gpu-policy = { path = "../policy" }
-gpu-placement = { path = "../placement" }
 gpu-simulator = { path = "../simulator" }
 gpu-control = { path = "../control" }
 drasi-lib = { path = "../../../../../../drasi-core/lib", optional = true }
@@ -72,3 +70,6 @@ drasi-source-application = { path = "../../../../../../drasi-core/components/sou
 drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false }
 axum = "0.7"
 tempfile = "3"
+drasi-computation-plugin-sdk = { path = "../../../../../../drasi-core/components/computation-plugin-sdk", features = ["test-support"] }
+drasi-computation-transformer-policy = { path = "../../../../../../drasi-core/components/computation-plugins/transformers/policy" }
+drasi-computation-transformer-optimization = { path = "../../../../../../drasi-core/components/computation-plugins/transformers/optimization" }

@@ -1323,6 +1323,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-computation-transformer-optimization"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core-types",
+ "good_lp",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "drasi-computation-transformer-policy"
+version = "0.11.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-computation-contracts",
+ "drasi-computation-plugin-sdk",
+ "drasi-core-types",
+ "regorus",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "drasi-core"
 version = "0.5.10"
 dependencies = [
@@ -2295,7 +2325,6 @@ dependencies = [
  "axum",
  "futures-util",
  "gpu-contracts",
- "gpu-policy",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2319,6 +2348,8 @@ dependencies = [
  "drasi-computation-contracts",
  "drasi-computation-plugin-sdk",
  "drasi-computation-source-postgres",
+ "drasi-computation-transformer-optimization",
+ "drasi-computation-transformer-policy",
  "drasi-core",
  "drasi-core-types",
  "drasi-host-sdk",
@@ -2330,8 +2361,6 @@ dependencies = [
  "futures-util",
  "gpu-contracts",
  "gpu-control",
- "gpu-placement",
- "gpu-policy",
  "gpu-simulator",
  "serde",
  "serde_json",
@@ -2344,37 +2373,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpu-placement"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "good_lp",
- "gpu-contracts",
- "gpu-policy",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "gpu-policy"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "gpu-contracts",
- "regorus",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
 name = "gpu-simulator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "gpu-contracts",
- "gpu-policy",
  "serde",
  "serde_json",
  "uuid",

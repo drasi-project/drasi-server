@@ -8,7 +8,6 @@ publish.workspace = true
 
 [dependencies]
 gpu-contracts.workspace = true
-gpu-policy.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

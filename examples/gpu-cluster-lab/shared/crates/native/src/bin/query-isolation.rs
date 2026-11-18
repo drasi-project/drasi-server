@@ -440,39 +440,34 @@ fn validate(id: &str, rows: &[Value], corpus: &Corpus, expired: bool) -> Result<
                 "stale required replica count"
             );
         }
-        "scheduling-inputs" => {
-            let current = rows
-                .iter()
-                .filter(|r| {
-                    r["configuration"] == corpus.configuration
-                        && r["capacities"].as_array().is_some_and(|c| !c.is_empty())
-                })
-                .collect::<Vec<_>>();
+        "placement-gpus" => {
+            unique("gpu_id")?;
             ensure!(
-                current.len() == 1,
-                "expected one current nonempty scheduling aggregate"
-            );
-            let capacities = current[0]["capacities"].as_array().unwrap();
-            let ids = capacities
-                .iter()
-                .map(|c| c["gpu_id"].as_str())
-                .collect::<BTreeSet<_>>();
-            ensure!(
-                capacities.len() == gpus.len() && ids.len() == gpus.len() && !ids.contains(&None),
-                "duplicate/missing capacities"
+                rows.len() == gpus.len()
+                    && rows
+                        .iter()
+                        .all(|r| gpus.contains_key(r["gpu_id"].as_str().unwrap_or_default())),
+                "duplicate/missing placement GPUs"
             );
             if expired {
                 ensure!(
-                    capacities.iter().all(|c| c["fresh"] == false),
-                    "capacity remains fresh after due timers"
-                );
-            } else {
-                ensure!(
-                    capacities.iter().all(|c| c["fresh"] == true),
-                    "pre-pause capacity is not fresh"
+                    rows.iter().all(|r| r["eligible"] == false),
+                    "placement GPU remains eligible after due timers"
                 );
             }
         }
+        "placement-pairs" => {
+            ensure!(
+                rows.len()
+                    == workloads.len()
+                        * corpus.configuration["clusters"]
+                            .as_object()
+                            .context("clusters missing")?
+                            .len(),
+                "incomplete workload/cluster pairs"
+            );
+        }
+        "placement-candidates" | "planner-policy" | "planner-solution" | "planner-status" => {}
         "plan-output" => {
             ensure!(rows.len() <= 1, "multiple candidate plans");
         }
@@ -552,12 +547,12 @@ fn accepts(id: &str, frame: &Frame) -> bool {
     if inputs::DATABASE_QUERIES.contains(&id) {
         return false;
     }
-    match id {
-        "simulation-inputs" => stream == "policy/out",
-        "scheduling-inputs" => matches!(stream, "policy/out" | "simulator/out"),
-        "plan-output" | "runtime-context" => stream == "placement/out",
-        _ => true,
+    if gpu_contracts::UI_QUERIES.contains(&id) {
+        return true;
     }
+    stream
+        .strip_suffix("/out")
+        .is_some_and(|producer| gpu_native::plugins::EDGES.contains(&(producer, id)))
 }
 
 fn shifted_time(value: u64, shift: i64) -> Result<u64> {

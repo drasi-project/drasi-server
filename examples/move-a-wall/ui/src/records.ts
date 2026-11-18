@@ -1,5 +1,5 @@
 import type { ResultRow } from '@drasi/react/client';
-export const queryIds = ['scene-inputs','geometry-context','obstructions','affected-journeys','geometry-status'] as const;
+export const queryIds = ['scene-inputs','journey-footprints','obstacle-footprints','obstructions','affected-journeys','scene-status'] as const;
 export type QueryId = typeof queryIds[number];
 export type Point = [number, number];
 export type Shape =
@@ -8,8 +8,7 @@ export type Shape =
   | { kind: 'destination'; point: Point }
   | { kind: 'obstacle'; vertices: Point[] };
 export type Entity = { id: string; name: string; active: boolean; shape: Shape };
-export type Clock = { type: 'clock'; revision: number; members: Record<string,number>; changed: string[]; command: string };
-export type Input = Clock | { type: 'entity'; revision: number; entity: Entity };
+export type Status = { revision: number; command: string; changed: string[]; objects: number };
 export function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected an object');
   return value as Record<string, unknown>;
@@ -46,23 +45,31 @@ export function entity(value: unknown): Entity {
   }
   return { id:text(v.id), name:text(v.name), active:bool(v.active), shape };
 }
-export function inputs(row: ResultRow): Input[] {
-  if (!Array.isArray(row.objects)) throw new Error('Query returned no objects array');
-  return row.objects.map(payload => {
-    const r = object(JSON.parse(text(payload)));
-    if (r.type === 'entity') return { type:'entity', revision:number(r.revision), entity:entity(r.entity) };
-    if (r.type !== 'clock' || !Array.isArray(r.changed)) throw new Error('Invalid source revision record');
-    const members = Object.fromEntries(Object.entries(object(r.members)).map(([key,v]) => [key,number(v)]));
-    return { type:'clock', revision:number(r.revision), members, changed:r.changed.map(text), command:text(r.command) };
-  });
+/** One scene-inputs row: a typed scene node's plain properties. */
+export function sceneEntity(row: ResultRow): Entity {
+  const { id, kind, name, active, ...fields } = row;
+  return entity({ id, name, active, shape:{ kind, ...fields } });
+}
+export function status(row: ResultRow): Status {
+  if (!Array.isArray(row.changed)) throw new Error('Scene status has no changed array');
+  return { revision:number(row.revision), command:text(row.command), changed:row.changed.map(text), objects:number(row.objects) };
 }
 export function validate(id: QueryId, row: ResultRow): ResultRow {
-  if (id === 'scene-inputs' || id === 'geometry-context') inputs(row);
-  else {
-    text(row.id);
-    if (id === 'geometry-status') { number(row.revision); number(row.obstructions); }
-    if (id === 'affected-journeys') for (const key of ['cart_id','journey_id','destination_id','obstacle_id','cart','task','destination','obstacle']) text(row[key]);
-    if (id === 'obstructions') for (const key of ['journey_id','cart_id','obstacle_id']) text(row[key]);
+  switch (id) {
+    case 'scene-inputs': sceneEntity(row); break;
+    case 'scene-status': status(row); break;
+    case 'journey-footprints':
+      for (const key of ['journey_id','cart_id']) text(row[key]);
+      points(row.points); number(row.radius); number(row.clearance); break;
+    case 'obstacle-footprints': text(row.obstacle_id); points(row.vertices); break;
+    case 'affected-journeys':
+      text(row.id);
+      for (const key of ['cart_id','journey_id','destination_id','obstacle_id','cart','task','destination','obstacle']) text(row[key]);
+      break;
+    case 'obstructions':
+      text(row.id);
+      for (const key of ['journey_id','cart_id','obstacle_id']) text(row[key]);
+      number(row.distance_m); number(row.required_m); break;
   }
   return row;
 }

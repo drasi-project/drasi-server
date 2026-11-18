@@ -24,7 +24,7 @@ WITH p, a, c, r, e,
      e.state = 'running' AND e.replica_index < w.replicas AND g.scheduling_enabled = true
      AND e.profile_id = w.profile_id AND e.data_profile_id = w.data_profile_id AND e.purpose = w.purpose
      AND e.memory_mib = w.memory_mib_per_replica AND e.compute_units = w.compute_units_per_replica AS workload_matches,
-     auth.current = true AND auth.authorization = 'allow' AND auth.policy_signature = c.policy_signature
+     auth.status = 'decided' AND auth.authorization = 'allow' AND auth.policy_hash = c.policy_bundle_hash
      AND auth.workload_id = w.workload_id AND auth.cluster_id = g.cluster_id
      AND auth.data_profile_id = w.data_profile_id AND auth.purpose = w.purpose AS policy_current,
      s.applied_plan_version = toString(p.plan_version) AND NOT expired
