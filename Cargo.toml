@@ -41,7 +41,7 @@ path = "src/main.rs"
 [dependencies]
 # Drasi dependencies use the existing sibling checkout, including local edits.
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { path = "../drasi-core/lib", features = [
+drasi-lib = { path = "../drasi-core-next/lib", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -52,29 +52,29 @@ drasi-lib = { path = "../drasi-core/lib", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = { path = "../drasi-core/core" }
+drasi-core = { path = "../drasi-core-next/core" }
 
 # Core bootstrap provider
-drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+drasi-bootstrap-noop = { path = "../drasi-core-next/components/bootstrappers/noop" }
 
 # Index plugins
-drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+drasi-index-rocksdb = { path = "../drasi-core-next/components/indexes/rocksdb" }
 
 # State store plugins
-drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb", features = ["configuration"] }
+drasi-state-store-redb = { path = "../drasi-core-next/components/state_stores/redb", features = ["configuration"] }
 
 # WAL plugins
-drasi-wal-redb = { path = "../drasi-core/components/wals/redb" }
+drasi-wal-redb = { path = "../drasi-core-next/components/wals/redb" }
 
 # Plugin SDK
-drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+drasi-plugin-sdk = { path = "../drasi-core-next/components/plugin-sdk" }
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["registry", "fetcher", "watcher"] }
-drasi-computation-bridge-common = { path = "../drasi-core/components/computation-plugins/common/bridge" }
-drasi-computation-source-bridge = { path = "../drasi-core/components/computation-plugins/sources/bridge" }
-drasi-computation-sink-bridge = { path = "../drasi-core/components/computation-plugins/sinks/bridge" }
-drasi-instance-host = { path = "../drasi-core/components/instance-host" }
+drasi-host-sdk = { path = "../drasi-core-next/components/host-sdk", features = ["registry", "fetcher", "watcher"] }
+drasi-computation-bridge-common = { path = "../drasi-core-next/components/computation-plugins/common/bridge" }
+drasi-computation-source-bridge = { path = "../drasi-core-next/components/computation-plugins/sources/bridge" }
+drasi-computation-sink-bridge = { path = "../drasi-core-next/components/computation-plugins/sinks/bridge" }
+drasi-instance-host = { path = "../drasi-core-next/components/instance-host" }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -119,7 +119,7 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 reqwest_otel = { version = "0.13.4", package = "reqwest", default-features = false, features = ["blocking", "rustls"] }
 
 [dev-dependencies]
-drasi-computation-transformer-query = { path = "../drasi-core/components/computation-plugins/transformers/query" }
+drasi-computation-transformer-query = { path = "../drasi-core-next/components/computation-plugins/transformers/query" }
 # Testing utilities
 tracing = "0.1"
 tempfile = "3.8"
@@ -139,9 +139,9 @@ tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
 rusqlite = { version = "0.32", features = ["bundled"] }
-drasi-core = { path = "../drasi-core/core" }
-drasi-source-application = { path = "../drasi-core/components/sources/application" }
-drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+drasi-core = { path = "../drasi-core-next/core" }
+drasi-source-application = { path = "../drasi-core-next/components/sources/application" }
+drasi-reaction-application = { path = "../drasi-core-next/components/reactions/application" }
 
 [lints.rust]
 warnings = "deny"
