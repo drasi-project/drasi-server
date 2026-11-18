@@ -146,6 +146,15 @@ pub fn from_json_str<T: DeserializeOwned>(s: &str) -> Result<T, ConfigError> {
 /// println!("Server configuration loaded successfully");
 /// ```
 pub fn load_config_file<P: AsRef<Path>>(path: P) -> Result<DrasiServerConfig, ConfigError> {
+    load_config_file_with_overrides(path, None, None)
+}
+
+/// Validate listener placement against final CLI settings without replacing saved references.
+pub fn load_config_file_with_overrides<P: AsRef<Path>>(
+    path: P,
+    port: Option<u16>,
+    enable_ui: Option<bool>,
+) -> Result<DrasiServerConfig, ConfigError> {
     let path_ref = path.as_ref();
     let content = fs::read_to_string(path_ref)?;
 
@@ -177,7 +186,7 @@ pub fn load_config_file<P: AsRef<Path>>(path: P) -> Result<DrasiServerConfig, Co
     };
 
     // Validate the configuration
-    config.validate()?;
+    config.validate_with_overrides(port, enable_ui)?;
 
     Ok(config)
 }

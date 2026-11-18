@@ -93,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         metrics: Default::default(),
+        telemetry: None,
         persist_config: true,
         // Use in-memory indexes (default)
         // Disable temporal history (default)

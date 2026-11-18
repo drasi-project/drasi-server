@@ -60,6 +60,11 @@ pub mod error_codes {
     pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    pub const SERVER_SHUTTING_DOWN: &str = "SERVER_SHUTTING_DOWN";
+    pub const TELEMETRY_RENDER_FAILED: &str = "TELEMETRY_RENDER_FAILED";
+    pub const TELEMETRY_SCRAPE_UNAVAILABLE: &str = "TELEMETRY_SCRAPE_UNAVAILABLE";
+    pub const TELEMETRY_METRICS_UNAVAILABLE: &str = "TELEMETRY_METRICS_UNAVAILABLE";
+    pub const TELEMETRY_INSPECTION_FAILED: &str = "TELEMETRY_INSPECTION_FAILED";
     /// Returned when an in-memory mutation succeeded but the configuration
     /// could not be persisted to disk. The runtime state has changed; the
     /// on-disk YAML has not. Operators should retry the operation or restart
@@ -208,6 +213,15 @@ impl IntoResponse for ErrorResponse {
 /// with 500 status.
 impl From<anyhow::Error> for ErrorResponse {
     fn from(err: anyhow::Error) -> Self {
+        if err.chain().any(|cause| {
+            cause.is::<crate::server::lifecycle::ServerShuttingDown>()
+                || cause.is::<crate::server::lifecycle::RequestAbandoned>()
+        }) {
+            return Self::new(
+                error_codes::SERVER_SHUTTING_DOWN,
+                "Server is shutting down or the request was abandoned before publication",
+            );
+        }
         ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
     }
 }
@@ -230,6 +244,10 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::CONFIGURATION_CONFLICT
         | error_codes::CONFIGURATION_TRANSITION_REQUIRED => StatusCode::CONFLICT,
         error_codes::CONFIGURATION_UNCONFIRMED => StatusCode::SERVICE_UNAVAILABLE,
+        error_codes::SERVER_SHUTTING_DOWN => StatusCode::SERVICE_UNAVAILABLE,
+        error_codes::TELEMETRY_SCRAPE_UNAVAILABLE | error_codes::TELEMETRY_METRICS_UNAVAILABLE => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
 
         error_codes::INVALID_REQUEST
         | error_codes::PLUGIN_INVALID_PATH
@@ -563,6 +581,22 @@ mod tests {
         // Unknown codes should also be internal server error
         assert_eq!(
             status_from_code("UNKNOWN_CODE"),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn telemetry_inspection_codes_map_to_their_statuses() {
+        assert_eq!(
+            ErrorResponse::new(error_codes::TELEMETRY_METRICS_UNAVAILABLE, "m")
+                .into_response()
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            ErrorResponse::new(error_codes::TELEMETRY_INSPECTION_FAILED, "m")
+                .into_response()
+                .status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
     }

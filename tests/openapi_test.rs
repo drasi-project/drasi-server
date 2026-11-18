@@ -385,3 +385,58 @@ fn test_openapi_spec_has_plugins_tag() {
         "Should have 'Plugins' tag, found: {tag_names:?}",
     );
 }
+
+#[test]
+fn test_openapi_spec_includes_telemetry_inspection() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let paths = json["paths"].as_object().unwrap();
+
+    assert!(
+        paths.contains_key("/api/v1/telemetry"),
+        "Should have telemetry settings path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/telemetry/metrics"),
+        "Should have telemetry metrics path"
+    );
+    let schemas = json["components"]["schemas"].as_object().unwrap();
+    assert!(
+        schemas.contains_key("TelemetryInspectionResponse"),
+        "Should have TelemetryInspectionResponse schema"
+    );
+    let metrics_settings = &schemas["MetricsInspection"];
+    assert!(
+        metrics_settings["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&serde_json::json!("path"))),
+        "metrics.path must always be present: {metrics_settings}"
+    );
+    assert_eq!(metrics_settings["properties"]["path"]["nullable"], true);
+    let metrics = &json["paths"]["/api/v1/telemetry/metrics"]["get"]["responses"];
+    assert!(
+        metrics["200"]["content"]
+            .as_object()
+            .unwrap()
+            .contains_key("text/plain; version=0.0.4; charset=utf-8"),
+        "Metrics 200 should be Prometheus text: {metrics}"
+    );
+    for status in ["503", "500"] {
+        assert!(
+            metrics[status]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .is_some_and(|schema| schema.ends_with("/ErrorResponse")),
+            "Metrics {status} should use ErrorResponse: {metrics}"
+        );
+    }
+    let tags: Vec<&str> = json["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|tag| tag["name"].as_str())
+        .collect();
+    assert!(
+        tags.contains(&"Telemetry"),
+        "Should have 'Telemetry' tag, found: {tags:?}"
+    );
+}

@@ -315,14 +315,31 @@ On Unix, SIGINT (Ctrl+C) and SIGTERM run the same shutdown sequence. Other
 platforms retain Ctrl+C shutdown. Signal handlers are installed before instances
 start on Unix; subsequent signals do not start cleanup again.
 
-Shutdown stops accepting new HTTP connections, cancels the plugin hot-reload
-watcher, allows up to 5 seconds for HTTP requests to drain, and permanently shuts
-down registered instances, including instances created through the API. The
-shutdown pass has a 30-second deadline. Failed or timed-out passes still retry
-owned library cleanup before exit, so termination can take longer. A drain timeout,
-cleanup failure, or shutdown timeout produces a nonzero exit status, even if the
-subsequent cleanup succeeds.
-Long-lived HTTP streams can exhaust the drain deadline. Configure container or
+Shutdown closes admission and HTTP ingress, joins accepted management/startup
+work (including unpublished instances), stops the owned polling watcher and
+actual Core producers, then drains owned collection and closes owned logging
+last. Graceful HTTP Serve owns its connections; its 5-second drain cap never
+aborts/drops Serve and calls its children joined. This Server's normal log SSE
+subscriptions end when admission closes; shared logging and other Servers'
+subscriptions remain open. One absolute 30-second overall wait caps the shared
+telemetry allowance (default 5 seconds, configurable
+1..300), not physical cleanup. The CLI reports incomplete cleanup, retains Tokio
+and its cleanup handle while accepted joins finish, and exits nonzero for missed
+deadlines or failures. Failed unfinished phases require explicit retry, not an
+automatic retry loop.
+
+Embedding callers can keep `server.cleanup_handle()` before consuming
+`server.run()`, or call `server.shutdown().await` before serving. Preparation APIs
+expose that same address before construction. Cancelled waits retain actual
+workers. Completed but unconsumed preparations do not block cleanup, and late
+`finish` rejects publication after shutdown. Check `status()` for Complete versus
+pending/retry-required work;
+historical errors do not mean completed cleanup must be waited forever.
+`wait_for_completion()` joins accepted work without new phase budgets.
+Caller-supplied `TelemetryBindings` never transfer provider/collector/logging
+shutdown responsibility. See [runtime ownership](docs/telemetry-configuration.md#obs-03-ownership-apis).
+Long-lived HTTP streams can exhaust the drain deadline and remain owned past
+the overall wait; there is no hard exit guarantee. Configure container or
 service-manager termination grace periods above 30 seconds to allow cleanup to
 finish. SIGKILL cannot run cleanup and still requires durable crash recovery.
 
@@ -1316,8 +1333,65 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 | `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
 | `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
+| `telemetry` | object | none | Startup-only telemetry policy and init support; every configured capability is available, and an invalid policy fails validation and startup. See [telemetry configuration](docs/telemetry-configuration.md). |
 
-### OpenTelemetry progress metrics
+### Operational metrics (Prometheus or OTLP)
+
+The startup-only `telemetry` policy selects one metrics backend for all actual
+instances, including native queries. No global recorder/provider, tracing
+export, process collector or inspection service is installed implicitly:
+
+```yaml
+telemetry:
+  profile: persistence
+  metrics:
+    backend: prometheus
+    processMetrics: false
+    prometheus:
+      path: /metrics
+```
+
+This serves metrics on the management listener; protect it with a restricted
+network or trusted proxy (there is no new authentication system). Select
+`backend: otlp` with `metrics.otlp.endpoint`, explicit `protocol: http/protobuf`,
+`exportInterval: 30` and `exportTimeout: 5` for push export instead. New values
+are **seconds**. Use full signal URLs; environment-backed authentication headers
+require normally verified HTTPS. New policy does not inherit `OTEL_*` overrides.
+Off/None creates no new backend, scrape route/listener or upkeep worker.
+
+Opt-in [process metrics](docs/telemetry-configuration.md#process-metrics)
+(`metrics.processMetrics: true`) add unlabelled `process_*` CPU, memory,
+file-descriptor and thread measurements to either backend, and
+[read-only inspection](docs/telemetry-configuration.md#read-only-inspection)
+(`inspection.enabled: true`) serves the effective settings and local metrics on
+the management listener.
+
+Counters, physical-queue gauges and actual evaluator/commit duration histograms
+preserve Core identities and native seconds/count units. Persistence includes
+supported commit/storage details; Debug is not a synonym for Persistence.
+New OTLP includes the existing `drasi.query.progress.sequence` gauge once on
+the **same provider**, not via an additional root `metrics` exporter. Prometheus
+does not export that progress instrument.
+
+See [telemetry configuration](docs/telemetry-configuration.md) for histogram
+bounds, limits, exclusions, overload, resource identity and retained ownership.
+The [existing observability example](examples/observability/README.md) keeps
+its Off/empty default and adds an explicit `live prometheus` / `live otlp`
+mock → native query → log reaction walkthrough using locally rebuilt,
+source/binary-fingerprinted plugins. Its one-command `showcase` runs the HTTP
+pipeline with pinned Jaeger, Prometheus and Grafana containers in podman and a
+steady input trickle. Live/export/native qualification is
+separately recorded in the [baseline](docs/observability-baseline.md);
+instructions are not a full-suite or release claim.
+
+### Legacy OpenTelemetry progress metrics
+
+For the local Core/Server adapter versions, migration decisions and compatibility
+checks, see the [OBS-01 baseline](docs/observability-baseline.md). This baseline
+does not enable new exporters or replace the progress-export contract below.
+Do not combine root `metrics` with any `telemetry` section, including Off or
+inspection-only settings. New telemetry uses explicit HTTP/protobuf signal URLs
+and second-valued intervals, not the legacy settings below.
 
 Configure `metrics` at Server level to export OTLP/HTTP JSON to an existing
 collector. Omitting it creates no metrics exporter or metrics worker.
@@ -1361,9 +1435,15 @@ The Server owns its meter provider; it does not replace the application's global
 provider. Collection reads existing graph-owned state without storage/network
 I/O. Network export and SDK shutdown run away from the Tokio executor, including
 on a current-thread runtime. Export errors are logged; shutdown errors are
-returned. Cancelled cleanup retains the worker for a later join. This first slice
-does not yet export every component's throughput, latency, queue, or delivery
-metrics.
+returned. Cancelled cleanup retains the worker for a later join. This legacy progress-only contract does not export the operational catalogue;
+use the new policy above for supported throughput, duration and queue metrics.
+The legacy provider uses the existing SDK custom/ManualReader feature and an
+application-owned serial collection/export loop, not an unjoinable SDK
+PeriodicReader thread. The HTTP/JSON exporter, rustls, resource, callback and
+millisecond interval/timeout contract are unchanged. One SDK/exporter close and
+all transport/Drop work run on the retained blocking worker. Phase expiry skips
+fresh final collection/flush, reports failure and retains accepted work for its
+actual join; it never grants another provider a fresh flush budget.
 
 ### Instance Settings
 

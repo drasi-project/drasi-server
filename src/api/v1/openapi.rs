@@ -113,6 +113,9 @@ use utoipa::openapi::RefOr;
         super::plugin_handlers::list_kinds,
         super::plugin_handlers::computation_plugin_metadata,
         super::plugin_handlers::get_kind_schema,
+        // Telemetry inspection (mounted only when enabled)
+        super::telemetry_handlers::get_telemetry,
+        super::telemetry_handlers::get_telemetry_metrics,
         // Missing instance handlers
         super::handlers::stream_all_component_events,
         super::handlers::push_source_data,
@@ -139,6 +142,13 @@ use utoipa::openapi::RefOr;
             ComponentEventDto,
             LogMessageDto,
             DrasiServerConfig,
+            crate::config::telemetry::TelemetryConfig,
+            crate::config::telemetry::InspectionConfig,
+            crate::config::telemetry::TelemetryFilters,
+            crate::config::telemetry::TracingConfig,
+            crate::config::telemetry::TelemetryMetricsConfig,
+            crate::config::telemetry::PrometheusConfig,
+            crate::config::telemetry::OtlpMetricsConfig,
             DrasiLibInstanceConfig,
             crate::computation::ComputationConfig,
             crate::computation::ComputationConfigInput,
@@ -196,6 +206,13 @@ use utoipa::openapi::RefOr;
             super::plugin_handlers::PluginDependentDto,
             super::plugin_handlers::LoadPluginRequest,
             super::plugin_handlers::InstallPluginRequest,
+            // Telemetry inspection DTOs
+            super::telemetry_handlers::TelemetryInspectionResponse,
+            super::telemetry_handlers::TracingInspection,
+            super::telemetry_handlers::MetricsInspection,
+            super::telemetry_handlers::LogsInspection,
+            super::telemetry_handlers::InspectionProfile,
+            super::telemetry_handlers::InspectionMetricsBackend,
         )
     ),
     tags(
@@ -209,6 +226,7 @@ use utoipa::openapi::RefOr;
         (name = "Solutions", description = "Deploy solution templates to instances"),
         (name = "Catalog", description = "Browse solution templates and other reusable configurations"),
         (name = "Plugins", description = "Plugin management — load, install, and inspect plugins"),
+        (name = "Telemetry", description = "Read-only telemetry inspection; routes exist only when telemetry.inspection.enabled is true"),
     ),
     info(
         title = "Drasi Server API",

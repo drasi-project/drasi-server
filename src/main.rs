@@ -23,10 +23,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
 
-use drasi_lib::get_or_init_global_registry;
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::computation::ComputationConfigInput;
+use drasi_server::telemetry::StandaloneTelemetry;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
 mod cli_styles;
@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
             plugins_dir,
         }) => {
             let effective_plugins_dir = plugins_dir.or(cli.plugins_dir);
-            validate_config(config, show_resolved, effective_plugins_dir)
+            validate_config(config, show_resolved, effective_plugins_dir).await
         }
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => {
@@ -230,123 +230,179 @@ async fn run_server(
     };
 
     // Check if config file exists, create default if it doesn't
-    let (config, tracing_initialized) = if !config_path.exists() {
-        // Initialize tracing first since we don't have a config yet
-        if std::env::var("RUST_LOG").is_err() {
-            // SAFETY: set_var is called early in main() before any other threads are spawned
-            unsafe {
-                std::env::set_var("RUST_LOG", "info,oci_client=error");
-            }
-        }
-        get_or_init_global_registry();
-
-        warn!(
-            "Config file '{}' not found. Creating default configuration.",
-            config_path.display()
-        );
-
-        // Create parent directories if they don't exist
-        if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Create default config with command line port if specified
-        let mut default_config = DrasiServerConfig::default();
-
-        // Use CLI port if provided
+    let missing = !config_path.exists();
+    let mut config = if missing {
+        let mut config = DrasiServerConfig::default();
         if let Some(port) = port_override {
-            default_config.port = ConfigValue::Static(port);
-            info!("Using command line port {port} in default configuration");
+            config.port = ConfigValue::Static(port);
         }
-
-        save_config_file(&default_config, &config_path)?;
-
-        info!(
-            "Default configuration created at: {}",
-            config_path.display()
-        );
-        info!("Please edit the configuration file to add sources, queries, and reactions.");
-
-        (default_config, true)
+        config
     } else {
-        // Load config first to get log level
-        (load_config_file(&config_path)?, false)
+        drasi_server::config::loader::load_config_file_with_overrides(
+            &config_path,
+            port_override,
+            ui_override,
+        )?
     };
-
-    // Resolve server settings for use in main
+    if let Some(enable_ui) = ui_override {
+        config.enable_ui = enable_ui;
+    }
     let mapper = DtoMapper::new();
     let resolved_settings = map_server_settings(&config, &mapper)?;
-
-    // Initialize tracing if not already done
-    if !tracing_initialized {
-        // Set log level from config if RUST_LOG wasn't explicitly set by user
-        if std::env::var("RUST_LOG").is_err() {
-            // SAFETY: set_var is called early in main() before any other threads are spawned
-            unsafe {
-                std::env::set_var(
-                    "RUST_LOG",
-                    format!("{},oci_client=error", &resolved_settings.log_level),
-                );
-            }
-        }
-        get_or_init_global_registry();
-    }
-
-    info!("Starting Drasi Server");
-    debug!("Debug logging is enabled");
-
-    if env_file_loaded {
-        info!("Loaded environment variables from .env file");
-    }
-
-    info!("Config file: {}", config_path.display());
-
-    let final_port = port_override.unwrap_or(resolved_settings.port);
-    let final_enable_ui = ui_override.unwrap_or(resolved_settings.enable_ui);
-    info!("Port: {final_port}");
-    info!(
-        "Web UI: {}",
-        if final_enable_ui {
-            "enabled"
-        } else {
-            "disabled"
-        }
-    );
-    debug!("Server configuration: {resolved_settings:?}");
-
-    // Resolve the plugins directory: use CLI arg if provided, otherwise default to ./plugins under binary directory
-    let plugins_dir = match plugins_dir {
-        Some(dir) => dir,
-        None => std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
-            .unwrap_or_else(|| {
-                warn!("Could not determine binary directory for plugin loading");
-                PathBuf::from("plugins")
-            }),
+    let preparation = StandaloneTelemetry::prepare(resolved_settings.log_level.clone());
+    let cleanup = preparation.cleanup_handle();
+    let runtime = match preparation.finish().await {
+        Ok(runtime) => runtime,
+        Err(error) => return retain_command_cleanup(Err(error), cleanup).await,
     };
-    info!("Plugins directory: {}", plugins_dir.display());
+    let outcome = async {
+        if missing {
+            warn!(
+                "Config file '{}' not found. Creating default configuration.",
+                config_path.display()
+            );
 
-    let server = DrasiServer::new(
-        config_path,
-        final_port,
-        plugins_dir,
-        skip_verification,
-        final_enable_ui,
-    )
-    .await?;
-    server.run().await?;
+            // Create parent directories if they don't exist
+            if let Some(parent) = config_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
 
-    Ok(())
+            if let Some(port) = port_override {
+                info!("Using command line port {port} in default configuration");
+            }
+
+            save_config_file(&config, &config_path)?;
+
+            info!(
+                "Default configuration created at: {}",
+                config_path.display()
+            );
+            info!("Please edit the configuration file to add sources, queries, and reactions.");
+        }
+
+        info!("Starting Drasi Server");
+        debug!("Debug logging is enabled");
+
+        if env_file_loaded {
+            info!("Loaded environment variables from .env file");
+        }
+
+        info!("Config file: {}", config_path.display());
+
+        let final_port = port_override.unwrap_or(resolved_settings.port);
+        let final_enable_ui = ui_override.unwrap_or(resolved_settings.enable_ui);
+        if let Some(telemetry) = config.resolved_telemetry(&mapper, final_port, final_enable_ui)? {
+            telemetry.ensure_runtime_available()?;
+        }
+        info!("Port: {final_port}");
+        info!(
+            "Web UI: {}",
+            if final_enable_ui {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
+        debug!("Server configuration: {resolved_settings:?}");
+
+        // Resolve the plugins directory: use CLI arg if provided, otherwise default to ./plugins under binary directory
+        let plugins_dir = match plugins_dir {
+            Some(dir) => dir,
+            None => std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+                .unwrap_or_else(|| {
+                    warn!("Could not determine binary directory for plugin loading");
+                    PathBuf::from("plugins")
+                }),
+        };
+        info!("Plugins directory: {}", plugins_dir.display());
+
+        let server = DrasiServer::prepare_new_with_runtime(
+            config_path,
+            final_port,
+            plugins_dir,
+            skip_verification,
+            final_enable_ui,
+            runtime,
+        )
+        .finish()
+        .await?;
+        server.run().await?;
+
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+    retain_command_cleanup(outcome, cleanup).await
+}
+
+async fn retain_command_cleanup(
+    outcome: Result<()>,
+    cleanup: drasi_server::server::ServerCleanupHandle,
+) -> Result<()> {
+    cleanup.request_shutdown()?;
+    let deadline = cleanup
+        .shutdown_deadline()
+        .ok_or_else(|| anyhow::anyhow!("Server cleanup request has no deadline"))?;
+    let stopped = cleanup.wait_until(deadline).await;
+    if cleanup.status().phase != drasi_server::server::CleanupPhase::Complete {
+        eprintln!("Server cleanup is incomplete; retaining the runtime and cleanup handle");
+        let _terminal = cleanup.wait_for_completion().await;
+        if cleanup.status().retry_required {
+            eprintln!("Server cleanup requires explicit retry; ownership remains retained");
+            // A failed unfinished phase is not an automatic retry loop. Do not
+            // tear down Tokio underneath the reachable owner.
+            std::future::pending::<()>().await;
+        }
+    }
+    match (outcome, stopped) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(drasi_lib::error::OperationFailures::new(
+            "Server command and cleanup failures",
+            vec![error, cleanup],
+        )
+        .into()),
+    }
 }
 
 /// Validate a configuration file
-fn validate_config(
+async fn validate_config(
     config_path: PathBuf,
     show_resolved: bool,
     plugins_dir: Option<PathBuf>,
 ) -> Result<()> {
-    use drasi_server::config::{validate_with_plugins, FullValidationResult};
+    let log_level = load_config_file(&config_path)
+        .ok()
+        .and_then(|config| map_server_settings(&config, &DtoMapper::new()).ok())
+        .map_or_else(|| "info".into(), |settings| settings.log_level);
+    let preparation = StandaloneTelemetry::prepare(log_level);
+    let cleanup = preparation.cleanup_handle();
+    let runtime = preparation.finish().await?;
+    let outcome =
+        validate_config_body(config_path, show_resolved, plugins_dir, &runtime.bindings());
+    let stopped = cleanup
+        .wait_until(tokio::time::Instant::now() + std::time::Duration::from_secs(30))
+        .await;
+    drop(runtime);
+    match (outcome, stopped) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(drasi_lib::error::OperationFailures::new(
+            "Validation and cleanup failures",
+            vec![error, cleanup],
+        )
+        .into()),
+    }
+}
+
+fn validate_config_body(
+    config_path: PathBuf,
+    show_resolved: bool,
+    plugins_dir: Option<PathBuf>,
+    bindings: &drasi_server::TelemetryBindings,
+) -> Result<()> {
+    use drasi_server::config::FullValidationResult;
 
     println!("Validating: {}", config_path.display());
     println!();
@@ -357,7 +413,7 @@ fn validate_config(
             "[ERROR] Configuration file not found: {}",
             config_path.display()
         );
-        std::process::exit(1);
+        anyhow::bail!("Configuration file was not found");
     }
 
     // Load .env file if it exists (same as run_server)
@@ -374,7 +430,7 @@ fn validate_config(
         Err(e) => {
             println!("Structure:");
             println!("  [ERR] {e}");
-            std::process::exit(1);
+            return Err(e.into());
         }
     };
 
@@ -396,6 +452,21 @@ fn validate_config(
     }
     println!();
 
+    if let Some(telemetry) = config.resolved_telemetry(
+        &mapper,
+        mapper.resolve_typed(&config.port)?,
+        config.enable_ui,
+    )? {
+        println!("Telemetry:");
+        println!("  [OK] Configuration policy valid (restart required for changes)");
+        if let Err(error) = telemetry.ensure_runtime_available() {
+            println!("  [WARN] {error}");
+        } else {
+            println!("  [OK] No unavailable telemetry capabilities requested");
+        }
+        println!();
+    }
+
     // Resolve plugins_dir: provided > default (binary dir + /plugins)
     let effective_plugins_dir = plugins_dir.or_else(|| {
         std::env::current_exe()
@@ -405,7 +476,11 @@ fn validate_config(
 
     // Phase 2-5: plugin-aware validation
     let result: FullValidationResult =
-        validate_with_plugins(&config, effective_plugins_dir.as_deref());
+        drasi_server::config::plugin_validation::validate_with_plugins_with_logging(
+            &config,
+            effective_plugins_dir.as_deref(),
+            bindings,
+        )?;
 
     // Environment references
     println!("Environment references:");
@@ -552,7 +627,7 @@ fn validate_config(
     }
 
     if error_count > 0 {
-        std::process::exit(1);
+        anyhow::bail!("Configuration validation failed");
     }
 
     Ok(())
