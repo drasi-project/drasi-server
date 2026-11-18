@@ -10,7 +10,12 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, response::Response, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
 use drasi_lib::observability::{RootSampling, TelemetryProfile};
 use serde::Serialize;
 
@@ -199,10 +204,20 @@ pub async fn get_telemetry_metrics(
     State(inspection): State<Arc<TelemetryInspection>>,
 ) -> Result<Response, ErrorResponse> {
     let Some(runtime) = &inspection.prometheus else {
-        return Err(ErrorResponse::new(
+        // Expected on every read under OTLP, `none` or Off, so this bypasses the
+        // error-level 5xx log in `ErrorResponse::into_response`; same status and body.
+        let (status, body) = ErrorResponse::new(
             error_codes::TELEMETRY_METRICS_UNAVAILABLE,
             "Local metrics are not available for this telemetry configuration",
-        ));
+        )
+        .with_status();
+        log::debug!(
+            "Returning HTTP {} [{}]: {}",
+            status.as_u16(),
+            body.code,
+            body.message
+        );
+        return Ok((status, body).into_response());
     };
     runtime.scrape().await.map_err(|error| {
         if error.code == error_codes::TELEMETRY_SCRAPE_UNAVAILABLE {
@@ -376,5 +391,36 @@ mod tests {
             bodies.push(to_bytes(response.into_body(), 64 * 1024).await.unwrap());
         }
         assert_eq!(bodies[0], bodies[1]);
+    }
+
+    #[tokio::test]
+    async fn metrics_without_prometheus_keep_the_error_status_and_body() {
+        let router = telemetry_router(TelemetryInspection::new(
+            &effective(json!({
+                "profile": "basic",
+                "inspection": {"enabled": true},
+                "metrics": {"backend": "none"}
+            })),
+            None,
+        ));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(TELEMETRY_METRICS_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[CONTENT_TYPE], "application/json");
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            json!({
+                "code": "TELEMETRY_METRICS_UNAVAILABLE",
+                "message": "Local metrics are not available for this telemetry configuration"
+            })
+        );
     }
 }

@@ -299,6 +299,7 @@ mod otlp {
                 cpu_seconds_total: Some(0.5 * call as f64),
                 resident_memory_bytes: Some(4096),
                 open_fds: Some(7),
+                threads: Some(3),
                 ..Default::default()
             }
         });
@@ -343,7 +344,8 @@ mod otlp {
         assert_eq!(sum.data_points[0].value, Some(Number::AsDouble(0.5)));
         for (name, unit, value) in [
             ("process_resident_memory_bytes", "By", 4096.0),
-            ("process_open_fds", "1", 7.0),
+            ("process_open_fds", "{file_descriptor}", 7.0),
+            ("process_threads", "{thread}", 3.0),
         ] {
             let exported = metric(&body, "drasi.server.process", name);
             assert_eq!(exported.unit, unit, "{name}");
@@ -356,7 +358,6 @@ mod otlp {
         }
         for absent in [
             "process_virtual_memory_bytes",
-            "process_threads",
             "process_max_fds",
             "process_start_time_seconds",
         ] {
@@ -400,13 +401,19 @@ mod otlp {
 
     #[tokio::test]
     async fn process_reading_missing_in_a_cycle_is_not_exported() {
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let collector = collector().await;
-        let first = Arc::new(AtomicBool::new(true));
-        let source: SnapshotSource = Arc::new(move || Metrics {
-            cpu_seconds_total: Some(1.0),
-            open_fds: first.swap(false, Ordering::SeqCst).then_some(7),
-            ..Default::default()
+        let calls = Arc::new(AtomicUsize::new(0));
+        // One snapshot per collection: open fds only in the first, CPU only in
+        // the first two, and resident memory in every one.
+        let source: SnapshotSource = Arc::new(move || {
+            let call = calls.fetch_add(1, Ordering::SeqCst);
+            Metrics {
+                cpu_seconds_total: (call < 2).then_some(1.0),
+                resident_memory_bytes: Some(4096),
+                open_fds: (call == 0).then_some(7),
+                ..Default::default()
+            }
         });
         let mut runtime = MetricsRuntime::default();
         runtime
@@ -417,10 +424,10 @@ mod otlp {
             .await
             .unwrap();
         runtime.activate().unwrap();
-        let requests = timeout(Duration::from_secs(5), async {
+        let requests = timeout(Duration::from_secs(10), async {
             loop {
                 let requests = collector.received_requests().await.unwrap();
-                if requests.len() >= 2 {
+                if requests.len() >= 3 {
                     return requests;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -428,7 +435,11 @@ mod otlp {
         })
         .await
         .unwrap();
-        let (first, second) = (decode(&requests[0]), decode(&requests[1]));
+        let (first, second, third) = (
+            decode(&requests[0]),
+            decode(&requests[1]),
+            decode(&requests[2]),
+        );
         let Data::Gauge(gauge) = metric(&first, "drasi.server.process", "process_open_fds")
             .data
             .as_ref()
@@ -441,6 +452,11 @@ mod otlp {
         assert!(
             !has_metric(&second, "process_open_fds"),
             "a missing reading must not re-export the previous value"
+        );
+        assert!(has_metric(&third, "process_resident_memory_bytes"));
+        assert!(
+            !has_metric(&third, "process_cpu_seconds_total"),
+            "a missing CPU reading must not re-export the previous cumulative value"
         );
         runtime.shutdown().await.unwrap();
     }

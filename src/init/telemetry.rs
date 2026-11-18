@@ -51,7 +51,7 @@ where
 }
 
 fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<TelemetryConfig>> {
-    if !prompts.confirm("Configure telemetry (runtime support is staged)?", false)? {
+    if !prompts.confirm("Configure telemetry?", false)? {
         return Ok(None);
     }
     let profile = prompts.select(

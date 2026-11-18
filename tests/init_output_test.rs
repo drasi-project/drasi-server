@@ -153,7 +153,7 @@ telemetry:
 }
 
 #[test]
-fn telemetry_cli_validation_preserves_env_precedence_and_startup_reports_readiness() {
+fn telemetry_cli_validation_preserves_env_precedence_and_reports_no_unavailable_capabilities() {
     let directory = tempfile::tempdir_in(".").unwrap();
     let path = directory.path().join("server.yaml");
     std::fs::write(directory.path().join(".env"), "OBS02_CLI_PROFILE=off\n").unwrap();
@@ -162,8 +162,6 @@ fn telemetry_cli_validation_preserves_env_precedence_and_startup_reports_readine
         r#"
 telemetry:
   profile: "${OBS02_CLI_PROFILE}"
-  inspection:
-    enabled: "${OBS05_CLI_INSPECTION:-false}"
   metrics:
     backend: prometheus
 "#,
@@ -176,8 +174,7 @@ telemetry:
             .arg(&path)
             .arg("--plugins-dir")
             .arg(directory.path())
-            .env_remove("OBS02_CLI_PROFILE")
-            .env_remove("OBS05_CLI_INSPECTION");
+            .env_remove("OBS02_CLI_PROFILE");
         if let Some(profile) = profile {
             command.env("OBS02_CLI_PROFILE", profile);
         }

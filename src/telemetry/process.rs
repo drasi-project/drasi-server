@@ -80,7 +80,10 @@ impl ProcessMeasurement {
         match self {
             Self::CpuSecondsTotal | Self::StartTimeSeconds => "s",
             Self::ResidentMemoryBytes | Self::VirtualMemoryBytes => "By",
-            Self::OpenFds | Self::MaxFds | Self::Threads => "1",
+            // Curly-brace annotations, not "1": Prometheus translation appends
+            // `_ratio` to gauges whose unit is exactly "1".
+            Self::OpenFds | Self::MaxFds => "{file_descriptor}",
+            Self::Threads => "{thread}",
         }
     }
 

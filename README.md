@@ -1323,7 +1323,7 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 | `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
 | `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
-| `telemetry` | object | none | Startup-only telemetry policy and init support; unavailable runtime capabilities fail startup explicitly. See [telemetry configuration](docs/telemetry-configuration.md). |
+| `telemetry` | object | none | Startup-only telemetry policy and init support; every configured capability is available, and an invalid policy fails validation and startup. See [telemetry configuration](docs/telemetry-configuration.md). |
 
 ### Operational metrics (Prometheus or OTLP)
 
@@ -1349,6 +1349,13 @@ are **seconds**. Use full signal URLs; environment-backed authentication headers
 require normally verified HTTPS. New policy does not inherit `OTEL_*` overrides.
 Off/None creates no new backend, scrape route/listener or upkeep worker.
 
+Opt-in [process metrics](docs/telemetry-configuration.md#process-metrics)
+(`metrics.processMetrics: true`) add unlabelled `process_*` CPU, memory,
+file-descriptor and thread measurements to either backend, and
+[read-only inspection](docs/telemetry-configuration.md#read-only-inspection)
+(`inspection.enabled: true`) serves the effective settings and local metrics on
+the management listener.
+
 Counters, physical-queue gauges and actual evaluator/commit duration histograms
 preserve Core identities and native seconds/count units. Persistence includes
 supported commit/storage details; Debug is not a synonym for Persistence.
@@ -1361,7 +1368,9 @@ bounds, limits, exclusions, overload, resource identity and retained ownership.
 The [existing observability example](examples/observability/README.md) keeps
 its Off/empty default and adds an explicit `live prometheus` / `live otlp`
 mock → native query → log reaction walkthrough using locally rebuilt,
-source/binary-fingerprinted plugins. Live/export/native qualification is
+source/binary-fingerprinted plugins. Its one-command `showcase` runs the HTTP
+pipeline with pinned Jaeger, Prometheus and Grafana containers in podman and a
+steady input trickle. Live/export/native qualification is
 separately recorded in the [baseline](docs/observability-baseline.md);
 instructions are not a full-suite or release claim.
 

@@ -5,6 +5,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +18,17 @@ SPEC = importlib.util.spec_from_file_location(
 )
 bundle = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bundle)
+TRAFFIC_SPEC = importlib.util.spec_from_file_location(
+    "observability_traffic", ROOT / "examples/observability/showcase/traffic.py",
+)
+traffic = importlib.util.module_from_spec(TRAFFIC_SPEC)
+TRAFFIC_SPEC.loader.exec_module(traffic)
+DEMO = ROOT / "examples/observability/demo.sh"
+SHOWCASE = ROOT / "examples/observability/showcase"
+PROCESS_FAMILIES = {
+    "process_cpu_seconds_total", "process_resident_memory_bytes", "process_virtual_memory_bytes",
+    "process_open_fds", "process_max_fds", "process_threads", "process_start_time_seconds",
+}
 SCENARIO = "http"
 PG_SETTINGS = (
     "DRASI_DEMO_PG_HOST", "DRASI_DEMO_PG_DATABASE", "DRASI_DEMO_PG_USER",
@@ -159,6 +172,104 @@ class ObservabilityBundleTests(unittest.TestCase):
             )
             self.assertTrue((run / "demo-owner.json").is_file())
             self.assertFalse((run / "data").is_symlink())
+
+
+class ObservabilityShowcaseTests(unittest.TestCase):
+    def demo(self, *arguments, **settings):
+        environment = os.environ.copy()
+        environment.pop("DRASI_DEMO_TRUST_LOCAL_PLUGINS", None)
+        environment.update(settings)
+        return subprocess.run(
+            ["bash", str(DEMO), *arguments],
+            cwd=ROOT, env=environment, capture_output=True, text=True, check=False,
+        )
+
+    def test_showcase_and_send_reject_invalid_arguments(self):
+        for arguments in (
+            ["showcase", "extra"], ["send", "0"], ["send", "1001"], ["send", "05"],
+            ["send", "five"], ["send", "1", "2"],
+        ):
+            result = self.demo(*arguments)
+            self.assertEqual(result.returncode, 2, arguments)
+            self.assertIn("Usage:", result.stderr, arguments)
+
+    def test_showcase_requires_trust_before_podman_or_a_run_directory(self):
+        runs = ROOT / "target/observability-example/runs"
+        before = set(runs.iterdir()) if runs.is_dir() else set()
+        result = self.demo("showcase")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("DRASI_DEMO_TRUST_LOCAL_PLUGINS=1", result.stderr)
+        after = set(runs.iterdir()) if runs.is_dir() else set()
+        self.assertEqual(before, after)
+
+    def test_send_refuses_without_a_running_demo(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        # Bound but never listening, then closed: nothing answers on this port.
+        result = self.demo("send", "3", DRASI_DEMO_PORT=str(port))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("No running observability demo", result.stderr)
+        self.assertIn("demo.sh showcase", result.stderr)
+
+    def test_trickle_inserts_each_reading_once_then_only_updates_them(self):
+        changes = [traffic.trickle_change(sequence) for sequence in range(3 * traffic.READINGS)]
+        first, later = changes[:traffic.READINGS], changes[traffic.READINGS:]
+        ids = {change["element"]["id"] for change in first}
+        self.assertEqual(len(ids), traffic.READINGS)
+        self.assertEqual({change["operation"] for change in first}, {"insert"})
+        self.assertEqual({change["operation"] for change in later}, {"update"})
+        self.assertLessEqual({change["element"]["id"] for change in later}, ids)
+        for change in changes:
+            self.assertEqual(change["element"]["labels"], ["Reading"])
+            self.assertIsInstance(change["element"]["properties"]["value"], float)
+
+    def test_dashboard_uses_documented_families_and_provisioned_data_sources(self):
+        dashboard = json.loads(
+            (SHOWCASE / "grafana/dashboards/drasi-server-observability.json").read_text(),
+        )
+        self.assertEqual(dashboard["uid"], "drasi-server-observability")
+        self.assertEqual(dashboard["refresh"], "5s")
+        self.assertEqual(dashboard["time"], {"from": "now-15m", "to": "now"})
+        targets = [target for panel in dashboard["panels"] for target in panel.get("targets", [])]
+        expressions = [target["expr"] for target in targets if "expr" in target]
+        self.assertIn("rate(process_cpu_seconds_total[1m]) * 100", expressions)
+        families = {
+            re.sub(r"_(bucket|sum|count)$", "", name) if name.startswith("drasi_") else name
+            for expression in expressions
+            for name in re.findall(r"\b(?:drasi|process)_[a-z_]+", expression)
+        }
+        readme = (ROOT / "examples/observability/README.md").read_text()
+        for family in families:
+            self.assertIn(f"`{family}`", readme, family)
+        self.assertEqual(
+            {family for family in families if family.startswith("process_")},
+            PROCESS_FAMILIES - {"process_virtual_memory_bytes"},
+        )
+        for family in families - PROCESS_FAMILIES:
+            self.assertFalse(family.endswith("_total"), f"{family}: Server adds no _total suffix")
+        provisioning = (SHOWCASE / "grafana/provisioning/datasources/drasi-showcase.yaml").read_text()
+        used = {target["datasource"]["uid"] for target in targets}
+        self.assertEqual(used, {"drasi-prometheus", "drasi-jaeger"})
+        for uid in used:
+            self.assertIn(f"uid: {uid}", provisioning)
+
+    def test_showcase_publishes_loopback_only_pinned_images_without_credentials(self):
+        script = DEMO.read_text()
+        published = re.findall(r'--publish "([^"]+)"', script)
+        self.assertEqual(len(published), 4)
+        for mapping in published:
+            self.assertTrue(mapping.startswith("127.0.0.1:"), mapping)
+        images = re.findall(r"^[A-Z]+_IMAGE=(\S+)$", script, re.MULTILINE)
+        self.assertEqual(len(images), 3)
+        for image in images:
+            self.assertRegex(image, r":v?\d+\.\d+\.\d+$")
+        self.assertNotRegex(script, r"(^|[\s;|&(])docker\s")
+        for path in SHOWCASE.rglob("*"):
+            if path.suffix in {".yml", ".yaml", ".json"}:
+                text = path.read_text().lower()
+                for word in ("password", "secret", "token", "basicauth: true"):
+                    self.assertNotIn(word, text, path)
 
 
 if __name__ == "__main__":

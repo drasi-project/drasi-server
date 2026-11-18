@@ -32,10 +32,9 @@ is available in this build, so it reports `No unavailable telemetry capabilities
 requested`. Listener requirements, such as inspection needing the management
 API, are checked at startup. The wizard validates its output the same way.
 
-Normal startup rejects every effectively enabled, unavailable capability
-before loading plugins or constructing components. It never silently accepts
-an exporter or inspection request and does nothing. Omitted telemetry, an
-empty section with no destinations, or Off can start.
+Normal startup checks telemetry before loading plugins or constructing
+components: an invalid policy or unmet listener requirement fails explicitly.
+Omitted telemetry, an empty section with no destinations, or Off can start.
 Off suppresses new tracing and metrics even if their destinations are retained.
 Inspection remains independent: Off plus inspection starts, reports profile
 `off`, backend `none` and `path: null`, and its metrics route returns 503.
@@ -380,14 +379,17 @@ the `prometheus` or `otlp` backend. Both backends use these exact names:
 | `process_cpu_seconds_total` | counter (fractional) | f64 observable counter, monotonic | `s` | x | x | x | x |
 | `process_resident_memory_bytes` | gauge | observable gauge | `By` | x | x | x | x |
 | `process_virtual_memory_bytes` | gauge | observable gauge | `By` | x | x | x | x |
-| `process_open_fds` | gauge | observable gauge | `1` | x | x | x | x |
-| `process_max_fds` | gauge | observable gauge | `1` | x | x | x | x |
-| `process_threads` | gauge | observable gauge | `1` | x | x |  | x |
+| `process_open_fds` | gauge | observable gauge | `{file_descriptor}` | x | x | x | x |
+| `process_max_fds` | gauge | observable gauge | `{file_descriptor}` | x | x | x | x |
+| `process_threads` | gauge | observable gauge | `{thread}` | x | x |  | x |
 | `process_start_time_seconds` | gauge | observable gauge | `s` | x | x | x | x |
 
 Platform columns follow `metrics-process` 2.4.3; OpenBSD is not a qualified
 target. `process_virtual_memory_max_bytes` and `process_heap_bytes` are not
 emitted. CPU usage, in cores, is `rate(process_cpu_seconds_total[1m])`.
+The count gauges use curly-brace annotation units rather than `1`, so
+OTLP-to-Prometheus translation (for example a Collector's Prometheus exporter)
+keeps their names instead of appending `_ratio`.
 
 - A measurement the platform cannot provide, or a reading that fails, is
   omitted from that scrape or export. It is never published as `0` or as a
@@ -475,12 +477,18 @@ separate port. It never installs a backend to manufacture data.
 | Server shutting down | 503 `SERVER_SHUTTING_DOWN` | 503 `SERVER_SHUTTING_DOWN` |
 | POST, PUT, PATCH or DELETE | 405 | 405 |
 
-Errors use the standard `ErrorResponse` body. Access equals reachability of
-the management listener (the OBS-02 decision): there is no authentication and
-the API's CORS policy applies. Restrict it with a trusted proxy or restricted
-network. **Enabling inspection exposes Prometheus metrics on the management
-port even when `/metrics` uses a separate `prometheus.port`**; deployments
-requiring strict metrics-port isolation must leave inspection disabled.
+A metrics read admitted just before shutdown may find the scrape runtime
+already closing; it then receives 503 `TELEMETRY_METRICS_UNAVAILABLE` rather
+than `SERVER_SHUTTING_DOWN`.
+
+The 503 and 500 responses use the standard `ErrorResponse` body; 404 and 405
+have empty bodies, and 405 includes an `Allow` header. Access equals
+reachability of the management listener (the OBS-02 decision): there is no
+authentication and the API's CORS policy applies. Restrict it with a trusted
+proxy or restricted network. **Enabling inspection exposes Prometheus metrics
+on the management port even when `/metrics` uses a separate
+`prometheus.port`**; deployments requiring strict metrics-port isolation must
+leave inspection disabled.
 Inspection stores no trace history, queries no external metrics or trace
 backend, and never changes policy or YAML.
 

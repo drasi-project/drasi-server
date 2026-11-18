@@ -575,9 +575,10 @@ The implementation on `observability-item-6` (sibling Core `d698e4b1` on
   appends them to every render: the shared route, a separate port and the
   inspection route. OTLP exports them as observable instruments under scope
   `drasi.server.process` on the existing provider and resource, sampled
-  immediately before each export collection. Unavailable, failed, non-finite
-  and unlimited readings are omitted, `filters.exclude` applies, and missing
-  expected readings warn at most once per 300 seconds. There is one set per
+  immediately before each export collection. Unavailable, failed and
+  non-finite readings are omitted, as is `process_max_fds` when the limit is
+  unlimited; `filters.exclude` applies, and missing expected readings warn at
+  most once per 300 seconds. There is one set per
   process; a second configured-telemetry Server in the same process already
   fails startup on process-global logging.
 - **Read-only inspection** (`inspection.enabled`). `GET /api/v1/telemetry`
@@ -591,15 +592,42 @@ The implementation on `observability-item-6` (sibling Core `d698e4b1` on
   `DRASI_DEMO_PROCESS_METRICS` and `DRASI_DEMO_INSPECTION` overrides. The
   Off/empty `start`, `validate` and `init` defaults are unchanged.
 
+- **Showcase.** `demo.sh showcase` runs the same pipeline with Prometheus,
+  Grafana (provisioned data sources and dashboard) and Jaeger in podman, plus
+  an automatic input trickle; `demo.sh send [N]` adds bursts. The Collector
+  walkthrough remains an advanced section.
+
 No configuration field, builder method, authentication layer, per-instance
 policy or trace history was added. Access to inspection equals management
 listener reachability (OBS-02 decision).
 
-**Verification results: pending the end-of-implementation verification run.**
-Focused test counts, the live macOS walkthrough and the Clippy/format checks
-will be recorded here; nothing in this section is yet a qualification claim.
-Linux, Windows, CI, full-suite, release and overhead qualification are not
-claimed.
+### OBS-06 recorded verification (2026-11-17, macOS arm64)
+
+Focused qualification only, run once at the end of implementation against the
+final code:
+
+| Check | Result |
+|---|---|
+| `cargo test --locked --lib` | 593 passed, 0 failed, 6 ignored |
+| `cargo test --locked --no-fail-fast --test observability_metrics --test openapi_test --test init_output_test --test observability_runtime` | 18/0/2 ignored entry points; 12/0; 17/0; 23/0/1 |
+| `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/test_observability_demo.py` | 15 passed |
+| `cargo clippy --locked --all-targets -- -D warnings` | Only the 7 known baseline findings, none in OBS-06 files |
+| `rustfmt --check` on changed Rust files, `git diff --check`, `bash -n demo.sh` | Clean; rustfmt still reports the pre-existing module ordering in untouched `src/api/v1/handlers/mod.rs` |
+| `example_configs_validation_test` | 6 passed, 27 failed: pre-existing component-ID (UUID) drift in older example configs, none in `examples/observability`; not changed here |
+
+Live checks: the matched HTTP bundle ran under Prometheus and OTLP with all five
+inputs processed. With the Collector (otelcol-contrib v0.165.0), `process_*` and
+`drasi_*` arrived under one resource identity. That run predates the
+`{file_descriptor}`/`{thread}` unit fix, which is verified by unit test but not
+re-run live through the Collector. The showcase (Prometheus v3.16.0, Grafana
+13.3.1, Jaeger 2.22.0) ran on the final code: the Prometheus target was up via
+`host.containers.internal` with Server on loopback, every panel query
+returned data, `send 5` added five changes, Jaeger held the service's traces,
+and Ctrl+C removed only owned containers. Grafana cannot search Jaeger 2.22
+traces; it opens them by ID.
+
+Linux/Windows (including podman host reachability), CI, full-suite, release and
+overhead qualification are not claimed.
 
 ## Running the checks
 
