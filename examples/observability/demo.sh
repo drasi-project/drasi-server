@@ -392,7 +392,7 @@ if [[ "$action" == live || "$action" == live-postgres || "$action" == showcase ]
         done
         CONFIG_FILE="$SCRIPT_DIR/postgres-config.yaml"
     else
-        CONFIG_FILE="$SCRIPT_DIR/pipeline-config.yaml"
+        CONFIG_FILE="$SCRIPT_DIR/drasi-server.yaml"
     fi
     default_profile=persistence
     if [[ "$action" == showcase ]]; then

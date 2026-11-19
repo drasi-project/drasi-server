@@ -1,69 +1,288 @@
-# Observability: Drasi Server traces and metrics
+# Drasi Server observability example
 
-## Showcase: one command, three links
+This example shows how to observe a running Drasi Server with standard
+open-source tools. Drasi Server has built-in telemetry. It can:
 
-The showcase shows two things with real tools running in podman:
+- export **traces** over OpenTelemetry (OTLP/HTTP), one per change that flows
+  through a pipeline;
+- expose **metrics** for Prometheus to scrape, or push them over OTLP;
+- report **process metrics** (CPU, memory, threads, file descriptors) for the
+  whole Server process;
+- serve a read-only **inspection API** that describes the active telemetry
+  settings.
 
-1. **Tracing**: follow each change through Server in Jaeger (and in Grafana).
-2. **Metrics**: Drasi pipeline metrics next to Server's whole-process
-   (system) metrics, scraped by Prometheus and graphed in Grafana.
+The example runs a small continuous-query pipeline so that each of these has
+real data to show. The fastest way to see everything is the
+[showcase](#quick-start-run-the-showcase): one command starts the pipeline with
+Jaeger, Prometheus and Grafana and feeds it steady input. The rest of this page
+explains the configuration, walks through what to look at, and shows how to
+point Server at your own tools.
 
-It runs the HTTP source → native query → log reaction pipeline from
-[`live`](#2-run-the-http-pipeline-send-input-and-scrape) and sends it one
-change about every 2 seconds, so graphs and traces move without another step.
+## Contents
 
-You need podman (on macOS, a running `podman machine`), Python 3.11+, curl, and
-the Rust toolchain and sibling `../drasi-core` checkout described under
-[Advanced](#advanced). Build the matched local bundle once, and again after any
-source change, then start the showcase from the repository root:
+- [What the example shows](#what-the-example-shows)
+- [The Drasi Server configuration](#the-drasi-server-configuration)
+- [Prerequisites](#prerequisites)
+- [Quick start: run the showcase](#quick-start-run-the-showcase)
+- [Explore the showcase](#explore-the-showcase)
+- [How Jaeger, Prometheus and Grafana are set up](#how-jaeger-prometheus-and-grafana-are-set-up)
+- [Run the example other ways](#run-the-example-other-ways)
+- [How the launcher works](#how-the-launcher-works)
+- [Environment variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Security notes](#security-notes)
+- [Further reading](#further-reading)
 
-```sh
-bash examples/observability/demo.sh build-plugins
-DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 bash examples/observability/demo.sh showcase
+## What the example shows
+
+The example runs one Drasi Server instance with a three-component pipeline:
+
+- **Source `observations`** (HTTP): receives changes to `Reading` nodes.
+- **Query `observed-values`**: the continuous Cypher query
+  `MATCH (n:Reading) RETURN n.value AS value`. Drasi keeps its result up to
+  date as readings are inserted, updated or deleted.
+- **Reaction `observed-log`**: writes every change to the query's result to
+  Server's log.
+
+While changes flow through the pipeline, you can examine:
+
+| Telemetry | What you see | Where |
+|---|---|---|
+| Traces | One trace per change: `source.publish` → `query.process` → `sink.handle` | Jaeger and Grafana, or any OTLP/HTTP trace receiver |
+| Pipeline metrics | `drasi_*` families: events dispatched and processed, results emitted, query engine duration, queue depth | Prometheus and Grafana, or any OTLP/HTTP metrics receiver |
+| Process metrics | `process_*` families: CPU, memory, threads, file descriptors, start time | Same as pipeline metrics |
+| Inspection API | The active telemetry settings, without endpoints or credentials | `GET /api/v1/telemetry` on Server's management port |
+
+In the showcase, the pieces connect like this. Each arrow points from the side
+that starts the request:
+
+```text
+input generator ── POST, one change every ~2 s ──▶ Drasi Server
+                                                   source → query → reaction
+                                                     │                  ▲
+                                 pushes each trace   │                  │  scrapes /metrics
+                                 (OTLP/HTTP)         ▼                  │  every 5 s
+                                                   Jaeger           Prometheus
+                                                   stores traces    stores metrics
+                                                     ▲                  ▲
+                                 fetches one trace   │                  │  runs each panel's
+                                 by ID               │                  │  query every 5 s
+                                                     └──── Grafana ─────┘
+                                                              ▲
+                                                              │  you open the dashboard
+                                                           browser
 ```
 
-The first start pulls three pinned images. When it prints `Demo is live`, open
-the printed links:
+Server sends traces to Jaeger, and Prometheus collects metrics from Server.
+Grafana stores nothing itself: it reads from Jaeger and Prometheus whenever the
+dashboard refreshes. Server runs directly on your machine, bound to 127.0.0.1.
+Jaeger, Prometheus and Grafana run as podman containers, published only on
+127.0.0.1.
 
-| Link (defaults) | What to look at |
+### Files in this folder
+
+| File | Purpose |
 |---|---|
-| **Grafana** `http://127.0.0.1:3000/d/drasi-server-observability?var-trace_id=…` | The **Drasi Server observability** dashboard (also Grafana's home page), refreshed every 5 s over the last 15 minutes. The pipeline row shows changes flowing through source, query and reaction; the Server process row shows CPU, memory, threads, file descriptors and uptime; the Traces row opens one real input trace. |
-| **Jaeger** `http://127.0.0.1:16686/search?service=drasi-server-observability` | One trace per change: `source.publish` → `query.process` → `sink.handle`, plus the Debug profile's query phases (`query.evaluate`, `query.commit`, …), with `instance_id`, `graph_id` and `component_id` attributes. |
-| **Prometheus** `http://127.0.0.1:9090/targets` | The `drasi-server` target is **UP**; query any family below, for example `rate(process_cpu_seconds_total[1m]) * 100`. |
+| [`drasi-server.yaml`](drasi-server.yaml) | Server configuration for the HTTP pipeline, used by `showcase` and `live` |
+| [`postgres-config.yaml`](postgres-config.yaml) | The same pipeline with a PostgreSQL change-data-capture source, used by `live-postgres` |
+| [`server-config.yaml`](server-config.yaml) | A Server with no instances and telemetry off by default, used by `start` and `validate` |
+| [`demo.sh`](demo.sh) | The launcher for every mode |
+| [`local_bundle.py`](local_bundle.py) | Builds and checks the local plugin bundle |
+| [`showcase/`](showcase/) | Prometheus configuration, Grafana provisioning and dashboard, and the input generator `traffic.py` |
+| [`otel-collector.yaml`](otel-collector.yaml) | Optional OpenTelemetry Collector configuration |
 
-Send a burst from another terminal and watch the rates jump:
+## The Drasi Server configuration
 
-```sh
-bash examples/observability/demo.sh send 20     # N changes; default 5, at most 1000
+Everything Server does in the example comes from one file,
+[`drasi-server.yaml`](drasi-server.yaml). It has two parts:
+
+- The `instances` block defines the pipeline: an HTTP source that receives
+  input, a Cypher query over it, and a log reaction that prints the query's
+  changes.
+- The `telemetry` block turns on the traces and metrics that the rest of the
+  example displays.
+
+Below is the file with the showcase's values filled in. It is abridged: the
+launcher replaces each `${VAR:-default}` placeholder, and the instance ID is the
+name of the run directory it creates. Every setting is commented in the file
+itself.
+
+```yaml
+apiVersion: drasi.io/v1
+host: "127.0.0.1"
+port: 18081                     # management API and /metrics
+persistConfig: false
+enableUi: false
+
+instances:
+  - id: "<run-id>"
+    sources:
+      - kind: http              # input arrives here
+        name: observations
+        host: "127.0.0.1"
+        port: 18090
+    queries:
+      - name: observed-values
+        query: "MATCH (n:Reading) RETURN n.value AS value"
+        queryLanguage: Cypher
+        inputs: [observations]
+    reactions:
+      - kind: log               # prints every query result change
+        name: observed-log
+        queries: [observed-values]
+
+telemetry:
+  profile: debug                # adds query phases (query.evaluate, query.commit, …) to traces
+  inspection:
+    enabled: true               # serves GET /api/v1/telemetry
+  tracing:
+    endpoint: http://127.0.0.1:4318/v1/traces   # Jaeger's OTLP/HTTP receiver
+    protocol: http/protobuf
+    serviceName: drasi-server-observability
+    sampleRatio: 1.0            # keep every trace
+  metrics:
+    backend: prometheus         # served at /metrics, scraped by Prometheus
+    processMetrics: true        # CPU, memory, threads, file descriptors, uptime
+    prometheus:
+      path: /metrics
 ```
 
-Press Ctrl+C to stop. The launcher stops, in order, the input generator, then
-Server, then removes only its own containers (with their anonymous volumes)
-and network, and confirms that every port it used is closed.
+The **profile** controls how much detail Server collects:
 
-### What the dashboard shows
-
-The PromQL uses the names Server's Prometheus backend actually exposes, without
-`_total` or unit suffixes:
-
-| Panel | Families |
+| Profile | What it collects |
 |---|---|
-| Source events dispatched (per second) | `drasi_source_events_dispatched` |
-| Query events processed (per second) | `drasi_query_events_processed` |
-| Query results emitted, by `change_kind` | `drasi_query_results_emitted` |
-| Reaction results and deliveries | `drasi_reaction_results_processed`; `drasi_component_inputs_processed` for the graph's sink (`completion="handled"`) |
-| Query engine duration p50 / p95 | `drasi_query_engine_duration` histogram (`_bucket`), seconds |
-| Queue depth: pending and peak | `drasi_queue_depth`, `drasi_queue_depth_max` |
-| CPU, % of one core | `process_cpu_seconds_total`, as `rate(process_cpu_seconds_total[1m]) * 100` |
-| Resident memory, threads | `process_resident_memory_bytes`, `process_threads` |
-| File descriptors: open vs max | `process_open_fds`, `process_max_fds` (absent when unlimited) |
-| Uptime | `process_start_time_seconds`, as `time() - process_start_time_seconds` |
-| Trace | Jaeger trace for the **Trace ID** box |
+| `off` | Nothing. Inspection can still be turned on separately. |
+| `basic` | The standard pipeline metrics and spans |
+| `debug` | `basic`, plus debug details such as query phase spans (`query.evaluate`, `query.commit`, …) |
+| `persistence` | `basic`, plus storage and recovery details such as `drasi_query_commit_duration`; it does not include the `debug` details |
+
+The showcase defaults to `debug` and the `live` modes to `persistence`; set
+`DRASI_DEMO_PROFILE` to choose another. For every field and its limits, see
+[telemetry configuration](../../docs/telemetry-configuration.md).
+
+## Prerequisites
+
+Run every command on this page from the repository root. You need:
+
+- The Rust toolchain pinned in `rust-toolchain.toml` (currently 1.95.0) and the
+  native build dependencies.
+- The sibling `../drasi-core` checkout that this repository's Cargo
+  dependencies point to. `python3 scripts/plugin_origin.py mode` must print
+  `local`.
+- Cargo dependencies already in the local cache: the example builds offline
+  (`--locked --offline`).
+- Bash, Python 3.11 or later, and curl.
+- For the showcase: podman. On macOS, start it first with
+  `podman machine start`.
+- For the PostgreSQL variant only: an existing database with logical
+  replication enabled.
+
+## Quick start: run the showcase
+
+1. Build Server and the three plugins the pipeline uses. Do this once, and again
+   after any change to Server or Core source:
+
+   ```sh
+   bash examples/observability/demo.sh build-plugins
+   ```
+
+2. Start the showcase:
+
+   ```sh
+   DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 bash examples/observability/demo.sh showcase
+   ```
+
+   The plugins you just built are unsigned. `DRASI_DEMO_TRUST_LOCAL_PLUGINS=1`
+   confirms that you trust them; see
+   [Local plugin bundle and trust](#local-plugin-bundle-and-trust).
+
+3. Wait for `Demo is live`. The first start pulls three pinned images. The
+   launcher then prints its links:
+
+   ```text
+   Grafana dashboard: http://127.0.0.1:3000/d/drasi-server-observability?var-trace_id=<trace id>
+   Jaeger traces:     http://127.0.0.1:16686/search?service=drasi-server-observability
+   Prometheus:        http://127.0.0.1:9090/targets
+   More input:        bash examples/observability/demo.sh send 20
+   ```
+
+4. Explore, as described in the next section.
+
+5. Press Ctrl+C to stop. If the showcase runs in the background, where Ctrl+C
+   does not reach it, stop it from another terminal:
+
+   ```sh
+   kill $(pgrep -f 'demo.sh showcase')
+   ```
+
+   Either way, the launcher stops the input generator, then Server, then
+   removes only its own containers (with their anonymous volumes) and network,
+   and confirms that every port it used is closed.
+
+## Explore the showcase
+
+The commands and links below use the default ports. If you changed them, use
+the links the launcher prints.
+
+### Grafana: the dashboard
+
+Open the Grafana link. The **Drasi Server observability** dashboard shows the
+last 15 minutes and refreshes every 5 seconds. It has three rows.
+
+**Drasi pipeline** shows how changes move through the pipeline. Each change
+the generator sends appears, in order, in the first four panels; in this
+example one change is one event.
+
+| Panel | What it means | Metric |
+|---|---|---|
+| Source events dispatched | Changes per second that the source handed to the pipeline | `drasi_source_events_dispatched` |
+| Query events processed | Changes per second that the query finished processing | `drasi_query_events_processed` |
+| Query results emitted | Changes per second to the query's result, by `change_kind`: `add` (a new row), `update` (a changed row) or `delete` (a removed row) | `drasi_query_results_emitted` |
+| Reaction results and deliveries | Results per second delivered to the reaction | `drasi_component_inputs_processed` for the pipeline's sink (`completion="handled"`), and `drasi_reaction_results_processed` |
+| Query engine duration | How long the query engine took to evaluate one change, as p50 and p95 | `drasi_query_engine_duration` histogram, in seconds |
+| Queue depth | Changes waiting between components right now (pending, summed over all queues) and the most that have ever waited in one queue (peak) | `drasi_queue_depth`, `drasi_queue_depth_max` |
+
+The generator inserts ten readings, then only updates them, so **Query results
+emitted** shows a short burst of `add` followed by a steady line of `update`.
+The **peak** queue depth is a high-water mark: it only goes up while Server
+runs, so a burst from `send` leaves it raised.
+
+**Reading p50 and p95.** Every evaluation of the query is timed. **p50** (the
+median) is the time within which half of the evaluations finished; **p95** is
+the time within which 95% finished, so it shows the slow tail. A p50 of 1 ms and
+a p95 of 4 ms mean a typical change takes about 1 ms and only 1 change in 20
+takes longer than 4 ms. The time covers only the query engine's evaluation in
+steady state (`phase="steady"`): not committing results or delivering them to
+the reaction. Treat both lines as estimates:
+
+- Each point is computed over a short sliding window (Grafana's
+  `$__rate_interval`, about 20 seconds here). At one change every 2 seconds,
+  that is only about ten evaluations, so the lines jump. A burst from `send`
+  gives more samples.
+- Prometheus estimates percentiles by interpolating inside histogram buckets.
+  The bucket boundaries near these values are 500 µs, 1 ms, 5 ms and 10 ms, so a
+  p95 of 4 ms means "the slowest few evaluations took between 1 and 5 ms", not
+  exactly 4 ms.
+
+**Server process** shows the whole `drasi-server` process, including the
+plugins loaded into it, not one instance:
+
+| Panel | What it means | Metric |
+|---|---|---|
+| CPU | CPU time the process uses, as a percentage of one core (100% is one core fully busy) | `process_cpu_seconds_total`, as `rate(process_cpu_seconds_total[1m]) * 100` |
+| Resident memory | Physical memory the process occupies | `process_resident_memory_bytes` |
+| Threads | Operating-system threads in the process | `process_threads` |
+| File descriptors: open vs max | Open files and sockets, against the process's soft limit; max is absent when the limit is unlimited | `process_open_fds`, `process_max_fds` |
+| Uptime | Time since Server started | `process_start_time_seconds`, as `time() - process_start_time_seconds` |
+
+**Traces (Jaeger)** shows one trace, selected by the **Trace ID** box at the top
+of the dashboard. The launcher's link fills the box with a real trace. To view
+another, copy a trace ID from Jaeger into the box.
 
 Things that look odd but are expected:
 
 - `drasi_reaction_results_processed` stays 0: the log reaction does not report
-  its work through Core's reaction worker. The graph's deliveries to the
+  its work through Core's reaction worker. The pipeline's deliveries to the
   reaction (`sink.handle`) move instead.
 - Drasi counter panels show an info icon, "metric might not be a counter":
   Prometheus 3 expects counter names to end in `_total`. The rates are correct.
@@ -73,116 +292,200 @@ Things that look odd but are expected:
   Its health check therefore reports 404. Search in the Jaeger UI, then paste a
   trace ID into the dashboard's **Trace ID** box.
 
-### How the showcase runs
+### Jaeger: follow one change
 
-- **Pipeline:** the same matched local bundle, receipt checks and trust opt-in
-  as `live`, in a new owned run directory under
-  `target/observability-example/runs/`. Its `showcase/` subdirectory holds the
-  Server and generator logs, the container ID files and the generated
-  Prometheus target file. Like other run directories, it is retained.
-- **Telemetry:** metrics backend `prometheus` at `/metrics` on the management
-  listener, `processMetrics: true`, trace export to Jaeger's OTLP/HTTP
-  endpoint, profile `debug` by default (so traces include query phases),
-  sample ratio 1.0 and inspection on.
-- **Input:** a generator posts one change about every 2 seconds through
-  Server's source-data proxy, `POST /api/v1/instances/{instance}/sources/observations/push`.
-  It inserts ten readings (`reading-1` … `reading-10`), then only updates them,
-  so the query's result set stays bounded. `send` posts N updates to the same
-  ten readings; it finds the running instance through `GET /api/v1/instances`
-  and refuses (exit 1) when no demo answers. It also works against `live`.
-- **Containers**, on the owned podman network
-  `drasi-server-observability-showcase`, labelled
-  `io.drasi.demo=server-observability-showcase`:
+Open the Jaeger link and choose any trace for the service
+`drasi-server-observability`. The trace for one change contains:
 
-  | Container | Pinned image | Published on 127.0.0.1 |
-  |---|---|---|
-  | `drasi-server-observability-showcase-jaeger` | `cr.jaegertracing.io/jaegertracing/jaeger:2.22.0` | 4318 (OTLP/HTTP from Server), 16686 (UI) |
-  | `drasi-server-observability-showcase-prometheus` | `docker.io/prom/prometheus:v3.16.0` | 9090 |
-  | `drasi-server-observability-showcase-grafana` | `docker.io/grafana/grafana:13.3.1` | 3000 |
+- `source.publish`: the source hands the change to the pipeline.
+- `query.process`: the query processes the change. With the `debug` profile,
+  child spans show its phases, such as `query.evaluate` and `query.commit`.
+- `sink.handle`: the pipeline delivers the resulting change to the log
+  reaction.
 
-- **Prometheus** ([`showcase/prometheus.yml`](showcase/prometheus.yml)) scrapes
-  Server every 5 s through the podman host alias
-  `host.containers.internal:<management port>`. Server itself stays bound to
-  127.0.0.1.
-- **Grafana** allows anonymous **Viewer** access only. It creates no admin
-  user, and both the login form and basic authentication are disabled. Its
-  provisioned data sources are Prometheus (the default) and Jaeger, reached by
-  container name on the owned network
-  ([`showcase/grafana/provisioning/`](showcase/grafana/provisioning/)). The
-  [dashboard](showcase/grafana/dashboards/drasi-server-observability.json) is
-  also the home dashboard. Analytics, update checks and plugin preinstalls
-  are off. No configuration file contains credentials.
+Each span has `instance_id`, `graph_id` and `component_id` attributes, which
+identify the instance and component that did the work. The span durations show
+where the time for that change went. Jaeger also lists lifecycle and control
+spans, for example from startup.
 
-The launcher refuses to start, before creating a run directory, if podman does
-not work, if any of its ports is already in use, or if one of its container
-names or its network already exists. It never replaces or removes anything it
-did not create in that run. If an earlier run was killed without cleanup,
-inspect and remove the leftover yourself, for example with
-`podman rm -f drasi-server-observability-showcase-jaeger`.
+### Prometheus: query the metrics
 
-Overrides:
+Open the Prometheus link. The **Target health** page should show the
+`drasi-server` job as **UP**. (Its endpoint link does not open in a browser; see
+[Prometheus (metrics)](#prometheus-metrics).) Then try these on the **Query**
+page:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DRASI_DEMO_PORT` | `18081` | Server management API and `/metrics` (also used by `send`) |
-| `DRASI_DEMO_SOURCE_PORT` | `18090` | HTTP source listener |
-| `DRASI_DEMO_OTLP_PORT` | `4318` | Jaeger OTLP/HTTP receiver |
-| `DRASI_DEMO_JAEGER_PORT` | `16686` | Jaeger UI |
-| `DRASI_DEMO_PROMETHEUS_PORT` | `9090` | Prometheus UI and API |
-| `DRASI_DEMO_GRAFANA_PORT` | `3000` | Grafana |
-| `DRASI_DEMO_PROFILE` | `debug` | `basic`, `debug` or `persistence` |
+```promql
+sum(rate(drasi_source_events_dispatched[1m]))
+sum by (change_kind) (rate(drasi_query_results_emitted[1m]))
+histogram_quantile(0.95, sum by (le) (rate(drasi_query_engine_duration_bucket{phase="steady"}[1m])))
+rate(process_cpu_seconds_total[1m]) * 100
+```
 
-`DRASI_DEMO_SAMPLE_RATIO`, `DRASI_DEMO_INSPECTION`, `DRASI_DEMO_EXCLUDE` and
-`DRASI_DEMO_SHUTDOWN_TIMEOUT` work as in [`live`](#state-ownership-and-environment).
-The metrics backend (`prometheus`), process metrics (on) and the trace
-endpoint (the owned Jaeger) are fixed. The dashboard's Jaeger UI link assumes
-the default port; the printed link always uses the actual one.
+They show, in order: changes per second entering the pipeline, result changes
+per second by kind, the p95 query engine duration in seconds, and Server's CPU
+as a percentage of one core.
 
-## Advanced
+Drasi metric names have no `_total` or unit suffix. Histograms expose `_bucket`,
+`_sum` and `_count` series, with durations in seconds. Series carry
+`instance_id` and `graph_id` labels, plus labels such as `component_id` or
+`queue_id` that identify the component or queue. Component IDs are UUIDs that
+Server assigns, not the names in the configuration.
 
-The rest of this page covers the configuration-only default, the `live` modes
-and an optional OpenTelemetry Collector walkthrough. The default remains
-**configuration-only**: Off, no instances, no plugins. Two optional live modes
-use real local plugins and exactly one metrics backend, Prometheus or
-OTLP/HTTP protobuf, plus optional OTLP/HTTP protobuf traces:
+### Server's own APIs
 
-- `live`: **HTTP source → native query → log reaction**; you send the input.
-- `live-postgres`: **PostgreSQL CDC source → native query → log reaction**
-  against a database you already run and supply.
+Server's management API listens on port 18081. Its interactive API reference
+is at `http://127.0.0.1:18081/api/v1/docs/`. From a terminal:
 
-Live modes also enable whole-process metrics and read-only inspection by
-default; handled-branch latency stays disabled. Unlike the showcase, they
-install or start no dashboard, container, database or collector service.
+```sh
+API=http://127.0.0.1:18081/api/v1
+curl --noproxy '*' -s "$API/instances"
+INSTANCE=$(curl --noproxy '*' -s "$API/instances" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
+curl --noproxy '*' -s "$API/instances/$INSTANCE/queries/observed-values/results"
+curl --noproxy '*' -s "$API/telemetry"
+curl --noproxy '*' -s http://127.0.0.1:18081/metrics | grep -E '^(drasi|process)_'
+```
 
-These are reproducible instructions, **not a record of successful OBS-05 or
-OBS-06 live qualification**. See the
-[baseline](../../docs/observability-baseline.md) for
-recorded results, the deferred native-query blocker and outstanding gates.
-Health alone proves no metrics or traces.
+- The instance ID is `run-<random>`; each start creates a new one.
+- The results call returns the query's current rows, one `{"value": …}` per
+  reading. Component paths accept either a name or the assigned UUID.
+- `/api/v1/telemetry` returns the active telemetry settings (see
+  [Process metrics and inspection](#process-metrics-and-inspection)).
+- `/metrics` is the same text Prometheus scrapes.
+- `--noproxy '*'` stops curl from sending these local requests through a proxy
+  set in your environment.
 
-### Prerequisites and unchanged default
+The log reaction's output is in Server's log, in the run directory the launcher
+prints: `target/observability-example/runs/<instance>/showcase/server.log`.
 
-Use the supported Rust toolchain (currently 1.95.0), native build dependencies,
-and matching Cargo-selected sibling `../drasi-core`. Bash and Python 3.11+ are
-needed for live mode; curl is useful for checks. Run from the repository root:
+### Add load
+
+Send a burst of changes from another terminal and watch the rates jump within a
+few seconds:
+
+```sh
+bash examples/observability/demo.sh send 20     # N changes; default 5, at most 1000
+```
+
+`send` finds the running instance through `GET /api/v1/instances` and updates
+the same ten readings. It exits with status 1 if no demo answers. It also works
+with the `live` modes below.
+
+## How Jaeger, Prometheus and Grafana are set up
+
+Server pushes traces to a receiver and serves metrics for a scraper. Each tool
+needs only a little setup to take part. `demo.sh showcase` does all of it for
+you; to use your own instances of these tools, repeat the same steps.
+
+### Jaeger (traces)
+
+Jaeger needs no configuration file. The showcase runs the stock Jaeger 2 image
+with its default configuration, which accepts OTLP and keeps traces in memory.
+Two things connect it to Server:
+
+- Publish Jaeger's OTLP/HTTP receiver (container port 4318) and its UI
+  (container port 16686).
+- Point Server's `telemetry.tracing.endpoint` at the receiver's full URL,
+  `http://127.0.0.1:4318/v1/traces`, with `protocol: http/protobuf`. The
+  `serviceName` setting is the service you select in Jaeger's search.
+
+### Prometheus (metrics)
+
+Prometheus pulls metrics, so it must be told where Server is:
+
+- In Server's configuration, set `telemetry.metrics.backend: prometheus`.
+  Server then serves metrics at `/metrics` on its management port (18081).
+- In Prometheus, add a scrape job for that address.
+  [`showcase/prometheus.yml`](showcase/prometheus.yml) defines the job
+  `drasi-server`, which scrapes `/metrics` every 5 seconds. Its target comes
+  from a small file that the launcher writes at start:
+  `host.containers.internal:<management port>`, the name a podman container
+  uses to reach your machine.
+
+`host.containers.internal` resolves only inside the containers. The endpoint
+link on Prometheus's **Target health** page therefore does not open in your
+browser; open `http://127.0.0.1:18081/metrics` instead. A Prometheus that runs
+directly on your machine would use `127.0.0.1:18081` as its target.
+
+### Grafana (dashboard)
+
+Grafana keeps no metrics or traces of its own, and Server never sends anything
+to it. Each time the dashboard refreshes (every 5 seconds), Grafana asks the
+two tools that do store data:
+
+- **Metrics come from Prometheus.** Every metric panel holds a PromQL query,
+  for example `sum(rate(drasi_source_events_dispatched[$__rate_interval]))`.
+  Grafana sends each query to Prometheus's query API and draws the time series
+  it returns. Prometheus answers from the samples it scraped from Server's
+  `/metrics`, so the graphs trail Server by a few seconds.
+- **Traces come from Jaeger.** The trace panel asks Jaeger for the single trace
+  whose ID is in the dashboard's **Trace ID** box, and draws its spans. It
+  looks traces up by ID only and cannot search, which is why you copy IDs from
+  the Jaeger UI.
+- **Grafana's server makes these requests, not your browser** (the data
+  sources use `access: proxy`). That is why the data sources can use container
+  names such as `http://drasi-server-observability-showcase-prometheus:9090`,
+  which resolve only on the showcase's podman network. Your browser talks only
+  to Grafana, on port 3000.
+
+For that, Grafana needs two data sources and a dashboard. The showcase
+provisions them from files, so nothing is set up by hand:
+
+- [Data sources](showcase/grafana/provisioning/datasources/drasi-showcase.yaml):
+  Prometheus (the default) and Jaeger, each reached by container name on the
+  showcase's podman network. The Prometheus data source declares the 5-second
+  scrape interval (`timeInterval: 5s`), which Grafana uses to size each
+  panel's `$__rate_interval` window.
+- A [dashboard provider](showcase/grafana/provisioning/dashboards/drasi-showcase.yaml)
+  loads [`drasi-server-observability.json`](showcase/grafana/dashboards/drasi-server-observability.json),
+  which is also set as Grafana's home dashboard.
+- Environment settings on the container allow anonymous read-only
+  (**Viewer**) access with no admin user or login form, and turn off analytics
+  and update checks.
+
+To use the dashboard in your own Grafana, add a Prometheus data source with UID
+`drasi-prometheus` and a Jaeger data source with UID `drasi-jaeger` (the UIDs
+the dashboard refers to), then import the dashboard JSON.
+
+## Run the example other ways
+
+The showcase is one of several modes of the same launcher:
+
+| Command | What it runs |
+|---|---|
+| `start` (the default) | A Server with no instances; telemetry is off unless you turn it on |
+| `validate` | Checks `server-config.yaml` and its telemetry settings without starting Server |
+| `init` | An interactive wizard that writes `wizard-config.yaml` |
+| `build-plugins [http\|postgres]` | Builds Server and one scenario's plugins (default `http`) |
+| `live [prometheus\|otlp]` | The HTTP pipeline with one metrics backend and optional traces; you send the input |
+| `live-postgres [prometheus\|otlp]` | The same pipeline with a PostgreSQL CDC source, against your own database |
+| `showcase` | The HTTP pipeline with Jaeger, Prometheus, Grafana and steady input |
+| `send [N]` | Sends N reading updates (default 5, at most 1000) to the running demo |
+
+Unlike the showcase, the `live` modes start no containers, databases or
+collectors, and send no input of their own. They turn on process metrics and
+inspection by default.
+
+### A Server without a pipeline: `start`, `validate`, `init`
 
 ```sh
 bash examples/observability/demo.sh             # same as start
-bash examples/observability/demo.sh validate    # no sockets/collector/plugins
+bash examples/observability/demo.sh validate    # no sockets, collector or plugins
 bash examples/observability/demo.sh init        # interactive wizard
 ```
 
-Default startup is foreground, **127.0.0.1:18081**, UI off, `persistConfig: false`,
-auto-install off and verification on. The launcher builds Server with
-`--locked --offline` (dependencies must already be cached)
-under `target/observability-server` and uses
-`target/observability-example/empty-plugins`, never the user's plugin directory.
-`GET /health` and `GET /api/v1/instances` return success; the latter has empty
-`data`. `/metrics` and `/api/v1/telemetry` return 404. Stop with Ctrl+C.
-`DRASI_DEMO_PORT=18082` chooses another loopback management port.
+`start` runs Server in the foreground on **127.0.0.1:18081** with
+[`server-config.yaml`](server-config.yaml): no instances, UI off,
+`persistConfig: false`, plugin auto-install off and signature verification on.
+The launcher builds Server offline under `target/observability-server` and uses
+an empty plugin directory, `target/observability-example/empty-plugins`, never
+your own. `GET /health` and `GET /api/v1/instances` succeed (the latter with
+empty `data`); `/metrics` and `/api/v1/telemetry` return 404 because telemetry
+is off. `DRASI_DEMO_PORT=18082` chooses another port. Stop with Ctrl+C.
 
-Validation checks policy; it neither binds ports nor contacts the destination.
-Prometheus, OTLP metrics and OTLP traces are available:
+`validate` checks the telemetry settings without binding ports or contacting
+any destination:
 
 ```sh
 DRASI_DEMO_PROFILE=basic DRASI_DEMO_METRICS_BACKEND=prometheus \
@@ -192,84 +495,41 @@ DRASI_DEMO_PROFILE=persistence DRASI_DEMO_METRICS_BACKEND=otlp \
   bash examples/observability/demo.sh validate
 ```
 
-Replacing `validate` with `start` enables the chosen backends, but still starts
-**no pipeline**. Settings for the other metrics backend do not activate it.
-Inspection is independent of Off: the command below serves `/api/v1/telemetry`
-with profile `off`, backend `none` and `path: null`, while
+Out-of-range values fail validation, for example an unknown profile, sample
+ratio `1.5`, export interval `0`, export timeout `31` or shutdown timeout `301`.
+Replacing `validate` with `start` turns the chosen backends on, but still runs
+no pipeline. Settings for the metrics backend you did not choose stay inactive.
+
+Inspection works even with telemetry off. The command below serves
+`/api/v1/telemetry` with profile `off`, backend `none` and `path: null`, while
 `/api/v1/telemetry/metrics` returns 503 `TELEMETRY_METRICS_UNAVAILABLE`:
 
 ```sh
 DRASI_DEMO_INSPECTION=true bash examples/observability/demo.sh start
 ```
 
-`server-config.yaml` keeps `processMetrics: false`; process metrics are shown
-with the live modes below.
+The wizard writes `wizard-config.yaml` (ignored by Git) and refuses to
+overwrite an existing one. You can skip telemetry, choose Off (optionally with
+inspection), or choose tracing and one metrics backend with optional process
+metrics and inspection. The launcher never switches to the wizard's output on
+its own.
 
-Invalid profiles, sample ratio `1.5`, interval `0`, timeout `31` and shutdown
-budget `301` fail validation even if a destination is retained but inactive.
-The wizard writes ignored `wizard-config.yaml`, refusing overwrite. Skip
-telemetry to omit it, choose Off (optionally with inspection) for logs only, or
-choose tracing and one metrics backend with optional process metrics and
-inspection. The launcher does not silently switch to wizard output.
+### The HTTP pipeline with Prometheus: `live`
 
-### 1. Explicitly build one matching local scenario bundle
-
-Stop other instances of this demo before rebuilding. This is the manual,
-opt-in preparation command; neither ordinary startup nor live startup downloads
-plugins or adopts an arbitrary existing executable:
-
-```sh
-python3 scripts/plugin_origin.py mode                 # must print local
-bash examples/observability/demo.sh build-plugins     # HTTP scenario
-bash examples/observability/demo.sh build-plugins postgres   # optional
-```
-
-Each command builds only Server plus that scenario's three libraries with
-their `dynamic-plugin` features: `drasi-source-http` (or
-`drasi-source-postgres`), `drasi-computation-transformer-query` and
-`drasi-reaction-log`. Query bootstrap is disabled, so no bootstrap library is
-bundled. It uses the currently selected Core sources, including local edits.
-Cargo runs offline; missing cached dependencies are an explicit failure, not a
-registry fallback. It runs **no tests**. Core and Server lockfile graphs use
-separate target directories:
-
-- Server: `target/observability-server`
-- Core libraries: `target/observability-plugins`
-- Example-owned copies: `target/observability-example/bundles/<scenario>/`.
-  Nothing is published to `target/debug/plugins` or another live plugin folder.
-
-`target/observability-example/<scenario>-build.json` records the scenario, its
-exact plugin set, source fingerprints (including dirty/untracked source),
-compiler identity and binary hashes **after that build**. Live startup rejects a
-missing receipt, an older receipt format, another scenario's receipt, a
-missing/replaced binary or changed Core/Server source; rerun the matching build
-command. Matching names, ABI versions or an old successful build are
-insufficient provenance. This is a developer-trusted local receipt, not a
-cryptographic supply-chain attestation. The host still performs its normal
-metadata/ABI/capability checks when loading. No library is opened by the
-preparation helper. The local libraries are unsigned: live modes require
-`DRASI_DEMO_TRUST_LOCAL_PLUGINS=1` and then pass `--skip-verification` for only
-the three receipt-checked local files. This is an explicit development trust
-decision, not signature verification. Normal configuration-only startup retains
-verification. Never use this opt-in for untrusted or registry-downloaded libraries.
-Another Cargo build/test can replace the Server executable with a different
-feature set; rerun `build-plugins` if the receipt then rejects it.
-
-### 2. Run the HTTP pipeline, send input and scrape
+Build the bundle as in the [quick start](#quick-start-run-the-showcase), then:
 
 ```sh
 DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 bash examples/observability/demo.sh live prometheus
 ```
 
-The launcher prints its unique instance and owned run directory. The HTTP
-source listens on loopback port `DRASI_DEMO_SOURCE_PORT` (default `18090`). In
-another terminal, send several readings, either directly to the source or
-through Server's instance-scoped source-data proxy:
+The launcher prints the instance ID and run directory. Send input from another
+terminal with `demo.sh send`, or post changes yourself, either straight to the
+HTTP source (port 18090) or through Server's source-data proxy:
 
 ```sh
 INSTANCE=run-REPLACE_WITH_PRINTED_SUFFIX
 API="http://127.0.0.1:18081/api/v1/instances/$INSTANCE"
-# The source listener validates its assigned UUID, not the name `observations`.
+# The source listener checks its assigned UUID, not the name `observations`.
 SOURCE_ID=$(curl --noproxy '*' --fail -s "$API/sources" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
 for value in 1 2 3 4 5; do
@@ -277,73 +537,69 @@ for value in 1 2 3 4 5; do
     -d "{\"operation\":\"insert\",\"element\":{\"type\":\"node\",\"id\":\"reading-$value\",\"labels\":[\"Reading\"],\"properties\":{\"value\":$value}}}" \
     "http://127.0.0.1:18090/sources/$SOURCE_ID/events"
 done
-# The same JSON through Server's proxy (path accepts the source name):
+# The same JSON through Server's proxy, which accepts the source name:
 curl --noproxy '*' --fail -H 'content-type: application/json' \
   -d '{"operation":"insert","element":{"type":"node","id":"reading-6","labels":["Reading"],"properties":{"value":6}}}' \
   "$API/sources/observations/push"
 ```
 
-Then inspect the pipeline and metrics:
+Then inspect the pipeline and its metrics:
 
 ```sh
-curl --noproxy '*' --fail http://127.0.0.1:18081/api/v1/instances
-curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/sources"
-curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/queries"
-curl --noproxy '*' --fail "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/reactions"
+curl --noproxy '*' --fail "$API/sources"
+curl --noproxy '*' --fail "$API/queries"
+curl --noproxy '*' --fail "$API/reactions"
+curl --noproxy '*' --fail "$API/queries/observed-values/results"
 curl --noproxy '*' --fail http://127.0.0.1:18081/metrics
 ```
 
-Names are `observations`, `observed-values`, `observed-log`; all component IDs
-are **assigned UUIDs**, not these names. Every API component path is scoped by
-the explicit instance. The unique eligible native query factory is selected by
-the existing loader; there is no linked-reference fallback or implicit instance.
+The listings report each component's assigned UUID as its `id`, next to its
+name. In `/metrics`, look for:
 
-Check real observations, not just HTTP 200:
-
-| Prometheus family | Expected type / observation |
+| Prometheus family | What to expect |
 |---|---|
-| `drasi_source_events_dispatched` | counter; positive, increasing for assigned `source_id` |
-| `drasi_query_events_processed` | counter; positive `phase="steady"` for assigned `query_id` |
-| `drasi_query_results_emitted` | counter; positive `change_kind="add"` for that query |
-| `drasi_reaction_results_processed` | counter; positive for assigned reaction + query |
-| `drasi_query_engine_duration` | histogram; positive `_count`, finite nonnegative `_sum` in **seconds** |
-| `drasi_query_commit_duration` | histogram under Persistence only; evaluation/publication and delivery acknowledgement are distinct commits |
-| `drasi_queue_depth` / `drasi_queue_depth_max` | gauges for actual supported `queue_id`, with actual instance/graph identity |
+| `drasi_source_events_dispatched` | Counter that grows with each change, labelled with the source's ID |
+| `drasi_query_events_processed` | Counter with `phase="steady"` that grows for the query |
+| `drasi_query_results_emitted` | Counter by `change_kind`, for example `add` for new readings |
+| `drasi_reaction_results_processed` | Counter for the reaction and query; stays 0 with the log reaction (see [expected quirks](#grafana-the-dashboard)) |
+| `drasi_query_engine_duration` | Histogram in seconds whose `_count` grows |
+| `drasi_query_commit_duration` | Histogram, only with the `persistence` profile |
+| `drasi_queue_depth`, `drasi_queue_depth_max` | Gauges, one series per queue (`queue_id`) |
 
-Scrape twice, sending input in between, to establish growth. Count actual
-inputs; asynchronous in-flight work can briefly lag. Identity labels are
-`instance_id`, `graph_id`, `component_id` and the specific
-source/query/reaction/queue labels, not guessed names or fabricated zeros. Queue IDs name physical bindings; they need not be component UUIDs.
-No `_seconds` or `_total` suffix is appended. Histograms expose `_bucket`,
-`_sum`, `_count`; finite boundaries match the [shared bucket list](../../docs/telemetry-configuration.md#metric-data-and-bounds).
-The query result API and log reaction output should advance while scraping.
+Scrape twice with input in between to see counters grow; in-flight work can lag
+briefly. Histogram bucket boundaries are listed in
+[telemetry configuration](../../docs/telemetry-configuration.md#metric-data-and-bounds).
 
-Stop with Ctrl+C before each variant. Keep the explicit local trust opt-in
-for this terminal's subsequent live commands:
+#### Compare profiles and filters
+
+Stop Server with Ctrl+C between runs:
 
 ```sh
 export DRASI_DEMO_TRUST_LOCAL_PLUGINS=1
 DRASI_DEMO_PROFILE=basic bash examples/observability/demo.sh live prometheus
 DRASI_DEMO_PROFILE=debug bash examples/observability/demo.sh live prometheus
 DRASI_DEMO_PROFILE=persistence bash examples/observability/demo.sh live prometheus
-# Exclude a real family that is otherwise present, without stopping processing:
+# Drop one metric family without affecting processing:
 DRASI_DEMO_EXCLUDE=drasi.query.engine.duration \
   bash examples/observability/demo.sh live prometheus
 ```
 
-Basic/Debug both retain evaluator metrics; Debug does **not** imply Persistence
-commit metrics. Persistence adds supported commit/outbox/recovery observations,
-not every Debug detail. In the exclusion run, evaluator histogram HELP/TYPE,
-bucket/count/sum series must all be absent while query/result/reaction counters
-still grow. `drasi_query_progress_sequence` and `drasi_pipeline_end_to_end_duration`
-must be absent in every Prometheus variant. The `process_*` families are present
-by default and absent with `DRASI_DEMO_PROCESS_METRICS=false`.
-Progress is deliberately **OTLP-only**. The default exclusion is `drasi.plugin.`;
-`DRASI_DEMO_EXCLUDE` replaces that one literal substring (not a glob).
+- `basic` and `debug` both include the query engine metrics; `debug` does not
+  add the `persistence` commit metrics.
+- `persistence` adds commit, outbox and recovery metrics such as
+  `drasi_query_commit_duration`, but not every `debug` detail.
+- With the exclusion, every `drasi_query_engine_duration` series disappears
+  while the other counters keep growing. `DRASI_DEMO_EXCLUDE` replaces the
+  default exclusion, `drasi.plugin.`; it is a literal substring, not a pattern.
+- `drasi_query_progress_sequence` never appears in Prometheus: progress is
+  exported only over OTLP. `drasi_pipeline_end_to_end_duration` does not appear
+  either, because no profile turns on handled-branch latency.
+- The `process_*` families appear by default and disappear with
+  `DRASI_DEMO_PROCESS_METRICS=false`.
 
-#### Process metrics and read-only inspection
+#### Process metrics and inspection
 
-Live modes enable both by default. While the pipeline runs:
+The `live` modes turn both on by default. While the pipeline runs:
 
 ```sh
 curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry
@@ -351,28 +607,26 @@ curl --noproxy '*' -s http://127.0.0.1:18081/metrics | grep '^process_'
 curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry/metrics | grep '^process_'
 ```
 
-With the defaults and no trace endpoint, the settings are:
+With the `live` defaults and no trace endpoint, `/api/v1/telemetry` returns:
 
 ```json
 {"profile":"persistence","tracing":{"exportEnabled":false,"sampleRatio":1.0,"localInspection":false},"metrics":{"backend":"prometheus","processMetrics":true,"path":"/api/v1/telemetry/metrics"},"logs":{"pathTemplate":"/api/v1/instances/{instanceId}/{collection}/{componentId}/logs","streamPathTemplate":"/api/v1/instances/{instanceId}/{collection}/{componentId}/logs/stream"}}
 ```
 
 The settings contain no endpoint, header or credential. Both metrics routes
-show the same unlabelled `process_*` families next to the `drasi_*` families:
-`process_cpu_seconds_total` (a fractional counter), resident/virtual memory
-bytes, open/max file descriptors, threads and start time. They describe the
-whole Server process, not this instance. `process_max_fds` is omitted when the
-soft limit is unlimited; unavailable readings are omitted, never `0`. CPU usage
-is `rate(process_cpu_seconds_total[1m])`. `DRASI_DEMO_EXCLUDE=process_` also
-removes them (replacing the default `drasi.plugin.` exclusion), and
+return the same `process_*` families, without labels, next to the `drasi_*`
+families: `process_cpu_seconds_total` (a fractional counter), resident and
+virtual memory bytes, open and maximum file descriptors, threads and start
+time. They describe the whole Server process. `process_max_fds` is omitted when
+the soft limit is unlimited, and a reading that is unavailable is omitted rather
+than reported as `0`. `DRASI_DEMO_EXCLUDE=process_` removes them, and
 `DRASI_DEMO_INSPECTION=false` makes both inspection routes return 404.
-Inspection has no authentication: anyone who can reach the management port can
-read it, which is loopback here.
 
-### 3. Use an existing OTLP receiver instead
+### Metrics over OTLP
 
-Start a receiver you already have that accepts **HTTP/protobuf metrics** at a
-full URL, then:
+Start an OTLP receiver you already have that accepts **HTTP/protobuf metrics**,
+or the [OpenTelemetry Collector](#send-to-an-opentelemetry-collector) below,
+then:
 
 ```sh
 DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 \
@@ -381,52 +635,41 @@ DRASI_DEMO_EXPORT_INTERVAL=2 DRASI_DEMO_EXPORT_TIMEOUT=1 \
   bash examples/observability/demo.sh live otlp
 ```
 
-No receiver is started by the launcher. HTTP is for credential-free loopback
-development only. `/metrics` must return 404 in this mode. Decode the receiver's
-actual request as `ExportMetricsServiceRequest`, not JSON based on a 200 response.
-Check the dotted counterparts of the families above under scope `drasi.core`:
-monotonic cumulative sums, gauges and explicit cumulative histograms with units
-`1` / `s`, the same bounds and actual identity attributes. No input text,
-result values or credentials may appear in attributes.
+Server now pushes metrics every 2 seconds instead of serving them, so
+`/metrics` returns 404, `/api/v1/telemetry` reports backend `otlp` with
+`path: null`, and `/api/v1/telemetry/metrics` returns 503
+`TELEMETRY_METRICS_UNAVAILABLE`. Your receiver gets:
 
-The same provider/resource also exports exactly **one instrument** named
-`drasi.query.progress.sequence` under scope `drasi.progress`. It is a gauge,
-with multiple points (not duplicate instruments):
+- The pipeline metrics under the scope `drasi.core`, with dotted names (for
+  example `drasi.query.engine.duration`): cumulative counters, gauges and
+  explicit-bucket histograms with units `1` or `s`, and the same identity
+  attributes. No input text, result values or credentials appear in
+  attributes.
+- One gauge, `drasi.query.progress.sequence`, under the scope `drasi.progress`.
+  Its points have `drasi.progress.stage` set to `output.produced`, or to
+  `input.committed` together with `drasi.input.kind` and `drasi.input.id`, and
+  carry the instance and query IDs. Values grow as input is committed and
+  output produced. Queries that are stopped or not ready are omitted, not
+  reported as zero. `DRASI_DEMO_EXCLUDE=drasi.query.progress.` removes it.
+- With process metrics on, up to seven `process_*` metrics, without
+  attributes, under the scope `drasi.server.process`, sampled just before each
+  export.
 
-- `drasi.progress.stage=output.produced`, and `input.committed` with
-  `drasi.input.kind` / `drasi.input.id`.
-- `drasi.instance.id` and `drasi.query.id` match this run/API UUID; generation,
-  operation, output generation, config hash and persistent flag are retained.
-- Values increase with actual input/output and remain within signed 64-bit
-  range. Unsupported/unready/stopped queries are omitted, not emitted as zero.
-  Stopping the query by its assigned API UUID and observing later exports can
-  demonstrate omission; collector-retained stale samples are not a fresh export.
+All scopes share one resource: `service.name=drasi-server-observability`, the
+Server version, the process ID and a `service.instance.id` that changes on every
+restart. The profile and exclusion variants above work with `otlp` too.
 
-Both scopes share `service.name=drasi-server-observability`, Server version,
-PID and one process-start-unique `service.instance.id`; a restart changes that
-ID. With process metrics enabled (the default), the same requests also carry up
-to seven `process_*` instruments, with the same names and no attributes, under
-scope `drasi.server.process` and the same resource. They are sampled once
-immediately before each export. In this mode `/api/v1/telemetry` reports
-backend `otlp` with `path: null`, and `/api/v1/telemetry/metrics` returns 503
-`TELEMETRY_METRICS_UNAVAILABLE`. Run the Basic/Debug/Persistence and exclusion
-variants above with `otlp`.
-To exclude progress entirely use `DRASI_DEMO_EXCLUDE=drasi.query.progress.`.
-To distinguish committed-but-unchanged input from produced output, use the
-existing focused progress proof; this always-inserting workload is not that
-proof and does not promise exactly-once completion.
+The launcher starts no receiver. Plain HTTP is for local development only. For
+an authenticated receiver, use a private copy of the configuration with
+headers taken from environment variables and an **HTTPS** endpoint; never write
+resolved tokens into the file. Server follows no redirects, and `OTEL_*`
+environment variables do not override these settings. `--skip-verification`
+concerns plugin signatures and has nothing to do with TLS.
 
-For authentication, adapt a private copy of the config with environment-backed
-headers and a normally trusted **HTTPS** receiver. Do not write resolved tokens,
-use `--skip-verification` to mean TLS bypass (it is unrelated), or add custom-CA
-production settings. Redirects are not followed. No automatic `OTEL_*` variables
-override this new policy. The focused TLS boundary test uses a test-only trust
-anchor; it does not qualify a real external authenticated collector.
+### Traces to your own receiver
 
-### 4. Export traces
-
-Add a receiver you already run that accepts **HTTP/protobuf traces** at a full
-URL. Either metrics backend can be combined with trace export:
+Any receiver that accepts **HTTP/protobuf traces** works, with either metrics
+backend:
 
 ```sh
 DRASI_DEMO_TRUST_LOCAL_PLUGINS=1 \
@@ -435,28 +678,22 @@ DRASI_DEMO_SAMPLE_RATIO=1.0 DRASI_DEMO_PROFILE=debug \
   bash examples/observability/demo.sh live prometheus
 ```
 
-Send input as in section 2. Decode the receiver's request as
-`ExportTraceServiceRequest`. Expect actual graph operations such as
-`source.publish`, `query.process` and `sink.handle` (the graph's delivery to
-the reaction), plus lifecycle/control spans (Debug adds
-`query.evaluate`/`query.commit` phases), with `instance_id`, `graph_id` and
-`component_id` attributes, and the same resource identity as OTLP metrics.
-`reaction.process` appears only when a reaction reports its own work through
-Core's reaction worker; the ordinary log reaction here did not in the recorded
-walkthrough.
-Completed native plugin spans keep their original IDs, parents, events and
-timestamps; Server does not wrap them in new spans.
+Send input as in [`live`](#the-http-pipeline-with-prometheus-live). Each change
+produces the spans described in [Jaeger](#jaeger-follow-one-change), with the
+same resource identity as OTLP metrics. A `reaction.process` span appears only
+for reactions that report their work through Core's reaction worker; the log
+reaction does not. Spans completed inside native plugins keep their original
+IDs, parents, events and timestamps.
 
-`DRASI_DEMO_SAMPLE_RATIO=0` exports no new root traces, while metrics, query
-results and ordinary logs continue. A sampled incoming parent is still honored,
-and an unsampled parent is never resampled. Without a trace endpoint, no trace
-exporter starts. Exports are bounded (2,048 spans / 16 MiB, batches of 256,
-one request at a time, no retries); an unavailable receiver drops batches with
-diagnostics and never blocks processing.
+- `DRASI_DEMO_SAMPLE_RATIO=0` starts no new traces, while metrics, results and
+  logs continue. A sampled incoming parent is still honored, and an unsampled
+  one is never resampled.
+- Without a trace endpoint, no trace exporter starts.
+- Export is bounded (2,048 queued spans or 16 MiB, batches of 256, one request
+  at a time, no retries). If the receiver is down, batches are dropped with a
+  diagnostic and processing never blocks.
 
-#### What incoming context can and cannot reach
-
-Send a W3C parent with either input path:
+**Incoming trace context.** You can send a W3C `traceparent` with a change:
 
 ```sh
 curl --noproxy '*' --fail -H 'content-type: application/json' \
@@ -465,20 +702,19 @@ curl --noproxy '*' --fail -H 'content-type: application/json' \
   "http://127.0.0.1:18081/api/v1/instances/$INSTANCE/sources/observations/push"
 ```
 
-The proxy forwards only a validated `traceparent`/`tracestate` (never baggage or
-credentials) and starts no span of its own; invalid metadata is dropped without
-rejecting the data. This scenario's HTTP source is an **ordinary** source plugin.
-Ordinary source cdylibs without negotiated portable context receive the header,
-but the context does not cross their plugin boundary: downstream operations
-start a new trace. Do not expect the incoming trace ID here. Native
-`drasi.network` HTTP/gRPC sources do continue incoming context through polling;
-that is qualified by the focused Server/Core tests, not by this walkthrough.
+The proxy forwards only a valid `traceparent` and `tracestate` (never baggage
+or credentials) and starts no span of its own; invalid headers are dropped
+without rejecting the change. This example's HTTP source is an ordinary
+(non-native) plugin, and context does not cross that plugin boundary, so the
+change still starts a new trace rather than joining yours. Native
+`drasi.network` HTTP and gRPC sources do carry incoming context into the
+pipeline.
 
-### 5. PostgreSQL CDC against an existing database
+### A PostgreSQL CDC source: `live-postgres`
 
-`live-postgres` never starts, creates or deletes a database, replication slot
-or publication. Supply an isolated database with logical replication enabled
-and a table such as:
+This variant reads changes from a PostgreSQL table you provide. The launcher
+never starts, creates or deletes a database, replication slot or publication.
+Use an isolated database with logical replication enabled and a table such as:
 
 ```sql
 CREATE TABLE observation (id integer PRIMARY KEY, value integer NOT NULL);
@@ -492,25 +728,25 @@ bash examples/observability/demo.sh build-plugins postgres
 bash examples/observability/demo.sh live-postgres prometheus
 ```
 
-The launcher refuses to start until host, database, user and password are set;
+The launcher refuses to start until host, database, user and password are set.
 `DRASI_DEMO_PG_PORT`, `DRASI_DEMO_PG_SLOT` and `DRASI_DEMO_PG_PUBLICATION`
 default to `5432`, `drasi_observability_slot` and `drasi_observability_pub`.
-Credentials stay environment references and are never written to receipts or
-run directories. Insert rows (for example `INSERT INTO observation VALUES (1, 10);`)
-and inspect results, metrics and traces as above. Each CDC change starts a new
-trace root; it does not inherit the SQL client's trace. Remove the slot and
-publication yourself when finished; the launcher does not.
+Credentials stay environment references; they are never written to build
+receipts or run directories. Insert rows (for example
+`INSERT INTO observation VALUES (1, 10);`) and inspect results, metrics and
+traces as above. Each change starts a new trace; it does not inherit the SQL
+client's trace. Remove the slot and publication yourself when you finish.
 
-### 6. See it in your own OpenTelemetry tool
+### Send to an OpenTelemetry Collector
 
-A local OpenTelemetry Collector can stand in for your observability tool as the
-receiver for sections 3 and 4. It needs no Docker and installs nothing
-system-wide. Download the official `otelcol-contrib` release archive for your
-platform into the ignored `target/observability-demo-tools/`, and verify it
-before unpacking. Recent releases publish a `<archive>.sha256` file per
-archive; older ones publish a combined
-`opentelemetry-collector-releases_otelcol-contrib_checksums.txt`. The
-walkthrough used v0.165.0 on macOS arm64:
+A local OpenTelemetry Collector can stand in for your own observability tool as
+the OTLP receiver. It needs no containers and installs nothing system-wide.
+Download the `otelcol-contrib` release archive for your platform into the
+ignored `target/observability-demo-tools/` directory, and check its checksum
+before unpacking. The commands below use v0.165.0 for macOS on Apple silicon;
+set `VERSION` and `PLATFORM` for yours. Recent releases publish an
+`<archive>.sha256` file per archive; older ones publish one combined
+`opentelemetry-collector-releases_otelcol-contrib_checksums.txt`.
 
 ```sh
 VERSION=0.165.0 PLATFORM=darwin_arm64   # e.g. darwin_amd64, linux_amd64, linux_arm64
@@ -529,16 +765,15 @@ cd ../../..
 target/observability-demo-tools/otelcol-contrib --version
 ```
 
-Stop if the checksum does not match; do not unpack or run that archive.
+If the checksum does not match, do not unpack or run the archive.
 
 [`otel-collector.yaml`](otel-collector.yaml) receives OTLP/HTTP on
-`127.0.0.1:4318` (`/v1/metrics`, `/v1/traces`). It sends metrics to the `debug`
-exporter and to a `prometheus` exporter on `127.0.0.1:8889`; traces go to
-`debug` only. It is loopback-only and has no credentials or TLS, so use it for
-development only. To adapt it, copy it into `target/observability-demo-tools/`.
-Any new or edited non-Markdown file that Git does not ignore changes the live
-bundle's source fingerprint, so the next live start then requires
-`build-plugins` again.
+`127.0.0.1:4318` (`/v1/metrics` and `/v1/traces`). It sends metrics to the
+`debug` exporter and to a `prometheus` exporter on `127.0.0.1:8889`; traces go
+to `debug` only. It has no credentials or TLS, so use it for local development
+only. To adapt it, copy it into `target/observability-demo-tools/`: any new or
+edited file in this folder other than Markdown changes the bundle's source
+fingerprint, and the next live start then requires `build-plugins` again.
 
 ```sh
 target/observability-demo-tools/otelcol-contrib validate --config examples/observability/otel-collector.yaml
@@ -554,7 +789,7 @@ DRASI_DEMO_EXPORT_INTERVAL=2 \
   bash examples/observability/demo.sh live otlp
 ```
 
-Send five inputs as in section 2, then check:
+Send a few changes (`bash examples/observability/demo.sh send 5`), then check:
 
 ```sh
 curl --noproxy '*' -s http://127.0.0.1:18081/api/v1/telemetry
@@ -565,93 +800,195 @@ curl --noproxy '*' -s http://127.0.0.1:8889/metrics | grep '^process_cpu_seconds
 ```
 
 - **Settings:** `/api/v1/telemetry` shows `"exportEnabled":true`,
-  `"backend":"otlp"`, `"processMetrics":true` and `"path":null`.
-  `/api/v1/telemetry/metrics` returns 503 `TELEMETRY_METRICS_UNAVAILABLE`
-  because OTLP has no local read, and `/metrics` returns 404. Read the metrics
-  from the Collector instead.
+  `"backend":"otlp"`, `"processMetrics":true` and `"path":null`, and
+  `/api/v1/telemetry/metrics` returns 503 because OTLP has no local read. Read
+  the metrics from the Collector instead.
 - **Collector scrape:** the `process_*` families appear next to `drasi_*`, and
   `process_cpu_seconds_total` grows between the two scrapes. The Collector's
-  Prometheus exporter renames Drasi series as it re-exposes them: Drasi gauges
-  with unit `1` get `_ratio` (for example `drasi_queue_depth_ratio`), Drasi
-  counters get `_total` and duration histograms get `_seconds`. The `process_*`
-  names arrive unchanged; their count units (`{file_descriptor}`, `{thread}`)
-  add no suffix. It also adds `otel_scope_name` (`drasi.server.process`,
+  Prometheus exporter renames Drasi series as it re-exposes them: gauges with
+  unit `1` get `_ratio` (for example `drasi_queue_depth_ratio`), counters get
+  `_total` and duration histograms get `_seconds`. The `process_*` names arrive
+  unchanged. It also adds `otel_scope_name` (`drasi.server.process`,
   `drasi.core` or `drasi.progress`). Server's own names are unchanged; the
   debug output and Server's Prometheus backend show them.
-- **Shared identity:** both families carry the same `instance` (the resource's
+- **Shared identity:** all series carry the same `instance` (the resource's
   `service.instance.id`) and `job="drasi-server-observability"`
-  (`service.name`). `target_info` carries `process_pid` and `service_version`.
-  A Server restart changes `instance`. A Prometheus server that scrapes
-  `:8889` renames these labels to `exported_job` / `exported_instance` unless
-  its scrape job sets `honor_labels: true`.
-- **Collector log:** each metrics export logs `ResourceMetrics #0
-  service.version=… service.name=drasi-server-observability process.pid=…
-  service.instance.id=…`, then `ScopeMetrics … drasi.server.process` followed
-  by up to seven `process_*` lines with `{}` (no attributes), beside the
-  `drasi.core` and `drasi.progress` scopes. Traces log `ScopeTraces #0
-  drasi.core` with `source.publish`, `query.process` and `sink.handle` spans
-  that carry `instance_id`, `graph_id` and `component_id`.
-- **In your tool:** point a Prometheus-compatible scraper at
-  `http://127.0.0.1:8889/metrics`. `rate(process_cpu_seconds_total[1m])` is
-  CPU usage in cores (multiply by 100 for percent of one core), and
-  `process_resident_memory_bytes` is resident memory. To export straight to your
-  own tool instead, set the two endpoint variables to its OTLP/HTTP protobuf
-  URLs; see section 3 for HTTPS and authentication.
+  (`service.name`), and `target_info` carries `process_pid` and
+  `service_version`. A Prometheus that scrapes `:8889` renames these labels to
+  `exported_job` and `exported_instance` unless its scrape job sets
+  `honor_labels: true`.
+- **Collector log:** each metrics export logs the resource
+  (`service.name=drasi-server-observability`, `service.version`,
+  `process.pid`, `service.instance.id`), then the `drasi.server.process`,
+  `drasi.core` and `drasi.progress` scopes. Traces log the `drasi.core` scope
+  with `source.publish`, `query.process` and `sink.handle` spans.
+- **In your own tool:** point a Prometheus-compatible scraper at
+  `http://127.0.0.1:8889/metrics`, or set the two endpoint variables to your
+  tool's OTLP/HTTP protobuf URLs to export to it directly.
 
-Stop Server with Ctrl+C first, then the Collector. Confirm that ports 18081,
-18090, 4318 and 8889 are closed, for example with
+Stop Server with Ctrl+C first, then the Collector. The Collector keeps serving
+the last values for a few minutes after Server stops; those are retained
+samples, not new exports. Confirm that the ports are closed, for example with
 `lsof -nP -iTCP:4318 -iTCP:8889 -iTCP:18081 -iTCP:18090 -sTCP:LISTEN`.
-While the Collector still runs, it keeps serving the last values for a few
-minutes. Those are retained samples, not fresh exports.
 
-### State, ownership and environment
+## How the launcher works
 
-Each live or showcase start creates `target/observability-example/runs/run-<random>/` and
-starts Server **from that directory**. It contains an explicit demo ownership
-marker and only copies of the three verified libraries. WAL files are beneath
-that run's `data/<hex-instance-key>/wal/`. `persistIndex: false` and unique
-instance/work directories avoid old index/WAL reuse with new component UUIDs.
-`persistConfig: false` does not disable WAL. No state is deleted, no configured
-slot is recreated, and no existing user's data is cleared. After stopping and
-joining the foreground process, you may inspect/archive/remove only the exact
-printed directory bearing `demo-owner.json`; never delete a generic `data/`.
-This example grows memory/results/state while left running; keep runs bounded.
+### Local plugin bundle and trust
 
-First SIGINT/SIGTERM closes admission and requests retained cleanup. Repeated
-signals do not create a new budget. Wait for actual process exit, then confirm
-the owned management/scrape port is closed before another run. A five-second
-telemetry allowance is capped by the overall 30-second wait; these are bounded
-waits, not permission to abandon stalled workers or a hard process-exit promise.
+Server loads sources, queries and reactions as plugins. `build-plugins` builds
+Server and exactly the three plugins that one scenario needs, with their
+`dynamic-plugin` features, from your current Server and `../drasi-core`
+source, including uncommitted edits:
 
-| Variable | Configuration-only default | Live default |
+- `drasi-source-http` (or `drasi-source-postgres`)
+- `drasi-computation-transformer-query`
+- `drasi-reaction-log`
+
+Query bootstrap is off, so no bootstrap plugin is needed. Stop any running
+instance of this example before rebuilding. The build runs offline and runs no
+tests. It uses its own target directories and publishes nothing to a shared
+plugin folder:
+
+- Server: `target/observability-server`
+- Core plugins: `target/observability-plugins`
+- The example's copies: `target/observability-example/bundles/<scenario>/`
+
+The build writes a receipt, `target/observability-example/<scenario>-build.json`,
+recording the plugin set, source fingerprints (including uncommitted files),
+compiler and binary hashes. Every `live` or `showcase` start checks it and
+refuses if the receipt is missing or from another scenario, a binary was
+replaced, or Server or Core source changed; rerun `build-plugins` to fix it.
+The receipt is a local consistency check, not a cryptographic supply-chain
+attestation. Server still runs its normal metadata, ABI and capability checks
+when it loads the plugins.
+
+Locally built plugins are unsigned. The `live` and `showcase` modes therefore
+require `DRASI_DEMO_TRUST_LOCAL_PLUGINS=1`, and only then pass
+`--skip-verification` for the three checked files. This is a development trust
+decision, not signature verification. Never use it for plugins you did not
+build yourself. `start` keeps signature verification on.
+
+### Run directories and state
+
+Each `live` or `showcase` start creates a new directory,
+`target/observability-example/runs/run-<random>/`, and runs Server from it.
+The directory name is also the instance ID. It holds:
+
+- `demo-owner.json`, which marks it as this example's;
+- copies of the three checked plugins;
+- the write-ahead log, under `data/<hex instance key>/wal/` (it is always on;
+  `persistConfig: false` does not turn it off);
+- for the showcase, a `showcase/` folder with the Server and generator logs,
+  container ID files and the generated Prometheus target file.
+
+A new directory and `persistIndex: false` on each run keep old index or log
+data from being reused. Nothing is deleted when a run ends, so you can inspect
+it afterwards. Remove only directories that contain `demo-owner.json`, and never
+a generic `data/` directory. A long-running example keeps accumulating
+results and state, so keep runs short.
+
+### Stopping
+
+The first Ctrl+C (or SIGTERM) stops new work and starts an orderly shutdown;
+repeating it does not extend the time allowed. Telemetry gets up to 5 seconds
+to flush, within an overall 30-second wait. Wait for the process to exit and
+the ports to close before starting another run.
+
+### Showcase containers
+
+The showcase creates, on its own podman network
+`drasi-server-observability-showcase` and with the label
+`io.drasi.demo=server-observability-showcase`:
+
+| Container | Pinned image | Published on 127.0.0.1 |
 |---|---|---|
-| `DRASI_DEMO_PORT` | `18081` | `18081` |
-| `DRASI_DEMO_PROFILE` | `off` | `persistence` (Basic/Debug also supported) |
-| `DRASI_DEMO_METRICS_BACKEND` | `none` | explicit live argument, default `prometheus` |
-| `DRASI_DEMO_METRICS_ENDPOINT` | `http://127.0.0.1:4318/v1/metrics` | same |
-| `DRASI_DEMO_EXPORT_INTERVAL` | `30` seconds | `2` seconds |
-| `DRASI_DEMO_EXPORT_TIMEOUT` | `5` seconds | `1` second |
-| `DRASI_DEMO_SHUTDOWN_TIMEOUT` | `5` seconds | `5` seconds |
-| `DRASI_DEMO_INSPECTION` | `false` | `true` |
-| `DRASI_DEMO_PROCESS_METRICS` | not used; disabled | `true` |
-| `DRASI_DEMO_TRACE_ENDPOINT` | empty (no trace export) | same |
-| `DRASI_DEMO_SAMPLE_RATIO` | `0.1` | `1.0` |
-| `DRASI_DEMO_SOURCE_PORT` | not used | `18090` (HTTP scenario) |
-| `DRASI_DEMO_PG_*` | not used | PostgreSQL scenario only; see section 5 |
-| `DRASI_DEMO_EXCLUDE` | not used | `drasi.plugin.` |
-| `DRASI_DEMO_INSTANCE` | not used | launcher-owned unique run name |
+| `drasi-server-observability-showcase-jaeger` | `cr.jaegertracing.io/jaegertracing/jaeger:2.22.0` | 4318 (OTLP/HTTP from Server), 16686 (UI) |
+| `drasi-server-observability-showcase-prometheus` | `docker.io/prom/prometheus:v3.16.0` | 9090 |
+| `drasi-server-observability-showcase-grafana` | `docker.io/grafana/grafana:13.3.1` | 3000 |
 
-The showcase uses the live defaults except where its
-[overrides table](#how-the-showcase-runs) differs.
+Prometheus keeps one day of data inside its container. Before creating anything,
+the launcher checks that podman works, that every port it needs is free, and
+that none of its containers or its network already exists. It never replaces or
+removes anything it did not create in that run.
 
-These are ordinary `ConfigValue` references, not a
-second environment system. Existing environment values win over defaults;
-unset overrides to restore baseline behavior. The CLI loads optional `.env`
-without overriding existing values; live mode runs in a new directory without
-one. New OTLP interval/timeout ranges are 1..=3,600 / 1..=30 **seconds**; legacy
-root `metrics` remains HTTP/JSON and **milliseconds**. Never combine both.
+The input generator, [`showcase/traffic.py`](showcase/traffic.py), posts one
+change about every 2 seconds through Server's source-data proxy,
+`POST /api/v1/instances/{instance}/sources/observations/push`. It inserts ten
+readings (`reading-1` … `reading-10`), then only updates them, so the query's
+result stays small.
 
-Loopback is intentional. There is no new authentication system; production
-scraping needs a trusted proxy/restricted network, and CORS is not authentication.
-See [telemetry configuration](../../docs/telemetry-configuration.md) for bounds,
-scrape overload, ownership and startup rollback.
+## Environment variables
+
+The configuration files read these through Drasi Server's normal
+`${VAR:-default}` substitution. A value already set in your environment wins
+over the default; unset it to return to the default. Server also loads an
+optional `.env` file without overriding existing variables; `live` and
+`showcase` runs start in a new directory that has none.
+
+| Variable | `start` / `validate` | `live` / `live-postgres` | `showcase` |
+|---|---|---|---|
+| `DRASI_DEMO_TRUST_LOCAL_PLUGINS` | not used | must be `1` | must be `1` |
+| `DRASI_DEMO_PORT` (management API, `/metrics`; also used by `send`) | `18081` | `18081` | `18081` |
+| `DRASI_DEMO_PROFILE` | `off` | `persistence` | `debug` |
+| `DRASI_DEMO_METRICS_BACKEND` | `none` | the command's argument, default `prometheus` | always `prometheus` |
+| `DRASI_DEMO_METRICS_ENDPOINT` | `http://127.0.0.1:4318/v1/metrics` | same | not used |
+| `DRASI_DEMO_EXPORT_INTERVAL` (seconds) | `30` | `2` | not used |
+| `DRASI_DEMO_EXPORT_TIMEOUT` (seconds) | `5` | `1` | not used |
+| `DRASI_DEMO_PROCESS_METRICS` | not used (off) | `true` | always `true` |
+| `DRASI_DEMO_INSPECTION` | `false` | `true` | `true` |
+| `DRASI_DEMO_TRACE_ENDPOINT` | empty (no trace export) | empty | always the showcase's Jaeger |
+| `DRASI_DEMO_SAMPLE_RATIO` | `0.1` | `1.0` | `1.0` |
+| `DRASI_DEMO_EXCLUDE` | not used | `drasi.plugin.` | `drasi.plugin.` |
+| `DRASI_DEMO_SHUTDOWN_TIMEOUT` (seconds) | `5` | `5` | `5` |
+| `DRASI_DEMO_SOURCE_PORT` (HTTP source) | not used | `18090` (`live`) | `18090` |
+| `DRASI_DEMO_OTLP_PORT` (Jaeger OTLP/HTTP) | not used | not used | `4318` |
+| `DRASI_DEMO_JAEGER_PORT` (Jaeger UI) | not used | not used | `16686` |
+| `DRASI_DEMO_PROMETHEUS_PORT` | not used | not used | `9090` |
+| `DRASI_DEMO_GRAFANA_PORT` | not used | not used | `3000` |
+| `DRASI_DEMO_PG_*` | not used | `live-postgres` only; see [PostgreSQL](#a-postgresql-cdc-source-live-postgres) | not used |
+| `DRASI_DEMO_INSTANCE` | not used | set by the launcher | set by the launcher |
+
+The showcase ports must all differ. The dashboard's own link to the Jaeger UI
+assumes the default port; the links the launcher prints always use the actual
+ports.
+
+OTLP export interval and timeout are in seconds, from 1 to 3,600 and 1 to 30.
+The older root-level `metrics` section of a Server configuration uses HTTP/JSON
+and milliseconds instead; a configuration cannot use both.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `live` or `showcase` exits asking for `DRASI_DEMO_TRUST_LOCAL_PLUGINS=1` | Set it to confirm that you trust the plugins you built locally. |
+| Start refuses the build receipt | Server or Core source, or the Server binary, changed since the last `build-plugins`; another `cargo build` or `cargo test` can replace the binary. Rerun `bash examples/observability/demo.sh build-plugins`. |
+| The build fails on a missing dependency | It runs offline. Fetch dependencies with network access first, for example with `cargo fetch` in this repository and in `../drasi-core`. |
+| `showcase requires a working podman` | Start podman; on macOS, `podman machine start`. |
+| `Ports already in use: …` | Another program or an earlier run holds the port. Stop it, or choose other ports with the `DRASI_DEMO_*_PORT` variables. |
+| `Container … already exists` or `Podman network … already exists` | An earlier run was killed before cleanup. Check that it is a leftover, then remove it yourself, for example `podman rm -f drasi-server-observability-showcase-jaeger` and `podman network rm drasi-server-observability-showcase`. |
+| `send` reports that no demo answered | Start the showcase or a `live` mode first. If you changed the port, set `DRASI_DEMO_PORT` for `send` too. |
+| Prometheus's endpoint link does not open | Expected: `host.containers.internal` exists only inside the containers. Open `http://127.0.0.1:18081/metrics`. |
+| Grafana's Jaeger data source reports 404 | Expected; see the [expected quirks](#grafana-the-dashboard). Trace lookup by ID still works. |
+| A panel stays empty | Give it a scrape or two (5 seconds each). If it is still empty, check `target/observability-example/runs/<instance>/showcase/server.log`. |
+
+## Security notes
+
+- Everything binds to 127.0.0.1. `/metrics` and the inspection API have no
+  authentication; anyone who can reach the management port can read them.
+  CORS is not authentication. In production, put scraping behind a trusted
+  proxy or a restricted network.
+- Grafana allows anonymous read-only access and has no admin user. No
+  configuration file in this example contains credentials.
+- `DRASI_DEMO_TRUST_LOCAL_PLUGINS=1` skips signature verification for the three
+  plugins you built. Never use it for plugins from anywhere else.
+- Plain-HTTP OTLP is for local development. Use HTTPS, with headers from
+  environment variables, for any real receiver.
+- The PostgreSQL password stays an environment reference and is never written
+  to disk by the launcher.
+
+## Further reading
+
+- [Telemetry configuration](../../docs/telemetry-configuration.md): every
+  setting, limit and metric bound, plus ownership and startup behavior.
+- [Observability baseline](../../docs/observability-baseline.md): implementation
+  status, what has been verified and what remains open.
