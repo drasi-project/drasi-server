@@ -164,13 +164,14 @@ graph/component attributes. A restart gets a new identity; no automatic
 `OTEL_RESOURCE_ATTRIBUTES`/`OTEL_SERVICE_NAME` merge occurs. Prometheus retains
 Core identity labels; it does not invent an OTLP progress or resource series.
 
-The facade adapter has an approved same-version local patch:
-[`metrics-opentelemetry` provenance](../patches/metrics-opentelemetry/README.md).
-It preserves full metric-key equality when cached hashes collide, for counters,
-gauges and histograms. Original upstream BSL-1.0 license/notices and commit
-`12be6ec64d25aa99992c750c488338c68e65b281` are retained; package version
-0.24033.1 and instrument/label semantics are unchanged. This is not a limit
-increase, second recorder or shared Cargo-cache edit.
+The facade adapter is the published `metrics-opentelemetry` 0.24033.1, which
+identifies cached series by the `metrics` key hash alone. That hash does not
+mix in the length of label values of 1–3 bytes, so with the OTLP backend two
+otherwise identical series whose differing value shares its first, middle and
+last byte (for example instance IDs `a` and `aa`, or plugin label values `1`
+and `11`) are exported as one series. Use label values, including instance IDs,
+of four or more characters. UUID component IDs and Core's fixed label values
+are not affected, and the Prometheus backend compares full keys.
 
 ## Examples
 

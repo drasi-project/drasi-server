@@ -61,14 +61,15 @@ test-only. Core keeps its OTel integration behind `otel-context`; ordinary
 logging remains independent. Unrelated older OTel versions used transitively by
 other libraries do not provide Server's telemetry types.
 
-The approved local `metrics-opentelemetry` 0.24033.1 override fixes cached-hash
-collisions using full `metrics::Key` equality across all three handle caches.
-It preserves the upstream BSL-1.0 license/notices and exact source commit
-`12be6ec64d25aa99992c750c488338c68e65b281`.
-See [patch provenance](../patches/metrics-opentelemetry/README.md).
-Version/dependencies and exported names/labels are unchanged; the shared Cargo
-cache was not modified. The focused real protobuf collision/2,001-series
-regressions passed during Task 3; that is not native-bundle requalification.
+`metrics-opentelemetry` is the published 0.24033.1 crate; the local override
+that preserved full `metrics::Key` equality was removed. Known limitation: the
+adapter identifies cached series by the `metrics` 0.24.6 key hash alone, which
+does not mix in the length of label values of 1–3 bytes. Under the OTLP metrics
+backend, two otherwise identical series whose differing value shares its first,
+middle and last byte (for example instance IDs `a`/`aa`, `s1`/`s11`, or plugin
+label values `1`/`11`) are exported as one series. Measured with that hash, UUID
+component IDs, Core's fixed label values and IDs of four or more characters did
+not collide. The Prometheus backend compares full keys and is unaffected.
 
 Do not substitute `metrics-exporter-opentelemetry`: its documented unsupported
 operations include `Counter::absolute` and gauge increment/decrement. An SDK
