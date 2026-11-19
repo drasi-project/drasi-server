@@ -212,7 +212,7 @@ Run every command on this page from the repository root. You need:
    does not reach it, stop it from another terminal:
 
    ```sh
-   kill $(pgrep -f 'demo.sh showcase')
+   pkill -f 'demo.sh showcase' || echo 'No showcase is running.'
    ```
 
    Either way, the launcher stops the input generator, then Server, then
