@@ -19,9 +19,6 @@ exclude = ["examples/sse-cli"]
 [workspace.package]
 rust-version = "1.95.0"
 
-[patch.crates-io]
-# Preserve full metric-key equality when cached hashes collide.
-metrics-opentelemetry = { path = "patches/metrics-opentelemetry" }
 
 [package]
 rust-version.workspace = true
