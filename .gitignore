@@ -19,6 +19,7 @@ logs/
 
 # AI plan files
 .plans/
+/docs/superpowers/
 
 # OS generated files
 .DS_Store
@@ -44,6 +45,8 @@ examples/*/plugins/
 # UI build artifacts
 ui/node_modules/
 ui/dist/
+
+bin/
 
 # Dependency/plugin preparation helpers
 scripts/__pycache__/

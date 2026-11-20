@@ -148,7 +148,7 @@ with open(os.environ["POLICY_LOG"], "a") as output:
     output.write(json.dumps(["cargo", str(target)]) + "\\n")
 folder = target / "debug"
 folder.mkdir(parents=True, exist_ok=True)
-for name in ("drasi_source_mock", "drasi_reaction_log", "drasi_reaction_http", "drasi_bootstrap_scriptfile"):
+for name in ("drasi_source_mock", "drasi_reaction_log", "drasi_reaction_http", "drasi_bootstrap_scriptfile", "drasi_computation_transformer_query"):
     for prefix, suffix in (("lib", ".dylib"), ("lib", ".so"), ("", ".dll")):
         (folder / (prefix + name + suffix)).write_text("fresh:" + str(target))
 """)
@@ -176,7 +176,8 @@ for name in ("drasi_source_mock", "drasi_reaction_log", "drasi_reaction_http", "
                 self.assertEqual(command, "cargo")
                 self.assertEqual(Path(actual_target).resolve(), target.resolve())
                 copied = list((self.server / "target/debug/plugins").iterdir())
-                self.assertEqual(len(copied), 4)
+                self.assertEqual(len(copied), 5)
+                self.assertTrue(any("drasi_computation_transformer_query" in path.name for path in copied))
                 self.assertTrue(all(path.read_text() == "fresh:" + actual_target for path in copied))
 
     def test_yaml_validation_needs_no_source_preparation_and_reports_test_failure(self):

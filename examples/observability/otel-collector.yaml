@@ -1,0 +1,25 @@
+# Local OpenTelemetry Collector (otelcol-contrib) for the observability example.
+# Loopback only: no credentials, no TLS. Not a production configuration.
+# Receives OTLP/HTTP protobuf on 127.0.0.1:4318 (/v1/metrics, /v1/traces),
+# logs a summary of everything received, and re-exposes metrics for
+# Prometheus scraping at http://127.0.0.1:8889/metrics.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+
+exporters:
+  debug:
+    verbosity: basic
+  prometheus:
+    endpoint: 127.0.0.1:8889
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [debug, prometheus]
+    traces:
+      receivers: [otlp]
+      exporters: [debug]

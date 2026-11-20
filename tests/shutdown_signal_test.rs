@@ -14,7 +14,9 @@ async fn assert_shutdown(
     stall_http: bool,
     start_empty: bool,
 ) -> Result<()> {
-    let directory = tempfile::tempdir()?;
+    let directory = tempfile::Builder::new()
+        .prefix("shutdown-signal-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
@@ -148,6 +150,31 @@ async fn assert_shutdown(
             .status()
             .await?;
         anyhow::ensure!(status.success(), "Failed to send second signal");
+        drop(pending_request.take());
+    }
+
+    if stall_http {
+        // The process must retain Serve and its accepted connection after the
+        // bounded waiter expires, rather than aborting Serve at its five-second
+        // drain cap or dropping Tokio at thirty seconds.
+        timeout(Duration::from_secs(33), async {
+            let mut poll = interval(Duration::from_millis(20));
+            loop {
+                poll.tick().await;
+                anyhow::ensure!(
+                    child.try_wait()?.is_none(),
+                    "Server discarded pending HTTP cleanup"
+                );
+                if std::fs::read_to_string(&log_path)?
+                    .contains("Server cleanup is incomplete; retaining the runtime")
+                {
+                    return Ok::<_, anyhow::Error>(());
+                }
+            }
+        })
+        .await
+        .context("CLI did not report its bounded incomplete wait")??;
+        assert!(child.try_wait()?.is_none());
         drop(pending_request.take());
     }
 

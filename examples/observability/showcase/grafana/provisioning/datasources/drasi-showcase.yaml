@@ -1,0 +1,22 @@
+# Grafana data sources for the observability showcase (`demo.sh showcase`).
+# Both are reached by container name on the showcase's own podman network.
+# No credentials: Prometheus and Jaeger run without authentication here.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: drasi-prometheus
+    type: prometheus
+    access: proxy
+    url: http://drasi-server-observability-showcase-prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s
+      httpMethod: POST
+  - name: Jaeger
+    uid: drasi-jaeger
+    type: jaeger
+    access: proxy
+    url: http://drasi-server-observability-showcase-jaeger:16686
+    editable: false

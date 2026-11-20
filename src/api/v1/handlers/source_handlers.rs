@@ -318,7 +318,7 @@ pub async fn stream_source_logs(
         .get(&instance_id)
         .await
         .ok_or_else(|| ErrorResponse::new(error_codes::INTERNAL_ERROR, "Instance not found"))?;
-    shared::stream_source_logs(Extension(core), Path(id)).await
+    shared::stream_source_logs_with_cleanup(core, id, registry.cleanup_handle()).await
 }
 
 /// Delete a source
@@ -406,13 +406,16 @@ pub async fn stop_source(
     shared::stop_source(Extension(core), Path(id)).await
 }
 
-/// Push data to a source's listening port (proxy to avoid CORS)
+/// Push JSON to a source's listening port, forwarding validated W3C context only.
+/// Invalid optional trace metadata is ignored without rejecting the data.
 #[utoipa::path(
     post,
     path = "/api/v1/instances/{instanceId}/sources/{id}/push",
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID"),
-        ("id" = String, Path, description = "Source ID")
+        ("id" = String, Path, description = "Source ID"),
+        ("traceparent" = Option<String>, Header, description = "Optional W3C parent (at most 512 bytes)"),
+        ("tracestate" = Option<String>, Header, description = "Optional W3C state (at most 512 bytes and 32 members)")
     ),
     request_body = serde_json::Value,
     responses(
@@ -423,8 +426,9 @@ pub async fn stop_source(
 )]
 pub async fn push_source_data(
     Extension(registry): Extension<InstanceRegistry>,
-    Extension(http_client): Extension<reqwest::Client>,
+    Extension(http_client): Extension<shared::SourceProxyClient>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let core = registry
@@ -435,6 +439,7 @@ pub async fn push_source_data(
         Extension(core),
         Extension(http_client),
         Path(id),
+        headers,
         Json(body),
     )
     .await

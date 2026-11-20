@@ -33,7 +33,7 @@ pub fn remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
                 plugins_dir.display()
             ))
         );
-        std::process::exit(1);
+        return Err(super::command_failed());
     }
 
     let is_wildcard = is_wildcard_pattern(reference);
@@ -98,7 +98,7 @@ pub fn remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
             "{}",
             cli_styles::error(&format!("Plugin not found: {reference}"))
         );
-        std::process::exit(1);
+        return Err(super::command_failed());
     }
 
     // Update lockfile: remove entries by key/pattern/filename.
