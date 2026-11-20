@@ -35,20 +35,24 @@ point Server at your own tools.
 
 ## What the example shows
 
-The example runs one Drasi Server instance with a three-component pipeline:
+The example runs one Drasi Server instance with a four-component pipeline:
 
 - **Source `observations`** (HTTP): receives changes to `Reading` nodes.
 - **Query `observed-values`**: the continuous Cypher query
   `MATCH (n:Reading) RETURN n.value AS value`. Drasi keeps its result up to
   date as readings are inserted, updated or deleted.
-- **Reaction `observed-log`**: writes every change to the query's result to
+- **Query `high-readings`**: `MATCH (n:Reading) WHERE n.value > 30 RETURN n.value AS value`.
+  A reading enters or leaves its result as the value crosses 30. With two
+  queries on the same source, you can compare per-query metrics and queues side
+  by side.
+- **Reaction `observed-log`**: writes every change to either query's result to
   Server's log.
 
 While changes flow through the pipeline, you can examine:
 
 | Telemetry | What you see | Where |
 |---|---|---|
-| Traces | One trace per change: `source.publish` → `query.process` → `sink.handle` | Jaeger and Grafana, or any OTLP/HTTP trace receiver |
+| Traces | One trace per change and query: `source.publish` → `query.process` → `sink.handle` | Jaeger and Grafana, or any OTLP/HTTP trace receiver |
 | Pipeline metrics | `drasi_*` families: events dispatched and processed, results emitted, query engine duration, queue depth | Prometheus and Grafana, or any OTLP/HTTP metrics receiver |
 | Process metrics | `process_*` families: CPU, memory, threads, file descriptors, start time | Same as pipeline metrics |
 | Inspection API | The active telemetry settings, without endpoints or credentials | `GET /api/v1/telemetry` on Server's management port |
@@ -97,8 +101,8 @@ Everything Server does in the example comes from one file,
 [`drasi-server.yaml`](drasi-server.yaml). It has two parts:
 
 - The `instances` block defines the pipeline: an HTTP source that receives
-  input, a Cypher query over it, and a log reaction that prints the query's
-  changes.
+  input, two Cypher queries over it, and a log reaction that prints both
+  queries' changes.
 - The `telemetry` block turns on the traces and metrics that the rest of the
   example displays.
 
@@ -126,10 +130,14 @@ instances:
         query: "MATCH (n:Reading) RETURN n.value AS value"
         queryLanguage: Cypher
         inputs: [observations]
+      - name: high-readings     # only readings above 30
+        query: "MATCH (n:Reading) WHERE n.value > 30 RETURN n.value AS value"
+        queryLanguage: Cypher
+        inputs: [observations]
     reactions:
       - kind: log               # prints every query result change
         name: observed-log
-        queries: [observed-values]
+        queries: [observed-values, high-readings]
 
 telemetry:
   profile: debug                # adds query phases (query.evaluate, query.commit, …) to traces
@@ -204,6 +212,7 @@ Run every command on this page from the repository root. You need:
    Jaeger traces:     http://127.0.0.1:16686/search?service=drasi-server-observability
    Prometheus:        http://127.0.0.1:9090/targets
    More input:        bash examples/observability/demo.sh send 20
+   High readings:     bash examples/observability/demo.sh send-high 20
    ```
 
 4. Explore, as described in the next section.
@@ -230,24 +239,46 @@ Open the Grafana link. The **Drasi Server observability** dashboard shows the
 last 15 minutes and refreshes every 5 seconds. It has three rows.
 
 **Drasi pipeline** shows how changes move through the pipeline. Each change
-the generator sends appears, in order, in the first four panels; in this
-example one change is one event.
+the generator sends appears, in order, in the panels below. The source hands
+every change to each query separately, so one change counts as one event per
+query, and the per-query panels show one line for each query.
 
 | Panel | What it means | Metric |
 |---|---|---|
-| Source events dispatched | Changes per second that the source handed to the pipeline | `drasi_source_events_dispatched` |
-| Query events processed | Changes per second that the query finished processing | `drasi_query_events_processed` |
-| Query results emitted | Changes per second to the query's result, by `change_kind`: `add` (a new row), `update` (a changed row) or `delete` (a removed row) | `drasi_query_results_emitted` |
-| Reaction results and deliveries | Results per second delivered to the reaction | `drasi_component_inputs_processed` for the pipeline's sink (`completion="handled"`), and `drasi_reaction_results_processed` |
-| Query engine duration | How long the query engine took to evaluate one change, as p50 and p95 | `drasi_query_engine_duration` histogram, in seconds |
-| Queue depth | Changes waiting between components right now (pending, summed over all queues) and the most that have ever waited in one queue (peak) | `drasi_queue_depth`, `drasi_queue_depth_max` |
+| Source events dispatched | Events per second that the source handed to the pipeline: one per change and query, so with two queries about twice the input rate | `drasi_source_events_dispatched` |
+| Query events processed | Changes per second that each query finished processing | `drasi_query_events_processed` |
+| Query results emitted | Changes per second to each query's result, by `change_kind`: `add` (a new row), `update` (a changed row) or `delete` (a removed row) | `drasi_query_results_emitted` |
+| Reaction results and deliveries | Results per second delivered to the reaction, from both queries | `drasi_component_inputs_processed` for the pipeline's sink (`completion="handled"`), and `drasi_reaction_results_processed` |
+| Query engine duration | How long the query engine took to evaluate one change, as p50 and p95 for each query | `drasi_query_engine_duration` histogram, in seconds |
+| Queue depth: pending | Changes waiting in each queue right now | `drasi_queue_depth` |
+| Queue depth: peak | The most changes each queue has held since it was created | `drasi_queue_depth_max` |
 
-The generator inserts ten readings, then only updates them, so **Query results
-emitted** shows a short burst of `add` followed by a steady line of `update`.
-The **peak** queue depth is a high-water mark: it only goes up while Server
-runs, so a burst from `send` leaves it raised.
+**Reading the legends.** Each line is labelled with its query's name, such as
+`observed-values` or `high-readings`. Each query has two queues, labelled with
+the query name and the queue's role:
 
-**Reading p50 and p95.** Every evaluation of the query is timed. **p50** (the
+- `<query> input`: the queue where changes from the source wait for the query;
+- `<query> output`: the queue where the query's result changes wait to be
+  delivered toward the reaction.
+
+Drasi's metrics identify components by the UUID Server assigns at startup, so
+the dashboard looks names up from two series Drasi publishes alongside them:
+`drasi_component_info` (each component's current name) and
+`drasi_queue_edge_info` (which components each queue connects). See
+[Prometheus: query the metrics](#prometheus-query-the-metrics) for how the
+join works. A queue attached to no query would appear under its raw `queue_id`.
+
+The generator inserts ten readings, then only updates them. **Query results
+emitted** therefore shows a short burst of `add` from both queries, then a
+steady line of `update` from `observed-values`. `high-readings` keeps emitting
+`add` and `delete` as readings cross 30, plus `update` for readings that change
+while staying above 30. The **peak** queue depth is a high-water mark: it only
+goes up while Server runs, so a burst from `send` leaves it raised. A burst
+also shows how differently the queues fill: in one run, `send 300` raised one
+query's input queue to 128 waiting changes and the other's to 56, while both
+output queues stayed at 1.
+
+**Reading p50 and p95.** Every evaluation of a query is timed. **p50** (the
 median) is the time within which half of the evaluations finished; **p95** is
 the time within which 95% finished, so it shows the slow tail. A p50 of 1 ms and
 a p95 of 4 ms mean a typical change takes about 1 ms and only 1 change in 20
@@ -295,18 +326,22 @@ Things that look odd but are expected:
 ### Jaeger: follow one change
 
 Open the Jaeger link and choose any trace for the service
-`drasi-server-observability`. The trace for one change contains:
+`drasi-server-observability`. Each change produces one trace per query, so with
+two queries every change appears twice. A trace contains:
 
-- `source.publish`: the source hands the change to the pipeline.
+- `source.publish`: the source hands the change to that query.
 - `query.process`: the query processes the change. With the `debug` profile,
   child spans show its phases, such as `query.evaluate` and `query.commit`.
-- `sink.handle`: the pipeline delivers the resulting change to the log
-  reaction.
+- `sink.handle`, twice, when the change altered the query's result: once for the
+  query's output sink and once for the log reaction. When the result did not
+  change, for example a `high-readings` update that stays below 30, the trace
+  ends at `query.process`.
 
 Each span has `instance_id`, `graph_id` and `component_id` attributes, which
-identify the instance and component that did the work. The span durations show
-where the time for that change went. Jaeger also lists lifecycle and control
-spans, for example from startup.
+identify the instance and component that did the work. A `query.process` span's
+`component_id` is the query's ID; `drasi_component_info` maps it to the name.
+The span durations show where the time for that change went. Jaeger also lists
+lifecycle and control spans, for example from startup.
 
 ### Prometheus: query the metrics
 
@@ -317,20 +352,52 @@ page:
 
 ```promql
 sum(rate(drasi_source_events_dispatched[1m]))
-sum by (change_kind) (rate(drasi_query_results_emitted[1m]))
-histogram_quantile(0.95, sum by (le) (rate(drasi_query_engine_duration_bucket{phase="steady"}[1m])))
+sum by (query_id, change_kind) (rate(drasi_query_results_emitted[1m]))
+histogram_quantile(0.95, sum by (query_id, le) (rate(drasi_query_engine_duration_bucket{phase="steady"}[1m])))
+drasi_queue_depth_max
 rate(process_cpu_seconds_total[1m]) * 100
 ```
 
-They show, in order: changes per second entering the pipeline, result changes
-per second by kind, the p95 query engine duration in seconds, and Server's CPU
-as a percentage of one core.
+They show, in order: changes per second entering the pipeline, each query's
+result changes per second by kind, each query's p95 engine duration in seconds,
+the peak depth of every queue (two per query), and Server's CPU as a percentage
+of one core.
 
 Drasi metric names have no `_total` or unit suffix. Histograms expose `_bucket`,
 `_sum` and `_count` series, with durations in seconds. Series carry
-`instance_id` and `graph_id` labels, plus labels such as `component_id` or
-`queue_id` that identify the component or queue. Component IDs are UUIDs that
-Server assigns, not the names in the configuration.
+`instance_id` and `graph_id` labels, plus labels such as `component_id`,
+`query_id` or `queue_id` that identify the component or queue. Component IDs
+are UUIDs that Server assigns, not the names in the configuration.
+
+Names come from two extra series:
+
+- `drasi_component_info{component_id, component_kind, component_name}` is 1 for
+  each component's current name. A name a component no longer has, after a
+  rename or removal, stays at 0, so select current names with `== 1`.
+- `drasi_queue_edge_info{queue_id, from_component_id, to_component_id}` is 1
+  for each graph edge bound to a queue. A query's input queue is the one whose
+  edge ends at the query; its output queue is the one whose edge starts there.
+
+Join them to label any per-query metric by name. A query's `query_id` is its
+component ID:
+
+```promql
+sum by (instance_id, graph_id, component_name) (
+  rate(drasi_query_events_processed[1m])
+  * on (instance_id, graph_id, query_id) group_left (component_name)
+    label_replace(
+      max by (instance_id, graph_id, component_id, component_name) (
+        drasi_component_info{component_kind="query"} == 1),
+      "query_id", "$1", "component_id", "(.*)")
+)
+```
+
+Names are unique only within one instance's graph, so the join carries
+`instance_id` and `graph_id`. The showcase dashboard runs a single instance and
+leaves them out.
+
+The dashboard's queue panels use the same idea through `drasi_queue_edge_info`;
+open a panel's menu and choose **Edit** to see its queries.
 
 ### Server's own APIs
 
@@ -342,14 +409,19 @@ API=http://127.0.0.1:18081/api/v1
 curl --noproxy '*' -s "$API/instances"
 INSTANCE=$(curl --noproxy '*' -s "$API/instances" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
+curl --noproxy '*' -s "$API/instances/$INSTANCE/queries"
 curl --noproxy '*' -s "$API/instances/$INSTANCE/queries/observed-values/results"
+curl --noproxy '*' -s "$API/instances/$INSTANCE/queries/high-readings/results"
 curl --noproxy '*' -s "$API/telemetry"
 curl --noproxy '*' -s http://127.0.0.1:18081/metrics | grep -E '^(drasi|process)_'
 ```
 
 - The instance ID is `run-<random>`; each start creates a new one.
-- The results call returns the query's current rows, one `{"value": …}` per
-  reading. Component paths accept either a name or the assigned UUID.
+- The queries listing shows each query's `name` next to its assigned `id`, the
+  ID that metrics use.
+- The results calls return each query's current rows, one `{"value": …}` per
+  reading (for `high-readings`, only readings above 30). Component paths accept
+  either a name or the assigned UUID.
 - `/api/v1/telemetry` returns the active telemetry settings (see
   [Process metrics and inspection](#process-metrics-and-inspection)).
 - `/metrics` is the same text Prometheus scrapes.
@@ -371,6 +443,18 @@ bash examples/observability/demo.sh send 20     # N changes; default 5, at most 
 `send` finds the running instance through `GET /api/v1/instances` and updates
 the same ten readings. It exits with status 1 if no demo answers. It also works
 with the `live` modes below.
+
+To make `high-readings` busy, send changes that cross its threshold:
+
+```sh
+bash examples/observability/demo.sh send-high 40   # N changes; default 20, at most 1000
+```
+
+`send-high` moves a reading above 30 and then the same reading below 30, in
+turn for each reading. Each pair adds the reading to the `high-readings` result
+and removes it again, so that query's `add` and `delete` lines jump. No change
+can reach only one query: the source hands every change to both, so
+`observed-values` processes the same changes and reports them as `update`.
 
 ## How Jaeger, Prometheus and Grafana are set up
 
@@ -462,6 +546,7 @@ The showcase is one of several modes of the same launcher:
 | `live-postgres [prometheus\|otlp]` | The same pipeline with a PostgreSQL CDC source, against your own database |
 | `showcase` | The HTTP pipeline with Jaeger, Prometheus, Grafana and steady input |
 | `send [N]` | Sends N reading updates (default 5, at most 1000) to the running demo |
+| `send-high [N]` | Sends N changes that move readings above and then below 30 (default 20, at most 1000), so `high-readings` adds and deletes rows |
 
 Unlike the showcase, the `live` modes start no containers, databases or
 collectors, and send no input of their own. They turn on process metrics and
@@ -550,6 +635,7 @@ curl --noproxy '*' --fail "$API/sources"
 curl --noproxy '*' --fail "$API/queries"
 curl --noproxy '*' --fail "$API/reactions"
 curl --noproxy '*' --fail "$API/queries/observed-values/results"
+curl --noproxy '*' --fail "$API/queries/high-readings/results"
 curl --noproxy '*' --fail http://127.0.0.1:18081/metrics
 ```
 
@@ -559,12 +645,12 @@ name. In `/metrics`, look for:
 | Prometheus family | What to expect |
 |---|---|
 | `drasi_source_events_dispatched` | Counter that grows with each change, labelled with the source's ID |
-| `drasi_query_events_processed` | Counter with `phase="steady"` that grows for the query |
-| `drasi_query_results_emitted` | Counter by `change_kind`, for example `add` for new readings |
+| `drasi_query_events_processed` | Counter with `phase="steady"` that grows for each query (`query_id`) |
+| `drasi_query_results_emitted` | Counter per query by `change_kind`, for example `add` for new readings |
 | `drasi_reaction_results_processed` | Counter for the reaction and query; stays 0 with the log reaction (see [expected quirks](#grafana-the-dashboard)) |
-| `drasi_query_engine_duration` | Histogram in seconds whose `_count` grows |
+| `drasi_query_engine_duration` | Histogram per query, in seconds, whose `_count` grows |
 | `drasi_query_commit_duration` | Histogram, only with the `persistence` profile |
-| `drasi_queue_depth`, `drasi_queue_depth_max` | Gauges, one series per queue (`queue_id`) |
+| `drasi_queue_depth`, `drasi_queue_depth_max` | Gauges, one series per queue (`queue_id`): an input and an output queue for each query |
 
 Scrape twice with input in between to see counters grow; in-flight work can lag
 briefly. Histogram bucket boundaries are listed in
@@ -914,8 +1000,8 @@ removes anything it did not create in that run.
 The input generator, [`showcase/traffic.py`](showcase/traffic.py), posts one
 change about every 2 seconds through Server's source-data proxy,
 `POST /api/v1/instances/{instance}/sources/observations/push`. It inserts ten
-readings (`reading-1` … `reading-10`), then only updates them, so the query's
-result stays small.
+readings (`reading-1` … `reading-10`), then only updates them, so the queries'
+results stay small.
 
 ## Environment variables
 

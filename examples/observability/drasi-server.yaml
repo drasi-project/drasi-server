@@ -28,12 +28,22 @@ instances:
         enableBootstrap: false
         inputs:
           - observations
+      # Only readings above 30: a reading enters or leaves the result as its
+      # value crosses 30, so this query also emits add and delete changes.
+      - name: high-readings
+        autoStart: true
+        query: "MATCH (n:Reading) WHERE n.value > 30 RETURN n.value AS value"
+        queryLanguage: Cypher
+        enableBootstrap: false
+        inputs:
+          - observations
     reactions:
       - kind: log
         name: observed-log
         autoStart: true
         queries:
           - observed-values
+          - high-readings
 
 telemetry:
   # How much detail Server collects: off, basic, debug or persistence.

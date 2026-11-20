@@ -5,7 +5,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s [start|validate|init|build-plugins [http|postgres]|live [prometheus|otlp]|live-postgres [prometheus|otlp]|showcase|send [N]]\n' "$0"
+    printf 'Usage: %s [start|validate|init|build-plugins [http|postgres]|live [prometheus|otlp]|live-postgres [prometheus|otlp]|showcase|send [N]|send-high [N]]\n' "$0"
     printf '  start          Run the configuration-only Server in the foreground (default).\n'
     printf '  validate       Validate server-config.yaml without starting a Server.\n'
     printf '  init           Run the wizard, writing wizard-config.yaml without overwriting it.\n'
@@ -14,6 +14,7 @@ usage() {
     printf '  live-postgres  Run an existing PostgreSQL CDC source -> native query -> log.\n'
     printf '  showcase       Run the HTTP pipeline with Jaeger, Prometheus and Grafana in podman and steady input.\n'
     printf '  send [N]       Send N reading updates (default 5, at most 1000) to the running demo.\n'
+    printf '  send-high [N]  Send N changes crossing 30 (default 20, at most 1000), so high-readings adds and deletes rows.\n'
 }
 
 if [[ $# -gt 2 ]]; then
@@ -44,8 +45,9 @@ case "$action" in
         [[ $# -le 1 ]] || { usage >&2; exit 2; }
         export DRASI_DEMO_METRICS_BACKEND=prometheus
         ;;
-    send)
+    send|send-high)
         count="${2:-5}"
+        [[ "$action" == send-high ]] && count="${2:-20}"
         [[ "$count" =~ ^[1-9][0-9]{0,2}$ || "$count" == 1000 ]] || { usage >&2; exit 2; }
         ;;
     -h|--help)
@@ -358,6 +360,7 @@ run_showcase() {
     printf 'Jaeger traces:     http://127.0.0.1:%s/search?service=%s\n' "$jaeger_port" "$SERVICE_NAME"
     printf 'Prometheus:        http://127.0.0.1:%s/targets\n' "$prometheus_port"
     printf 'More input:        %sbash examples/observability/demo.sh send 20\n' "$send_prefix"
+    printf 'High readings:     %sbash examples/observability/demo.sh send-high 20\n' "$send_prefix"
     printf '\nDemo is live. Press Ctrl+C to stop and clean up.\n'
 
     # Returns early when a trapped signal arrives; the EXIT trap then cleans up.
@@ -376,6 +379,9 @@ if [[ "$action" == build-plugins ]]; then
 fi
 if [[ "$action" == send ]]; then
     exec python3 "$SHOWCASE_FILES/traffic.py" send --port "$api_port" --count "$count"
+fi
+if [[ "$action" == send-high ]]; then
+    exec python3 "$SHOWCASE_FILES/traffic.py" send --port "$api_port" --count "$count" --crossing
 fi
 if [[ "$action" == live || "$action" == live-postgres || "$action" == showcase ]]; then
     if [[ "${DRASI_DEMO_TRUST_LOCAL_PLUGINS:-}" != 1 ]]; then

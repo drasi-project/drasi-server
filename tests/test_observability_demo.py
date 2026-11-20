@@ -36,6 +36,7 @@ PG_SETTINGS = (
 )
 
 
+
 class ObservabilityBundleTests(unittest.TestCase):
     def test_live_requires_explicit_unsigned_local_plugin_trust(self):
         environment = os.environ.copy()
@@ -187,7 +188,8 @@ class ObservabilityShowcaseTests(unittest.TestCase):
     def test_showcase_and_send_reject_invalid_arguments(self):
         for arguments in (
             ["showcase", "extra"], ["send", "0"], ["send", "1001"], ["send", "05"],
-            ["send", "five"], ["send", "1", "2"],
+            ["send", "five"], ["send", "1", "2"], ["send-high", "0"], ["send-high", "1001"],
+            ["send-high", "x"],
         ):
             result = self.demo(*arguments)
             self.assertEqual(result.returncode, 2, arguments)
@@ -207,10 +209,25 @@ class ObservabilityShowcaseTests(unittest.TestCase):
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
         # Bound but never listening, then closed: nothing answers on this port.
-        result = self.demo("send", "3", DRASI_DEMO_PORT=str(port))
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("No running observability demo", result.stderr)
-        self.assertIn("demo.sh showcase", result.stderr)
+        for command in ("send", "send-high"):
+            result = self.demo(command, "3", DRASI_DEMO_PORT=str(port))
+            self.assertEqual(result.returncode, 1, command)
+            self.assertIn("No running observability demo", result.stderr)
+            self.assertIn("demo.sh showcase", result.stderr)
+
+    def test_crossing_changes_move_each_reading_above_then_below_30(self):
+        changes = [traffic.crossing_change(sequence) for sequence in range(4 * traffic.READINGS)]
+        for above, below in zip(changes[::2], changes[1::2]):
+            self.assertEqual(above["element"]["id"], below["element"]["id"])
+            self.assertGreater(above["element"]["properties"]["value"], 30)
+            self.assertLess(below["element"]["properties"]["value"], 30)
+        self.assertEqual(
+            {change["element"]["id"] for change in changes},
+            {f"reading-{index}" for index in range(1, traffic.READINGS + 1)},
+        )
+        for change in changes:
+            self.assertEqual(change["operation"], "update")
+            self.assertEqual(change["element"]["labels"], ["Reading"])
 
     def test_trickle_inserts_each_reading_once_then_only_updates_them(self):
         changes = [traffic.trickle_change(sequence) for sequence in range(3 * traffic.READINGS)]
@@ -253,6 +270,41 @@ class ObservabilityShowcaseTests(unittest.TestCase):
         self.assertEqual(used, {"drasi-prometheus", "drasi-jaeger"})
         for uid in used:
             self.assertIn(f"uid: {uid}", provisioning)
+
+    def test_dashboard_labels_queries_and_queues_by_name(self):
+        dashboard = json.loads(
+            (SHOWCASE / "grafana/dashboards/drasi-server-observability.json").read_text(),
+        )
+        panels = {panel["title"]: panel for panel in dashboard["panels"]}
+        for title in ("Query events processed", "Query results emitted", "Query engine duration"):
+            for target in panels[title]["targets"]:
+                self.assertIn("drasi_component_info", target["expr"], title)
+                self.assertIn("== 1", target["expr"], title)
+                self.assertIn("{{component_name}}", target["legendFormat"], title)
+        for title in ("Queue depth: pending", "Queue depth: peak"):
+            targets = {target["legendFormat"]: target["expr"] for target in panels[title]["targets"]}
+            self.assertEqual(
+                set(targets),
+                {"{{component_name}} input", "{{component_name}} output", "{{queue_id}}"},
+                title,
+            )
+            for legend, end in (("input", "to_component_id"), ("output", "from_component_id")):
+                expr = targets[f"{{{{component_name}}}} {legend}"]
+                self.assertIn("drasi_queue_edge_info == 1", expr, title)
+                self.assertIn(end, expr, title)
+                self.assertIn("drasi_component_info", expr, title)
+            self.assertIn("unless on (queue_id)", targets["{{queue_id}}"], title)
+        # Retired names and unbound edges stay at 0, so every lookup must keep only current ones.
+        for title in (
+            "Query events processed", "Query results emitted", "Query engine duration",
+            "Queue depth: pending", "Queue depth: peak",
+        ):
+            for target in panels[title]["targets"]:
+                lookups = re.findall(
+                    r"drasi_(?:component|queue_edge)_info(?:\{[^}]*\})?( == 1)?", target["expr"],
+                )
+                self.assertTrue(lookups, f"{title}: {target['legendFormat']}")
+                self.assertNotIn("", lookups, f"{title}: {target['legendFormat']}")
 
     def test_showcase_publishes_loopback_only_pinned_images_without_credentials(self):
         script = DEMO.read_text()

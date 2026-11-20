@@ -132,7 +132,9 @@ acknowledgement commits, not a fabricated one-commit-per-input invariant.
 All actual instances/graphs/static/native producers share one recorder/context.
 Core attributes include actual `instance_id`, `graph_id`, `component_id`,
 `component_kind` and catalogue-specific labels such as `query_id` / `queue_id`.
-Names are not substituted for assigned component UUIDs. Physical queue identity
+Names are not substituted for assigned component UUIDs; they are published
+alongside them as separate info series (see
+[component names and queue edges](#component-names-and-queue-edges)). Physical queue identity
 is provider-owned; unsupported observations are omitted rather than synthesized.
 Generic component and specialized counters are different views, not additive
 totals. No metric exports query text, record payloads or credentials.
@@ -144,6 +146,57 @@ family/generated-histogram-name or label-key collisions transactionally before
 recorder registration, through the same optional context guard used by native
 bindings. OTLP's unguarded names remain unchanged. These are admission limits,
 **not a hard RSS or throughput guarantee**.
+
+### Component names and queue edges
+
+Two Basic gauges describe the graph so that metrics can be labelled by name.
+No other series changes:
+
+| Series | Labels besides `instance_id`, `graph_id` | Value |
+|---|---|---|
+| `drasi.component.info` | `component_id`, `component_kind`, `component_name` | 1 for the component's current name; 0 for a name it no longer has after a rename or removal |
+| `drasi.queue.edge_info` | `queue_id`, `from_component_id`, `to_component_id` | 1 for each graph edge bound to the physical queue; 0 once that edge or the queue's binding is gone |
+
+The recorder cannot delete a series, so retired entries stay at 0; select
+current ones with `== 1`. Each new name a component takes keeps its own series,
+so a rename to a new name permanently uses one series of the 16,384 budget
+(renaming back reuses it). Both series are metadata: when one cannot be
+registered (budget exhausted, a name longer than the 1,024-byte label-value
+limit, or a rejected registration), a warning is logged once per component or
+edge, and the rename, addition or data flow continues without that series. OTLP
+exports both as gauges with the same attributes.
+
+A query's `query_id` is its component ID, and a query's input queue is the
+queue whose edge ends at the query (`to_component_id`); its output queue is the
+one whose edge starts there (`from_component_id`). Names are unique only within
+a graph, and queue IDs only within an instance's graph, so carry `instance_id`
+and `graph_id` through every join. In PromQL:
+
+```promql
+# Query events per second, by query name
+sum by (instance_id, graph_id, component_name) (
+  rate(drasi_query_events_processed[1m])
+  * on (instance_id, graph_id, query_id) group_left (component_name)
+    label_replace(
+      max by (instance_id, graph_id, component_id, component_name) (
+        drasi_component_info{component_kind="query"} == 1),
+      "query_id", "$1", "component_id", "(.*)")
+)
+
+# Items waiting in each query's input queue, by query name
+max by (instance_id, graph_id, component_name) (
+  max by (instance_id, graph_id, queue_id, component_name) (
+    label_replace(drasi_queue_edge_info == 1, "component_id", "$1", "to_component_id", "(.*)")
+    * on (instance_id, graph_id, component_id) group_left (component_name)
+      max by (instance_id, graph_id, component_id, component_name) (
+        drasi_component_info{component_kind="query"} == 1)
+  )
+  * on (instance_id, graph_id, queue_id) group_left drasi_queue_depth
+)
+```
+
+The edge side of that join comes first because one shared queue can feed more
+than one query; there is only one depth series per queue.
 
 ### Same-provider progress migration
 

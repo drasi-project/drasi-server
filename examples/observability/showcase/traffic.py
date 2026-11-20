@@ -65,15 +65,17 @@ def call(url, body=None):
         return json.load(response)
 
 
-def change(operation, index):
+def change(operation, index, value=None):
     """One reading change; the value always moves so the query emits a result."""
+    if value is None:
+        value = random.uniform(15.0, 35.0)
     return {
         "operation": operation,
         "element": {
             "type": "node",
             "id": f"reading-{index % READINGS + 1}",
             "labels": ["Reading"],
-            "properties": {"value": round(random.uniform(15.0, 35.0), 2)},
+            "properties": {"value": round(value, 2)},
         },
     }
 
@@ -81,6 +83,16 @@ def change(operation, index):
 def trickle_change(sequence):
     """Insert every reading once, then update the existing ids in turn."""
     return change("insert" if sequence < READINGS else "update", sequence)
+
+
+def crossing_change(sequence):
+    """Move one reading above 30, then the same reading below 30.
+
+    Each pair adds the reading to the `high-readings` result (value > 30) and
+    removes it again; `observed-values` sees both as updates.
+    """
+    value = random.uniform(31.0, 35.0) if sequence % 2 == 0 else random.uniform(25.0, 29.0)
+    return change("update", sequence // 2, value)
 
 
 def discover_instance(port):
@@ -121,15 +133,17 @@ def push(port, instance, body):
         raise DemoUnavailable("Server did not report success for the change.")
 
 
-def send(port, count):
+def send(port, count, crossing=False):
     instance = discover_instance(port)
     start = random.randrange(READINGS)
     for offset in range(count):
+        body = crossing_change(2 * start + offset) if crossing else change("update", start + offset)
         try:
-            push(port, instance, change("update", start + offset))
+            push(port, instance, body)
         except DemoUnavailable as error:
             raise DemoUnavailable(f"Sent {offset} of {count} changes. {error}") from None
-    print(f"Sent {count} reading updates to instance {instance} (source {SOURCE}).")
+    kind = "changes crossing 30 (for high-readings)" if crossing else "reading updates"
+    print(f"Sent {count} {kind} to instance {instance} (source {SOURCE}).")
 
 
 def trickle(port, instance, interval):
@@ -152,6 +166,10 @@ def main():
     burst = commands.add_parser("send", help="send a burst of updates to the running demo")
     burst.add_argument("--port", type=port_number, required=True)
     burst.add_argument("--count", type=change_count, default=5)
+    burst.add_argument(
+        "--crossing", action="store_true",
+        help="move readings above then below 30, so high-readings adds and deletes rows",
+    )
     steady = commands.add_parser("trickle", help="send one change per interval until stopped")
     steady.add_argument("--port", type=port_number, required=True)
     steady.add_argument("--instance", required=True)
@@ -159,7 +177,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "send":
-            send(args.port, args.count)
+            send(args.port, args.count, args.crossing)
         else:
             trickle(args.port, args.instance, args.interval)
     except DemoUnavailable as error:
