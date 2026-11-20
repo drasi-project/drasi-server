@@ -20,8 +20,9 @@ use axum::{
 use drasi_lib::{
     computation::v1::{ComponentId, ComponentName, GraphError},
     management::{
-        AcceptanceReceipt, ConfigurationRequest, ManagementError, NewComponentDefinition,
-        OrdinaryComponentDefinition, OrdinaryComponentRecord, RecoveryTransitionRequired,
+        AcceptanceReceipt, ComponentRemoval, ConfigurationRequest, ManagementError,
+        NewComponentDefinition, OrdinaryComponentDefinition, OrdinaryComponentRecord,
+        RecoveryTransitionRequired,
     },
     DrasiError, DrasiLib,
 };
@@ -446,76 +447,64 @@ pub async fn delete_component(
         )
         .await;
     }
-    let mut attempts = 0;
-    let accepted = loop {
-        attempts += 1;
-        let committed = core.desired_configuration().map_err(read_error)?;
-        let expected = preconditions
-            .expected_revision
-            .unwrap_or(committed.revision);
-        if committed
-            .desired
-            .topology
-            .components
-            .iter()
-            .any(|component| &component.name == name)
-        {
-            return Err(native_component(name));
-        }
-        let Some(existing) = committed
-            .desired
-            .ordinary
-            .iter()
-            .find(|record| {
-                &record.name == name && record_kind(&record.component).0 == component_type
-            })
-            .cloned()
-        else {
-            return Err(ErrorResponse::new(
-                role.not_found_code(),
-                format!("{component_type} '{name}' not found"),
+    let committed = core.desired_configuration().map_err(read_error)?;
+    if committed
+        .desired
+        .topology
+        .components
+        .iter()
+        .any(|component| &component.name == name)
+    {
+        return Err(native_component(name));
+    }
+    let Some(existing) = committed
+        .desired
+        .ordinary
+        .iter()
+        .find(|record| &record.name == name && record_kind(&record.component).0 == component_type)
+        .cloned()
+    else {
+        return Err(ErrorResponse::new(
+            role.not_found_code(),
+            format!("{component_type} '{name}' not found"),
+        ));
+    };
+    let mut desired = committed.desired.clone();
+    desired.ordinary.retain(|record| record.id != existing.id);
+    validate_desired(desired, component_type, name.as_str())
+        .map_err(|_| dependent(component_type, name, &committed.desired.ordinary, &existing))?;
+    // Deleting a source or reaction also erases its stored state, matching
+    // the non-managed delete path. DrasiLib always erases query state.
+    let removal = ComponentRemoval {
+        request_id: Some(request_id.clone()),
+        expected_revision: preconditions.expected_revision,
+        erase_data: !matches!(role, ComponentRole::Query),
+    };
+    let component_id = Some(existing.id.to_string());
+    let accepted = match core.remove_component(&existing.id, removal).await {
+        Ok(receipt) => Accepted::new(receipt, component_id),
+        Err(error) if format!("{error:#}").contains("Depended on by") => {
+            return Err(dependent(
+                component_type,
+                name,
+                &committed.desired.ordinary,
+                &existing,
             ));
-        };
-        let mut desired = committed.desired.clone();
-        desired.ordinary.retain(|record| record.id != existing.id);
-        let desired = validate_desired(desired, component_type, name.as_str())
-            .map_err(|_| dependent(component_type, name, &committed.desired.ordinary, &existing))?;
-        let request = ConfigurationRequest {
-            desired: Some(desired),
-            additions: Vec::new(),
-        };
-        let component_id = Some(existing.id.to_string());
-        match core
-            .apply_configuration(expected, request_id.clone(), request)
+        }
+        Err(error) => {
+            match classify(
+                core,
+                &request_id,
+                component_type,
+                name.as_str(),
+                false,
+                error,
+            )
             .await
-        {
-            Ok(receipt) => break Accepted::new(receipt, component_id),
-            Err(error) => {
-                if error.to_string().contains("is depended on by")
-                    || format!("{error:#}").contains("is depended on by")
-                {
-                    return Err(dependent(
-                        component_type,
-                        name,
-                        &committed.desired.ordinary,
-                        &existing,
-                    ));
-                }
-                let retry = preconditions.expected_revision.is_none() && attempts < 3;
-                match classify(
-                    core,
-                    &request_id,
-                    component_type,
-                    name.as_str(),
-                    retry,
-                    error,
-                )
-                .await
-                {
-                    Ok(receipt) => break Accepted::new(receipt, component_id),
-                    Err(Classified::Retry) => continue,
-                    Err(Classified::Error(error)) => return Err(error),
-                }
+            {
+                Ok(receipt) => Accepted::new(receipt, component_id),
+                Err(Classified::Error(error)) => return Err(error),
+                Err(Classified::Retry) => unreachable!("delete retries are disabled"),
             }
         }
     };

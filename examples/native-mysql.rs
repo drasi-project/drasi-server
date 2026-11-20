@@ -53,15 +53,56 @@ fn endpoint(component: &ComponentId, port: &str) -> Result<Endpoint> {
 fn stream(component: &ComponentName) -> Result<StreamId> {
     Ok(StreamId::try_new(format!("{component}/out"))?)
 }
-fn literal(value: impl serde::Serialize) -> Result<ConfigurationValue> {
-    Ok(ConfigurationValue::Literal(serde_json::to_value(value)?))
+/// Source fields supplied per deployment, each as one JSON environment value
+/// named `DRASI_MYSQL_<FIELD>`.
+pub const SOURCE_FIELDS: &[&str] = &[
+    "host",
+    "port",
+    "database",
+    "user",
+    "password",
+    "sslMode",
+    "serverId",
+    "tables",
+    "startFrom",
+];
+/// Sink fields supplied per deployment as `DRASI_MYSQL_SINK_<FIELD>`.
+pub const SINK_FIELDS: &[&str] = &[
+    "host",
+    "port",
+    "database",
+    "user",
+    "password",
+    "sslMode",
+    "outputs",
+    "defaultTemplate",
+];
+/// The environment variable that supplies `field`, for example `sslMode`
+/// under `DRASI_MYSQL` is `DRASI_MYSQL_SSL_MODE`.
+pub fn variable(prefix: &str, field: &str) -> String {
+    let mut name = format!("{prefix}_");
+    for character in field.chars() {
+        if character.is_ascii_uppercase() {
+            name.push('_');
+        }
+        name.push(character.to_ascii_uppercase());
+    }
+    name
 }
-fn reference(key: &str) -> Result<ConfigurationValue> {
-    Ok(ConfigurationValue::Reference {
-        resource: resource("mysql-configuration")?,
-        key: format!("env-json:{key}").into(),
-        secret: true,
-    })
+fn references(prefix: &str, fields: &[&str]) -> Result<Vec<(Arc<str>, ConfigurationValue)>> {
+    fields
+        .iter()
+        .map(|field| {
+            Ok((
+                (*field).into(),
+                ConfigurationValue::Reference {
+                    resource: resource("mysql-configuration")?,
+                    key: format!("env-json:{}", variable(prefix, field)).into(),
+                    secret: *field == "password",
+                },
+            ))
+        })
+        .collect()
 }
 fn load(directory: &Path, package: &str) -> Result<Arc<NativePlugin>> {
     let file = directory.join(format!(
@@ -213,11 +254,8 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
         completion: None,
         implementation: bootstrap.descriptor().implementation.clone(),
         configuration_version: bootstrap.descriptor().configuration_version,
-        configuration: BTreeMap::from([
-            ("source".into(), literal(&recipe.source.id)?),
-            ("stream".into(), literal(stream(&recipe.source.name)?)?),
-            ("settings".into(), reference("DRASI_MYSQL_SOURCE_SETTINGS")?),
-        ]),
+        // The paired provider takes its settings from the source.
+        configuration: BTreeMap::new(),
         dependencies: if bootstrap
             .descriptor()
             .dependencies
@@ -259,20 +297,40 @@ fn generate(directory: &Path, recipe: &Path) -> Result<Value> {
     }
     let mut source = source_factory.specification(
         recipe.source.id.clone(),
-        json!({"stream":stream(&recipe.source.name)?,"settings":{},"persistent":false}),
+        json!({"stream":stream(&recipe.source.name)?,"persistent":false,
+            "database":"deployment","user":"deployment"}),
     )?;
     source
         .configuration
-        .insert("settings".into(), reference("DRASI_MYSQL_SOURCE_SETTINGS")?);
+        .extend(references("DRASI_MYSQL", SOURCE_FIELDS)?);
     source.dependencies.insert(
         "consumer_progress".into(),
         vec![resource("mysql-consumers")?],
     );
     let sink_id = fixed_id(0xff01);
     let outlet_id = fixed_id(0xff02);
-    let mut sink = sink_factory.specification(sink_id.clone(), json!({"settings":{}}))?;
+    let mut sink = sink_factory.specification(sink_id.clone(), json!({"database":"deployment"}))?;
     sink.configuration
-        .insert("settings".into(), reference("DRASI_MYSQL_SINK_SETTINGS")?);
+        .extend(references("DRASI_MYSQL_SINK", SINK_FIELDS)?);
+    builder = declare(
+        builder,
+        "mysql-delivery-indexes",
+        ResourceRole::IndexBackend,
+        json!({"kind":"memoryIndexes"}),
+    )?;
+    builder = declare(
+        builder,
+        "mysql-delivery",
+        ResourceRole::IndexBackend,
+        json!({"kind":"nativeConsumer","failureScope":"processRestart","maxStreams":2,"receiptsPerStream":64}),
+    )?
+    .resource_dependency(
+        resource("mysql-delivery")?,
+        resource("mysql-delivery-indexes")?,
+        ResourceRole::IndexBackend,
+    )?;
+    sink.dependencies
+        .insert("consumer".into(), vec![resource("mysql-delivery")?]);
     let mut outlet = outlet_factory.specification_from_config(outlet_id.clone(), json!({}))?;
     outlet
         .dependencies
@@ -468,9 +526,7 @@ mod tests {
             .map(|identity| identity.0.load(Ordering::SeqCst));
         let setup = async {
             let registry = plugins.read().await;
-            register_components(config, &core, &registry)
-                .await?
-                .ensure_committed()?;
+            register_components(config, &core, &registry).await?;
             if let Some(identity) = &identity {
                 anyhow::ensure!(
                     Some(identity.0.load(Ordering::SeqCst)) == prior_creations,
@@ -488,7 +544,8 @@ mod tests {
             ] {
                 tokio::time::timeout(
                     DEADLINE,
-                    core.computation_component(component)?.wait_started(),
+                    core.component_by_name(&ComponentName::try_new(component)?)?
+                        .wait_started(),
                 )
                 .await??;
             }
@@ -527,19 +584,22 @@ mod tests {
                 .await
         });
         let proof = async {
-            let schema = tokio::time::timeout(DEADLINE, core.get_source_schema("mysql-source"))
-                .await??
-                .context("native MySQL catalog schema")?;
+            let source_name = ComponentName::try_new("mysql-source")?;
+            let schema =
+                tokio::time::timeout(DEADLINE, core.get_source_schema_by_name(&source_name))
+                    .await??
+                    .context("native MySQL catalog schema")?;
             anyhow::ensure!(
                 schema.nodes.len() == 1 && schema.nodes[0].label == "items",
                 "Server source inspection did not read the actual MySQL catalog"
             );
+            let source_id = core.component_by_name(&source_name)?.id().clone();
             anyhow::ensure!(
                 core.get_graph_schema()
                     .await?
                     .nodes
                     .get("items")
-                    .is_some_and(|node| node.sources.contains("mysql-source")),
+                    .is_some_and(|node| node.sources.contains(&source_id)),
                 "Server graph schema omitted native MySQL"
             );
             if restarted {
@@ -629,7 +689,8 @@ mod tests {
                     .expect_count("SELECT COUNT(*) FROM audit", "7")
                     .await?;
                 if let Some(identity) = &identity {
-                    let sink = core.computation_component("mysql-procedures")?;
+                    let sink =
+                        core.component_by_name(&ComponentName::try_new("mysql-procedures")?)?;
                     sink.stop().await?;
                     database
                         .sql(
@@ -658,8 +719,8 @@ mod tests {
             );
             let serialized = serde_json::to_string(&saved)?;
             anyhow::ensure!(
-                serialized.contains("secret-json:DRASI_MYSQL_SOURCE_SETTINGS")
-                    && serialized.contains("secret-json:DRASI_MYSQL_SINK_SETTINGS")
+                serialized.contains("secret-json:DRASI_MYSQL_PASSWORD")
+                    && serialized.contains("secret-json:DRASI_MYSQL_SINK_DATABASE")
                     && !serialized.contains("native-test")
                     && !serialized.contains("server-first-auth")
                     && !serialized.contains("server-second-auth"),
@@ -765,6 +826,8 @@ mod tests {
             specification
                 .dependencies
                 .insert("identity".into(), vec![identity_id]);
+            specification.configuration.remove("user");
+            specification.configuration.remove("password");
         }
         for package in [
             "drasi-computation-source-mysql",
@@ -797,15 +860,19 @@ mod tests {
                 settings.remove("user");
                 settings.remove("password");
             }
-            let secrets = Arc::new(
-                MemorySecretStoreProvider::new()
-                    .with_secret(
-                        "DRASI_MYSQL_SOURCE_SETTINGS",
-                        database.source_settings().to_string(),
-                    )
-                    .with_secret("DRASI_MYSQL_SINK_SETTINGS", sink.to_string())
-                    .with_secret("MYSQL_ACTIVATION_PASSWORD", "server-first-auth"),
-            );
+            let mut store = MemorySecretStoreProvider::new()
+                .with_secret("MYSQL_ACTIVATION_PASSWORD", "server-first-auth");
+            for (prefix, fields, settings) in [
+                ("DRASI_MYSQL", SOURCE_FIELDS, database.source_settings()),
+                ("DRASI_MYSQL_SINK", SINK_FIELDS, sink),
+            ] {
+                for field in fields {
+                    if let Some(value) = settings.get(*field) {
+                        store = store.with_secret(&variable(prefix, field), value.to_string());
+                    }
+                }
+            }
+            let secrets = Arc::new(store);
             config = round(
                 &config,
                 registry.clone(),

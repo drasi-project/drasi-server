@@ -210,7 +210,8 @@ pub fn definition_with_mode(
         .bind_stream(endpoint("source", "out")?, StreamId::try_new("source/out")?);
     // One visible provider node serves the source; the source relays its
     // consumers' bootstrap sessions to it over bootstrap edges.
-    let mut provider_configuration = json!({"source":id("source")?,"stream":"source/out"});
+    // The bootstrap edge supplies the served source and stream.
+    let mut provider_configuration = json!({});
     if !paired {
         for (field, value) in [
             ("path", json!(database)),

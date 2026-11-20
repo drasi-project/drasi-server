@@ -19,7 +19,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+                  - component: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
                   joins: []
                   middleware: []
               language:
@@ -41,7 +41,7 @@ instances:
               source_progress:
               - all-messages-progress
             descriptor:
-              id: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+              id: 764244d2-b18f-43d0-a576-ae176e78a910
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -744,7 +744,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+          id: 764244d2-b18f-43d0-a576-ae176e78a910
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1452,79 +1452,11 @@ instances:
         construction:
           Factory:
             completion: null
-            configuration:
-              database:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_DATABASE
-                  resource: postgres-configuration
-                  secret: false
-              feedbackIntervalMs:
-                Literal: 1000
-              host:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_HOST
-                  resource: postgres-configuration
-                  secret: false
-              ioTimeoutMs:
-                Literal: 10000
-              maxProtocolBytes:
-                Literal: 8388608
-              maxTransactionBytes:
-                Literal: 8388608
-              maxTransactionChanges:
-                Literal: 4096
-              maxTransactionDurationMs:
-                Literal: 30000
-              password:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_PASSWORD
-                  resource: postgres-configuration
-                  secret: true
-              port:
-                Reference:
-                  key: env-json:DRASI_PG_MY_POSTGRES_PORT
-                  resource: postgres-configuration
-                  secret: false
-              publication:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_PUBLICATION
-                  resource: postgres-configuration
-                  secret: false
-              slotName:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_SLOT_NAME
-                  resource: postgres-configuration
-                  secret: false
-              slotOwnership:
-                Literal: external
-              source:
-                Literal: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
-              sslMode:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_SSL_MODE
-                  resource: postgres-configuration
-                  secret: false
-              stream:
-                Literal: my-postgres/out
-              tableKeys:
-                Literal:
-                - keyColumns:
-                  - MessageId
-                  table: Message
-              tables:
-                Literal:
-                - Message
-              user:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_USER
-                  resource: postgres-configuration
-                  secret: false
+            configuration: {}
             configuration_version: 1
-            dependencies:
-              source_progress:
-              - all-messages-progress
+            dependencies: {}
             descriptor:
-              id: b872383e-8e88-4323-be55-6fd99284a41a
+              id: 68583afc-cbfd-47e9-bf49-d992ce1aa973
               ports:
               - direction: Output
                 id: snapshot
@@ -1707,7 +1639,7 @@ instances:
               version: '1'
             role: BootstrapProvider
         descriptor:
-          id: b872383e-8e88-4323-be55-6fd99284a41a
+          id: 68583afc-cbfd-47e9-bf49-d992ce1aa973
           ports:
           - direction: Output
             id: snapshot
@@ -1964,7 +1896,7 @@ instances:
               consumer_progress:
               - my-postgres-consumers
             descriptor:
-              id: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+              id: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
               plugin_identity:
                 id: drasi-computation-source-postgres
                 version: 0.11.3
@@ -2495,7 +2427,7 @@ instances:
               version: '1'
             role: Source
         descriptor:
-          id: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+          id: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
           plugin_identity:
             id: drasi-computation-source-postgres
             version: 0.11.3
@@ -3399,10 +3331,10 @@ instances:
       relationships:
       - definition:
           from:
-            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+            component: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
             port: out
           to:
-            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+            component: 764244d2-b18f-43d0-a576-ae176e78a910
             port: in
         pipe:
           Bounded:
@@ -3418,10 +3350,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+            component: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
             port: snapshot
           to:
-            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+            component: 764244d2-b18f-43d0-a576-ae176e78a910
             port: bootstrap
         pipe:
           Bounded:
@@ -3437,10 +3369,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: b872383e-8e88-4323-be55-6fd99284a41a
+            component: 68583afc-cbfd-47e9-bf49-d992ce1aa973
             port: snapshot
           to:
-            component: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+            component: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
             port: bootstrap
         pipe:
           Bounded:
@@ -3456,7 +3388,7 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+            component: 764244d2-b18f-43d0-a576-ae176e78a910
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -3477,14 +3409,14 @@ instances:
         required: []
       resource_configurations:
         all-messages-progress:
-          component: 55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7
+          component: 764244d2-b18f-43d0-a576-ae176e78a910
           indexes: query-indexes
           kind: sourceProgress
         my-postgres-consumers:
           consumers:
-            55c51dd8-25b2-4eb9-8e2c-60e8328e8ed7: all-messages-progress
+            764244d2-b18f-43d0-a576-ae176e78a910: all-messages-progress
           kind: consumerProgress
-          producer: 677be7eb-5892-46a1-bfa4-2f9e69b74f4a
+          producer: b53fcc90-2747-4051-a5ad-8079d7eb5ebb
         postgres-configuration:
           kind: configuration
         query-indexes:

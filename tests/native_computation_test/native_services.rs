@@ -539,8 +539,19 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
         })
         .cloned()
         .context("SQLite file bootstrap factory")?;
+    // The file snapshot serves its source's element namespace, so the source
+    // must declare the same SQLite identities (same tables and keys).
+    let source_plugin =
+        drasi_host_sdk::computation::load(artifact("drasi_computation_source_sqlite"))?;
+    let sqlite_source = source_plugin
+        .factories()
+        .iter()
+        .find(|factory| factory.metadata().implementation.name.as_ref() == "drasi.sqlite/changes")
+        .cloned()
+        .context("SQLite changes source factory")?;
     let mut plugins = factories();
     plugins.register_computation_plugin(plugin)?;
+    plugins.register_computation_plugin(source_plugin)?;
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("input.db");
     let connection = rusqlite::Connection::open(&path)?;
@@ -554,15 +565,23 @@ async fn sqlite_file_bootstrap_uses_native_catalogue_and_memory_query_recipes() 
     ] {
         connection.execute("UPDATE Item SET value=?1", [value])?;
         let mut topology = bootstrap_topology(json!({"kind":"memoryIndexes"}))?;
+        let input = topology
+            .components
+            .iter_mut()
+            .find(|component| component.name.as_str() == "input")
+            .context("input component")?;
+        *input = desired(
+            "input",
+            sqlite_source.specification(
+                id("input"),
+                json!({
+                    "stream": "input/out",
+                    "tables": ["Item"],
+                    "initSql": "CREATE TABLE Item(code TEXT PRIMARY KEY,value TEXT)"
+                }),
+            )?,
+        );
         let configuration = BTreeMap::<Arc<str>, _>::from([
-            (
-                "source".into(),
-                ConfigurationValue::Literal(json!(id("input"))),
-            ),
-            (
-                "stream".into(),
-                ConfigurationValue::Literal(json!("input/out")),
-            ),
             ("path".into(), ConfigurationValue::Literal(json!(path))),
             (
                 "tables".into(),
@@ -1730,13 +1749,17 @@ fn consumer_config(path: &Path) -> Result<ComputationConfig> {
     )?;
     sink.dependencies
         .insert("consumer".into(), vec![resource("delivery")]);
+    // An exactly-once consumer requires a restart-stable producer identity;
+    // the tests inject envelopes under that identity.
+    let source = plugin
+        .factories()
+        .iter()
+        .find(|factory| factory.metadata().implementation.name.as_ref() == "fixture/durable-source")
+        .context("durable source fixture")?;
     topology.components = vec![
         desired(
             "input",
-            super::factory(COUNTER).specification(
-                id("input"),
-                json!({"stream":"input/out","count":1,"paused":true}),
-            )?,
+            source.specification(id("input"), json!({"stream":"input/out"}))?,
         ),
         desired("consumer", sink),
     ];

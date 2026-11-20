@@ -31,9 +31,6 @@ fn endpoint(component: &ComponentId, port: &str) -> Result<Endpoint> {
 fn stream(source: &str) -> Result<StreamId> {
     Ok(StreamId::try_new(format!("{source}/out"))?)
 }
-fn literal(value: impl serde::Serialize) -> Result<ConfigurationValue> {
-    Ok(ConfigurationValue::Literal(serde_json::to_value(value)?))
-}
 fn variable(kind: &str, source: &str, suffix: &str) -> String {
     format!(
         "DRASI_{}_{}_{suffix}",
@@ -413,19 +410,10 @@ fn generate(libraries: &Path, recipe: &Path) -> Result<Value> {
         } else {
             http_bootstrap.clone().context("HTTP bootstrap factory")?
         };
-        let mut provider_configuration = BTreeMap::from([
-            ("source".into(), literal(component_id)?),
-            ("stream".into(), literal(stream(source_id)?)?),
-        ]);
-        if kind == "postgres" {
-            let Value::Object(fields) = postgres_literals(source) else {
-                unreachable!("PostgreSQL settings are an object");
-            };
-            for (field, value) in fields {
-                provider_configuration.insert(field.into(), literal(value)?);
-            }
-            provider_configuration.extend(postgres_references(source_id)?);
-        } else {
+        // The served source and stream come from the bootstrap edge, and the
+        // paired PostgreSQL provider takes everything else from its source.
+        let mut provider_configuration = BTreeMap::new();
+        if kind != "postgres" {
             provider_configuration.insert("settings".into(), settings_reference(kind, source_id)?);
         }
         let provider = provider_node(

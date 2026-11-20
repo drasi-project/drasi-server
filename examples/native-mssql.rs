@@ -219,23 +219,8 @@ pub fn generate(libraries: &Path) -> Result<DrasiServerConfig> {
         completion: None,
         implementation: bootstrap.descriptor().implementation.clone(),
         configuration_version: bootstrap.descriptor().configuration_version,
-        configuration: BTreeMap::from([
-            (
-                "source".into(),
-                ConfigurationValue::Literal(json!(id("items"))),
-            ),
-            (
-                "stream".into(),
-                ConfigurationValue::Literal(json!(stream("items"))),
-            ),
-            (
-                "labels".into(),
-                ConfigurationValue::Literal(json!(["Items"])),
-            ),
-        ])
-        .into_iter()
-        .chain(references("DRASI_MSSQL", SOURCE_FIELDS))
-        .collect(),
+        // The paired provider takes its settings, tables and barrier from the source.
+        configuration: BTreeMap::new(),
         dependencies: if bootstrap
             .descriptor()
             .dependencies

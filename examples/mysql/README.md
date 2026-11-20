@@ -32,14 +32,17 @@ target/debug/examples/native-mysql generate target/debug \
 
 The generator explicitly selects the loaded native query plugin, not the linked
 reference constructor. The native libraries reject literal secret settings in a canonical definition.
-The generated configuration uses `env-json:DRASI_MYSQL_SOURCE_SETTINGS` and
-`env-json:DRASI_MYSQL_SINK_SETTINGS` through the real configuration resource.
-Both environment variables contain JSON objects, resolved at construction, not
-credentials checked into the graph.
+The generated configuration references each deployment field through the real
+configuration resource as one JSON environment value: `DRASI_MYSQL_<FIELD>` for
+the source (`host`, `port`, `database`, `user`, `password`, `sslMode`,
+`serverId`, `tables`, `startFrom`) and `DRASI_MYSQL_SINK_<FIELD>` for the sink
+(`host`, `port`, `database`, `user`, `password`, `sslMode`, `outputs`,
+`defaultTemplate`). A camelCase field becomes upper snake case, for example
+`DRASI_MYSQL_SSL_MODE`. Values are resolved at construction, not credentials
+checked into the graph.
 
-The source settings are the native `MySqlConfig`: explicitly selected `items`,
-ordinary `changes`, `replay: server`, and an opt-in coordinated
-`start: {mode: snapshot, lock_timeout_ms: 5000}`. Each query has its own
+The source selects `items` and starts from a coordinated snapshot
+(`startFrom: snapshot`). Each query has its own
 `sourceProgress` resource; the source has the corresponding fixed
 `consumerProgress` set. A visible `items-bootstrap` provider node
 (`drasi.mysql/shared-row-bootstrap`) is connected by a bootstrap edge to the

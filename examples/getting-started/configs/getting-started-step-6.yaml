@@ -19,7 +19,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+                  - component: 14e412dc-6688-436d-a9b6-2f2abfaede61
                   joins: []
                   middleware: []
               language:
@@ -41,7 +41,7 @@ instances:
               source_progress:
               - all-messages-progress
             descriptor:
-              id: 53ff7d00-90ab-4537-a272-9cc9249150e0
+              id: 07342bc3-74d0-432c-944a-f08a47f9b1ad
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -744,7 +744,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 53ff7d00-90ab-4537-a272-9cc9249150e0
+          id: 07342bc3-74d0-432c-944a-f08a47f9b1ad
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -1456,7 +1456,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+                  - component: 14e412dc-6688-436d-a9b6-2f2abfaede61
                   joins: []
                   middleware: []
               language:
@@ -1476,7 +1476,7 @@ instances:
               source_progress:
               - hello-world-senders-progress
             descriptor:
-              id: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+              id: cb62cefb-c284-4738-99ef-027bbbe17a74
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -2179,7 +2179,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+          id: cb62cefb-c284-4738-99ef-027bbbe17a74
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -2891,7 +2891,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+                  - component: 14e412dc-6688-436d-a9b6-2f2abfaede61
                   joins: []
                   middleware: []
               language:
@@ -2911,7 +2911,7 @@ instances:
               source_progress:
               - message-counts-progress
             descriptor:
-              id: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+              id: 173cf2ce-1fce-44a8-848b-0c8583aaedad
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -3614,7 +3614,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+          id: 173cf2ce-1fce-44a8-848b-0c8583aaedad
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -4326,7 +4326,7 @@ instances:
               execution:
                 Literal:
                   inputs:
-                  - component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+                  - component: 14e412dc-6688-436d-a9b6-2f2abfaede61
                   joins: []
                   middleware: []
               language:
@@ -4346,7 +4346,7 @@ instances:
               source_progress:
               - inactive-senders-progress
             descriptor:
-              id: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+              id: 769f64f4-7ebc-4c74-bc05-8c0e12982606
               output_progress: Origin
               plugin_identity:
                 id: drasi-computation-transformer-query
@@ -5049,7 +5049,7 @@ instances:
               version: '1'
             role: Transformer
         descriptor:
-          id: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+          id: 769f64f4-7ebc-4c74-bc05-8c0e12982606
           output_progress: Origin
           plugin_identity:
             id: drasi-computation-transformer-query
@@ -5757,82 +5757,11 @@ instances:
         construction:
           Factory:
             completion: null
-            configuration:
-              database:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_DATABASE
-                  resource: postgres-configuration
-                  secret: false
-              feedbackIntervalMs:
-                Literal: 1000
-              host:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_HOST
-                  resource: postgres-configuration
-                  secret: false
-              ioTimeoutMs:
-                Literal: 10000
-              maxProtocolBytes:
-                Literal: 8388608
-              maxTransactionBytes:
-                Literal: 8388608
-              maxTransactionChanges:
-                Literal: 4096
-              maxTransactionDurationMs:
-                Literal: 30000
-              password:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_PASSWORD
-                  resource: postgres-configuration
-                  secret: true
-              port:
-                Reference:
-                  key: env-json:DRASI_PG_MY_POSTGRES_PORT
-                  resource: postgres-configuration
-                  secret: false
-              publication:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_PUBLICATION
-                  resource: postgres-configuration
-                  secret: false
-              slotName:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_SLOT_NAME
-                  resource: postgres-configuration
-                  secret: false
-              slotOwnership:
-                Literal: external
-              source:
-                Literal: 8a5e2068-5251-48c2-9d07-7b80a382f0df
-              sslMode:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_SSL_MODE
-                  resource: postgres-configuration
-                  secret: false
-              stream:
-                Literal: my-postgres/out
-              tableKeys:
-                Literal:
-                - keyColumns:
-                  - MessageId
-                  table: Message
-              tables:
-                Literal:
-                - Message
-              user:
-                Reference:
-                  key: env:DRASI_PG_MY_POSTGRES_USER
-                  resource: postgres-configuration
-                  secret: false
+            configuration: {}
             configuration_version: 1
-            dependencies:
-              source_progress:
-              - hello-world-senders-progress
-              - all-messages-progress
-              - message-counts-progress
-              - inactive-senders-progress
+            dependencies: {}
             descriptor:
-              id: 1a6b1f48-a70e-4782-8402-31f237c1ea5b
+              id: cd2908f1-00d7-412d-9e99-15e63589192b
               ports:
               - direction: Output
                 id: snapshot
@@ -6015,7 +5944,7 @@ instances:
               version: '1'
             role: BootstrapProvider
         descriptor:
-          id: 1a6b1f48-a70e-4782-8402-31f237c1ea5b
+          id: cd2908f1-00d7-412d-9e99-15e63589192b
           ports:
           - direction: Output
             id: snapshot
@@ -6272,7 +6201,7 @@ instances:
               consumer_progress:
               - my-postgres-consumers
             descriptor:
-              id: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+              id: 14e412dc-6688-436d-a9b6-2f2abfaede61
               plugin_identity:
                 id: drasi-computation-source-postgres
                 version: 0.11.3
@@ -6803,7 +6732,7 @@ instances:
               version: '1'
             role: Source
         descriptor:
-          id: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+          id: 14e412dc-6688-436d-a9b6-2f2abfaede61
           plugin_identity:
             id: drasi-computation-source-postgres
             version: 0.11.3
@@ -7707,10 +7636,10 @@ instances:
       relationships:
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: out
           to:
-            component: 53ff7d00-90ab-4537-a272-9cc9249150e0
+            component: 07342bc3-74d0-432c-944a-f08a47f9b1ad
             port: in
         pipe:
           Bounded:
@@ -7726,10 +7655,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: snapshot
           to:
-            component: 53ff7d00-90ab-4537-a272-9cc9249150e0
+            component: 07342bc3-74d0-432c-944a-f08a47f9b1ad
             port: bootstrap
         pipe:
           Bounded:
@@ -7745,10 +7674,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: out
           to:
-            component: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+            component: cb62cefb-c284-4738-99ef-027bbbe17a74
             port: in
         pipe:
           Bounded:
@@ -7764,10 +7693,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: snapshot
           to:
-            component: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+            component: cb62cefb-c284-4738-99ef-027bbbe17a74
             port: bootstrap
         pipe:
           Bounded:
@@ -7783,10 +7712,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: out
           to:
-            component: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+            component: 173cf2ce-1fce-44a8-848b-0c8583aaedad
             port: in
         pipe:
           Bounded:
@@ -7802,10 +7731,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: snapshot
           to:
-            component: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+            component: 173cf2ce-1fce-44a8-848b-0c8583aaedad
             port: bootstrap
         pipe:
           Bounded:
@@ -7821,10 +7750,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: out
           to:
-            component: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+            component: 769f64f4-7ebc-4c74-bc05-8c0e12982606
             port: in
         pipe:
           Bounded:
@@ -7840,10 +7769,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: snapshot
           to:
-            component: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+            component: 769f64f4-7ebc-4c74-bc05-8c0e12982606
             port: bootstrap
         pipe:
           Bounded:
@@ -7859,10 +7788,10 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 1a6b1f48-a70e-4782-8402-31f237c1ea5b
+            component: cd2908f1-00d7-412d-9e99-15e63589192b
             port: snapshot
           to:
-            component: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+            component: 14e412dc-6688-436d-a9b6-2f2abfaede61
             port: bootstrap
         pipe:
           Bounded:
@@ -7878,7 +7807,7 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 53ff7d00-90ab-4537-a272-9cc9249150e0
+            component: 07342bc3-74d0-432c-944a-f08a47f9b1ad
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -7897,7 +7826,7 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+            component: cb62cefb-c284-4738-99ef-027bbbe17a74
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -7916,7 +7845,7 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+            component: 173cf2ce-1fce-44a8-848b-0c8583aaedad
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -7935,7 +7864,7 @@ instances:
           required_for_creation: false
       - definition:
           from:
-            component: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+            component: 769f64f4-7ebc-4c74-bc05-8c0e12982606
             port: out
           to:
             component: 00000000-0000-0000-0000-00000000ff01
@@ -7956,29 +7885,29 @@ instances:
         required: []
       resource_configurations:
         all-messages-progress:
-          component: 53ff7d00-90ab-4537-a272-9cc9249150e0
+          component: 07342bc3-74d0-432c-944a-f08a47f9b1ad
           indexes: query-indexes
           kind: sourceProgress
         hello-world-senders-progress:
-          component: 27c60317-9c69-4e3f-a43d-d5e659f8ee1d
+          component: cb62cefb-c284-4738-99ef-027bbbe17a74
           indexes: query-indexes
           kind: sourceProgress
         inactive-senders-progress:
-          component: 9daa77de-1050-43c2-bba6-f3c3b68726e5
+          component: 769f64f4-7ebc-4c74-bc05-8c0e12982606
           indexes: query-indexes
           kind: sourceProgress
         message-counts-progress:
-          component: 6fc644b5-fd5d-4e48-aef8-b98985ca060c
+          component: 173cf2ce-1fce-44a8-848b-0c8583aaedad
           indexes: query-indexes
           kind: sourceProgress
         my-postgres-consumers:
           consumers:
-            27c60317-9c69-4e3f-a43d-d5e659f8ee1d: hello-world-senders-progress
-            53ff7d00-90ab-4537-a272-9cc9249150e0: all-messages-progress
-            6fc644b5-fd5d-4e48-aef8-b98985ca060c: message-counts-progress
-            9daa77de-1050-43c2-bba6-f3c3b68726e5: inactive-senders-progress
+            07342bc3-74d0-432c-944a-f08a47f9b1ad: all-messages-progress
+            173cf2ce-1fce-44a8-848b-0c8583aaedad: message-counts-progress
+            769f64f4-7ebc-4c74-bc05-8c0e12982606: inactive-senders-progress
+            cb62cefb-c284-4738-99ef-027bbbe17a74: hello-world-senders-progress
           kind: consumerProgress
-          producer: 8a5e2068-5251-48c2-9d07-7b80a382f0df
+          producer: 14e412dc-6688-436d-a9b6-2f2abfaede61
         postgres-configuration:
           kind: configuration
         query-indexes:

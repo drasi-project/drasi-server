@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import secrets
@@ -180,15 +181,9 @@ class Qualification:
 
     def environment(self):
         source = {
-            "connection": {
-                "host": "127.0.0.1", "port": self.database_port, "database": "test",
-                "user": "root", "password": self.password, "ssl_mode": "disabled",
-                "tls_ca_pem": None, "server_id": 812, "heartbeat_interval_ms": 100,
-            },
-            "tables": ["items"], "start": {"mode": "snapshot", "lock_timeout_ms": 5000},
-            "output": "changes", "replay": "server",
-            "transactions": {"max_changes": 64, "max_bytes": 1048576, "max_duration_ms": 10000},
-            "max_protocol_bytes": 1048576, "io_timeout_ms": 10000,
+            "host": "127.0.0.1", "port": self.database_port, "database": "test",
+            "user": "root", "password": self.password, "sslMode": "disabled",
+            "serverId": 812, "tables": ["items"], "startFrom": "snapshot",
         }
         templates = {}
         for name, row, value in [
@@ -200,19 +195,20 @@ class Qualification:
                 "CALL effect({{param output.alias}},{{param operation}},"
                 + "{{param " + row + ".id}}," + value + ")"}
         sink = {
-            "hostname": "127.0.0.1", "port": self.database_port, "database": "test",
-            "user": "root", "password": self.password,
+            "host": "127.0.0.1", "port": self.database_port, "database": "test",
+            "user": "root", "password": self.password, "sslMode": "disable",
             "outputs": {
                 name: {"component": name, "port": "out"}
                 for name in ("all-items", "selected-items")
             },
-            "default_template": templates,
+            "defaultTemplate": templates,
         }
-        return {
-            **os.environ,
-            "DRASI_MYSQL_SOURCE_SETTINGS": json.dumps(source),
-            "DRASI_MYSQL_SINK_SETTINGS": json.dumps(sink),
-        }
+        environment = dict(os.environ)
+        for prefix, settings in (("DRASI_MYSQL", source), ("DRASI_MYSQL_SINK", sink)):
+            for field, value in settings.items():
+                name = prefix + "_" + re.sub(r"([A-Z])", r"_\1", field).upper()
+                environment[name] = json.dumps(value)
+        return environment
 
     def start_server(self, phase):
         self.server_log = (self.evidence / f"server-{phase}.log").open("w")

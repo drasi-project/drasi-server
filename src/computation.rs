@@ -121,6 +121,7 @@ pub enum ComputationResourceConfig {
     TransactionalTransformers {},
     BridgeIngressControl {},
     BridgeEgressControl {},
+    #[serde(rename_all = "camelCase")]
     BridgeTls {
         version: u32,
         #[schema(value_type = String)]
@@ -1408,18 +1409,18 @@ mod tests {
     fn server_tls_recipe_uses_shared_validation_without_opening_key_files() {
         let config = serde_json::json!({
             "kind": "bridgeTls", "version": 1, "role": "server",
-            "trust_roots": ["/not-opened/root.der"],
-            "certificate_chain": ["/not-opened/server.der"],
-            "private_key": "/not-opened/server.pk8",
-            "peer_certificate_sha256": "0".repeat(64)
+            "trustRoots": ["/not-opened/root.der"],
+            "certificateChain": ["/not-opened/server.der"],
+            "privateKey": "/not-opened/server.pk8",
+            "peerCertificateSha256": "0".repeat(64)
         });
         let recipe: ComputationResourceConfig = serde_json::from_value(config.clone()).unwrap();
         assert_eq!(recipe.role(), ResourceRole::Identity);
         validate_host_recipe(&recipe, &hosting_resource(ResourceOwnership::Graph)).unwrap();
         assert_eq!(serde_json::to_value(&recipe).unwrap(), config);
         for (field, invalid) in [
-            ("private_key", serde_json::json!("relative.pk8")),
-            ("peer_certificate_sha256", serde_json::json!("not-a-pin")),
+            ("privateKey", serde_json::json!("relative.pk8")),
+            ("peerCertificateSha256", serde_json::json!("not-a-pin")),
         ] {
             let mut changed = config.clone();
             changed[field] = invalid;
