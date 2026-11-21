@@ -33,6 +33,11 @@ reusing historical binaries. Missing external prerequisites or a failing Rust
 target do not make a partial workflow pass; retain separate results for stages
 that did not execute.
 
+Observability (OBS-01..06) requires a Core checkout that carries the
+OpenTelemetry work, such as `merge/otel-into-recovery`. See the
+[observability baseline](observability-baseline.md) for the merge inputs,
+telemetry adapter versions, plugin rebuilding and qualification results.
+
 ## Historical released runtime (not this branch's source selection)
 
 The September 25 released configuration used the published release from

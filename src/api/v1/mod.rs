@@ -48,6 +48,7 @@ pub mod handlers;
 pub mod openapi;
 pub mod plugin_handlers;
 pub mod routes;
+pub(crate) mod telemetry_handlers;
 
 pub use handlers::*;
 pub use openapi::inject_plugin_schemas;

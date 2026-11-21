@@ -25,6 +25,16 @@ use tokio::sync::RwLock;
 use drasi_lib::DrasiLib;
 
 use crate::api::models::BootstrapProviderConfig;
+use crate::{
+    server::{lifecycle::ManagementRequest, ServerCleanupHandle},
+    TelemetryBindings,
+};
+
+#[derive(Clone)]
+struct RuntimeContext {
+    bindings: Option<TelemetryBindings>,
+    cleanup: ServerCleanupHandle,
+}
 
 /// Thread-safe registry for managing DrasiLib instances.
 ///
@@ -40,6 +50,7 @@ pub struct InstanceRegistry {
     /// resolved and wired live.
     bootstrap_providers: Arc<RwLock<IndexMap<String, HashMap<String, BootstrapProviderConfig>>>>,
     configuration_stores: crate::managed_configuration::ConfigurationStores,
+    runtime: Option<Arc<RuntimeContext>>,
 }
 
 impl InstanceRegistry {
@@ -71,6 +82,7 @@ impl InstanceRegistry {
             instances: Arc::new(RwLock::new(IndexMap::new())),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
             configuration_stores: Default::default(),
+            runtime: None,
         }
     }
 
@@ -80,6 +92,7 @@ impl InstanceRegistry {
             instances: Arc::new(RwLock::new(instances)),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
             configuration_stores: Default::default(),
+            runtime: None,
         }
     }
 
@@ -89,6 +102,78 @@ impl InstanceRegistry {
     ) -> Self {
         self.configuration_stores = stores;
         self
+    }
+
+    pub(crate) fn with_runtime_context(
+        mut self,
+        bindings: TelemetryBindings,
+        cleanup: ServerCleanupHandle,
+    ) -> Self {
+        self.runtime = Some(Arc::new(RuntimeContext {
+            bindings: Some(bindings),
+            cleanup,
+        }));
+        self
+    }
+
+    pub(crate) fn with_cleanup_context(mut self, cleanup: ServerCleanupHandle) -> Self {
+        self.runtime = Some(Arc::new(RuntimeContext {
+            bindings: None,
+            cleanup,
+        }));
+        self
+    }
+
+    pub(crate) fn bind_builder(
+        &self,
+        builder: drasi_lib::DrasiLibBuilder,
+    ) -> anyhow::Result<drasi_lib::DrasiLibBuilder> {
+        match self
+            .runtime
+            .as_ref()
+            .and_then(|context| context.bindings.as_ref())
+        {
+            Some(bindings) => bindings.apply_to(builder),
+            None => Ok(builder),
+        }
+    }
+
+    pub(crate) fn cleanup_handle(&self) -> Option<ServerCleanupHandle> {
+        self.runtime.as_ref().map(|context| context.cleanup.clone())
+    }
+
+    pub(crate) fn plugin_log_registry(
+        &self,
+    ) -> Option<Arc<drasi_lib::observability::ComponentLogRegistry>> {
+        self.runtime
+            .as_ref()?
+            .bindings
+            .as_ref()
+            .map(|bindings| bindings.logging().registry())
+    }
+
+    pub(crate) async fn publish_instance(
+        &self,
+        id: String,
+        instance: Arc<DrasiLib>,
+    ) -> anyhow::Result<()> {
+        let mut instances = self.instances.write().await;
+        let publish = || {
+            anyhow::ensure!(!instances.contains_key(&id), "Instance already exists");
+            instances.insert(id, instance);
+            Ok(())
+        };
+        if let Some(context) = &self.runtime {
+            if let Some(request) =
+                ManagementRequest::current().filter(|request| request.belongs_to(&context.cleanup))
+            {
+                request.publish(publish)
+            } else {
+                context.cleanup.publish(publish)
+            }
+        } else {
+            publish()
+        }
     }
 
     pub(crate) fn configuration_stores(
@@ -185,5 +270,48 @@ impl InstanceRegistry {
 impl Default for InstanceRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TelemetryBindings;
+    use drasi_lib::observability::{
+        ComponentLogRuntime, LogPolicy, TelemetryProfile, TelemetrySettings,
+    };
+
+    // Break caught: progress collection waits for management's registry lock
+    // or stops observing the authoritative map after a busy sample.
+    #[tokio::test]
+    async fn metrics_reader_omits_busy_registry_and_resumes_actual_instances() -> anyhow::Result<()>
+    {
+        let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
+        let core = Arc::new(
+            TelemetryBindings::new(
+                TelemetrySettings::new(TelemetryProfile::Off),
+                logging.clone(),
+            )
+            .apply_to(DrasiLib::builder().with_id("metrics-reader"))?
+            .build()
+            .await?,
+        );
+        let registry = InstanceRegistry::new();
+        let reader = registry.metrics_reader();
+        let busy = registry.instances.write().await;
+        let error = reader().err().expect("busy metrics reader must not wait");
+        assert!(error.to_string().contains("busy"));
+        assert!(error.to_string().contains("omitted"));
+        drop(busy);
+        registry
+            .publish_instance("metrics-reader".into(), core.clone())
+            .await?;
+        let instances = reader()?;
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].0, "metrics-reader");
+        assert!(Arc::ptr_eq(&instances[0].1, &core));
+        core.shutdown().await?;
+        logging.shutdown(std::time::Duration::from_secs(5)).await?;
+        Ok(())
     }
 }

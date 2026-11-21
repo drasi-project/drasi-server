@@ -1039,7 +1039,7 @@ async fn standalone_journal_transition_refuses_pending_delivery_and_preserves_dr
         .await?
         .context("pending delivery")?
         .into_parts()
-        .1
+        .2
         .context("completion")?
         .complete(HandlingOutcome::Handled)
         .await?;

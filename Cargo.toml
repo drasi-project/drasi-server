@@ -19,6 +19,7 @@ exclude = ["examples/sse-cli"]
 [workspace.package]
 rust-version = "1.95.0"
 
+
 [package]
 rust-version.workspace = true
 name = "drasi-server"
@@ -42,6 +43,7 @@ path = "src/main.rs"
 # Drasi dependencies use the existing sibling checkout, including local edits.
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
 drasi-lib = { path = "../drasi-core/lib", features = [
+  "otel-context",
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -70,7 +72,7 @@ drasi-wal-redb = { path = "../drasi-core/components/wals/redb" }
 drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["registry", "fetcher", "watcher", "otel-context"] }
 drasi-computation-bridge-common = { path = "../drasi-core/components/computation-plugins/common/bridge" }
 drasi-computation-source-bridge = { path = "../drasi-core/components/computation-plugins/sources/bridge" }
 drasi-computation-sink-bridge = { path = "../drasi-core/components/computation-plugins/sinks/bridge" }
@@ -82,6 +84,7 @@ tokio = { version = "1.53.3", features = ["full"] }
 axum = "0.7"
 bytes = "1.6"
 futures-util = "0.3"
+futures = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -89,6 +92,9 @@ serde_yaml = "0.9"
 anyhow = "1.0"
 async-trait = "0.1"
 log = "0.4"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt", "registry"] }
+tracing-log = "=0.2.0"
 chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 rust-embed = "8"
@@ -113,15 +119,27 @@ toml = "0.8"
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
 percent-encoding = "2"
-opentelemetry = { version = "0.33.1", default-features = false, features = ["metrics"] }
-opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["metrics"] }
-opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["metrics", "http-json", "reqwest-blocking-client", "reqwest-rustls"] }
+opentelemetry = { version = "=0.33.1", default-features = false, features = ["metrics", "trace"] }
+opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["metrics", "trace", "experimental_metrics_custom_reader"] }
+opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["metrics", "trace", "http-json", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
+opentelemetry-proto = { version = "=0.33.1", default-features = false, features = ["metrics", "trace", "gen-tonic-messages"] }
+prost = "=0.14.4"
+tracing-opentelemetry = { version = "=0.34.0", default-features = false }
 reqwest_otel = { version = "0.13.4", package = "reqwest", default-features = false, features = ["blocking", "rustls"] }
+metrics = "=0.24.6"
+metrics-exporter-prometheus = { version = "=0.17.2", default-features = false }
+metrics-opentelemetry = "=0.24033.1"
+opentelemetry-http = { version = "=0.33.1", default-features = false }
+metrics-process = { version = "=2.4.3", default-features = false }
 
 [dev-dependencies]
+tokio = { version = "1.53.3", features = ["test-util"] }
 drasi-computation-transformer-query = { path = "../drasi-core/components/computation-plugins/transformers/query" }
+# Test-only: call matched SDK fixture exports and copied plugin libraries.
+drasi-computation-plugin-sdk = { path = "../drasi-core/components/computation-plugin-sdk" }
+libloading = "=0.8.9"
+opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["trace", "testing"] }
 # Testing utilities
-tracing = "0.1"
 tempfile = "3.8"
 mockall = "0.12"
 tokio-test = "0.4"
@@ -134,7 +152,6 @@ test-case = "3.3"
 wiremock = "=0.6.5"
 
 # Additional testing dependencies
-futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"

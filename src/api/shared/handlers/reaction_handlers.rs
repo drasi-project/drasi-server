@@ -451,6 +451,14 @@ pub async fn stream_reaction_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
+    stream_reaction_logs_with_cleanup(core, id, None).await
+}
+
+pub(crate) async fn stream_reaction_logs_with_cleanup(
+    core: Arc<drasi_lib::DrasiLib>,
+    id: String,
+    cleanup: Option<crate::server::ServerCleanupHandle>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     let name = resolve_component_name(&core, &id, "reaction").await?;
     core.get_reaction_status_by_name(&name)
         .await
@@ -471,7 +479,12 @@ pub async fn stream_reaction_logs(
         }
     })
     .filter_map(sse_event_async);
-    let stream = history_stream.chain(live_stream);
+    let stream = history_stream.chain(live_stream).take_until(async move {
+        match cleanup {
+            Some(cleanup) => cleanup.admission_closed().await,
+            None => std::future::pending::<()>().await,
+        }
+    });
     Ok(Sse::new(stream))
 }
 
