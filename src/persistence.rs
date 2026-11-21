@@ -498,7 +498,7 @@ impl ConfigPersistence {
         wrapper_config.instances = instance_configs;
 
         // Validate before saving
-        wrapper_config.validate()?;
+        wrapper_config.validate_for_persistence()?;
 
         // Use atomic write: write to temp file, then rename
         let temp_path = self.config_file_path.with_extension("tmp");
@@ -1681,5 +1681,59 @@ mod tests {
         persist_after_operation(&None, "anything")
             .await
             .expect("None config persistence should be Ok");
+    }
+
+    #[tokio::test]
+    async fn telemetry_references_survive_saves_without_reresolving_credentials() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+        let mut config: DrasiServerConfig = serde_json::from_value(serde_json::json!({
+            "telemetry": {
+                "profile": "${OBS02_SAVED_PROFILE:-basic}",
+                "tracing": {
+                    "endpoint": "${OBS02_SAVED_ENDPOINT:-https://collector.example/v1/traces}",
+                    "protocol": "http/protobuf",
+                    "headers": {"authorization": "${OBS02_SAVED_AUTH}"}
+                },
+                "metrics": {"backend": "none"}
+            }
+        }))
+        .unwrap();
+        let overrides = HashMap::from([(
+            "OBS02_SAVED_AUTH".to_string(),
+            "Bearer transient-fixture-value".to_string(),
+        )]);
+        config
+            .resolved_telemetry(&DtoMapper::with_overrides(overrides), 8080, true)
+            .unwrap();
+        let expected = serde_json::to_value(&config.telemetry).unwrap();
+        let save = |config: &DrasiServerConfig| {
+            ConfigPersistence::new(
+                cfg_path.clone(),
+                InstanceRegistry::new(),
+                "127.0.0.1".to_string(),
+                8080,
+                "info".to_string(),
+                true,
+                config,
+            )
+            .unwrap()
+        };
+        save(&config).save().await.unwrap();
+        let saved = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(!saved.contains("transient-fixture-value"));
+        let restored: DrasiServerConfig = serde_yaml::from_str(&saved).unwrap();
+        assert_eq!(serde_json::to_value(restored.telemetry).unwrap(), expected);
+        // Saving must not need a resolver even for a retained, unsupported Secret reference.
+        config.telemetry.as_mut().unwrap().tracing.endpoint = Some(ConfigValue::Secret {
+            name: "endpoint-reference".into(),
+        });
+        save(&config).save().await.unwrap();
+        let restored: DrasiServerConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
+        assert!(matches!(
+            restored.telemetry.unwrap().tracing.endpoint,
+            Some(ConfigValue::Secret { .. })
+        ));
     }
 }

@@ -14,13 +14,11 @@
 
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
-use indexmap::IndexMap;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
@@ -43,11 +41,21 @@ use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
+use crate::{telemetry::StandaloneTelemetry, TelemetryBindings};
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::BootstrapPluginDescriptor;
 use drasi_wal_redb::RedbWalProvider;
+
+pub(crate) mod lifecycle;
+pub use lifecycle::{
+    CleanupPhase, CleanupStatus, ServerCleanupError, ServerCleanupHandle, ServerPreparation,
+};
+
+#[cfg(test)]
+#[path = "server/lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -61,10 +69,31 @@ pub struct DrasiServer {
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     plugin_orchestrator: Arc<PluginOrchestrator>,
     cors_allowed_origins: Vec<String>,
-    watcher_handle: Option<tokio::task::JoinHandle<()>>,
     configuration_stores: crate::managed_configuration::ConfigurationStores,
-    metrics: crate::telemetry::MetricsRuntime,
+    instance_registry: InstanceRegistry,
     metrics_config: Option<crate::telemetry::MetricsConfig>,
+    cleanup: ServerCleanupHandle,
+    new_telemetry: bool,
+    prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
+    inspection: Option<Arc<api::v1::telemetry_handlers::TelemetryInspection>>,
+}
+
+impl Drop for DrasiServer {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup.request_shutdown() {
+            log::error!("Server cleanup remains owned but could not be scheduled: {error}");
+        }
+    }
+}
+
+struct RunningWait(ServerCleanupHandle);
+
+impl Drop for RunningWait {
+    fn drop(&mut self) {
+        if let Err(error) = self.0.request_shutdown() {
+            log::error!("Server run waiter ended; cleanup remains owned: {error}");
+        }
+    }
 }
 
 struct PreparedInstance {
@@ -75,6 +104,13 @@ struct PreparedInstance {
     /// runtime-created sources can resolve `bootstrapProvider: <id>`
     /// references. Empty for programmatically built instances.
     bootstrap_providers: HashMap<String, BootstrapProviderConfig>,
+    published: bool,
+}
+
+enum FileTelemetry {
+    Standalone,
+    Borrowed(TelemetryBindings),
+    Initialized(TelemetryBindings),
 }
 
 impl DrasiServer {
@@ -86,8 +122,162 @@ impl DrasiServer {
         skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
-        let mut config = load_config_file(&config_path)?;
-        config.validate()?;
+        Self::prepare_new(config_path, port, plugins_dir, skip_verification, enable_ui)
+            .finish()
+            .await
+    }
+
+    /// Prepare configured startup with owned logging before plugin construction.
+    pub fn prepare_new(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+    ) -> ServerPreparation<Self> {
+        Self::prepare_file(
+            config_path,
+            port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            ServerCleanupHandle::bootstrap(),
+            FileTelemetry::Standalone,
+        )
+    }
+
+    /// Borrow host integrations; a simultaneous YAML telemetry section rejects.
+    pub fn prepare_new_with_telemetry(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        bindings: TelemetryBindings,
+    ) -> ServerPreparation<Self> {
+        Self::prepare_file(
+            config_path,
+            port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            ServerCleanupHandle::bootstrap(),
+            FileTelemetry::Borrowed(bindings),
+        )
+    }
+
+    /// Transfer an already initialized standalone owner without reinstalling globals.
+    pub fn prepare_new_with_runtime(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        runtime: StandaloneTelemetry,
+    ) -> ServerPreparation<Self> {
+        let (bindings, cleanup) = runtime.into_server_parts();
+        Self::prepare_file(
+            config_path,
+            port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            cleanup,
+            FileTelemetry::Initialized(bindings),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_file(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        cleanup: ServerCleanupHandle,
+        telemetry: FileTelemetry,
+    ) -> ServerPreparation<Self> {
+        let submitted = (|| {
+            let admission = cleanup.admit()?;
+            ServerPreparation::start_blocking(admission, move |owner| {
+                tokio::runtime::Handle::try_current()?.block_on(Self::prepare_file_inner(
+                    config_path,
+                    port,
+                    plugins_dir,
+                    skip_verification,
+                    enable_ui,
+                    owner,
+                    telemetry,
+                ))
+            })
+        })();
+        match submitted {
+            Ok(preparation) => preparation,
+            Err(error) => ServerPreparation::failed(cleanup, error),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn prepare_file_inner(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        cleanup: ServerCleanupHandle,
+        telemetry: FileTelemetry,
+    ) -> Result<Self> {
+        let mut config = crate::config::loader::load_config_file_with_overrides(
+            &config_path,
+            Some(port),
+            Some(enable_ui),
+        )?;
+        let resolved_settings = map_server_settings(&config, &DtoMapper::new())?;
+        let new_telemetry =
+            config.telemetry.is_some() || matches!(&telemetry, FileTelemetry::Borrowed(_));
+        anyhow::ensure!(
+            !matches!(&telemetry, FileTelemetry::Borrowed(_)) || config.telemetry.is_none(),
+            "Configured telemetry and borrowed telemetry bindings are mutually exclusive"
+        );
+        let effective = config.resolved_telemetry(&DtoMapper::new(), port, enable_ui)?;
+        if let Some(effective) = &effective {
+            effective.ensure_runtime_available()?;
+        }
+        let runtime_registry = InstanceRegistry::new();
+        cleanup.retain_registry(runtime_registry.clone())?;
+        let mut prometheus = None;
+        let mut inspection = None;
+        let bindings = match telemetry {
+            FileTelemetry::Borrowed(bindings) => {
+                cleanup.retain_bindings(bindings.clone())?;
+                bindings
+            }
+            owned => {
+                let bindings = match owned {
+                    FileTelemetry::Initialized(bindings) => bindings,
+                    _ => StandaloneTelemetry::initialize_logging(
+                        &cleanup,
+                        resolved_settings.log_level.clone(),
+                    )?,
+                };
+                if let Some(effective) = effective {
+                    let collection = crate::telemetry::runtime::prepare_collection(
+                        &cleanup,
+                        effective,
+                        &runtime_registry,
+                        bindings,
+                    )
+                    .await?;
+                    prometheus = collection.prometheus;
+                    inspection = collection.inspection;
+                    collection.bindings
+                } else {
+                    bindings
+                }
+            }
+        };
+        let runtime_registry =
+            runtime_registry.with_runtime_context(bindings.clone(), cleanup.clone());
 
         // CLI --skip-verification flag overrides config (disables when set)
         if skip_verification {
@@ -259,17 +449,7 @@ impl DrasiServer {
         let mut startup_plugin_records = Vec::new();
         let mut plugin_load_stats: Option<crate::dynamic_loading::PluginLoadStats> = None;
         if plugins_dir.exists() {
-            let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
-                instance_id: String::new(),
-                runtime_handle: tokio::runtime::Handle::current(),
-                log_registry: drasi_lib::observability::get_or_init_global_registry(),
-                source_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::observability::ComponentEventHistory::new(),
-                )),
-                reaction_event_history: Arc::new(tokio::sync::RwLock::new(
-                    drasi_lib::observability::ComponentEventHistory::new(),
-                )),
-            });
+            let callback_ctx = bindings.plugin_callback_context()?;
             let load_stats = crate::dynamic_loading::load_plugins(
                 &plugins_dir,
                 &mut plugin_registry,
@@ -294,6 +474,14 @@ impl DrasiServer {
             plugin_ops,
             verification_config,
         ));
+        plugin_orchestrator
+            .bind_instances(runtime_registry.clone())
+            .await?;
+        cleanup.retain_runtime(
+            runtime_registry.clone(),
+            plugin_registry.clone(),
+            plugin_orchestrator.clone(),
+        )?;
 
         // Register startup-loaded plugins in the orchestrator
         plugin_orchestrator
@@ -306,7 +494,7 @@ impl DrasiServer {
             .await?;
 
         // Start plugin hot-reload watcher if configured
-        let start_watcher = || {
+        let start_watcher = || async {
             if config.hot_reload_plugins {
                 use drasi_host_sdk::watcher::{PluginWatcher, PluginWatcherConfig};
 
@@ -314,24 +502,25 @@ impl DrasiServer {
                     plugins_dir: plugins_dir.clone(),
                     debounce: std::time::Duration::from_millis(config.hot_reload_debounce_ms),
                 };
-                let mut watcher = PluginWatcher::new(watcher_config);
+                let watcher = PluginWatcher::new(watcher_config);
                 let mut rx = watcher.subscribe();
                 let orchestrator_for_watcher = plugin_orchestrator.clone();
+                let watcher_admission = cleanup.admit()?;
+                let cleanup_for_watcher = cleanup.clone();
 
-                // Start the filesystem watcher
-                if let Err(e) = watcher.start() {
-                    warn!("Failed to start notify-based plugin watcher: {e}. Falling back to polling.");
-                    if let Err(e) = watcher.start_polling() {
-                        warn!("Failed to start polling plugin watcher: {e}");
-                    }
-                }
+                let backend = watcher.prepare_owned_polling();
+                cleanup.retain_watcher(backend.clone())?;
+                backend.start().await.map_err(anyhow::Error::new)?;
 
                 // Spawn a task that receives file events and applies the configured policy
-                let handle = tokio::spawn(async move {
-                    // Keep the watcher alive for the duration of this task
-                    let _watcher = watcher;
+                cleanup.start_watcher(watcher_admission, async move {
                     loop {
-                        match rx.recv().await {
+                        let event = tokio::select! {
+                            biased;
+                            _ = cleanup_for_watcher.admission_closed() => break,
+                            event = rx.recv() => event,
+                        };
+                        match event {
                             Ok(event) => {
                                 use drasi_host_sdk::plugin_types::PluginFileEvent;
                                 match event {
@@ -365,20 +554,19 @@ impl DrasiServer {
                             }
                         }
                     }
-                });
+                })?;
                 info!(
-                    "Plugin hot-reload enabled (debounce: {}ms)",
+                    "Plugin hot-reload enabled (owned polling, debounce/scan interval: {}ms)",
                     config.hot_reload_debounce_ms
                 );
-                Some(handle)
+                Ok::<_, anyhow::Error>(())
             } else {
-                None
+                Ok(())
             }
         };
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
-        let resolved_settings = map_server_settings(&config, &mapper)?;
         let resolved_instances = config.resolved_instances(&mapper)?;
 
         // Determine persistence and read-only status
@@ -486,6 +674,7 @@ impl DrasiServer {
                 let mut builder = DrasiLib::builder()
                     .with_id(&instance.id)
                     .with_allow_external_component_ids(true);
+                builder = runtime_registry.bind_builder(builder)?;
 
                 // Set capacity defaults if configured (resolve env vars)
                 if let Some(capacity) = instance.default_priority_queue_capacity {
@@ -615,12 +804,17 @@ impl DrasiServer {
                     Some(seed)
                 };
                 let core = builder.build().await.context("Failed to create DrasiLib")?;
+                cleanup.retain_core(Arc::new(core.clone()))?;
+                runtime_registry
+                    .publish_instance(instance.id.clone(), Arc::new(core.clone()))
+                    .await?;
 
                 let instance_id = instance.id.clone();
                 instances.push(PreparedInstance {
                     id_hint: Some(instance.id),
                     core: core.clone(),
                     bootstrap_providers,
+                    published: true,
                 });
                 if let Some(seed) = in_memory {
                     crate::managed_configuration::seed_in_memory(&core, seed)
@@ -648,17 +842,8 @@ impl DrasiServer {
             Ok::<_, anyhow::Error>(())
         }
         .await;
-        if let Err(error) = preparation {
-            return Err(crate::computation::cleanup_failed_preparation(
-                instances
-                    .into_iter()
-                    .map(|instance| instance.core)
-                    .collect(),
-                error,
-            )
-            .await);
-        }
-        let watcher_handle = start_watcher();
+        preparation?;
+        start_watcher().await?;
 
         Ok(Self {
             instances,
@@ -671,11 +856,14 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: config.cors_allowed_origins.clone(),
-            watcher_handle,
             configuration_stores,
+            instance_registry: runtime_registry,
             metrics_config: config.metrics.clone(),
-            metrics: Default::default(),
             loaded_configuration: Some(config),
+            cleanup,
+            new_telemetry,
+            prometheus,
+            inspection,
         })
     }
 
@@ -688,32 +876,14 @@ impl DrasiServer {
         port: u16,
         config_file_path: Option<String>,
     ) -> Self {
-        let mut plugin_registry = PluginRegistry::new();
-        register_core_plugins(&mut plugin_registry);
-        let plugin_registry = Arc::new(RwLock::new(plugin_registry));
-        let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
-        let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
-        Self {
-            instances: vec![PreparedInstance {
-                id_hint: None,
-                core,
-                bootstrap_providers: HashMap::new(),
-            }],
+        Self::from_cores(
+            vec![(core, None)],
             enable_api,
             enable_ui,
             host,
             port,
             config_file_path,
-            read_only: Arc::new(false), // Programmatic mode assumes write access
-            plugin_registry,
-            plugin_orchestrator,
-            cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            watcher_handle: None,
-            configuration_stores: Default::default(),
-            loaded_configuration: None,
-            metrics_config: None,
-            metrics: Default::default(),
-        }
+        )
     }
 
     /// Create a DrasiServer from multiple pre-built cores (for builder multi-instance usage)
@@ -725,12 +895,76 @@ impl DrasiServer {
         port: u16,
         config_file_path: Option<String>,
     ) -> Self {
+        let cleanup = ServerCleanupHandle::prepared(
+            cores
+                .iter()
+                .map(|(core, _)| Arc::new(core.clone()))
+                .collect(),
+        );
+        Self::assemble(
+            cores,
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            cleanup,
+            false,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_prepared_cores(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        cleanup: ServerCleanupHandle,
+        new_telemetry: bool,
+        registry: InstanceRegistry,
+    ) -> Self {
+        let cores = cores
+            .into_iter()
+            .map(|(core, _)| {
+                let id = core.get_config().id.clone();
+                (core, Some(id))
+            })
+            .collect();
+        Self::assemble(
+            cores,
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            cleanup,
+            new_telemetry,
+            Some(registry),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assemble(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        cleanup: ServerCleanupHandle,
+        new_telemetry: bool,
+        registry: Option<InstanceRegistry>,
+    ) -> Self {
         let instances = cores
             .into_iter()
             .map(|(core, id_hint)| PreparedInstance {
                 id_hint,
                 core,
                 bootstrap_providers: HashMap::new(),
+                published: registry.is_some(),
             })
             .collect();
 
@@ -739,6 +973,12 @@ impl DrasiServer {
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
         let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
         let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
+        let instance_registry = registry.unwrap_or_else(|| match cleanup.bindings() {
+            Some(bindings) => {
+                InstanceRegistry::new().with_runtime_context(bindings, cleanup.clone())
+            }
+            None => InstanceRegistry::new().with_cleanup_context(cleanup.clone()),
+        });
         Self {
             instances,
             enable_api,
@@ -750,12 +990,133 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            watcher_handle: None,
             configuration_stores: Default::default(),
+            instance_registry,
             loaded_configuration: None,
             metrics_config: None,
-            metrics: Default::default(),
+            cleanup,
+            new_telemetry,
+            prometheus: None,
+            inspection: None,
         }
+    }
+
+    pub(crate) fn with_prepared_prometheus(
+        mut self,
+        prometheus: Option<crate::telemetry::prometheus::PreparedPrometheus>,
+    ) -> Self {
+        self.prometheus = prometheus;
+        self
+    }
+
+    pub(crate) fn with_prepared_inspection(
+        mut self,
+        inspection: Option<Arc<api::v1::telemetry_handlers::TelemetryInspection>>,
+    ) -> Self {
+        self.inspection = inspection;
+        self
+    }
+
+    /// Address retained instance cleanup independently of Server serving.
+    pub fn cleanup_handle(&self) -> ServerCleanupHandle {
+        self.cleanup.clone()
+    }
+
+    /// Check an already-configured Core without injecting or replacing handles.
+    ///
+    /// The caller owns borrowed providers. Exposed policy, scope, capability
+    /// and logging identity are checked; opaque collector/recorder identity
+    /// and exporter health remain the caller's preconfiguration obligations.
+    ///
+    /// ```no_run
+    /// use drasi_server::{DrasiLib, DrasiServer, TelemetryBindings};
+    /// use std::time::Duration;
+    /// use tokio::time::Instant;
+    ///
+    /// # async fn example(core: DrasiLib, bindings: TelemetryBindings) -> anyhow::Result<()> {
+    /// let server = DrasiServer::from_core_with_telemetry(
+    ///     core, false, false, "127.0.0.1".into(), 8080, None, bindings,
+    /// ).await?;
+    /// server.cleanup_handle()
+    ///     .wait_until(Instant::now() + Duration::from_secs(30)).await?;
+    /// // Borrowed providers are still open and remain application-owned.
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn from_core_with_telemetry(
+        core: DrasiLib,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        bindings: crate::TelemetryBindings,
+    ) -> Result<Self> {
+        Self::from_cores_with_telemetry(
+            vec![(core, None)],
+            enable_api,
+            enable_ui,
+            host,
+            port,
+            config_file_path,
+            bindings,
+        )
+        .await
+    }
+
+    /// Retain all supplied Cores through checked validation and any rollback.
+    pub async fn from_cores_with_telemetry(
+        cores: Vec<(DrasiLib, Option<String>)>,
+        enable_api: bool,
+        enable_ui: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+        bindings: crate::TelemetryBindings,
+    ) -> Result<Self> {
+        let cleanup = ServerCleanupHandle::prepared(
+            cores
+                .iter()
+                .map(|(core, _)| Arc::new(core.clone()))
+                .collect(),
+        );
+        let submitted = (|| {
+            let admission = cleanup.admit()?;
+            ServerPreparation::start(admission, move |owner| async move {
+                owner.retain_bindings(bindings.clone())?;
+                let registry =
+                    InstanceRegistry::new().with_runtime_context(bindings.clone(), owner.clone());
+                owner.retain_registry(registry.clone())?;
+                let mut ids = std::collections::HashSet::new();
+                for (core, _) in &cores {
+                    bindings.validate_prebuilt(core).await?;
+                    anyhow::ensure!(
+                        ids.insert(core.get_config().id.clone()),
+                        "Duplicate prebuilt Core instance ID"
+                    );
+                    registry
+                        .publish_instance(core.get_config().id.clone(), Arc::new(core.clone()))
+                        .await?;
+                }
+                Ok(Self::from_prepared_cores(
+                    cores,
+                    enable_api,
+                    enable_ui,
+                    host,
+                    port,
+                    config_file_path,
+                    owner,
+                    true,
+                    registry,
+                ))
+            })
+        })();
+        match submitted {
+            Ok(preparation) => preparation,
+            Err(error) => ServerPreparation::failed(cleanup, error),
+        }
+        .finish()
+        .await
     }
 
     /// Check if we have write access to the config file
@@ -766,41 +1127,44 @@ impl DrasiServer {
 
     /// Configure optional OTLP progress metrics for a programmatically built server.
     pub fn with_metrics(mut self, config: crate::telemetry::MetricsConfig) -> Result<Self> {
+        anyhow::ensure!(
+            !self.new_telemetry,
+            "Legacy progress metrics cannot be combined with configured telemetry or borrowed telemetry bindings"
+        );
         config.validate()?;
         self.metrics_config = Some(config);
         Ok(self)
     }
 
-    pub async fn run(mut self) -> Result<()> {
-        let cores = self
-            .instances
-            .iter()
-            .map(|instance| instance.core.clone())
-            .collect();
-        let result = self.run_until_shutdown().await;
-        let metrics_cleanup = self.metrics.shutdown().await;
-        if let Some(handle) = self.watcher_handle.take() {
-            handle.abort();
-            let _ = handle.await;
+    /// Request the same cleanup attempt as signals, cancellation and startup
+    /// rollback. The first request anchors the overall 30-second wait.
+    pub async fn shutdown(&self) -> Result<()> {
+        self.cleanup.shutdown().await
+    }
+
+    /// Consume the Server, retaining a cleanup address before calling this if
+    /// the embedding application may cancel its wait or keep Tokio alive later.
+    pub async fn run(self) -> Result<()> {
+        let cleanup = self.cleanup.clone();
+        let _waiter = RunningWait(cleanup.clone());
+        let work = cleanup.start_management(move || async move {
+            let mut server = self;
+            if let Err(error) = server.run_until_shutdown().await {
+                server.cleanup.record_failure(error);
+            }
+        })?;
+        cleanup.admission_closed().await;
+        let outcome = cleanup.shutdown().await;
+        if outcome.is_ok() {
+            work.finish().await?;
+            info!("Drasi Server shutdown complete");
         }
-        let result = match (result, metrics_cleanup) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
-            (Err(error), Err(cleanup)) => Err(anyhow::Error::new(
-                drasi_lib::error::OperationFailures::new(
-                    "Server and metrics shutdown failed",
-                    vec![error, cleanup],
-                ),
-            )),
-        };
-        match result {
-            Ok(()) => Ok(()),
-            Err(error) => Err(crate::computation::cleanup_failed_preparation(cores, error).await),
-        }
+        outcome
     }
 
     #[allow(clippy::print_stdout)]
     async fn run_until_shutdown(&mut self) -> Result<()> {
+        let startup = self.cleanup.admit()?;
         #[cfg(unix)]
         let (mut interrupt, mut terminate) = {
             use tokio::signal::unix::{signal, SignalKind};
@@ -809,6 +1173,24 @@ impl DrasiServer {
                 signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?,
             )
         };
+        let signal_cleanup = self.cleanup.clone();
+        self.cleanup.start_signal(async move {
+            #[cfg(unix)]
+            {
+                tokio::select! {
+                    _ = signal_cleanup.admission_closed() => Ok(()),
+                    received = interrupt.recv() => received.context("SIGINT signal stream closed"),
+                    received = terminate.recv() => received.context("SIGTERM signal stream closed"),
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                tokio::select! {
+                    _ = signal_cleanup.admission_closed() => Ok(()),
+                    result = tokio::signal::ctrl_c() => result.context("Failed to listen for Ctrl+C"),
+                }
+            }
+        })?;
 
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
@@ -828,7 +1210,15 @@ impl DrasiServer {
         );
         info!("Initializing Drasi Server");
 
-        let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
+        let registry = self
+            .instance_registry
+            .clone()
+            .with_configuration_stores(self.configuration_stores.clone());
+        self.cleanup.retain_runtime(
+            registry.clone(),
+            self.plugin_registry.clone(),
+            self.plugin_orchestrator.clone(),
+        )?;
         let mut bootstrap_providers_by_id: Vec<(String, HashMap<String, BootstrapProviderConfig>)> =
             Vec::new();
 
@@ -849,46 +1239,35 @@ impl DrasiServer {
             let core = Arc::new(core);
             info!("Starting ComputationGraph instance '{id}'");
             println!("  Instance '{id}': ComputationGraph");
-            // The default signal disposition was replaced above, so a stalled
-            // start must still observe shutdown requests.
-            #[cfg(unix)]
-            {
-                let started = tokio::select! {
-                    result = crate::managed_configuration::start_instance(&core) => Some(result),
-                    _ = interrupt.recv() => None,
-                    _ = terminate.recv() => None,
-                };
-                if let Some(result) = started {
-                    result?;
-                } else {
+            // A stalled start must still observe shutdown requests. Server
+            // cleanup owns every prepared core and shuts them down.
+            let started = tokio::select! {
+                result = crate::managed_configuration::start_instance(&core) => Some(result),
+                _ = self.cleanup.admission_closed() => None,
+            };
+            match started {
+                Some(result) => result?,
+                None => {
                     warn!("Shutdown requested while starting instance '{id}'");
-                    let started = instance_map.values().cloned().chain([core.clone()]);
-                    let cleanup = async {
-                        for started in started {
-                            if let Err(error) = started.shutdown().await {
-                                error!("Failed to shut down a starting instance: {error}");
-                            }
-                        }
-                    };
-                    if tokio::time::timeout(Duration::from_secs(30), cleanup)
-                        .await
-                        .is_err()
-                    {
-                        error!("Instances did not shut down within 30 seconds");
-                    }
                     anyhow::bail!("Drasi Server shutdown requested during startup");
                 }
             }
-            #[cfg(not(unix))]
-            crate::managed_configuration::start_instance(&core).await?;
             bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
-            instance_map.insert(id, core);
+            if !instance.published {
+                registry.publish_instance(id, core).await?;
+            }
         }
 
-        let registry = InstanceRegistry::from_map(instance_map)
-            .with_configuration_stores(self.configuration_stores.clone());
         if let Some(config) = &self.metrics_config {
-            self.metrics.start(config.clone(), &registry).await?;
+            let metrics = Arc::new(tokio::sync::Mutex::new(
+                crate::telemetry::MetricsRuntime::default(),
+            ));
+            self.cleanup.retain_metrics(metrics.clone())?;
+            metrics
+                .lock()
+                .await
+                .start(config.clone(), &registry)
+                .await?;
         }
         self.plugin_orchestrator
             .bind_instances(registry.clone())
@@ -941,155 +1320,57 @@ impl DrasiServer {
             (None, None)
         };
 
-        // Start web API if enabled
-        let (api_shutdown, api_shutdown_receiver) = tokio::sync::oneshot::channel();
-        let mut api_task = if self.enable_api {
-            let task = self
-                .start_api(
-                    registry.clone(),
-                    config_persistence.clone(),
-                    solutions_dir,
-                    api_shutdown_receiver,
-                )
+        let management = if self.enable_api {
+            let app = self
+                .management_router(registry.clone(), config_persistence.clone(), solutions_dir)
                 .await?;
-            info!(
-                "Drasi Server started successfully with API on port {}",
-                self.port
-            );
-            Some(task)
+            let socket = tokio::net::TcpListener::bind((self.host.as_str(), self.port)).await?;
+            Some((socket, app))
         } else {
-            info!("Drasi Server started successfully (API disabled)");
             None
         };
-
-        #[cfg(unix)]
-        let signal_result = tokio::select! {
-            received = interrupt.recv() => received.context("SIGINT signal stream closed"),
-            received = terminate.recv() => received.context("SIGTERM signal stream closed"),
+        let prometheus = match &self.prometheus {
+            Some(prometheus) => prometheus.bind_separate(&self.host).await?,
+            None => None,
         };
-        #[cfg(not(unix))]
-        let signal_result = tokio::signal::ctrl_c()
-            .await
-            .context("Failed to listen for Ctrl+C");
+        // All required sockets are bound before either listener can serve or
+        // collection is activated. Failure above drops every partial binding.
+        if let Some((socket, app)) = management {
+            self.cleanup
+                .serve_listener(lifecycle::ApiListener::Management, socket, app)?;
+        }
+        if let Some((socket, app)) = prometheus {
+            self.cleanup
+                .serve_listener(lifecycle::ApiListener::Prometheus, socket, app)?;
+        }
+        if self.metrics_config.is_none() {
+            self.cleanup.activate_collection().await?;
+        }
+        if self.cleanup.admission_is_open() {
+            self.cleanup.running()?;
+            if self.enable_api {
+                info!(
+                    "Drasi Server started successfully with API on port {}",
+                    self.port
+                );
+            } else {
+                info!("Drasi Server started successfully (API disabled)");
+            }
+        }
+        drop(startup);
+
+        self.cleanup.admission_closed().await;
 
         info!("Shutting down Drasi Server");
-        let _ = api_shutdown.send(());
-
-        let mut cores = Vec::new();
-        let mut failures = Vec::new();
-        let mut api_joined = false;
-        let shutdown_result = tokio::time::timeout(Duration::from_secs(30), async {
-            if let Err(error) = signal_result {
-                failures.push(error);
-            }
-
-            if let Some(handle) = self.watcher_handle.as_mut() {
-                handle.abort();
-                if let Err(error) = handle.await {
-                    if !error.is_cancelled() {
-                        failures.push(
-                            anyhow::Error::new(error).context("Plugin hot-reload watcher failed"),
-                        );
-                    }
-                    self.watcher_handle.take();
-                }
-                info!("Plugin hot-reload watcher stopped");
-            }
-
-            if let Some(task) = api_task.as_mut() {
-                match tokio::time::timeout(Duration::from_secs(5), &mut *task).await {
-                    Ok(result) => {
-                        api_joined = true;
-                        match result {
-                            Ok(Ok(())) => info!("Web API stopped"),
-                            Ok(Err(error)) => {
-                                failures.push(anyhow::Error::new(error).context("Web API failed"))
-                            }
-                            Err(error) => failures
-                                .push(anyhow::Error::new(error).context("Web API task failed")),
-                        }
-                    }
-                    Err(_) => {
-                        task.abort();
-                        failures.push(anyhow::anyhow!("Web API did not drain within 5 seconds"));
-                        if let Err(error) = (&mut *task).await {
-                            if !error.is_cancelled() {
-                                failures.push(
-                                    anyhow::Error::new(error)
-                                        .context("Web API task failed during cleanup"),
-                                );
-                            }
-                        }
-                        api_joined = true;
-                    }
-                }
-            }
-
-            cores = registry
-                .list()
-                .await
-                .into_iter()
-                .map(|(id, core)| (id, (*core).clone()))
-                .collect();
-            for (id, core) in &cores {
-                if let Err(error) = core.shutdown().await {
-                    error!("Failed to shut down instance '{id}': {error}");
-                    failures.push(
-                        anyhow::Error::from(error)
-                            .context(format!("Failed to shut down instance '{id}'")),
-                    );
-                }
-            }
-        })
-        .await
-        .context("Drasi Server shutdown timed out after 30 seconds");
-
-        if let Err(error) = shutdown_result {
-            failures.push(error);
-        }
-        if !api_joined {
-            if let Some(task) = api_task.as_mut() {
-                task.abort();
-                if let Err(error) = task.await {
-                    if !error.is_cancelled() {
-                        failures.push(
-                            anyhow::Error::new(error).context("Web API task failed during cleanup"),
-                        );
-                    }
-                }
-            }
-        }
-        if !failures.is_empty() {
-            if cores.is_empty() {
-                cores = registry
-                    .list()
-                    .await
-                    .into_iter()
-                    .map(|(id, core)| (id, (*core).clone()))
-                    .collect();
-            }
-            let error = anyhow::Error::new(drasi_lib::error::OperationFailures::new(
-                "Shutdown failed",
-                failures,
-            ));
-            return Err(crate::computation::cleanup_failed_preparation(
-                cores.into_iter().map(|(_, core)| core).collect(),
-                error,
-            )
-            .await);
-        }
-
-        info!("Drasi Server shutdown complete");
         Ok(())
     }
 
-    async fn start_api(
+    async fn management_router(
         &self,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
-        shutdown: tokio::sync::oneshot::Receiver<()>,
-    ) -> Result<tokio::task::JoinHandle<std::io::Result<()>>> {
+    ) -> Result<Router> {
         // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
         let registry_version = {
@@ -1196,6 +1477,23 @@ impl DrasiServer {
                 .allow_headers(tower_http::cors::Any)
         };
 
+        if let Some(prometheus) = &self.prometheus {
+            if prometheus.config.port.is_none() {
+                app = app.merge(prometheus.router()?);
+            }
+        }
+        if let Some(inspection) = &self.inspection {
+            // route_layer applies management admission to both routes, including
+            // their 405 responses, without wrapping the listener-wide 404 fallback.
+            app = app.merge(
+                api::v1::telemetry_handlers::telemetry_router(inspection.clone()).route_layer(
+                    axum::middleware::from_fn_with_state(
+                        registry.clone(),
+                        api::v1::routes::management_admission,
+                    ),
+                ),
+            );
+        }
         let app = app.layer(cors_layer);
 
         let addr = format!("{}:{}", self.host, self.port);
@@ -1206,19 +1504,7 @@ impl DrasiServer {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 
-        let listener = tokio::net::TcpListener::bind(&addr).await?;
-
-        Ok(tokio::spawn(async move {
-            let result = axum::serve(listener, app)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown.await;
-                })
-                .await;
-            if let Err(error) = &result {
-                error!("Web API server error: {error}");
-            }
-            result
-        }))
+        Ok(app)
     }
 }
 
@@ -1236,6 +1522,31 @@ pub fn register_core_plugins(registry: &mut PluginRegistry) {
 #[cfg(test)]
 #[path = "server/managed_tests.rs"]
 mod managed_tests;
+
+#[cfg(test)]
+async fn configured_test_server(
+    path: PathBuf,
+    port: u16,
+    plugins: PathBuf,
+    skip_verification: bool,
+    enable_ui: bool,
+) -> Result<DrasiServer> {
+    let logging =
+        tokio::task::spawn_blocking(drasi_lib::observability::init_default_subscriber).await??;
+    DrasiServer::prepare_new_with_telemetry(
+        path,
+        port,
+        plugins,
+        skip_verification,
+        enable_ui,
+        TelemetryBindings::new(
+            drasi_lib::observability::TelemetrySettings::default(),
+            logging,
+        ),
+    )
+    .finish()
+    .await
+}
 
 #[cfg(test)]
 mod single_runtime_tests {
@@ -1290,7 +1601,7 @@ mod single_runtime_tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("server.yaml");
         config.save_to_file(&path).unwrap();
-        let server = DrasiServer::new(
+        let server = configured_test_server(
             path.clone(),
             8080,
             directory.path().join("plugins"),
@@ -1373,6 +1684,8 @@ mod single_runtime_tests {
         assert!(core.is_running().await);
         assert!(!handle.desired_snapshot().lifecycle_policies[&definition.id].auto_start);
         core.shutdown().await.unwrap();
+        drop(handle);
+        drop(server);
 
         let mut config = config;
         let crate::computation::ComputationConfigInput::Definition(graph) =
@@ -1386,16 +1699,21 @@ mod single_runtime_tests {
         config.host = crate::api::models::ConfigValue::Static("127.0.0.1".into());
         config.port = crate::api::models::ConfigValue::Static(port);
         config.save_to_file(&path).unwrap();
-        let failed = DrasiServer::new(path, port, directory.path().join("plugins"), false, false)
-            .await
-            .unwrap();
+        let failed =
+            configured_test_server(path, port, directory.path().join("plugins"), false, false)
+                .await
+                .unwrap();
         let core = failed.instances[0].core.clone();
         let error = tokio::time::timeout(std::time::Duration::from_secs(10), failed.run())
             .await
             .expect("occupied API address must fail promptly")
             .unwrap_err();
         assert_eq!(
-            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+                .expect("startup failure must retain its original IO cause")
+                .kind(),
             std::io::ErrorKind::AddrInUse
         );
         assert!(!core.is_running().await);
@@ -1417,9 +1735,10 @@ mod single_runtime_tests {
         )
         .unwrap();
 
-        let configured = DrasiServer::new(config_path.clone(), 8080, plugins.clone(), false, false)
-            .await
-            .unwrap();
+        let configured =
+            configured_test_server(config_path.clone(), 8080, plugins.clone(), false, false)
+                .await
+                .unwrap();
         assert_eq!(configured.instances.len(), 2);
         for (instance, id) in configured.instances.iter().zip(["analytics", "monitoring"]) {
             assert_eq!(instance.core.get_current_config().await.unwrap().id, id);

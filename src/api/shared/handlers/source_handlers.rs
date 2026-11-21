@@ -519,6 +519,14 @@ pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
+    stream_source_logs_with_cleanup(core, id, None).await
+}
+
+pub(crate) async fn stream_source_logs_with_cleanup(
+    core: Arc<drasi_lib::DrasiLib>,
+    id: String,
+    cleanup: Option<crate::server::ServerCleanupHandle>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     let name = resolve_component_name(&core, &id, "source").await?;
     core.get_source_status_by_name(&name)
         .await
@@ -539,7 +547,13 @@ pub async fn stream_source_logs(
         }
     })
     .filter_map(sse_event_async);
-    let stream = history_stream.chain(live_stream);
+    // End only this Server's body; the registry may be borrowed by other hosts.
+    let stream = history_stream.chain(live_stream).take_until(async move {
+        match cleanup {
+            Some(cleanup) => cleanup.admission_closed().await,
+            None => std::future::pending::<()>().await,
+        }
+    });
     Ok(Sse::new(stream))
 }
 
@@ -625,8 +639,9 @@ pub async fn stop_source(
 /// This handler reads the source's configured host/port and forwards the request.
 pub async fn push_source_data(
     Extension(core): Extension<Arc<DrasiLib>>,
-    Extension(http_client): Extension<reqwest::Client>,
+    Extension(http_client): Extension<super::SourceProxyClient>,
     Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let name = resolve_component_name(&core, &id, "source").await?;
@@ -636,12 +651,16 @@ pub async fn push_source_data(
         .map_err(ErrorResponse::from)?;
 
     let props = info.properties;
-    let host = props
-        .get("host")
-        .and_then(|v| v.as_str())
-        .unwrap_or("127.0.0.1");
-    let port = props.get("port").and_then(|v| v.as_u64()).unwrap_or(8081);
-    let endpoint = props.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+    let host: String =
+        super::source_proxy::target_property(&props, "host", "127.0.0.1".to_string())
+            .await
+            .map_err(|error| *error)?;
+    let port: u16 = super::source_proxy::target_property(&props, "port", 8081)
+        .await
+        .map_err(|error| *error)?;
+    let endpoint: String = super::source_proxy::target_property(&props, "endpoint", String::new())
+        .await
+        .map_err(|error| *error)?;
 
     let base = if endpoint.is_empty() {
         String::new()
@@ -649,10 +668,25 @@ pub async fn push_source_data(
         format!("/{}", endpoint.trim_start_matches('/'))
     };
     // Use 127.0.0.1 for 0.0.0.0 since we're on the same host
-    let effective_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
-    let url = format!("http://{effective_host}:{port}{base}/sources/{id}/events");
+    let effective_host = if host == "0.0.0.0" {
+        "127.0.0.1"
+    } else {
+        host.as_str()
+    };
+    // The path segment is the source's assigned ID, which its listener validates;
+    // the request path may use the editable name.
+    let source_id = &info.id;
+    let url = format!("http://{effective_host}:{port}{base}/sources/{source_id}/events");
 
-    match http_client.post(&url).json(&body).send().await {
+    match http_client
+        .client()
+        .map_err(|error| *error)?
+        .post(&url)
+        .headers(super::source_proxy::validated_trace_headers(&headers))
+        .json(&body)
+        .send()
+        .await
+    {
         Ok(resp) if resp.status().is_success() => {
             let resp_body: serde_json::Value = resp
                 .json()

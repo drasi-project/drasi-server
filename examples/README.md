@@ -59,6 +59,21 @@ built `@drasi/react` package, with no Trading frontend dependency.
 
 ---
 
+### [observability/](observability/)
+**Telemetry configuration** - A local, configuration-first walkthrough of the
+OBS-02 policy and init wizard.
+
+- Starts an empty, loopback-only Server with telemetry disabled.
+- Exercises environment interpolation, validation and explicit startup errors
+  for unavailable exporters and inspection.
+- Requires no database, collector, Docker or plugin build.
+- Does not yet demonstrate data processing or trace/metric export.
+
+**Use this for:** Trying telemetry configuration before the later runtime and
+exporter integrations land.
+
+---
+
 ### 🐙 [github-webhooks/](github-webhooks/)
 **GitHub Integration** - Receive and process GitHub webhook events in real-time using the HTTP source in webhook mode.
 
@@ -106,12 +121,14 @@ cargo run -- --verify-plugins --config examples/getting-started/server-config.ya
 
 ## Common Patterns
 
-All examples demonstrate:
+Data-processing examples demonstrate:
 - ✅ YAML-based configuration
 - ✅ Auto-start components
 - ✅ Source → Query → Reaction data flow
 - ✅ REST API usage
 - ✅ Helper scripts for testing
+
+The observability example intentionally starts without a data pipeline.
 
 ## Need Help?
 

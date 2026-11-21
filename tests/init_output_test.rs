@@ -126,6 +126,71 @@ fn assert_camel_case_fields(yaml: &str) {
 // =============================================================================
 
 #[test]
+fn telemetry_output_keeps_references_and_reports_prometheus_readiness() {
+    let config: DrasiServerConfig = serde_yaml::from_str(
+        r#"
+telemetry:
+  profile: "${OBS02_INIT_PROFILE:-basic}"
+  metrics:
+    backend: prometheus
+    prometheus:
+      path: /metrics
+"#,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir_in(".").unwrap();
+    let path = directory.path().join("init.yaml");
+    drasi_server::save_config_file(&config, &path).unwrap();
+    let restored = drasi_server::load_config_file(&path).unwrap();
+    let policy = restored
+        .resolved_telemetry(&drasi_server::api::mappings::DtoMapper::new(), 8080, true)
+        .unwrap()
+        .unwrap();
+    assert!(policy.policy().metrics_enabled());
+    policy.ensure_runtime_available().unwrap();
+    let saved = std::fs::read_to_string(path).unwrap();
+    assert!(saved.contains("EnvironmentVariable") && saved.contains("OBS02_INIT_PROFILE"));
+}
+
+#[test]
+fn telemetry_cli_validation_preserves_env_precedence_and_reports_no_unavailable_capabilities() {
+    let directory = tempfile::tempdir_in(".").unwrap();
+    let path = directory.path().join("server.yaml");
+    std::fs::write(directory.path().join(".env"), "OBS02_CLI_PROFILE=off\n").unwrap();
+    std::fs::write(
+        &path,
+        r#"
+telemetry:
+  profile: "${OBS02_CLI_PROFILE}"
+  metrics:
+    backend: prometheus
+"#,
+    )
+    .unwrap();
+    let validate = |profile: Option<&str>| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_drasi-server"));
+        command
+            .args(["validate", "--config"])
+            .arg(&path)
+            .arg("--plugins-dir")
+            .arg(directory.path())
+            .env_remove("OBS02_CLI_PROFILE");
+        if let Some(profile) = profile {
+            command.env("OBS02_CLI_PROFILE", profile);
+        }
+        command.output().unwrap()
+    };
+    let from_dotenv = validate(None);
+    assert!(from_dotenv.status.success());
+    assert!(String::from_utf8_lossy(&from_dotenv.stdout)
+        .contains("No unavailable telemetry capabilities"));
+    let from_environment = validate(Some("basic"));
+    assert!(from_environment.status.success());
+    assert!(String::from_utf8_lossy(&from_environment.stdout)
+        .contains("No unavailable telemetry capabilities"));
+}
+
+#[test]
 fn test_empty_config_generates_valid_yaml() {
     let config = DrasiServerConfig {
         api_version: None,
@@ -146,6 +211,7 @@ fn test_empty_config_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -198,6 +264,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -259,6 +326,7 @@ fn test_mock_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -322,6 +390,7 @@ fn test_http_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -384,6 +453,7 @@ fn test_grpc_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -445,6 +515,7 @@ fn test_postgres_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -552,6 +623,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -641,6 +713,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -716,6 +789,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -787,6 +861,7 @@ fn test_log_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -851,6 +926,7 @@ fn test_http_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -916,6 +992,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -984,6 +1061,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -1057,6 +1135,7 @@ fn test_query_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {
@@ -1157,6 +1236,7 @@ fn test_full_config_roundtrip() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         solutions_dir: None,
 
         instances: vec![drasi_server::config::DrasiLibInstanceConfig {

@@ -8,8 +8,36 @@ use drasi_source_application::{
     ApplicationSource, ApplicationSourceConfig, ApplicationSourceHandle, PropertyMapBuilder,
 };
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::{mpsc, Notify};
+
+#[derive(Default)]
+pub(super) struct ShutdownProbe {
+    pub(super) sdk: AtomicUsize,
+    pub(super) exporter: AtomicUsize,
+    pub(super) periodic_exports: AtomicUsize,
+    pub(super) preparation: std::sync::Mutex<Option<Arc<PreparationGate>>>,
+}
+
+#[derive(Default)]
+pub(super) struct PreparationGate {
+    pub(super) entered: AtomicBool,
+    pub(super) released: std::sync::Mutex<bool>,
+    pub(super) changed: std::sync::Condvar,
+}
+
+impl ShutdownProbe {
+    pub(super) fn pause_preparation(&self) {
+        let gate = self.preparation.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            let mut released = gate.released.lock().unwrap();
+            gate.entered.store(true, Ordering::SeqCst);
+            while !*released {
+                released = gate.changed.wait(released).unwrap();
+            }
+        }
+    }
+}
 
 struct CollectorState {
     received: mpsc::UnboundedSender<Value>,
@@ -29,7 +57,7 @@ async fn collect(State(state): State<Arc<CollectorState>>, Json(body): Json<Valu
     Json(json!({}))
 }
 
-async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
+pub(super) async fn instance(id: &str) -> Result<(Arc<DrasiLib>, ApplicationSourceHandle)> {
     let (source, input) = ApplicationSource::new(
         drasi_lib::ComponentId::generate(),
         ApplicationSourceConfig {
@@ -252,22 +280,95 @@ async fn exported_progress_and_owned_shutdown() -> Result<()> {
         }
     })
     .await??;
-    assert!(
-        tokio::time::timeout(Duration::from_millis(20), metrics.shutdown())
-            .await
-            .is_err()
-    );
+    assert!(tokio::time::timeout(Duration::from_millis(20), async {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        metrics.request_shutdown(deadline)?;
+        metrics.wait_shutdown_until(deadline).await
+    },)
+    .await
+    .is_err());
+    assert!(metrics.worker.read().await.is_some());
+    assert_eq!(metrics.shutdown_probe.sdk.load(Ordering::SeqCst), 0);
+    assert_eq!(metrics.shutdown_probe.exporter.load(Ordering::SeqCst), 0);
+    let expired = metrics
+        .wait_shutdown_until(tokio::time::Instant::now())
+        .await
+        .expect_err("stalled actual export must retain its join");
+    assert!(expired.downcast_ref::<MetricsCleanupError>().is_some());
     assert!(metrics.worker.read().await.is_some());
     assert_eq!(second.get_query_progress_metrics()?.len(), 1);
     collector.stalled.store(false, Ordering::Release);
     collector.release.notify_waiters();
     tokio::time::timeout(Duration::from_secs(5), metrics.shutdown()).await??;
     assert!(metrics.worker.read().await.is_none());
+    assert_eq!(metrics.shutdown_probe.sdk.load(Ordering::SeqCst), 1);
+    assert_eq!(metrics.shutdown_probe.exporter.load(Ordering::SeqCst), 1);
+    while receiver.try_recv().is_ok() {}
     metrics.shutdown().await?;
+    assert_eq!(metrics.shutdown_probe.sdk.load(Ordering::SeqCst), 1);
+    assert_eq!(metrics.shutdown_probe.exporter.load(Ordering::SeqCst), 1);
+    assert!(
+        receiver.try_recv().is_err(),
+        "a repeated join must not collect/export again"
+    );
     second.shutdown().await?;
     stop.send(())
         .map_err(|_| anyhow::anyhow!("collector already stopped"))?;
     tokio::time::timeout(Duration::from_secs(5), &mut server).await???;
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn expired_metrics_phase_skips_fresh_collection_but_joins_cleanup() -> Result<()> {
+    let collector = wiremock::MockServer::start().await;
+    let registry = InstanceRegistry::new();
+    let (core, _) = instance("expired-phase").await?;
+    registry
+        .add("expired-phase".into(), core.clone())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let mut metrics = MetricsRuntime::default();
+    metrics
+        .start(
+            MetricsConfig {
+                endpoint: ConfigValue::Static(format!("{}/v1/metrics", collector.uri())),
+                export_interval_ms: 60_000,
+                export_timeout_ms: 100,
+            },
+            &registry,
+        )
+        .await?;
+    metrics.request_shutdown(tokio::time::Instant::now())?;
+    let result = metrics
+        .wait_shutdown_until(tokio::time::Instant::now() + Duration::from_secs(5))
+        .await;
+    let terminal = result.expect_err("an expired collection is not flush success");
+    assert!(
+        terminal.chain().any(|cause| {
+            cause
+                .downcast_ref::<drasi_lib::error::OperationFailures>()
+                .is_some_and(|failures| {
+                    failures.failures().iter().any(|failure| {
+                        matches!(
+                            failure.downcast_ref::<MetricsCleanupError>(),
+                            Some(MetricsCleanupError::PhaseExpired),
+                        )
+                    })
+                })
+        }),
+        "lost typed phase expiry: {terminal:#}"
+    );
+    assert!(metrics.is_joined().await);
+    assert!(collector
+        .received_requests()
+        .await
+        .context("requests")?
+        .is_empty());
+    assert!(metrics
+        .wait_shutdown_until(tokio::time::Instant::now())
+        .await
+        .is_err());
+    core.shutdown().await?;
     Ok(())
 }
 

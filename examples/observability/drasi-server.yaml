@@ -1,0 +1,88 @@
+apiVersion: drasi.io/v1
+host: "127.0.0.1"
+port: "${DRASI_DEMO_PORT:-18081}"
+logLevel: info
+persistConfig: false
+enableUi: false
+verifyPlugins: true
+autoInstallPlugins: false
+
+# Launch through demo.sh live: each invocation owns a new working/WAL directory.
+# Component IDs are deliberately omitted; names bind references, Core assigns UUIDs.
+# Input arrives on the ordinary HTTP source (direct POST or the Server push proxy).
+instances:
+  - id: "${DRASI_DEMO_INSTANCE}"
+    persistIndex: false
+    sources:
+      - kind: http
+        name: observations
+        autoStart: true
+        host: "127.0.0.1"
+        port: "${DRASI_DEMO_SOURCE_PORT:-18090}"
+        timeoutMs: 10000
+    queries:
+      - name: observed-values
+        autoStart: true
+        query: "MATCH (n:Reading) RETURN n.value AS value"
+        queryLanguage: Cypher
+        enableBootstrap: false
+        inputs:
+          - observations
+      # Only readings above 30: a reading enters or leaves the result as its
+      # value crosses 30, so this query also emits add and delete changes.
+      - name: high-readings
+        autoStart: true
+        query: "MATCH (n:Reading) WHERE n.value > 30 RETURN n.value AS value"
+        queryLanguage: Cypher
+        enableBootstrap: false
+        inputs:
+          - observations
+    reactions:
+      - kind: log
+        name: observed-log
+        autoStart: true
+        queries:
+          - observed-values
+          - high-readings
+
+telemetry:
+  # How much detail Server collects: off, basic, debug or persistence.
+  # debug adds query phases (query.evaluate, query.commit, ...) to traces.
+  profile: "${DRASI_DEMO_PROFILE:-persistence}"
+  # Read-only GET /api/v1/telemetry on the management port, showing what is
+  # active. Independent of the profile and of any exporter.
+  inspection:
+    enabled: "${DRASI_DEMO_INSPECTION:-true}"
+  tracing:
+    # Where traces are sent (Jaeger's OTLP/HTTP receiver in the showcase).
+    # Empty endpoint disables trace export; set a full .../v1/traces URL.
+    endpoint: "${DRASI_DEMO_TRACE_ENDPOINT:-}"
+    protocol: http/protobuf
+    # Service name that Jaeger and Grafana list the traces under.
+    serviceName: drasi-server-observability
+    # Fraction of traces kept, from 0 to 1. 1.0 keeps every trace.
+    sampleRatio: "${DRASI_DEMO_SAMPLE_RATIO:-1.0}"
+  metrics:
+    # Exactly one backend: prometheus (scraped from Server), otlp (pushed to a
+    # collector) or none. Settings for the other backend stay inactive.
+    backend: "${DRASI_DEMO_METRICS_BACKEND:-prometheus}"
+    # Adds whole-process metrics (CPU, memory, threads, file descriptors,
+    # uptime) next to the Drasi pipeline metrics.
+    processMetrics: "${DRASI_DEMO_PROCESS_METRICS:-true}"
+    # Used when backend is prometheus: metrics are served at this path on the
+    # management port.
+    prometheus:
+      path: /metrics
+    # Used when backend is otlp: metrics are pushed to this endpoint.
+    otlp:
+      endpoint: "${DRASI_DEMO_METRICS_ENDPOINT:-http://127.0.0.1:4318/v1/metrics}"
+      protocol: http/protobuf
+      # Seconds between pushes, and how long one push may take.
+      exportInterval: "${DRASI_DEMO_EXPORT_INTERVAL:-2}"
+      exportTimeout: "${DRASI_DEMO_EXPORT_TIMEOUT:-1}"
+  filters:
+    # Drops metrics whose name contains any of these literal substrings.
+    exclude:
+      - "${DRASI_DEMO_EXCLUDE:-drasi.plugin.}"
+  # Seconds Server may spend flushing telemetry when it shuts down.
+  shutdownTimeoutSeconds: "${DRASI_DEMO_SHUTDOWN_TIMEOUT:-5}"

@@ -1,0 +1,863 @@
+{
+  "uid": "drasi-server-observability",
+  "title": "Drasi Server observability",
+  "description": "Drasi pipeline metrics, Server process metrics and Jaeger traces for examples/observability (demo.sh showcase).",
+  "tags": [
+    "drasi",
+    "observability"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
+  "schemaVersion": 41,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "trace_id",
+        "label": "Trace ID (from Jaeger)",
+        "description": "Paste a trace ID from the Jaeger UI to show that trace in the Traces row.",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "id": 1,
+      "title": "Drasi pipeline",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 2,
+      "title": "Source events dispatched",
+      "description": "Events the HTTP source dispatched into the graph, per second. The source hands each change to every query separately, so with two queries this is about twice the input rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:/s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "sum(rate(drasi_source_events_dispatched[$__rate_interval]))",
+          "legendFormat": "source events/s",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 3,
+      "title": "Query events processed",
+      "description": "Source changes each query processed, per second, one line per query. Legends are query names, from drasi_component_info.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:/s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "sum by (component_name) (rate(drasi_query_events_processed[$__rate_interval]) * on (query_id) group_left (component_name) label_replace(max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1), \"query_id\", \"$1\", \"component_id\", \"(.*)\"))",
+          "legendFormat": "{{component_name}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 4,
+      "title": "Query results emitted",
+      "description": "Changes to each query's result, per second, by query and change kind. Legends are query names, from drasi_component_info.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:/s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "sum by (component_name, change_kind) (rate(drasi_query_results_emitted[$__rate_interval]) * on (query_id) group_left (component_name) label_replace(max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1), \"query_id\", \"$1\", \"component_id\", \"(.*)\"))",
+          "legendFormat": "{{component_name}} {{change_kind}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 5,
+      "title": "Reaction results and deliveries",
+      "description": "drasi_reaction_results_processed counts results a reaction reports through Core's reaction worker; the log reaction used here does not, so it stays 0. The graph's deliveries to the reaction (sink.handle, drasi_component_inputs_processed for the sink) show the results reaching it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:/s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "sum(rate(drasi_reaction_results_processed[$__rate_interval]))",
+          "legendFormat": "reaction results processed/s",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "sum(rate(drasi_component_inputs_processed{component_kind=\"sink\",completion=\"handled\"}[$__rate_interval]))",
+          "legendFormat": "deliveries to the reaction/s",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 6,
+      "title": "Query engine duration",
+      "description": "p50 and p95 of the evaluator histogram drasi_query_engine_duration (seconds), per query. Legends are query names, from drasi_component_info.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (component_name, le) (rate(drasi_query_engine_duration_bucket{phase=\"steady\"}[$__rate_interval]) * on (query_id) group_left (component_name) label_replace(max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1), \"query_id\", \"$1\", \"component_id\", \"(.*)\")))",
+          "legendFormat": "{{component_name}} p50",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (component_name, le) (rate(drasi_query_engine_duration_bucket{phase=\"steady\"}[$__rate_interval]) * on (query_id) group_left (component_name) label_replace(max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1), \"query_id\", \"$1\", \"component_id\", \"(.*)\")))",
+          "legendFormat": "{{component_name}} p95",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 7,
+      "title": "Queue depth: pending",
+      "description": "Items waiting in each queue right now, one line per queue. '<query> input' is the queue from the source into the query; '<query> output' is the queue from the query towards the reaction, matched through drasi_queue_edge_info and drasi_component_info. A queue attached to no query is shown by its queue_id.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (component_name) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"to_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) * on (queue_id) group_left drasi_queue_depth)",
+          "legendFormat": "{{component_name}} input",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (component_name) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"from_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) * on (queue_id) group_left drasi_queue_depth)",
+          "legendFormat": "{{component_name}} output",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (queue_id) (drasi_queue_depth unless on (queue_id) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"to_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) or max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"from_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1))))",
+          "legendFormat": "{{queue_id}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 17,
+      "title": "Queue depth: peak",
+      "description": "The most items each queue has held since it was created; it never goes down. '<query> input' is the queue from the source into the query; '<query> output' is the queue from the query towards the reaction, matched through drasi_queue_edge_info and drasi_component_info. A queue attached to no query is shown by its queue_id.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (component_name) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"to_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) * on (queue_id) group_left drasi_queue_depth_max)",
+          "legendFormat": "{{component_name}} input",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (component_name) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"from_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) * on (queue_id) group_left drasi_queue_depth_max)",
+          "legendFormat": "{{component_name}} output",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "max by (queue_id) (drasi_queue_depth_max unless on (queue_id) (max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"to_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1)) or max by (queue_id, component_name) (label_replace(drasi_queue_edge_info == 1, \"component_id\", \"$1\", \"from_component_id\", \"(.*)\") * on (component_id) group_left (component_name) max by (component_id, component_name) (drasi_component_info{component_kind=\"query\"} == 1))))",
+          "legendFormat": "{{queue_id}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 8,
+      "title": "Server process (whole drasi-server process)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 9,
+      "title": "CPU",
+      "description": "rate(process_cpu_seconds_total[1m]) * 100: percent of one CPU core.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "rate(process_cpu_seconds_total[1m]) * 100",
+          "legendFormat": "CPU % of one core",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 10,
+      "title": "Resident memory",
+      "description": "process_resident_memory_bytes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "process_resident_memory_bytes",
+          "legendFormat": "resident memory",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 11,
+      "title": "Threads",
+      "description": "process_threads.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "process_threads",
+          "legendFormat": "threads",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 12,
+      "title": "File descriptors: open vs max",
+      "description": "process_open_fds and the soft limit process_max_fds (omitted when unlimited).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "process_open_fds",
+          "legendFormat": "open",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "process_max_fds",
+          "legendFormat": "max (soft limit)",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 13,
+      "title": "Uptime",
+      "description": "time() - process_start_time_seconds.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "drasi-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "drasi-prometheus"
+          },
+          "expr": "time() - process_start_time_seconds",
+          "legendFormat": "uptime",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 14,
+      "title": "Traces (Jaeger)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "panels": []
+    },
+    {
+      "type": "text",
+      "id": 15,
+      "title": "Follow a change",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Every input becomes one trace per query: `source.publish` \u2192 `query.process` \u2192 `sink.handle` (the Debug profile adds `query.evaluate`, `query.commit` and other phases), with `instance_id`, `graph_id` and `component_id` attributes.\n\n- The Grafana link printed by `demo.sh showcase` opens one real input trace below.\n- To follow another change, pick a trace in the [Jaeger UI](http://127.0.0.1:16686/search?service=drasi-server-observability) (default port; the script prints the actual link) and paste its ID into **Trace ID** above.\n- Grafana's bundled Jaeger data source opens traces by ID but cannot *search* Jaeger 2.21+ (grafana/grafana-jaeger-datasource#87), so search in the Jaeger UI."
+      }
+    },
+    {
+      "type": "traces",
+      "id": 16,
+      "title": "Trace ${trace_id}",
+      "description": "The trace whose ID is entered in the Trace ID box, read through the Jaeger data source.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "drasi-jaeger"
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "drasi-jaeger"
+          },
+          "query": "${trace_id}"
+        }
+      ]
+    }
+  ]
+}

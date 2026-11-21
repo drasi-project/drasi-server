@@ -35,6 +35,7 @@
 pub mod loader;
 pub mod plugin_validation;
 pub mod schema_validation;
+pub mod telemetry;
 pub mod types;
 pub mod validation;
 

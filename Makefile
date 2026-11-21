@@ -20,7 +20,7 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins download-test-plugins \
-        build-local-plugins build-local-plugins-debug test-tooling prepare-build
+        build-local-plugins build-local-plugins-debug test-tooling test-observability-baseline prepare-build
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -42,6 +42,8 @@ ifeq ($(OS),Windows_NT)
 else
     SERVER_BIN := drasi-server
 endif
+
+OBSERVABILITY_SERVER_TARGET_DIR = $(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))/observability-server
 
 # Default target
 help:
@@ -69,12 +71,13 @@ help:
 	@echo "  make test               - Run non-ignored tests (plugin/database prerequisites still apply)"
 	@echo "  make test-all           - Build test plugins and run ALL tests (including ignored/E2E)"
 	@echo "  make test-smoke         - Plugin smoke test"
+	@echo "  make test-observability-baseline - Qualify matched local plugins and telemetry adapters"
 	@echo "  make vscode-test        - Run VSCode extension tests"
 	@echo ""
 	@echo "Plugins (local builds require Cargo-resolved matching local SDKs):"
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
-	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
+	@echo "  make build-local-test-plugins   - Build test bundle including the native query plugin"
 	@echo "  make download-test-plugins      - Download signed registry test plugins"
 	@echo "  make test-tooling               - Test plugin dependency-origin and setup policy"
 	@echo ""
@@ -188,6 +191,14 @@ test: prepare-build
 test-tooling:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 
+test-observability-baseline: prepare-build
+	@core_root="$$(python3 scripts/plugin_origin.py local-workspace)" && \
+		$(MAKE) -C "$$core_root" test-native-telemetry
+	$(MAKE) build-local-test-plugins
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo check --locked --lib
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo test --locked --lib -- telemetry::tests query_plugin::tests
+	CARGO_TARGET_DIR="$(OBSERVABILITY_SERVER_TARGET_DIR)" cargo test --locked --test observability_compatibility -- --include-ignored
+
 # Run the full Rust gate (including ignored integration parents), docs and smoke.
 # Build local plugins only when Cargo resolves matching local SDK/host/FFI code.
 # Registry mode uses the reviewed released graph and signed plugins.
@@ -237,10 +248,10 @@ build-local-test-plugins:
 	case "$$target_dir" in /*) ;; *) target_dir="$(CURDIR)/$$target_dir";; esac; \
 	cd "$$core_root"; \
 	cargo build --locked --lib --target-dir "$$target_dir" \
-		-p drasi-source-mock -p drasi-reaction-log -p drasi-reaction-http -p drasi-bootstrap-scriptfile \
-		--features drasi-source-mock/dynamic-plugin,drasi-reaction-log/dynamic-plugin,drasi-reaction-http/dynamic-plugin,drasi-bootstrap-scriptfile/dynamic-plugin; \
+		-p drasi-source-mock -p drasi-reaction-log -p drasi-reaction-http -p drasi-bootstrap-scriptfile -p drasi-computation-transformer-query \
+		--features drasi-source-mock/dynamic-plugin,drasi-reaction-log/dynamic-plugin,drasi-reaction-http/dynamic-plugin,drasi-bootstrap-scriptfile/dynamic-plugin,drasi-computation-transformer-query/dynamic-plugin; \
 	mkdir -p "$$plugins_dir"; \
-	for plugin in drasi_source_mock drasi_reaction_log drasi_reaction_http drasi_bootstrap_scriptfile; do \
+	for plugin in drasi_source_mock drasi_reaction_log drasi_reaction_http drasi_bootstrap_scriptfile drasi_computation_transformer_query; do \
 		cp "$$target_dir/debug/$(PLUGIN_LIB_PREFIX)$$plugin.$(PLUGIN_LIB_EXT)" "$$plugins_dir/"; \
 	done
 	@echo "=== Test plugins ready in target/debug/plugins/ ==="

@@ -18,7 +18,9 @@
 //! All routes are designed to be nested under `/api/v1/`.
 
 use axum::{
-    extract::Extension,
+    extract::{Extension, Request, State},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{delete, get, post, put},
     Router,
 };
@@ -62,15 +64,48 @@ pub fn build_v1_router(
         .layer(axum::middleware::from_fn(
             crate::api::shared::managed_components::preconditions_middleware,
         ))
-        .layer(Extension(registry))
+        .layer(Extension(registry.clone()))
         .layer(Extension(read_only))
         .layer(Extension(config_persistence))
         .layer(Extension(plugin_registry))
         .layer(Extension(solutions_dir))
-        .layer(Extension(reqwest::Client::new()))
+        .layer(Extension(
+            crate::api::shared::handlers::SourceProxyClient::default(),
+        ))
         .layer(Extension(ApiPrefix(
             ApiVersion::V1.path_prefix().to_string(),
         )))
+        .layer(middleware::from_fn_with_state(
+            registry.clone(),
+            management_admission,
+        ))
+}
+
+pub(crate) async fn management_admission(
+    State(registry): State<InstanceRegistry>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(cleanup) = registry.cleanup_handle() else {
+        return next.run(request).await;
+    };
+    let work = match cleanup.start_management(move || next.run(request)) {
+        Ok(work) => work,
+        Err(error) => return crate::api::shared::error::ErrorResponse::from(error).into_response(),
+    };
+    match work.finish().await {
+        Ok(response) => response,
+        Err(error) => crate::api::shared::error::ErrorResponse::new(
+            crate::api::shared::error::error_codes::INTERNAL_ERROR,
+            "Accepted management work did not return a response",
+        )
+        .with_details(crate::api::shared::error::ErrorDetail {
+            component_type: None,
+            component_id: None,
+            technical_details: Some(error.to_string()),
+        })
+        .into_response(),
+    }
 }
 
 /// Build routes for dynamic instance resources.

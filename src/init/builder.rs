@@ -82,6 +82,7 @@ pub fn build_config(
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         metrics: None,
+        telemetry: None,
         instances: vec![DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id).into(),
             persist_index: server_settings.persist_index,
@@ -96,6 +97,7 @@ pub fn build_config(
 
 /// Generate YAML string from configuration.
 pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
+    config.validate()?;
     // Add a header comment
     let mut yaml = String::new();
     yaml.push_str("# Drasi Server Configuration\n");
@@ -114,6 +116,13 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
     yaml.push_str("# - Use environment variables: ${VAR_NAME:-default}\n");
     yaml.push_str("# - Update 'my-query' with your actual GQL query\n");
     yaml.push_str("# - Connect reactions to your queries by updating the 'queries' field\n");
+    if config.telemetry.is_some() {
+        yaml.push_str("# - Telemetry changes require restart; valid configuration does not imply runtime support.\n");
+        yaml.push_str(
+            "# - Protect inspection/scrape listeners with a trusted proxy or restricted network.\n",
+        );
+        yaml.push_str("# - OTLP headers accept environment references without plaintext defaults; credentials require HTTPS.\n");
+    }
 
     Ok(yaml)
 }
