@@ -333,9 +333,8 @@ impl ComputationComponent for StreamComponent {
 #[async_trait]
 impl EnvelopeSource for StreamComponent {
     async fn next(&mut self) -> Result<Option<OutputEnvelope>> {
-        Ok(self.next.take().map(|envelope| OutputEnvelope {
-            port: PortId::try_new("out").expect("fixed output port"),
-            envelope,
+        Ok(self.next.take().map(|envelope| {
+            OutputEnvelope::new(PortId::try_new("out").expect("fixed output port"), envelope)
         }))
     }
 }

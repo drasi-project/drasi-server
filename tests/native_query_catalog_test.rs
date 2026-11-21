@@ -594,15 +594,10 @@ fn change(sequence: u64, value: Option<i64>) -> Result<OutputEnvelope> {
     } else {
         SourceChange::Delete { metadata }
     };
-    Ok(OutputEnvelope {
-        port: PortId::try_new("out")?,
-        envelope: GraphChangeCodec::encode_change(
-            change,
-            StreamId::try_new("input/out")?,
-            sequence,
-            None,
-        )?,
-    })
+    Ok(OutputEnvelope::new(
+        PortId::try_new("out")?,
+        GraphChangeCodec::encode_change(change, StreamId::try_new("input/out")?, sequence, None)?,
+    ))
 }
 
 #[tokio::test]

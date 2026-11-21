@@ -641,9 +641,23 @@ async fn persistence_and_reload_preserve_single_and_multi_instance_settings() {
     assert_eq!(resolved[1].default_dispatch_buffer_capacity, Some(16));
     let plugins = tmp.path().join("plugins");
     std::fs::create_dir(&plugins).unwrap();
-    drasi_server::DrasiServer::new(path, 8080, plugins, true, false)
-        .await
-        .expect("saved configuration reloads without selectors");
+    // Borrow test-owned logging; owned startup refuses an already-installed global logger.
+    let logging = drasi_lib::observability::ComponentLogRuntime::new(
+        drasi_lib::observability::LogPolicy::new("info").unwrap(),
+    )
+    .unwrap();
+    let bindings = drasi_server::TelemetryBindings::new(
+        drasi_lib::observability::TelemetrySettings::new(
+            drasi_lib::observability::TelemetryProfile::Off,
+        ),
+        logging,
+    );
+    drasi_server::DrasiServer::prepare_new_with_telemetry(
+        path, 8080, plugins, true, false, bindings,
+    )
+    .finish()
+    .await
+    .expect("saved configuration reloads without selectors");
     for (_, instance) in registry.list().await {
         instance.shutdown().await.unwrap();
     }

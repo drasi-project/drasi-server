@@ -239,10 +239,7 @@ impl ComputationComponent for Source {
 impl EnvelopeSource for Source {
     async fn next(&mut self) -> Result<Option<OutputEnvelope>> {
         match self.event.take() {
-            Some(event) => Ok(Some(OutputEnvelope {
-                port: PortId::try_new("out")?,
-                envelope: event,
-            })),
+            Some(event) => Ok(Some(OutputEnvelope::new(PortId::try_new("out")?, event))),
             None => std::future::pending().await,
         }
     }

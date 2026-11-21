@@ -466,7 +466,7 @@ elif "build" in sys.argv:
         assert sys.argv[sys.argv.index("--example") + 1] == "native-postgres"
         output = Path(os.environ["CARGO_TARGET_DIR"]) / "release/examples/native-postgres"
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text("#!" + sys.executable + "\\nimport json,sys\\nassert sys.argv[1] == 'settings'\\nprint(json.dumps({}))\\n")
+        output.write_text("#!" + sys.executable + "\\nimport sys\\nassert sys.argv[1] == 'settings'\\n")
         output.chmod(0o755)
         sys.exit(0)
     name = sys.argv[sys.argv.index("-p") + 1].replace("-", "_")

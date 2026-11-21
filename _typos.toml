@@ -3,6 +3,8 @@
 BA = "BA"
 # Intentional spelling used in error codes (SCHEMA_UNPARSEABLE)
 UNPARSEABLE = "UNPARSEABLE"
+# RTO = recovery time objective
+RTO = "RTO"
 
 [files]
 extend-exclude = [
