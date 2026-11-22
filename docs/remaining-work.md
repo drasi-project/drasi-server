@@ -1,7 +1,8 @@
 # Drasi Server remaining work
 
 This is the active list of known gaps, divergences and open decisions for Drasi
-Server on the ABI 4 drasi-core. Core-owned work is tracked in the
+Server on the current drasi-core (native computation ABI 0.1.0, ordinary
+plugin SDK ABI 0.19.0). Core-owned work is tracked in the
 [ComputationGraph remaining work](../../drasi-core/lib/docs/computation-graph-remaining-work.md)
 document and is linked from here only where it affects Server.
 
@@ -14,10 +15,10 @@ impact on Server deployments.
 | Work area | Entries |
 |---|---|
 | Persisted instances | [Update data mode](#sw-01), [native graph write-back](#sw-02), [write-back status](#sw-03), [write coalescing](#sw-04), [idempotent replay](#sw-05), [identity provider validation](#sw-06), [store retention after instance delete](#sw-07), [untested paths](#sw-08) |
-| Runtime and restart | [Query start after restart](#sw-10), [baseline test failures](#sw-11) |
-| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [ABI documentation](#sw-29), [secret references](#sw-30), [stored-procedure examples](#sw-31) |
+| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [ABI documentation](#sw-29), [secret references](#sw-30) |
 | Native workflows and clients | [Server, UI and client workflows](#sw-20), [required examples](#sw-25), [native plugin logs](#sw-32), [custom plugin deployment](#sw-33) |
-| Build and qualification | [Workspace clippy](#sw-17), [container suites](#sw-18), [workflow and recovery checks](#sw-21), [honest test runners](#sw-22), [example and tutorial acceptance](#sw-23), [CI selection](#sw-26), [repeated helper tests](#sw-27), [Trading dialog test](#sw-28) |
+| Observability | [OTLP log export](#sw-34), [reaction results metric](#sw-36), [stale observability gates](#sw-37) |
+| Build and qualification | [Container suites](#sw-18), [workflow and recovery checks](#sw-21), [honest test runners](#sw-22), [example and tutorial acceptance](#sw-23), [CI selection](#sw-26), [repeated helper tests](#sw-27), [Trading dialog test](#sw-28), [observability test fixtures](#sw-35) |
 
 ## Persisted instances
 
@@ -170,52 +171,9 @@ The following plan tests are not implemented:
 | Path | Missing evidence | Blocker |
 |---|---|---|
 | Cancellation and unconfirmed commit (503 with request ID) | Behavior when the store commit outcome is unknown | Needs a fault-injecting configuration store in Server tests |
-| Older-ABI plugin | Behavior of a plugin from an earlier ABI 4 minor version | Plugins are not yet ported ([SW-15](#sw-15)) |
+| Older-ABI plugin | Behavior of a plugin built for an earlier native ABI patch release | No earlier 0.1.x release exists yet; see [SW-14](#sw-14) |
 | Environment-variable secret envelopes | `{kind: EnvironmentVariable}` values are stored unresolved and never written to YAML resolved | Only stored-secret references are tested |
 | Identity provider attachment | The provider is attached to the rebuilt component after restart | The test checks only the stored reference |
-
-## Runtime and restart
-
-<a id="sw-10"></a>
-
-### Queries fail to start after a server restart (SW-10)
-
-**Kind:** Issue (Core). **Priority:** High.
-
-After a restart that reloads configuration,
-`reaction_removal_operational_test::matched_server_removes_sse_and_log_checkpoints_and_recreates_public_names`
-fails deterministically. `POST queries/<id>/start` returns 500 with
-`native activation failed: {...: NotCreated}`, because the query's nodes are
-still waiting for the source's resources when activation runs. The likely
-cause is the ordering of reload and registration in Core's restart and
-reconcile path. This defect predates the ABI 4 port.
-
-**Work:** investigate in Core and record it as a CW item; then rerun the test.
-The persisted-instance restart tests do not hit it, but it applies to any
-persisted server with native queries.
-
-<a id="sw-11"></a>
-
-### Baseline test failures (SW-11)
-
-**Kind:** Issue. **Priority:** Medium.
-
-The full test run fails 17 tests. The same tests failed before the ABI 4 port
-and before the persistence work. They include:
-
-- 6 `native_computation_test::shared_storage` tests: "live resource updates
-  must retain their identity, role, ownership and binding interface";
-- 6 `native_computation_test::native_services` tests: retirement rules
-  ("recovery configuration cannot change without verified drain"), a 503
-  `CONFIGURATION_UNCONFIRMED` where the test expects 409, and one elapsed
-  deadline;
-- the 2 crash-worker child tests;
-- the restart defect in [SW-10](#sw-10);
-- 2 SQL Server tests that need `DRASI_MSSQL_TEST_MODE`.
-
-**Work:** align the Server test expectations with Core's update and retirement
-rules, or fix the rules in Core where the tests describe the intended
-behavior.
 
 ## Configuration and plugins
 
@@ -249,11 +207,13 @@ to parse.
 
 **Kind:** Decision. **Priority:** Medium.
 
-`src/plugin_install.rs:218-224` installs a native plugin only when its ABI
-string exactly equals the host's `ABI_VERSION`. Core's loader accepts the same
-major version with an equal or older minor version (`accepts_abi_version`).
-Both are 4.0.0 today. At the first 4.x minor release, Server would refuse
-plugins that Core can load.
+`src/plugin_install.rs:218-227` installs a native plugin only when its ABI
+string exactly equals the host's `ABI_VERSION`. Core's loader
+(`accepts_abi_version`,
+`drasi-core/components/computation-plugin-abi/src/lib.rs:62-80`) requires the
+same major version and, before 1.0, the same minor version, but accepts any
+patch. Both are 0.1.0 today. At the first 0.1.x patch release, Server would
+refuse plugins that Core can load.
 
 **Decision:** keep exact matching, or call Core's rule so that install and load
 agree.
@@ -264,17 +224,18 @@ agree.
 
 **Kind:** Issue. **Priority:** High. **Owner:** the plugin work stream.
 
-- `target/debug/plugins` must be rebuilt for ABI 4 with
-  `make build-local-plugins-debug`. ABI 3 libraries are rejected with
-  `native error 8`.
-- Registry downloads (`autoInstallPlugins`) publish only ABI 3 builds and fail
-  until ABI 4 builds are published.
+- Local plugins build for the current ABI with
+  `make build-local-plugins-debug` (verified in the last full run). Libraries
+  built for an older ABI are rejected at load.
+- **Open:** registry downloads (`autoInstallPlugins`) have not been checked
+  for published current-ABI builds. Until they are, auto-install may fetch
+  libraries the host refuses.
 - `examples/move-a-wall` and `examples/gpu-cluster-lab/shared/crates/native`
-  need the lifecycle port and fixes for older API drift. The example
-  lockfiles are stale.
-- The native HTTP and gRPC sources and the SSE sink already work. Configure
-  them under `computation.graph`, and use `--skip-verification` when the
-  plugins directory has no lockfile.
+  and their lockfiles have been ported to the current lifecycle API, but were
+  not rebuilt or run in the last full run. See [SW-23](#sw-23).
+- The native HTTP and gRPC sources and the SSE sink work. Configure them under
+  `computation.graph`, and use `--skip-verification` when the plugins
+  directory has no lockfile.
 
 <a id="sw-16"></a>
 
@@ -296,14 +257,17 @@ PostgreSQL, HTTP and gRPC sources and the SSE sink gate on Pause.
 
 `docs/plugin-architecture.md:13-16` lists the ordinary ABI as 0.17 (also
 accepting 0.16) and the native ABI as 1.0; the host uses ordinary 0.19.0 and
-native 4.0.0. `README.md:1139` says plugin management needs a
-`dynamic-plugins` feature, which `README.md:3453` and
-`docs/plugin-architecture.md:9` correctly say does not exist. A plugin author
-following the table builds against the wrong ABI, and the plugin is refused at
-load.
+native 0.1.0. `README.md:1202` says plugin management needs a
+`dynamic-plugins` feature, which `README.md:3591` and
+`docs/plugin-architecture.md:9` correctly say does not exist.
+`docs/plugin-architecture.md:751,764-765` also tell readers to run a
+nonexistent `make build-dynamic-plugins` target with
+`--features dynamic-plugins`; the Makefile provides `build-local-plugins` and
+`build-local-plugins-debug` (`Makefile:261,270`). A plugin author following
+these docs builds against the wrong ABI or with commands that fail.
 
 **Work:** generate or test the compatibility table against the ABI constants,
-remove the `dynamic-plugins` note, and document the name/UUID receipt and
+remove the `dynamic-plugins` notes, correct the build commands, and document the name/UUID receipt and
 explicit wiring flow for native components (binding by a future name remains
 Core [CW-93](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-93)).
 
@@ -323,26 +287,6 @@ reference". Unverified: the exact validation lines in
 **Work:** add a typed reference syntax to readable authoring (or a supported
 generator for the expanded form), with an example that uses a secret store and
 one that uses activation credentials.
-
-<a id="sw-31"></a>
-
-### Stored-procedure sink examples hide templates in a secret (SW-31)
-
-**Kind:** Issue. **Priority:** Low. **Depends on:** Core
-[SP-04](../../drasi-core/lib/docs/computation-graph-remaining-work.md#sp-04).
-
-The native MySQL and SQL Server examples and the SQL Server test pass each
-stored-procedure sink's whole `settings` object as one secret JSON reference
-(`examples/native-mysql.rs:246`, `examples/native-mssql.rs:192`,
-`tests/native_mssql_test.rs:41-65`), because the sink factories mark all of
-`settings` secret. Operators therefore cannot read a sink's templates in the
-Server configuration.
-
-**Work:** once SP-04 marks only credentials and TLS keys secret, generate plain
-`settings` with per-field references, for example
-`settings: {host: …, password: secret:DRASI_MYSQL_PASSWORD, default_template: {…}}`
-instead of `settings: env-json:DRASI_MYSQL_SINK_SETTINGS`, and update the test
-assertions.
 
 ## Native workflows and clients
 
@@ -395,7 +339,7 @@ receipt and instance-isolation cases are owned by [SW-21](#sw-21).
 
 **Kind:** Issue. **Priority:** High for required examples. **Effort:** Large.
 
-Two example sets do not yet run on the native ABI 4 stack:
+Two example sets do not yet run on the current native stack:
 
 - **GPU Cluster Lab on stock Server.** `examples/gpu-cluster-lab/server/` is a
   reserved deployment; only the embedded variant is implemented. Build the
@@ -410,21 +354,29 @@ with documented setup and shutdown, and passes [SW-23](#sw-23)'s acceptance.
 
 <a id="sw-32"></a>
 
-### Native plugin logs do not reach the component log API (SW-32)
+### Native plugin logs at the component log API are untested (SW-32)
 
-**Kind:** Issue. **Priority:** Medium. **Depends on:** Core
+**Kind:** Qualification. **Priority:** Medium. **Related:** Core
 [CW-24](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-24).
 
-The per-component log endpoints (`/sources/:id/logs`, `/queries/:id/logs` and
-their streams, `src/api/v1/routes.rs:127-145`) receive ordinary-plugin logs
-through the legacy log callback. The native ABI has no log callback, so a
-native source that logs "connection refused" shows nothing at
-`GET /sources/<id>/logs`.
+Core now forwards native plugin logs: the SDK installs a host logger in every
+loaded plugin, and records made inside a component's telemetry scope become
+log messages for that component
+(`drasi-core/lib/src/observability/plugin_telemetry.rs:225-250`). Server wires
+the component log runtime through `with_component_logging`. The per-component
+endpoints are `/sources/:id/logs`, `/queries/:id/logs`, `/reactions/:id/logs`
+and their streams (`src/api/v1/routes.rs:162-200`).
 
-**Work:** once Core forwards native diagnostics, route them to the
-per-component log API, add a troubleshooting sequence (discovery,
-compatibility, validation, waiting resources, initialization, activation,
-processing), and test that a native plugin log line appears.
+**What remains:**
+
+- A Server test that a native source's log line (for example "connection
+  refused") appears at `GET /sources/<id>/logs` and its stream.
+- A troubleshooting sequence in the docs: discovery, compatibility,
+  validation, waiting resources, initialization, activation, processing.
+- Records a plugin makes outside a component scope (for example from a
+  background task it spawned without the scope) reach the host logger without
+  a component tag, so they do not appear at any component endpoint.
+  **Unverified:** whether the shipped plugins' background tasks keep the scope.
 
 <a id="sw-33"></a>
 
@@ -446,35 +398,96 @@ signed builds, and upgrade by restart. Provide a Server profile that matches
 Core's standalone plugin starter
 ([DX-1](../../drasi-core/lib/docs/computation-graph-remaining-work.md#dx-1)).
 
+## Observability
+
+<a id="sw-34"></a>
+
+### Server does not export logs over OTLP (SW-34)
+
+**Kind:** Issue. **Priority:** Medium. **Effort:** Small to medium.
+
+Server exports metrics and traces over OTLP, but not logs. Its
+`opentelemetry` dependencies enable only the `metrics` and `trace` features
+(`Cargo.toml:122-125`), and `docs/telemetry-configuration.md:5-6` states that
+`logLevel` and `RUST_LOG` control ordinary logging independently of
+telemetry. Core leaves export to the host by
+design, so this is Server's work.
+
+**Example:** an operator collecting traces in an OpenTelemetry Collector sees
+a failed delivery span but has to read the Server's stdout for the matching
+log line.
+
+**Done when:** logs can be exported over OTLP with the same endpoint and
+resource attributes as traces and metrics, carry trace and component
+identifiers, and are documented and tested; or the docs state this as a
+deliberate exclusion.
+
+<a id="sw-36"></a>
+
+### The reaction results metric stays at zero (SW-36)
+
+**Kind:** Investigation. **Priority:** Medium. **Effort:** Small.
+
+In the observability walkthrough the log reaction prints results, yet
+`drasi.reaction.results_processed` stays at 0
+(`docs/observability-baseline.md:418,533,557`). **Unverified:** the cause has
+not been investigated; it may be a recording gap in the native reaction path
+or a label mismatch in the query used.
+
+**Done when:** the metric counts the results each reaction processes, and a
+test checks it.
+
+<a id="sw-37"></a>
+
+### Stale completion gates in the observability baseline (SW-37)
+
+**Kind:** Issue. **Priority:** Low. **Effort:** Small.
+
+The "Remaining completion gates" in `docs/observability-baseline.md:683-720`
+still list clippy, formatting and fixture `cargo check` failures, all of which
+now pass. The note at `:560-566` that the Core #1027 fix is not on the branch
+is also out of date. The document also records two minor open behaviours:
+two concurrent first `wait_for_completion` callers can get a spurious "not
+requested" error (`:379-381`), and shutdown logs a "Cannot collect query
+progress" warning (`src/telemetry/progress.rs:19,28`).
+
+**Done when:** the gates reflect the current state, and the two minor
+behaviours are either fixed or recorded as accepted.
+
 ## Build and qualification
-
-<a id="sw-17"></a>
-
-### Whole-crate clippy fails on existing code (SW-17)
-
-**Kind:** Issue. **Priority:** Low.
-
-`cargo clippy --all-targets` and `make clippy` fail on errors in:
-
-- `src/server.rs` around line 1339 (identical `if` blocks);
-- `tests/test_support/solution_helpers.rs` and
-  `tests/test_support/mock_components.rs`;
-- `tests/reaction_removal_operational_test.rs` and `api_persistence_test`
-  (`unwrap`, `println!`, `vec!`).
-
-The library, binaries and persisted-instance tests are clippy-clean.
-
-**Work:** fix these warnings so that the whole-crate clippy run can gate CI.
 
 <a id="sw-18"></a>
 
-### Container and application suites not run on ABI 4 (SW-18)
+### Container and application suites not run on the current Core (SW-18)
 
 **Kind:** Qualification. **Priority:** Medium.
 
 `make test-all` (container suites, run with Podman), the SQL Server suite, and
-the Trading and Learning applications have not been run against ABI 4 Core
-with persistence. They depend on [SW-15](#sw-15).
+the Trading and Learning applications have not been run against the current
+Core with persistence. The two SQL Server tests in the main test run need
+`DRASI_MSSQL_TEST_MODE` and fail without it; the SQL Server container image is
+x86_64-only.
+
+<a id="sw-35"></a>
+
+### Observability tests need hand-built Core fixtures (SW-35)
+
+**Kind:** Issue. **Priority:** Medium. **Effort:** Small.
+
+The `observability_tracing` and `observability_metrics` tests load plugin
+libraries built from the Core checkout, but no make target builds them or sets
+their paths. They are `#[ignore]`d, so the normal test run skips them, and
+they fail under `--include-ignored` unless a developer first runs, in Core:
+
+`cargo build -p drasi-source-http -p drasi-computation-source-http -p drasi-computation-source-grpc --features dynamic-plugin`
+
+and `cargo build -p drasi-computation-plugin-sdk --example telemetry_fixture`,
+then sets `DRASI_OBS05_FIXTURES_DIR=<core>/target` and
+`DRASI_OBS04_NATIVE_FIXTURE=<core>/target/debug/examples/libtelemetry_fixture.dylib`.
+
+**Done when:** one make target builds the fixtures and runs the tests with
+these variables set, CI uses it, and a missing fixture produces a clear
+message.
 
 <a id="sw-21"></a>
 
@@ -620,8 +633,8 @@ returning 200 does not establish this.
 **Kind:** Issue. **Priority:** High. **Effort:** Medium.
 
 `.github/workflows/test.yml` runs only `make test-tooling` and
-`cargo test --locked`, so ignored and end-to-end tests never run (about 37
-`#[ignore]` sites under `tests/` and `src/`). Other suites no workflow runs:
+`cargo test --locked`, so ignored and end-to-end tests never run (about 54
+`#[ignore]` sites under `tests/` and `src/`, each with a reason). Other suites no workflow runs:
 
 - `npm --prefix ui test` (`react-package.yml` builds the UI but doesn't test it);
 - the VS Code extension tests (`dev-tools/vscode/drasi-server`, `npm test`);
@@ -641,9 +654,9 @@ as deliberately excluded with the reason. Related: [SW-18](#sw-18),
 
 **Kind:** Improvement. **Priority:** Low. **Effort:** Small.
 
-`tests/test_support/solution_helpers.rs:592-640` holds five `#[cfg(test)]`
+`tests/test_support/solution_helpers.rs:594-640` holds five `#[cfg(test)]`
 tests, such as `test_create_test_solution_template`. Every test file that
-declares `mod test_support;` (19 of them) compiles and runs these five again.
+declares `mod test_support;` (20 of them) compiles and runs these five again.
 
 **Done when:** they run in one test target, and assert on parsed YAML/JSONL
 instead of string presence.
