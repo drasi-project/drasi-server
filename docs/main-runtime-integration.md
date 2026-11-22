@@ -28,7 +28,7 @@ unchanged receipt, recovery, retry and provider settings; Core still enforces
 the required lifecycle and recovery boundaries.
 
 The local source/reaction/bootstrap SDK ABI is 0.19.0; the independently
-versioned native computation ABI is 4.0.0. Rebuild matched plugins rather than
+versioned native computation ABI is 0.1.0. Rebuild matched plugins rather than
 reusing historical binaries. Missing external prerequisites or a failing Rust
 target do not make a partial workflow pass; retain separate results for stages
 that did not execute.

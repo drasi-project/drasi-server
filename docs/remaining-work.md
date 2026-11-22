@@ -15,10 +15,10 @@ impact on Server deployments.
 | Work area | Entries |
 |---|---|
 | Persisted instances | [Update data mode](#sw-01), [native graph write-back](#sw-02), [write-back status](#sw-03), [write coalescing](#sw-04), [idempotent replay](#sw-05), [identity provider validation](#sw-06), [store retention after instance delete](#sw-07), [untested paths](#sw-08) |
-| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [ABI documentation](#sw-29), [secret references](#sw-30) |
-| Native workflows and clients | [Server, UI and client workflows](#sw-20), [required examples](#sw-25), [native plugin logs](#sw-32), [custom plugin deployment](#sw-33) |
+| Configuration and plugins | [Stream binding mismatch](#sw-12), [README graph example](#sw-13), [ABI admission rule](#sw-14), [plugin rebuilds and examples](#sw-15), [Pause gating](#sw-16), [plugin documentation check and wiring guide](#sw-29), [secret references](#sw-30), [query recovery after a source outage](#sw-38) |
+| Native workflows and clients | [Server, UI and client workflows](#sw-20), [required examples](#sw-25), [native plugin logs](#sw-32), [custom plugin deployment](#sw-33), [native PostgreSQL publications in examples](#sw-41) |
 | Observability | [OTLP log export](#sw-34), [reaction results metric](#sw-36), [stale observability gates](#sw-37) |
-| Build and qualification | [Container suites](#sw-18), [workflow and recovery checks](#sw-21), [honest test runners](#sw-22), [example and tutorial acceptance](#sw-23), [CI selection](#sw-26), [repeated helper tests](#sw-27), [Trading dialog test](#sw-28), [observability test fixtures](#sw-35) |
+| Build and qualification | [Container suites](#sw-18), [workflow and recovery checks](#sw-21), [honest test runners](#sw-22), [example and tutorial acceptance](#sw-23), [CI selection](#sw-26), [repeated helper tests](#sw-27), [Trading dialog test](#sw-28), [observability test fixtures](#sw-35), [Trading build rewrites a tracked file](#sw-39), [Trading live test](#sw-40) |
 
 ## Persisted instances
 
@@ -251,25 +251,23 @@ PostgreSQL, HTTP and gRPC sources and the SSE sink gate on Pause.
 
 <a id="sw-29"></a>
 
-### Plugin documentation states the wrong ABI versions (SW-29)
+### Plugin documentation has no version check or native wiring guide (SW-29)
 
-**Kind:** Issue. **Priority:** High.
+**Kind:** Documentation. **Priority:** Medium. **Effort:** Small to medium.
 
-`docs/plugin-architecture.md:13-16` lists the ordinary ABI as 0.17 (also
-accepting 0.16) and the native ABI as 1.0; the host uses ordinary 0.19.0 and
-native 0.1.0. `README.md:1202` says plugin management needs a
-`dynamic-plugins` feature, which `README.md:3591` and
-`docs/plugin-architecture.md:9` correctly say does not exist.
-`docs/plugin-architecture.md:751,764-765` also tell readers to run a
-nonexistent `make build-dynamic-plugins` target with
-`--features dynamic-plugins`; the Makefile provides `build-local-plugins` and
-`build-local-plugins-debug` (`Makefile:261,270`). A plugin author following
-these docs builds against the wrong ABI or with commands that fail.
+The plugin documentation now states the current versions: native ABI 0.1.0 and
+ordinary ABI 0.19.0 in `docs/plugin-architecture.md`, `README.md`, `CLAUDE.md`,
+`docs/main-runtime-integration.md` and `tests/README.md`. The nonexistent
+`dynamic-plugins` feature is no longer mentioned, and the build instructions use
+the Makefile's real targets. Nothing keeps these statements current: Core's
+documentation check
+([Source X-09](../../drasi-core/lib/docs/computation-graph-remaining-work.md#source-x-09))
+does not read Server's documents.
 
-**Work:** generate or test the compatibility table against the ABI constants,
-remove the `dynamic-plugins` notes, correct the build commands, and document the name/UUID receipt and
-explicit wiring flow for native components (binding by a future name remains
-Core [CW-93](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-93)).
+**Work:** test Server's compatibility table against the ABI constants, and
+document the name/UUID receipt and explicit wiring flow for native components
+(binding by a future name remains Core
+[CW-93](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-93)).
 
 <a id="sw-30"></a>
 
@@ -287,6 +285,30 @@ reference". Unverified: the exact validation lines in
 **Work:** add a typed reference syntax to readable authoring (or a supported
 generator for the expanded form), with an example that uses a secret store and
 one that uses activation credentials.
+
+<a id="sw-38"></a>
+
+### Queries cannot recover from a source outage without restarting Server (SW-38)
+
+**Kind:** Issue. **Priority:** Medium. **Effort:** Small to medium.
+
+Server builds every query with `recovery_policy: None`
+(`src/api/mappings/queries/mod.rs:94`), so its query configuration has no
+`recoveryPolicy` and every query uses Strict recovery. When an ordinary
+PostgreSQL source fails during a database outage (it reconnects only once; see
+Core [CW-112](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-112)),
+the queries that read it directly fail with "lost its explicit lifecycle
+dependency". After the database returns, `POST /sources/{id}/start` succeeds,
+but `POST /queries/{id}/start` answers 500 with "bootstrap provider requires an
+explicit reset under Strict recovery: source subscription requires
+reset/rebootstrap", and resubmitting the same query configuration is accepted
+but leaves the query failed. Only restarting Server recovers the queries.
+This was observed in learning-drasi-server's Getting Started tutorial by
+stopping its database container for 30 seconds.
+
+**Work:** expose the query recovery policy in Server's query configuration and
+API, or add an explicit reset or rebootstrap operation for a failed query, and
+test the outage-and-recovery sequence without restarting Server.
 
 ## Native workflows and clients
 
@@ -398,6 +420,38 @@ signed builds, and upgrade by restart. Provide a Server profile that matches
 Core's standalone plugin starter
 ([DX-1](../../drasi-core/lib/docs/computation-graph-remaining-work.md#dx-1)).
 
+<a id="sw-41"></a>
+
+### Example databases create publications the native PostgreSQL source refuses (SW-41)
+
+**Kind:** Issue. **Priority:** Medium. **Effort:** Small.
+
+The native PostgreSQL source (`drasi.postgres/shared-changes`) refuses a
+publication that publishes TRUNCATE, on every start
+(`drasi-core/components/postgres-common/src/replication.rs:380-389`, called
+from the source, its worker and both bootstrap paths). PostgreSQL publishes
+TRUNCATE unless the publication sets a publish list. These native setups create
+their publications without one:
+
+- the Getting Started example: `examples/getting-started/scripts/setup-database.sh:56`
+  and `examples/getting-started/database/init.sql:64`, used with
+  `examples/getting-started/server-config.yaml`;
+- `examples/postgres/qualify.py:279`, for every case except
+  `getting-started-server`, which uses the setup script above.
+
+`examples/postgres/qualify-trading.py` failed the same way until its
+publications added `WITH (publish = 'insert, update, delete')`, which Trading's
+`database/init.sql:117-120` already uses. **Unverified:** this is from reading
+the code; neither the Getting Started example nor `qualify.py` has been run
+since the check was added. `qualify.py` may also share the component-ID
+assumptions `qualify-trading.py` needed fixed: inventory `id`s are UUIDs with a
+separate `name`, and query nodes report the role `Query`.
+
+**Done when:** each native example's publications set
+`publish = 'insert, update, delete'`, the Getting Started example starts on a
+new database, and `python3 examples/postgres/qualify.py` passes every case
+against the local build.
+
 ## Observability
 
 <a id="sw-34"></a>
@@ -430,9 +484,12 @@ deliberate exclusion.
 
 In the observability walkthrough the log reaction prints results, yet
 `drasi.reaction.results_processed` stays at 0
-(`docs/observability-baseline.md:418,533,557`). **Unverified:** the cause has
-not been investigated; it may be a recording gap in the native reaction path
-or a label mismatch in the query used.
+(`docs/observability-baseline.md:418,533,557`). learning-drasi-server's OTel
+Observability tutorial reproduces it: the metric stays at 0 for the dashboard,
+log and HTTP reactions while each processes results. Core registers the metric
+(`drasi-core/lib/src/observability/detail_metrics.rs:264`). **Unverified:** the
+cause has not been investigated; it may be a recording gap in the native
+reaction path or a label mismatch in the query used.
 
 **Done when:** the metric counts the results each reaction processes, and a
 test checks it.
@@ -583,9 +640,7 @@ unconditional sleeps without weakening diagnostics. Evidence:
 
 Retain the seven migrated tutorials' existing scenario checks and automate
 uncovered walkthrough/CI cases with exact rows, effects and visible updates,
-bounded waits and repeatable reset. The Learning getting-started evaluator
-already has expected-output scenarios; that is distinct from the weak Server
-shell assertions above. Reuse existing tools rather than introduce another
+bounded waits and repeatable reset. Reuse existing tools rather than introduce another
 tutorial framework. Building Comfort's verifier already derives an independent
 source-data arithmetic oracle and checks all six query/dashboard snapshots
 (`learning-drasi-server/tutorials/building-comfort/scripts/verify_demo.py:34-130`).
@@ -614,9 +669,9 @@ evidence. Re-run affected acceptance against the current bundle, including
 snapshot/restart; do not reopen completed migrations or label old evidence as
 a current run. Preserve GPU's real handover/atomic paired-value/SIGKILL/slot/
 missing-history checks and Trading's real provisioning/CRUD/live/reconnect
-tests. In-process projection/UI units cannot substitute for them.
+tests; the Trading live test must first move to the native path
+([SW-40](#sw-40)). In-process projection/UI units cannot substitute for them.
 
-The agentic tutorial workflow is supplementary, not an independent sole gate.
 The six SSE CLI subprocess methods require `DRASI_SSE_CLI`; all skip without it
 (`learning-drasi-server/tutorials/sse-cli/tests/test_cli.py:1-20,86-195`).
 [CW-85](../../drasi-core/lib/docs/computation-graph-remaining-work.md#cw-85) owns CI selection and explicit environment jobs.
@@ -673,3 +728,62 @@ reproduced.
 
 **Done when:** it is reproduced, and the shared state it depends on is
 isolated so it passes in parallel without being excluded.
+
+<a id="sw-39"></a>
+
+### Building the Trading example rewrites a tracked file (SW-39)
+
+**Kind:** Issue. **Priority:** Low. **Effort:** Small.
+
+`examples/trading/app/scripts/export-native-recipe.ts` regenerates the tracked
+`examples/trading/app/public/native-computation.json`, and the generator assigns
+new component UUIDs on every run. Each build of the example, including the
+learning-drasi-server Trading tutorial's build, therefore leaves a large diff in
+that file. The app (`app/src/drasi/config.ts:31`) and the price generator
+(`mock-generator/simple_price_generator.py:103`) read the generated file.
+
+**Done when:** building the example leaves the checkout unchanged, for example
+by deriving stable component IDs from names or by writing the bundle to an
+untracked location that the app and the price generator read.
+
+<a id="sw-40"></a>
+
+### Trading's live browser test still targets the legacy plugins (SW-40)
+
+**Kind:** Issue. **Priority:** Medium. **Effort:** Medium.
+
+`npm run test:live` in `examples/trading/app` runs in
+`.github/workflows/react-package.yml:212-221` on pull requests to `main` that
+touch `src/**` or `examples/trading/**`. It predates native Trading and the
+component-ID changes, and cannot pass against the current Server:
+
+- `test/live/run.ts:246-262` configures ordinary `kind: 'http'` and
+  `kind: 'postgres'` sources with a `scriptfile` bootstrap, and `run.ts:270-279`
+  installs pinned, signed registry plugins. The current Server answers
+  `Missing plugins required by configuration: source/http (referenced by source 'price-feed')`.
+  Trading now starts an empty instance (`server/trading-sources-only.yaml`) and
+  loads the native plugins.
+- `run.ts:320-321` waits for a source whose `id` is `price-feed`. The sources
+  API returns UUID `id`s with a separate `name`, so readiness never passes.
+- `test/live/trading.live.spec.ts:111` posts prices to
+  `/sources/price-feed/events`. The native HTTP source's route takes the
+  source's UUID and answers 400.
+- `trading.live.spec.ts:135-140` expects 11 `POST …/queries` requests. The app
+  installs its components in one `POST …/computation/components`
+  (`app/src/drasi/ensureTradingResources.ts:242`) and never creates queries
+  that way (`:267`).
+- `run.ts:58` requires the `docker` CLI, and `run.ts:65-71` runs
+  `test/live/source_provenance.py`, which rejects path dependencies
+  (`:29-34`). `test/live/runtime-pins.json` pins Server 0.2.1 and SDK 0.10.0.
+  A checkout that uses the local `drasi-core` path dependency cannot pass this
+  gate.
+
+The spec's name-based REST reads still work, because Server resolves names in
+REST paths.
+
+**Work:** rebuild `run.ts` on the native path that
+`examples/postgres/qualify-trading.py` uses: an empty instance, local native
+plugins, `native-postgres settings` and the app's setup step. Look up the price
+source's UUID by name before posting, and replace the query-request assertion
+with the computation-components request. Keep the provisioning, CRUD, live and
+reconnect coverage that [SW-23](#sw-23) preserves.

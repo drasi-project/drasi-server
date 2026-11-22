@@ -6,7 +6,7 @@ This directory contains the comprehensive test suite for Drasi Server, including
 
 The native ABI integration suite requires real, separately built plugin libraries.
 Source/reaction/bootstrap fixtures must match SDK ABI 0.19.0; native computation
-plugins independently use ABI 4.0.0. Metadata assertions require the selected
+plugins independently use ABI 0.1.0. Metadata assertions require the selected
 SDK version, not a relabeled older binary. Build and stage the matched local
 plugins, recovery example and jq-enabled query factory through the supported gate:
 

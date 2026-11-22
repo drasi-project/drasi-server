@@ -62,7 +62,9 @@ class Trading(Qualification):
         for kind, tables in [("STOCKS", ["stocks", "portfolio", "watchlist"]), ("BROKER", ["limit_orders"])]:
             slot = "trading_" + uuid4().hex[:16]
             self.slots.append(slot)
-            self.sql(self.database, f"CREATE PUBLICATION {identifier(slot)} FOR TABLE {','.join(map(identifier, tables))};")
+            # The native PostgreSQL source rejects publications that publish TRUNCATE.
+            self.sql(self.database, f"CREATE PUBLICATION {identifier(slot)} FOR TABLE {','.join(map(identifier, tables))}"
+                                    " WITH (publish = 'insert, update, delete');")
             self.sql(self.database, f"SELECT pg_create_logical_replication_slot('{slot}','pgoutput');")
             self.env.update({f"TRADING_{kind}_SLOT": slot, f"TRADING_{kind}_PUBLICATION": slot})
         self.api_port, self.source_port, self.sse_port, self.server_port = [port() for _ in range(4)]
@@ -143,8 +145,9 @@ class Trading(Qualification):
         status, initial_inventory = self.response(f"/api/v1/instances/{self.instance}/computation")
         assert status == 200, initial_inventory
         components = initial_inventory["data"]["components"]
-        sources = {node["id"]: node["implementation"]["name"] for node in components
-                   if node["id"] in ("price-feed", "postgres-stocks", "postgres-broker")}
+        # Inventory IDs are component UUIDs; configured names are in "name".
+        sources = {node["name"]: node["implementation"]["name"] for node in components
+                   if node["name"] in ("price-feed", "postgres-stocks", "postgres-broker")}
         assert sources == {"price-feed": "drasi.network/http-source",
                            "postgres-stocks": "drasi.postgres/shared-changes",
                            "postgres-broker": "drasi.postgres/shared-changes"}, sources
@@ -152,7 +155,7 @@ class Trading(Qualification):
                        if node.get("implementation") is not None
                        and node["implementation"]["name"]
                        == "drasi.query/continuous"]
-        assert all(node["role"] == "Transformer" for node in query_nodes)
+        assert all(node["role"] == "Query" for node in query_nodes)
         queries = [node["id"] for node in query_nodes]
         assert len(queries) == 11, queries
         self.until("PG and HTTP bootstrap jointly initialize Trading", lambda:
@@ -170,7 +173,11 @@ class Trading(Qualification):
         assert result["success"] is True, result
         self.until("real Trading API writes reach shared native PG consumers", lambda:
                    len(self.rows("portfolio-query")) == 2 and len(self.rows("watchlist-query")) == 2)
-        self.request(f"http://127.0.0.1:{self.source_port}/sources/price-feed/events", {
+        # The HTTP source's event route takes the source's component UUID, not its name.
+        status, listed = self.response(f"/api/v1/instances/{self.instance}/sources")
+        assert status == 200, listed
+        price_feed = next(source["id"] for source in listed["data"] if source["name"] == "price-feed")
+        self.request(f"http://127.0.0.1:{self.source_port}/sources/{price_feed}/events", {
             "operation": "update", "timestamp": time.time_ns(),
             "element": {"type": "node", "id": "price_AAPL", "labels": ["stock_prices"],
                         "properties": {"symbol": "AAPL", "price": 210.0, "previous_close": 175.5, "volume": 25000000}},

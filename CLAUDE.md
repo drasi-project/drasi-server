@@ -23,7 +23,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Check compilation: `cargo check`
 
 ### Plugin Loading
-Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Source/Reaction/Bootstrap SDK ABI 0.19.0 and independent native ComputationGraph ABI 4.0.0 coexist in the same host. Rebuild plugins against the selected local SDK; do not infer compatibility from an older crate version. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
+Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Source/Reaction/Bootstrap SDK ABI 0.19.0 and independent native ComputationGraph ABI 0.1.0 coexist in the same host. Rebuild plugins against the selected local SDK; do not infer compatibility from an older crate version. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
 
 **Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. `scripts/plugin_origin.py` checks the locked Cargo graph: this branch's sibling SDK, host and FFI path dependencies select local mode, so use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 
@@ -328,11 +328,11 @@ DrasiServer separates two independent concepts:
 
 ### Builder-Based Configuration
 
-DrasiServer also supports a builder pattern for programmatic configuration. Sources, reactions, and state store providers are provided as plugin instances:
+DrasiServer also supports a builder pattern for programmatic configuration. Sources, reactions, and state store providers are provided as plugin instances. `query_plugin` is the selected native query plugin, for example `drasi_host_sdk::computation::NativePlugin::from_definition(drasi_computation_transformer_query::plugin()?)?`. `with_query_config` takes the query's name, its Cypher text and the names of its inputs:
 
 ```rust
+use drasi_lib::ComponentName;
 use drasi_server::DrasiServerBuilder;
-use drasi_lib::Query;
 use drasi_state_store_redb::RedbStateStoreProvider;
 use std::sync::Arc;
 
@@ -342,15 +342,12 @@ let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
 let server = DrasiServerBuilder::new()
     .with_id("my-server")
     .with_host_port("0.0.0.0", 8080)
+    .with_query_factory(query_plugin.query_factory()?)  // Explicit native query implementation
     .with_state_store_provider(Arc::new(state_store))  // Optional: for plugin state persistence
-    .with_source(my_source_instance)  // Plugin instance
-    .add_query(
-        Query::cypher("my-query")
-            .query("MATCH (n) RETURN n")
-            .from_input("my-source")
-            .build()
-    )
-    .with_reaction(my_reaction_instance)  // Plugin instance
+    .with_allow_external_component_ids(true)  // Required for preconstructed plugin instances
+    .with_source(ComponentName::try_new("my-source")?, my_source_instance)  // Plugin instance
+    .with_query_config("my-query", "MATCH (n) RETURN n", vec!["my-source".to_string()])?
+    .with_reaction(ComponentName::try_new("my-reaction")?, my_reaction_instance)  // Plugin instance
     .build()
     .await?;
 
@@ -386,11 +383,11 @@ server.run().await?;
   - Tests load real cdylib plugins (mock source, log reaction) and exercise the full
     dynamic loading pipeline including metadata validation, callbacks, factory invocation,
     and lifecycle management through FFI vtables.
-  - Prerequisites: build plugins in drasi-core with `make build-cdylib-plugins`
+  - Prerequisites: build plugins in drasi-core with `make build-test-plugins`
 
 ### Running Tests
 - Always run `cargo test` before committing
-- Use `./tests/run_working_tests.sh` for comprehensive testing
+- Use `make test-all` for comprehensive testing; it prepares matching plugins and also runs ignored and E2E tests
 - Check specific functionality with targeted tests
 
 ## API Endpoints
@@ -570,19 +567,16 @@ println!("  API Port: {}", port);
 The server can be used as a library in other Rust projects:
 
 ```rust
+use drasi_lib::ComponentName;
 use drasi_server::DrasiServerBuilder;
-use drasi_lib::Query;
 
 let server = DrasiServerBuilder::new()
     .with_id("my-server")
     .with_host_port("0.0.0.0", 8080)
-    .with_source(my_source)
-    .add_query(
-        Query::cypher("my-query")
-            .query("MATCH (n) RETURN n")
-            .from_input("my-source")
-            .build()
-    )
+    .with_query_factory(query_plugin.query_factory()?)
+    .with_allow_external_component_ids(true)
+    .with_source(ComponentName::try_new("my-source")?, my_source)
+    .with_query_config("my-query", "MATCH (n) RETURN n", vec!["my-source".to_string()])?
     .build()
     .await?;
 

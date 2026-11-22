@@ -399,10 +399,10 @@ lifecycle, status, and query-results endpoints all use that graph. Server does n
 expose all of the lower-level graph-management APIs available in the Rust library.
 Existing Source/Reaction and dynamic-plugin adapters remain supported; this is
 not a migration of existing plugin ABIs or stored data. The same host also loads
-independent native ComputationGraph ABI 1.0 plugins alongside the existing
-Source/Reaction/Bootstrap ABI 0.15 libraries.
-The built-in `__component_graph__` observability source still exposes the live
-graph's topology; its historical name does not imply a second runtime.
+independent native ComputationGraph ABI 0.1.0 plugins alongside the existing
+Source/Reaction/Bootstrap ABI 0.19.0 libraries.
+`GET /api/v1/instances/{instanceId}/computation` exposes the live graph's
+topology; there is no `__component_graph__` observability source.
 
 These instructions apply to the `agentofreality-parallel-computation-graph`
 branch. Use a [local development build](#computationgraph-development); do not
@@ -778,8 +778,9 @@ Server does not add authentication here. They are never published by topology-as
 `/plugins/kinds` adds a `computation` collection without changing legacy categories.
 Native plugin IDs are `computation:<id>@<version>`. Loading, installation, and watcher
 discovery share family dispatch and verification. Invalid native declarations never
-fall back to ABI 0.15. Replacing a loaded plugin or overwriting an installed binary
-at runtime is rejected: restart to replace it. There is no hot unloading.
+fall back to the ordinary ABI 0.19.0. Replacing a loaded plugin or overwriting an
+installed binary at runtime is rejected: restart to replace it. There is no hot
+unloading.
 
 Native `configurationSchemas` include each component's descriptions, defaults,
 limits and supported values when its binary supplies the optional configuration
@@ -1198,8 +1199,6 @@ You can upload custom template YAML files directly in the Web UI:
 #### `plugin`
 
 Manage dynamic plugins — install, upgrade, list, search, and remove plugin shared libraries.
-
-> **Note:** Plugin management requires the `dynamic-plugins` feature. Build with `cargo build --no-default-features --features dynamic-plugins`.
 
 ##### `plugin install`
 

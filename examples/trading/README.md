@@ -708,7 +708,8 @@ const eventSource = new EventSource('http://localhost:8281/events');
 
 eventSource.onmessage = (event) => {
   const data = JSON.parse(event.data);
-  // data.queryId - which query result changed
+  // data.queryId - UUID of the query whose result changed, not its name
+  //                (GET /api/v1/instances/trading-server/queries lists each id and name)
   // data.results - array of changes [{type: 'ADD'|'UPDATE'|'DELETE', data: {...}}]
   // data.timestamp - when the change occurred
 
@@ -726,7 +727,18 @@ eventSource.onmessage = (event) => {
 
 ### Sending Data to HTTP Source
 
+The HTTP source's `/sources/{id}/events` route takes the source's component
+UUID, not its name, and the generated UUIDs change whenever the bundle is
+regenerated. Look the UUID up by name from Server's sources API:
+
 ```python
+import requests
+
+sources = requests.get(
+    'http://localhost:8280/api/v1/instances/trading-server/sources', timeout=10,
+).json()['data']
+price_feed = next(source['id'] for source in sources if source['name'] == 'price-feed')
+
 # The price generator sends events like this:
 event = {
     "operation": "update",
@@ -744,8 +756,14 @@ event = {
     "timestamp": 1234567890000000000  # nanoseconds
 }
 
-requests.post('http://localhost:9100/sources/price-feed/events', json=event)
+response = requests.post(
+    f'http://localhost:9100/sources/{price_feed}/events', json=event, timeout=10,
+)
+response.raise_for_status()
 ```
+
+The price generator reads the same UUID from the generated
+`app/public/native-computation.json`.
 
 ## UI Components
 

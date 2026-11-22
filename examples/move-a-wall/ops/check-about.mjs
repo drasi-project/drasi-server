@@ -147,7 +147,7 @@ try {
     'impact-results': [/AffectedJourney Result node properties/, /task: string/, /destination: string/, /obstacle: string/],
     'inspection-results': [/scene-inputs Result node properties/, /obstructions Result node properties/, /scene-status Result node properties/],
     'catalog-api': [/Row values, selected by query ID/, /affected-journeys:/],
-    'catalog-sse': [/same graph-change v1 schema/, /Result node/, /scoped to that query output/, /generation, sequence and snapshot markers/],
+    'catalog-sse': [/same graph-change v2 schema/, /Result node/, /scoped to that query output/, /generation, sequence and snapshot markers/],
     'api-browser': [/success: true/, /data: Row\[\]/, /error: null/],
     'sse-browser': [/queryId: string/, /results: ResultDiff\[\]/, /type: "aggregation"/, /Heartbeat/],
   };

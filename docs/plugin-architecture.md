@@ -11,8 +11,8 @@ server build selector. Two independent dynamic ABI families share one host:
 
 | Family | ABI | Entry points |
 |--------|-----|--------------|
-| Source / Reaction / Bootstrap (and existing provider descriptors) | `0.17`, also accepts `0.16` fast-mode plugins | `drasi_plugin_metadata`, `drasi_plugin_init` |
-| Native ComputationGraph factories | `1.0` | `drasi_computation_plugin_metadata`, `drasi_computation_plugin_entry` |
+| Source / Reaction / Bootstrap (and existing provider descriptors) | `0.19.0`; a plugin must report the host's major.minor | `drasi_plugin_metadata`, `drasi_plugin_init` |
+| Native ComputationGraph factories | `0.1.0`; before 1.0 a plugin must report the host's major and minor | `drasi_computation_plugin_metadata`, `drasi_computation_plugin_entry` |
 
 Each producer enables its own `dynamic-plugin` feature. Legacy `export_plugin!`
 and native `export_computation_plugin!` are separate contracts; native plugins do
@@ -29,8 +29,8 @@ ComputationGraph runtime, with no fallback engine or runtime selector.
 │  Uses DrasiLib for query processing                              │
 │                                                                  │
 │  Plugin families:                                                │
-│  • Legacy Source/Reaction/Bootstrap ABI 0.16 / 0.17                │
-│  • Independent native ComputationGraph ABI 1.0                    │
+│  • Legacy Source/Reaction/Bootstrap ABI 0.19                     │
+│  • Independent native ComputationGraph ABI 0.1                   │
 ├──────────────────────────────────────────────────────────────────┤
 │                      drasi-host-sdk (library crate)              │
 │                                                                  │
@@ -68,7 +68,7 @@ ComputationGraph runtime, with no fallback engine or runtime selector.
 | Crate | Location | Role |
 |-------|----------|------|
 | `drasi-plugin-sdk` | `drasi-core/components/plugin-sdk` | Plugin-side SDK: FFI types, vtables, `export_plugin!` macro, vtable generation, FfiLogger, FfiStateStoreProxy |
-| `drasi-computation-plugin-abi` | `drasi-core/components/computation-plugin-abi` | Independent native ABI 1.0 C layouts and version headers |
+| `drasi-computation-plugin-abi` | `drasi-core/components/computation-plugin-abi` | Independent native ABI 0.1.0 C layouts and version headers |
 | `drasi-computation-plugin-sdk` | `drasi-core/components/computation-plugin-sdk` | Native factory metadata, wire serialization, producer-owned handles and export macro |
 | `drasi-host-sdk` | `drasi-core/components/host-sdk` | Host-side SDK: `PluginLoader`, proxy types (impl Source/Reaction/SourcePlugin), callback wiring, schema merging |
 | `drasi-server` | `drasi-server/` | Application: REST API, config persistence, OpenAPI spec, server lifecycle — uses `drasi-host-sdk` for dynamic loading |
@@ -117,8 +117,8 @@ Only the actual consumer publishes recovered progress; configuration cannot
 restore checkpoints or assert readiness/durability. Each instance constructs
 its own owner, and the graph verifies actual shared ownership rather than
 matching names. Native sources must independently negotiate recovery-v1.
-This recipe does not turn a volatile source or an old ABI 1.0 plugin into a
-replayable source, and it does not provide a database bootstrap implementation.
+This recipe does not turn a volatile source into a replayable source, and it
+does not provide a database bootstrap implementation.
 
 Native bootstrap-v1 factories are graph components, not resources. Each loaded
 bootstrap factory is also registered as a `BootstrapProvider` component kind
@@ -157,8 +157,9 @@ receiptsPerStream: 64
 
 Declare exactly one `IndexBackend` dependency for this resource, normally a
 `rocksdbIndexes` recipe. It uses that actual provider, not a second open inferred
-from a path, and isolates progress by instance, graph and consumer. Optional
-`retry` uses the shared delivery retry policy. The plugin's negotiated external
+from a path, and isolates progress by instance, graph and consumer. The recipe
+has no retry setting: the `DeliveryRunner` makes one attempt per delivery, and
+the graph retries a failed delivery in place. The plugin's negotiated external
 or transactional mode is validated against persisted progress; no mode is
 inferred from configuration. A producer's shared storage group is not a
 consumer transaction. External effects still require destination idempotence;
@@ -388,9 +389,9 @@ transitions.
    ↓
 3. For each plugin file:
    a. Only an allowed candidate may reach dlopen()
-   b. Explicit family dispatch: native symbols use ABI 1.0; invalid/partial native
-      declarations fail without invoking a legacy initializer
-   c. For legacy plugins, use the ABI 0.16 / 0.17 flow:
+   b. Explicit family dispatch: native symbols use native ABI 0.1; invalid/partial
+      native declarations fail without invoking a legacy initializer
+   c. For legacy plugins, use the ordinary ABI 0.19 flow:
       Resolve drasi_plugin_metadata() → PluginMetadata
       Reject missing or null metadata before initialization
       Validate SDK version (major.minor must match host) and target triple
@@ -435,15 +436,13 @@ The Server API (`GET /api/v1/plugins`) reports three different versions:
 | `kinds[].configVersion` | The configuration format for a plugin kind, from `config_version()` |
 | `sdkVersion` | The plugin/host interface compatibility version, not the Cargo package version of `drasi-plugin-sdk` |
 
-For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
+For native plugins, `sdkVersion` records the independent native ABI (`0.1.0`).
 The native manifest also exposes its wire version. Current native plugins use
 wire version 1 (binary computation envelopes and bulk MessagePack buffers).
 Build native plugins and the host from matching sources; unknown wire versions
-are rejected. Legacy ABI 0.17 adds versioned storage durability evidence
-and releases transferred state-store ownership. Existing ABI 0.16 plugins remain
-supported for fast-mode behavior, retaining their original state-store pointer
-lifetime and without new recovery services. ABI 0.15, unknown future contracts,
-malformed/missing metadata and wrong targets are rejected before initialization.
+are rejected. Legacy plugins must report ordinary ABI 0.19 (any patch); every
+other major.minor, unknown future contracts, malformed/missing metadata and wrong
+targets are rejected before initialization.
 Provider key-list errors remain explicit, and bootstrap subscription settings and
 context properties are forwarded.
 Loading compatibility and storage durability do not establish end-to-end recovery.
@@ -472,7 +471,7 @@ For matching local Server and plugin builds on the ComputationGraph branch, see
 ## FFI Boundary Design
 
 The opaque Rust object examples below describe the **legacy ABI only**. Native
-ComputationGraph ABI 1.0 uses serialized wire data and opaque producer-owned
+ComputationGraph ABI 0.1.0 uses serialized wire data and opaque producer-owned
 handles. It does not exchange Rust trait objects, futures, allocators, or native
 `SourceChange` memory layouts between independently built libraries.
 
@@ -611,30 +610,76 @@ drasi-plugin-sdk = { workspace = true }
 # ... your deps
 ```
 
-2. **Implement the Source trait** (same code for static and dynamic):
+2. **Implement the Source trait** (same code for static and dynamic). The
+   trait is `drasi_lib::sources::Source`, defined in
+   `drasi-core/lib/src/sources/traits.rs`. This sketch implements every
+   required method, delegates shared work to `SourceBase` and overrides some of
+   the methods that have defaults:
 
 ```rust
-use drasi_lib::sources::Source;
+use std::collections::HashMap;
 
-pub struct MyDbSource { /* ... */ }
+use anyhow::Result;
+use async_trait::async_trait;
+use drasi_lib::bootstrap::BootstrapProvider;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::config::SourceSubscriptionSettings;
+use drasi_lib::context::SourceRuntimeContext;
+use drasi_lib::sources::{Source, SourceBase, SourceBaseParams};
+use drasi_lib::ComponentId;
+
+pub struct MyDbSource {
+    base: SourceBase,
+    config: MyDbConfig,
+}
+
+impl MyDbSource {
+    pub fn new(id: ComponentId, config: MyDbConfig, auto_start: bool) -> Result<Self> {
+        let params = SourceBaseParams::new(id).with_auto_start(auto_start);
+        Ok(Self { base: SourceBase::new(params)?, config })
+    }
+}
 
 #[async_trait]
 impl Source for MyDbSource {
-    fn id(&self) -> &str { &self.id }
+    // Required methods
+    fn id(&self) -> &ComponentId { &self.base.id }
     fn type_name(&self) -> &str { "mydb" }
-    async fn start(&self) -> anyhow::Result<()> { /* connect */ }
-    async fn stop(&self) -> anyhow::Result<()> { /* disconnect */ }
-    async fn status(&self) -> ComponentStatus { /* ... */ }
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        todo!("Return every configuration property, including secrets")
+    }
+    async fn status(&self) -> ComponentStatus { self.base.get_status().await }
     async fn subscribe(&self, settings: SourceSubscriptionSettings)
-        -> anyhow::Result<SubscriptionResponse> { /* ... */ }
-    // ...
+        -> Result<SubscriptionResponse> {
+        self.base.subscribe_with_bootstrap(&settings, "mydb").await
+    }
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    async fn bind_runtime_context(&self, context: SourceRuntimeContext) {
+        self.base.bind_runtime_context(context).await;
+    }
+
+    // Overrides of methods with default implementations
+    fn auto_start(&self) -> bool { self.base.get_auto_start() }
+    async fn start(&self) -> Result<()> { todo!("Connect and publish changes") }
+    async fn stop(&self) -> Result<()> {
+        // Signals and joins the worker task, clears dispatchers and sets Stopped
+        self.base.stop_common().await
+    }
+    // Lets the server attach a configured bootstrap provider
+    async fn set_bootstrap_provider(&self, provider: Box<dyn BootstrapProvider + 'static>) {
+        self.base.set_bootstrap_provider(provider).await;
+    }
 }
 ```
 
 3. **Implement the descriptor** (factory + config schema):
 
 ```rust
+use async_trait::async_trait;
+use drasi_lib::sources::Source;
+use drasi_lib::ComponentId;
 use drasi_plugin_sdk::descriptor::SourcePluginDescriptor;
+use serde_json::Value;
 
 pub struct MyDbSourceDescriptor;
 
@@ -642,14 +687,14 @@ pub struct MyDbSourceDescriptor;
 impl SourcePluginDescriptor for MyDbSourceDescriptor {
     fn kind(&self) -> &str { "mydb" }
     fn config_version(&self) -> &str { "1.0.0" }
-    fn config_schema_name(&self) -> &str { "MyDbSourceConfig" }
+    fn config_schema_name(&self) -> &str { "source.mydb.MyDbSourceConfig" }
     fn config_schema_json(&self) -> String {
-        // Return utoipa OpenAPI schema as JSON
+        todo!("Serialize the DTO's utoipa schemas as a JSON map")
     }
-    async fn create_source(&self, id: &str, config: &Value, auto_start: bool)
+    async fn create_source(&self, id: &ComponentId, config_json: &Value, auto_start: bool)
         -> anyhow::Result<Box<dyn Source>> {
-        let config: MyDbConfig = serde_json::from_value(config.clone())?;
-        Ok(Box::new(MyDbSource::new(id, config, auto_start)))
+        let config: MyDbConfig = serde_json::from_value(config_json.clone())?;
+        Ok(Box::new(MyDbSource::new(id.clone(), config, auto_start)?))
     }
 }
 ```
@@ -672,31 +717,50 @@ drasi_plugin_sdk::export_plugin!(
 5. **Build**:
 
 ```sh
-# Static (linked into server binary):
-cargo build  # with drasi-server's builtin-plugins feature
-
-# Dynamic (standalone .so):
 cargo build --lib -p drasi-source-mydb --features drasi-source-mydb/dynamic-plugin
 ```
 
 ### Creating a Reaction Plugin
 
-Same pattern as source, but implement `Reaction` trait and `ReactionPluginDescriptor`:
+Same pattern as source, but implement the `Reaction` trait
+(`drasi-core/lib/src/reactions/traits.rs`) and `ReactionPluginDescriptor`. The
+host subscribes to the reaction's query inputs and forwards each result to
+`enqueue_query_result`, whose default discards it:
 
 ```rust
-use drasi_lib::reactions::Reaction;
-use drasi_plugin_sdk::descriptor::ReactionPluginDescriptor;
+use std::collections::HashMap;
 
-pub struct MyReaction { /* ... */ }
+use anyhow::Result;
+use async_trait::async_trait;
+use drasi_lib::channels::{ComponentStatus, QueryResult};
+use drasi_lib::config::ComponentReference;
+use drasi_lib::context::ReactionRuntimeContext;
+use drasi_lib::reactions::{Reaction, ReactionBase};
+use drasi_lib::ComponentId;
+use drasi_plugin_sdk::descriptor::ReactionPluginDescriptor;
+use serde_json::Value;
+
+pub struct MyReaction {
+    base: ReactionBase,
+}
 
 #[async_trait]
 impl Reaction for MyReaction {
-    fn id(&self) -> &str { &self.id }
+    fn id(&self) -> &ComponentId { &self.base.id }
     fn type_name(&self) -> &str { "myreaction" }
-    fn query_ids(&self) -> Vec<String> { self.query_ids.clone() }
-    async fn start(&self) -> anyhow::Result<()> { /* ... */ }
-    async fn stop(&self) -> anyhow::Result<()> { /* ... */ }
-    // ...
+    fn properties(&self) -> HashMap<String, Value> {
+        todo!("Return every configuration property, including secrets")
+    }
+    fn query_inputs(&self) -> Vec<ComponentReference> { self.base.queries.clone() }
+    async fn bind_runtime_context(&self, context: ReactionRuntimeContext) {
+        self.base.bind_runtime_context(context).await;
+    }
+    async fn status(&self) -> ComponentStatus { self.base.get_status().await }
+    async fn enqueue_query_result(&self, result: QueryResult) -> Result<()> {
+        self.base.enqueue_query_result(result).await
+    }
+    async fn start(&self) -> Result<()> { todo!("Start the processing loop") }
+    async fn stop(&self) -> Result<()> { self.base.stop_common().await }
 }
 
 pub struct MyReactionDescriptor;
@@ -704,8 +768,9 @@ pub struct MyReactionDescriptor;
 #[async_trait]
 impl ReactionPluginDescriptor for MyReactionDescriptor {
     fn kind(&self) -> &str { "myreaction" }
-    async fn create_reaction(&self, id: &str, query_ids: Vec<String>,
-        config: &Value, auto_start: bool) -> anyhow::Result<Box<dyn Reaction>> {
+    // config_version, config_schema_name and config_schema_json as for sources
+    async fn create_reaction(&self, id: &ComponentId, query_inputs: Vec<ComponentReference>,
+        config_json: &Value, auto_start: bool) -> anyhow::Result<Box<dyn Reaction>> {
         // ...
     }
 }
@@ -733,39 +798,48 @@ config_schema_json() → JSON string  →  Parse JSON
 
 ## Build System
 
-### Static Build (default)
+<a id="static-build-default"></a>
+
+### Server build
 
 ```sh
-cargo build                    # debug
-cargo build --release          # release
+cargo build --locked              # debug
+cargo build --locked --release    # release
 ```
 
-All plugins are statically linked. No `.so` files needed.
+The server binary links its core descriptors, its index, state-store and WAL
+backends, and its built-in native bridge and instance-host factories; it loads
+every other plugin as a shared library at runtime. It has no `builtin-plugins`
+or `dynamic-plugins` Cargo feature.
 
-### Dynamic Build
+<a id="dynamic-build"></a>
+
+### Plugin build
+
+Build plugins from the sibling drasi-core checkout that supplies the server's
+SDKs, so that plugin and host ABIs match:
 
 ```sh
-make build-dynamic             # build server + all plugins (debug)
-make build-dynamic-release     # build server + all plugins (release)
-make build-dynamic-server      # server only
-make build-dynamic-plugins     # plugins only
+make build-local-plugins          # all plugins (release) into target/release/plugins/
+make build-local-plugins-debug    # all plugins (debug) into target/debug/plugins/
+make build-local-test-plugins     # test bundle, including the native query plugin
 ```
 
-Plugins are built individually (not in batch) to avoid feature unification issues
-where adaptive plugins inherit cdylib entry points from their base dependencies.
+drasi-core's `xtask build-plugins` groups plugins into dependency-safe Cargo
+batches: plugins connected by a dependency build in separate invocations, so
+feature unification cannot make one plugin export another's FFI entry points.
 
 ### Testing
 
 ```sh
-# Static tests
-cargo test --lib                                                    # 196 tests
-cargo test --test error_resilience_test                             # 11 tests
+cargo test --locked                               # non-ignored tests (make test)
+cargo test --locked --test error_resilience_test
 
-# Dynamic tests (requires: make build-dynamic-plugins)
-cargo test --no-default-features --features dynamic-plugins --lib   # 185 tests
+# Prepare matching plugins, then run every test, including ignored/E2E tests
+make test-all
 
 # Host-SDK integration tests (requires pre-built cdylib plugins)
-cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test  # 22 tests
+cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test
 
 # Smoke tests (builds and runs server with all plugins)
 make test-smoke
@@ -812,7 +886,7 @@ Write unit tests against the trait implementation directly (no FFI needed):
 ```rust
 #[tokio::test]
 async fn test_my_source() {
-    let source = MyDbSource::new("test", config);
+    let source = MyDbSource::new(ComponentId::generate(), config, true).unwrap();
     source.start().await.unwrap();
     assert_eq!(source.status().await, ComponentStatus::Running);
 }

@@ -97,13 +97,16 @@ def send_price_to_http_source(http_url, source_id, price_data):
 def main():
     # Configuration
     http_source_url = os.getenv('TRADING_PRICE_SOURCE_URL', 'http://localhost:9100')
-    source_id = "price-feed"
     server_url = os.getenv('DRASI_SERVER_URL', 'http://localhost:8280')
     instance_id = os.getenv('DRASI_INSTANCE_ID', 'trading-server')
     bundle = json.loads((Path(__file__).parents[1] / 'app/public/native-computation.json').read_text())
-    query_ids = [node['descriptor']['id'] for node in bundle['definition']['components']
-                 if node['role'] == 'Query']
-    if not query_ids:
+    components = bundle['definition']['components']
+    query_ids = [node['descriptor']['id'] for node in components
+                 if node['descriptor'].get('semantic_kind') == 'Query']
+    # The HTTP source's event route takes the source's component UUID, not its name.
+    source_id = next((node['descriptor']['id'] for node in components
+                      if node['role'] == 'Source' and node['name'] == 'price-feed'), None)
+    if not query_ids or not source_id:
         raise ValueError('Generate the native Trading bundle before starting prices')
     
     # Stock symbols with base prices - all 50 stocks from the database

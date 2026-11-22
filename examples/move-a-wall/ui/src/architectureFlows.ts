@@ -103,9 +103,9 @@ const diffs = `ResultDiff =
       after: Row, row_signature: u64 }
   | { type: "noop" }`;
 
-const graphDetail = 'Graph pipes carry graph-change v1 envelopes: ElementImage adds and replacements, ElementPatch updates and deletes. The schema below shows decoded node properties, not a JSON transport envelope.';
+const graphDetail = 'Graph pipes carry graph-change v2 envelopes: ElementImage adds and replacements, ElementPatch updates and deletes. The schema below shows decoded node properties, not a JSON transport envelope.';
 const graphNote = 'Inserts and replacements carry node properties. Source deletes can be identity-only (element identity and metadata, not the old properties). Envelopes carry stream/sequence and timing information.';
-const queryDetail = 'A query output uses the same graph-change v1 schema as every other pipe. Each output is a Result node whose properties are the query’s RETURN aliases, with an identity scoped to that query output. Query ID, row kind, generation, sequence and snapshot markers are scoped envelope metadata, not node properties. The schema below shows the RETURN-alias properties.';
+const queryDetail = 'A query output uses the same graph-change v2 schema as every other pipe. Each output is a Result node whose properties are the query’s RETURN aliases, with an identity scoped to that query output. Query ID, row kind, generation, sequence and snapshot markers are scoped envelope metadata, not node properties. The schema below shows the RETURN-alias properties.';
 const queryNote = 'An added Result node carries an ElementImage; an update carries an ElementImage or ElementPatch; a delete carries the prior Result node as an ElementBeforeImage. A downstream transformer or query reads these envelopes directly, with no conversion step.';
 
 export const connections: Connection[] = [
@@ -129,35 +129,35 @@ ${entity}`,
   {
     id: 'scene-context', kind: 'graph', path: 'M513 210 H567',
     title: 'Scene store → Footprint queries',
-    implementation: 'scene.out → journey-footprints.in / obstacle-footprints.in · drasi.graph-change v1',
+    implementation: 'scene.out → journey-footprints.in / obstacle-footprints.in · drasi.graph-change v2',
     detail: graphDetail, schema: source,
     note: `${graphNote} Active filtering and the journey-to-cart join happen in the receiving queries; the source stream also contains inactive objects and the SceneStatus node.`,
   },
   {
     id: 'context-geometry', kind: 'rows', path: 'M773 210 H827',
     title: 'Footprint queries → Geometry',
-    implementation: 'journey-footprints.out / obstacle-footprints.out → geometry.in · drasi.graph-change v1 (Result nodes)',
+    implementation: 'journey-footprints.out / obstacle-footprints.out → geometry.in · drasi.graph-change v2 (Result nodes)',
     detail: queryDetail, schema: footprints,
     note: `${queryNote} Geometry keeps a footprint per Result node and recomputes only the pairs a changed footprint touches.`,
   },
   {
     id: 'geometry-impact', kind: 'graph', path: 'M1033 210 H1087',
     title: 'Geometry → Affected journeys',
-    implementation: 'geometry.out → affected-journeys.in · drasi.graph-change v1',
+    implementation: 'geometry.out → affected-journeys.in · drasi.graph-change v2',
     detail: graphDetail, schema: geometry,
     note: `${graphNote} Each Obstruction is inserted, updated or deleted as its journey/obstacle pair changes; the query joins it to the scene's names.`,
   },
   {
     id: 'scene-impact', kind: 'graph', path: 'M450 152 V130 H1150 V152',
     title: 'Scene store → Affected journeys',
-    implementation: 'scene.out → affected-journeys.in · drasi.graph-change v1',
+    implementation: 'scene.out → affected-journeys.in · drasi.graph-change v2',
     detail: graphDetail, schema: source,
     note: `${graphNote} The impact query reads the typed Cart, Journey, Destination and Obstacle nodes directly, so a name-only edit updates the impact without recomputing geometry.`,
   },
   {
     id: 'scene-inspection', kind: 'graph', path: 'M410 268 V405 H567',
     title: 'Scene store → Input/status inspection',
-    implementation: 'scene.out → scene-inputs.in / scene-status.in · drasi.graph-change v1',
+    implementation: 'scene.out → scene-inputs.in / scene-status.in · drasi.graph-change v2',
     detail: graphDetail, schema: source,
     note: `${graphNote} This is the same source stream sent to the footprint queries; scene-inputs retains inactive objects too, and scene-status selects the SceneStatus node.`,
   },
@@ -166,26 +166,26 @@ ${entity}`,
     title: 'Geometry → Cause inspection',
     implementation: 'geometry.out → obstructions.in',
     detail: graphDetail, schema: geometry,
-    note: `${graphNote} The obstructions query receives the same drasi.graph-change v1 stream as the impact query and selects Obstruction nodes.`,
+    note: `${graphNote} The obstructions query receives the same drasi.graph-change v2 stream as the impact query and selects Obstruction nodes.`,
   },
   {
     id: 'context-results', kind: 'rows', path: 'M670 152 V110 H1320 V405 H1293',
     title: 'Footprint queries → Query results outlet',
-    implementation: 'journey-footprints.out / obstacle-footprints.out → query-results.in · drasi.graph-change v1 (Result nodes)',
+    implementation: 'journey-footprints.out / obstacle-footprints.out → query-results.in · drasi.graph-change v2 (Result nodes)',
     detail: queryDetail, schema: footprints,
     note: `${queryNote} These are the same outputs that feed Geometry, published separately for inspection.`,
   },
   {
     id: 'impact-results', kind: 'rows', path: 'M1190 268 V347',
     title: 'Affected journeys → Query results outlet',
-    implementation: 'affected-journeys.out → query-results.in · drasi.graph-change v1 (Result nodes)',
+    implementation: 'affected-journeys.out → query-results.in · drasi.graph-change v2 (Result nodes)',
     detail: queryDetail, schema: impact,
     note: `${queryNote} One Result node represents one journey/obstacle cause. The query supplies the human-readable names.`,
   },
   {
     id: 'inspection-results', kind: 'rows', path: 'M773 405 H1087',
     title: 'Inspection queries → Query results outlet',
-    implementation: 'Three independent out ports → query-results.in · drasi.graph-change v1 (Result nodes)',
+    implementation: 'Three independent out ports → query-results.in · drasi.graph-change v2 (Result nodes)',
     detail: queryDetail,
     schema: `scene-inputs Result node properties:
 ${sceneRow}
@@ -208,7 +208,7 @@ ${sceneStatus}`,
   {
     id: 'catalog-sse', kind: 'rows', path: 'M670 463 V522',
     title: 'Continuous queries → native SSE sink',
-    implementation: 'All six query out ports → wall-ui.in · drasi.graph-change v1 (Result nodes)',
+    implementation: 'All six query out ports → wall-ui.in · drasi.graph-change v2 (Result nodes)',
     detail: 'Six independent bounded graph pipes, grouped in this arrow. The native sink reads these graph-change envelopes directly and writes the browser’s result-difference JSON only at the transport boundary, without catalog subscriptions or a reaction queue.',
     schema: queryDetail,
     note: 'The result shape is the selected query’s RETURN aliases, shown on its incoming arrow. Native envelopes include sequence; the unchanged browser SSE payload does not.',

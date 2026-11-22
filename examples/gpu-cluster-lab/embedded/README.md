@@ -291,8 +291,8 @@ flowchart LR
 
 The normal application-level topology contains **two explicit sources, nineteen
 continuous queries, six transformer nodes, and two sinks**. Drasi also
-creates query-result outlets and its built-in `__component_graph__` observability
-source. Native queries own their future-queue wakeups directly.
+creates query-result outlets. Native queries own their future-queue wakeups
+directly.
 
 Policy and optimization are **generic drasi-core plugins**, configured for this
 demo rather than written for it: `drasi.standard/policy` evaluates

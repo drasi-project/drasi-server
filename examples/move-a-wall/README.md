@@ -199,7 +199,7 @@ existing Server snapshot/subscription flow is unchanged.
 | `query-results` | `in`: Result nodes from all six CQs | Stock handled sink publishes into the shared `QueryResultsCatalog` for real snapshots/subscriptions |
 | `wall-ui` | `in`: direct graph-change envelopes with Result nodes from all six CQs | Native SSE on `/events`; the sink writes truthful graph changes (`ADD`/`REPLACE`/`PATCH`/`DELETE` with canonical identity); `@drasi/react` loads the canonical snapshot and applies live changes to its identity-keyed rows |
 
-Every pipe in this table uses the same graph-change v1 schema. A query's `RETURN`
+Every pipe in this table uses the same graph-change v2 schema. A query's `RETURN`
 aliases are properties of its Result nodes, whose identities are scoped to that
 query output; query ID, row kind, generation, sequence and snapshot markers are
 scoped envelope metadata. No pipe converts between a separate query-row and
