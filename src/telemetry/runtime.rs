@@ -397,7 +397,9 @@ mod tests {
     #[test]
     #[ignore = "isolated global-installation subprocess entry point"]
     fn initialization_child() -> Result<()> {
-        let case = std::env::var(CASE)?;
+        let Ok(case) = std::env::var(CASE) else {
+            return Ok(());
+        };
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?

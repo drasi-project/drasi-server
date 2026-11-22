@@ -565,8 +565,6 @@ async fn unsampled(otlp: bool) -> Result<()> {
 
 const SOURCE_ID: &str = "e07b5b54-840c-4c48-bac0-0bbdf637d306";
 const SINK_ID: &str = "f027d30c-f549-4d41-a5cf-bd7f0bc1e606";
-/// Native network sources require a UUID `sourceId` (also the URL segment).
-const SOURCE_NAME: &str = "8342ceea-94a0-4511-9ae5-c35d894ebf5f";
 
 struct Collector {
     descriptor: ComponentDescriptor,
@@ -663,7 +661,7 @@ async fn send(
                     node: Some(grpc_wire::Node {
                         metadata: Some(grpc_wire::ElementMetadata {
                             reference: Some(grpc_wire::ElementReference {
-                                source_id: SOURCE_NAME.into(),
+                                source_id: SOURCE_ID.into(),
                                 element_id: element.into(),
                             }),
                             labels: vec!["Room".into()],
@@ -671,7 +669,7 @@ async fn send(
                         }),
                     }),
                 }),
-                source_id: SOURCE_NAME.into(),
+                source_id: SOURCE_ID.into(),
             }),
         }
         .encode_to_vec();
@@ -690,7 +688,7 @@ async fn send(
     } else {
         reqwest::Client::new()
             .post(format!(
-                "http://127.0.0.1:{port}/sources/{SOURCE_NAME}/events"
+                "http://127.0.0.1:{port}/sources/{SOURCE_ID}/events"
             ))
             .json(&json!({"operation": "insert", "element": {
                 "type": "node", "id": element, "labels": ["Room"], "properties": {"value": 1}
@@ -745,7 +743,7 @@ async fn ingress(grpc: bool, instance: &str) -> Result<()> {
             factory.specification(
                 ComponentId::try_new(SOURCE_ID)?,
                 json!({
-                    "stream": "source/out", "sourceId": SOURCE_NAME,
+                    "stream": "source/out",
                     "host": "127.0.0.1", "port": port,
                 }),
             )?,

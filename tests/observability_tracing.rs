@@ -214,6 +214,10 @@ fn attribute(values: &[KeyValue], key: &str) -> Option<String> {
 #[test]
 #[ignore = "isolated global-installation subprocess entry point"]
 fn trace_child() -> Result<()> {
+    // Only the parent tests launch this with a case; a direct run is a no-op.
+    let Ok(case) = std::env::var(CASE) else {
+        return Ok(());
+    };
     let mut runtime = if std::env::var(FLAVOR)? == "current_thread" {
         tokio::runtime::Builder::new_current_thread()
     } else {
@@ -221,10 +225,7 @@ fn trace_child() -> Result<()> {
         builder.worker_threads(2);
         builder
     };
-    runtime
-        .enable_all()
-        .build()?
-        .block_on(scenario(&std::env::var(CASE)?))
+    runtime.enable_all().build()?.block_on(scenario(&case))
 }
 
 async fn scenario(case: &str) -> Result<()> {

@@ -15,6 +15,8 @@
 //! Integration tests for configuration persistence
 //! Tests that API mutations are saved to config file
 
+#![allow(clippy::unwrap_used)]
+
 mod test_support;
 
 use drasi_lib::config::{ComponentReference, QueryLanguage};

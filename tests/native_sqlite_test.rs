@@ -120,8 +120,7 @@ async fn results(
             for query in queries {
                 let body: Value = client
                     .get(format!(
-                        "{base}/instances/{}/queries/{query}/results",
-                        instance,
+                        "{base}/instances/{instance}/queries/{query}/results"
                     ))
                     .send()
                     .await?

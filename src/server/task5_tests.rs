@@ -964,7 +964,10 @@ fn standalone_handoff_applies_file_policy_without_replacing_capture() -> Result<
 #[test]
 #[ignore = "isolated standalone owner/policy handoff entry point"]
 fn runtime_handoff_child() -> Result<()> {
-    let mut builder = match std::env::var("DRASI_TASK5_HANDOFF_FLAVOR")?.as_str() {
+    let Ok(flavor) = std::env::var("DRASI_TASK5_HANDOFF_FLAVOR") else {
+        return Ok(());
+    };
+    let mut builder = match flavor.as_str() {
         "current_thread" => tokio::runtime::Builder::new_current_thread(),
         "multi_thread" => {
             let mut builder = tokio::runtime::Builder::new_multi_thread();

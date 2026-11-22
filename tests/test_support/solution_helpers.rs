@@ -20,6 +20,8 @@
 //! - Polling reaction logs for expected output
 //! - Creating mock HTTP servers for HTTP source/reaction testing
 
+#![allow(clippy::unwrap_used)]
+
 use axum::Router;
 use drasi_lib::{ComponentName, DrasiLib, Query};
 use drasi_server::api::v1::handlers;

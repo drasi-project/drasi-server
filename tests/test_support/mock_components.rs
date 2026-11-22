@@ -14,6 +14,8 @@
 
 //! Mock source and reaction implementations for testing DrasiLib.
 
+#![allow(clippy::unwrap_used)]
+
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::{ChangeDispatcher, ChannelChangeDispatcher};
 use drasi_lib::channels::{ComponentStatus, SourceEventWrapper, SubscriptionResponse};

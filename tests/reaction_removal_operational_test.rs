@@ -2,6 +2,10 @@
 // Licensed under the Apache License, Version 2.0.
 
 #![cfg(unix)]
+#![allow(
+    clippy::print_stdout,
+    reason = "Server output is printed to diagnose operational qualification failures"
+)]
 
 use anyhow::{Context, Result};
 use drasi_lib::{ComponentId, StateStoreProvider, StorePartition};
@@ -144,23 +148,13 @@ async fn reaction(
 }
 
 async fn lifecycle(client: &Client, api: u16, action: &str) -> Result<()> {
-    let paths = if action == "start" {
-        [
-            "sources/input",
-            "queries/values",
-            "reactions/stream",
-            "reactions/logger",
-            "reactions/unrelated",
-        ]
-    } else {
-        [
-            "sources/input",
-            "queries/values",
-            "reactions/stream",
-            "reactions/logger",
-            "reactions/unrelated",
-        ]
-    };
+    let paths = [
+        "sources/input",
+        "queries/values",
+        "reactions/stream",
+        "reactions/logger",
+        "reactions/unrelated",
+    ];
     for path in paths {
         request(
             client,
