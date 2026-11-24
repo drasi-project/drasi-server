@@ -251,6 +251,10 @@ impl DrasiServerBuilder {
     }
 
     /// Add an additional DrasiLibBuilder to run as a separate DrasiLib instance
+    ///
+    /// Without `with_telemetry` or `with_telemetry_bindings`, the builder applies
+    /// Server's default telemetry to this builder, replacing telemetry options set
+    /// on it; use `with_telemetry_bindings` to supply custom telemetry.
     pub fn add_instance_builder(mut self, builder: DrasiLibBuilder) -> Self {
         self.core_builders.push(builder);
         self

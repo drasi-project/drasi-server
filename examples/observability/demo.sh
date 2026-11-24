@@ -407,7 +407,7 @@ if [[ "$action" == live || "$action" == live-postgres || "$action" == showcase ]
     export DRASI_DEMO_PROFILE="${DRASI_DEMO_PROFILE:-$default_profile}"
     case "$DRASI_DEMO_PROFILE" in
         basic|debug|persistence) ;;
-        *) printf '%s requires basic, debug or persistence; use start for Off.\n' "${action%-postgres}" >&2; exit 2 ;;
+        *) printf '%s requires basic, debug or persistence; use DRASI_DEMO_PROFILE=off with start for Off.\n' "${action%-postgres}" >&2; exit 2 ;;
     esac
     if [[ "$action" == showcase ]]; then
         showcase_preflight

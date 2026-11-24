@@ -120,7 +120,7 @@ fn children(scenario: &str, rust_log: Option<&str>) -> Result<Vec<String>> {
 // Break caught: capture/console installation occurs after a fallible constructor,
 // or collection Off is incorrectly used as a log filter.
 #[test]
-fn off_preserves_early_constructor_diagnostics() -> Result<()> {
+fn default_policy_preserves_early_constructor_diagnostics() -> Result<()> {
     for console in children("early-constructor", None)? {
         assert_eq!(console.matches("early constructor diagnostic").count(), 1);
         assert!(!console.contains("suppressed OCI warning"));

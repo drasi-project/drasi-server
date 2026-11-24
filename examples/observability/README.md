@@ -89,7 +89,7 @@ Jaeger, Prometheus and Grafana run as podman containers, published only on
 |---|---|
 | [`drasi-server.yaml`](drasi-server.yaml) | Server configuration for the HTTP pipeline, used by `showcase` and `live` |
 | [`postgres-config.yaml`](postgres-config.yaml) | The same pipeline with a PostgreSQL change-data-capture source, used by `live-postgres` |
-| [`server-config.yaml`](server-config.yaml) | A Server with no instances and telemetry off by default, used by `start` and `validate` |
+| [`server-config.yaml`](server-config.yaml) | A Server with no instances and Server's default telemetry (basic, no destinations), used by `start` and `validate` |
 | [`demo.sh`](demo.sh) | The launcher for every mode |
 | [`local_bundle.py`](local_bundle.py) | Builds and checks the local plugin bundle |
 | [`showcase/`](showcase/) | Prometheus configuration, Grafana provisioning and dashboard, and the input generator `traffic.py` |
@@ -142,7 +142,7 @@ instances:
 telemetry:
   profile: debug                # adds query phases (query.evaluate, query.commit, …) to traces
   inspection:
-    enabled: true               # serves GET /api/v1/telemetry
+    enabled: true               # serves GET /api/v1/telemetry and /api/v1/telemetry/metrics
   tracing:
     endpoint: http://127.0.0.1:4318/v1/traces   # Jaeger's OTLP/HTTP receiver
     protocol: http/protobuf
@@ -159,13 +159,15 @@ The **profile** controls how much detail Server collects:
 
 | Profile | What it collects |
 |---|---|
-| `off` | Nothing. Inspection can still be turned on separately. |
+| `off` | Nothing. The settings route stays on unless `inspection.enabled: false`. |
 | `basic` | The standard pipeline metrics and spans |
 | `debug` | `basic`, plus debug details such as query phase spans (`query.evaluate`, `query.commit`, …) |
 | `persistence` | `basic`, plus storage and recovery details such as `drasi_query_commit_duration`; it does not include the `debug` details |
 
-The showcase defaults to `debug` and the `live` modes to `persistence`; set
-`DRASI_DEMO_PROFILE` to choose another. For every field and its limits, see
+Server uses `basic` when the `telemetry` section or `profile` is omitted; `off`
+must be chosen explicitly. The showcase defaults to `debug` and the `live` modes
+to `persistence`; set `DRASI_DEMO_PROFILE` to choose another. For every field
+and its limits, see
 [telemetry configuration](../../docs/telemetry-configuration.md).
 
 ## Prerequisites
@@ -538,7 +540,7 @@ The showcase is one of several modes of the same launcher:
 
 | Command | What it runs |
 |---|---|
-| `start` (the default) | A Server with no instances; telemetry is off unless you turn it on |
+| `start` (the default) | A Server with no instances and Server's default telemetry (basic, no destinations, settings route only) |
 | `validate` | Checks `server-config.yaml` and its telemetry settings without starting Server |
 | `init` | An interactive wizard that writes `wizard-config.yaml` |
 | `build-plugins [http\|postgres]` | Builds Server and one scenario's plugins (default `http`) |
@@ -566,8 +568,11 @@ bash examples/observability/demo.sh init        # interactive wizard
 The launcher builds Server offline under `target/observability-server` and uses
 an empty plugin directory, `target/observability-example/empty-plugins`, never
 your own. `GET /health` and `GET /api/v1/instances` succeed (the latter with
-empty `data`); `/metrics` and `/api/v1/telemetry` return 404 because telemetry
-is off. `DRASI_DEMO_PORT=18082` chooses another port. Stop with Ctrl+C.
+empty `data`). `/metrics` returns 404 because no Prometheus backend is active.
+`/api/v1/telemetry` returns the settings: profile `basic`, backend `none` and
+`path: null`. `/api/v1/telemetry/metrics` returns 404 because the default mounts
+only the settings route. `DRASI_DEMO_PORT=18082` chooses another port. Stop with
+Ctrl+C.
 
 `validate` checks the telemetry settings without binding ports or contacting
 any destination:
@@ -587,17 +592,20 @@ no pipeline. Settings for the metrics backend you did not choose stay inactive.
 
 Inspection works even with telemetry off. The command below serves
 `/api/v1/telemetry` with profile `off`, backend `none` and `path: null`, while
-`/api/v1/telemetry/metrics` returns 503 `TELEMETRY_METRICS_UNAVAILABLE`:
+`/api/v1/telemetry/metrics` returns 404 (only `inspection.enabled: true` mounts
+it):
 
 ```sh
-DRASI_DEMO_INSPECTION=true bash examples/observability/demo.sh start
+DRASI_DEMO_PROFILE=off bash examples/observability/demo.sh start
 ```
 
 The wizard writes `wizard-config.yaml` (ignored by Git) and refuses to
-overwrite an existing one. You can skip telemetry, choose Off (optionally with
-inspection), or choose tracing and one metrics backend with optional process
-metrics and inspection. The launcher never switches to the wizard's output on
-its own.
+overwrite an existing one. Skipping telemetry keeps Server's default (basic, no
+destinations, settings route only). Otherwise you choose a profile, including
+Off, and which inspection routes to serve: settings only (the default),
+settings and metrics, or none. Any profile other than Off also offers tracing
+and one metrics backend with optional process metrics. The launcher never
+switches to the wizard's output on its own.
 
 ### The HTTP pipeline with Prometheus: `live`
 
@@ -1015,13 +1023,13 @@ optional `.env` file without overriding existing variables; `live` and
 |---|---|---|---|
 | `DRASI_DEMO_TRUST_LOCAL_PLUGINS` | not used | must be `1` | must be `1` |
 | `DRASI_DEMO_PORT` (management API, `/metrics`; also used by `send`) | `18081` | `18081` | `18081` |
-| `DRASI_DEMO_PROFILE` | `off` | `persistence` | `debug` |
+| `DRASI_DEMO_PROFILE` | `basic` | `persistence` | `debug` |
 | `DRASI_DEMO_METRICS_BACKEND` | `none` | the command's argument, default `prometheus` | always `prometheus` |
 | `DRASI_DEMO_METRICS_ENDPOINT` | `http://127.0.0.1:4318/v1/metrics` | same | not used |
 | `DRASI_DEMO_EXPORT_INTERVAL` (seconds) | `30` | `2` | not used |
 | `DRASI_DEMO_EXPORT_TIMEOUT` (seconds) | `5` | `1` | not used |
 | `DRASI_DEMO_PROCESS_METRICS` | not used (off) | `true` | always `true` |
-| `DRASI_DEMO_INSPECTION` | `false` | `true` | `true` |
+| `DRASI_DEMO_INSPECTION` | not used (Server's default: settings route only) | `true` | `true` |
 | `DRASI_DEMO_TRACE_ENDPOINT` | empty (no trace export) | empty | always the showcase's Jaeger |
 | `DRASI_DEMO_SAMPLE_RATIO` | `0.1` | `1.0` | `1.0` |
 | `DRASI_DEMO_EXCLUDE` | not used | `drasi.plugin.` | `drasi.plugin.` |

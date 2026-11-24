@@ -1332,13 +1332,15 @@ The single [execution engine](#execution-engine) needs no configuration selector
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 | `instances` | array | `[]` | Explicit, independently configured DrasiLib instances |
 | `metrics` | object | none | Optional OpenTelemetry query-progress export; see below. |
-| `telemetry` | object | none | Startup-only telemetry policy and init support; every configured capability is available, and an invalid policy fails validation and startup. See [telemetry configuration](docs/telemetry-configuration.md). |
+| `telemetry` | object | `{}` | Startup-only telemetry policy and init support. Omitted means `telemetry: {}` (profile Basic, no trace or metrics destinations, and the read-only settings route `GET /api/v1/telemetry`), except when legacy root `metrics` is configured. `profile: off` opts out of collection, while `inspection.enabled: false` removes the settings route. Every configured capability is available, and an invalid policy fails validation and startup. See [telemetry configuration](docs/telemetry-configuration.md). |
 
 ### Operational metrics (Prometheus or OTLP)
 
 The startup-only `telemetry` policy selects one metrics backend for all actual
-instances, including native queries. No global recorder/provider, tracing
-export, process collector or inspection service is installed implicitly:
+instances, including native queries. Omitted, it is Basic with no
+destinations: no global recorder/provider, tracing export or process collector
+is installed implicitly, and only the read-only settings route is served.
+Configure a backend explicitly:
 
 ```yaml
 telemetry:
@@ -1360,10 +1362,14 @@ Off/None creates no new backend, scrape route/listener or upkeep worker.
 
 Opt-in [process metrics](docs/telemetry-configuration.md#process-metrics)
 (`metrics.processMetrics: true`) add unlabelled `process_*` CPU, memory,
-file-descriptor and thread measurements to either backend, and
-[read-only inspection](docs/telemetry-configuration.md#read-only-inspection)
-(`inspection.enabled: true`) serves the effective settings and local metrics on
-the management listener.
+file-descriptor and thread measurements to either backend.
+[Read-only inspection](docs/telemetry-configuration.md#read-only-inspection)
+serves the effective settings at `GET /api/v1/telemetry` on the management
+listener by default; `inspection.enabled: true` adds local metrics at
+`/api/v1/telemetry/metrics`, and `false` turns both routes off. While trace
+export or a metrics backend is active, instance IDs must be nonempty without
+whitespace or control characters
+([instance IDs](docs/telemetry-configuration.md#instance-ids)).
 
 Counters, physical-queue gauges and actual evaluator/commit duration histograms
 preserve Core identities and native seconds/count units. Persistence includes
@@ -1374,8 +1380,9 @@ does not export that progress instrument.
 
 See [telemetry configuration](docs/telemetry-configuration.md) for histogram
 bounds, limits, exclusions, overload, resource identity and retained ownership.
-The [existing observability example](examples/observability/README.md) keeps
-its Off/empty default and adds an explicit `live prometheus` / `live otlp`
+The [existing observability example](examples/observability/README.md) runs
+`start`/`validate` with Server's default (basic, no destinations, settings route
+only) and adds an explicit `live prometheus` / `live otlp`
 mock → native query → log reaction walkthrough using locally rebuilt,
 source/binary-fingerprinted plugins. Its one-command `showcase` runs the HTTP
 pipeline with pinned Jaeger, Prometheus and Grafana containers in podman and a
@@ -1388,9 +1395,12 @@ instructions are not a full-suite or release claim.
 For the local Core/Server adapter versions, migration decisions and compatibility
 checks, see the [OBS-01 baseline](docs/observability-baseline.md). This baseline
 does not enable new exporters or replace the progress-export contract below.
-Do not combine root `metrics` with any `telemetry` section, including Off or
-inspection-only settings. New telemetry uses explicit HTTP/protobuf signal URLs
-and second-valued intervals, not the legacy settings below.
+Do not combine root `metrics` with any `telemetry` section, including `{}`, Off
+or inspection-only settings. Root `metrics` without a `telemetry` section keeps
+working as before: Server telemetry stays Off, no inspection route is mounted,
+and startup logs one info line suggesting migration to `telemetry`. New
+telemetry uses explicit HTTP/protobuf signal URLs and second-valued intervals,
+not the legacy settings below.
 
 Configure `metrics` at Server level to export OTLP/HTTP JSON to an existing
 collector. Omitting it creates no metrics exporter or metrics worker.
@@ -1407,7 +1417,8 @@ credentials, a query string, or a fragment. HTTPS verifies the server certificat
 redirects are not followed. Standard OTLP exporter header environment variables
 can supply collector authentication. The default interval is 10,000 ms
 (allowed: 100 to 3,600,000); the default timeout is 5,000 ms (100 to 30,000).
-Programmatic callers can use `DrasiServer::with_metrics`.
+Programmatic callers can use `DrasiServer::with_metrics` when no `telemetry`
+is configured; it is rejected with explicit telemetry or borrowed bindings.
 
 The `drasi.progress` instrumentation scope exports the observable gauge
 `drasi.query.progress.sequence`. Its `drasi.progress.stage` attribute distinguishes

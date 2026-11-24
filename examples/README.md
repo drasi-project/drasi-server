@@ -63,7 +63,8 @@ built `@drasi/react` package, with no Trading frontend dependency.
 **Telemetry configuration** - A local, configuration-first walkthrough of the
 OBS-02 policy and init wizard.
 
-- Starts an empty, loopback-only Server with telemetry disabled.
+- Starts an empty, loopback-only Server with Server's default telemetry
+  (basic, no destinations, settings route `GET /api/v1/telemetry` only).
 - Exercises environment interpolation, validation and explicit startup errors
   for unavailable exporters and inspection.
 - Requires no database, collector, Docker or plugin build.

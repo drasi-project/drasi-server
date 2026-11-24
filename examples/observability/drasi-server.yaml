@@ -48,9 +48,13 @@ instances:
 telemetry:
   # How much detail Server collects: off, basic, debug or persistence.
   # debug adds query phases (query.evaluate, query.commit, ...) to traces.
+  # Server uses basic when telemetry or profile is omitted; off is the explicit
+  # opt-out.
   profile: "${DRASI_DEMO_PROFILE:-persistence}"
-  # Read-only GET /api/v1/telemetry on the management port, showing what is
-  # active. Independent of the profile and of any exporter.
+  # Read-only inspection on the management port, showing what is active.
+  # true serves GET /api/v1/telemetry and GET /api/v1/telemetry/metrics;
+  # omitting enabled serves only GET /api/v1/telemetry; false serves neither.
+  # Independent of the profile and of any exporter.
   inspection:
     enabled: "${DRASI_DEMO_INSPECTION:-true}"
   tracing:

@@ -452,7 +452,7 @@ pub(crate) fn default_telemetry_settings() -> Result<TelemetrySettings> {
 pub(crate) fn validate_telemetry_instance_id(id: &str) -> Result<()> {
     ensure!(
         !id.is_empty() && !id.chars().any(|c| c.is_whitespace() || c.is_control()),
-        "Instance {id:?}: telemetry requires a valid instance ID, but it is empty or contains whitespace or control characters; rename the instance or set telemetry.profile: off"
+        "Instance {id:?}: telemetry requires a valid instance ID, but it is empty or contains whitespace or control characters; rename the instance or disable telemetry (for example telemetry.profile: off)"
     );
     Ok(())
 }

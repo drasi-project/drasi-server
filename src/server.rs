@@ -278,14 +278,12 @@ impl DrasiServer {
                     let bindings =
                         bindings.with_settings(TelemetrySettings::new(TelemetryProfile::Off));
                     cleanup.configure_logging_bindings(bindings.clone())?;
+                    // Logged after owned logging is installed so standalone startup emits it.
+                    info!("Root `metrics` keeps the legacy query-progress export and Server telemetry stays off; replace it with a `telemetry` section to migrate");
                     bindings
                 }
             }
         };
-        // Logged after owned logging is installed so standalone startup emits it.
-        if config.metrics.is_some() && config.telemetry.is_none() {
-            info!("Root `metrics` keeps the legacy query-progress export and Server telemetry stays off; replace it with a `telemetry` section to migrate");
-        }
         let runtime_registry =
             runtime_registry.with_runtime_context(bindings.clone(), cleanup.clone());
 

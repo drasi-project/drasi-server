@@ -21,7 +21,8 @@ routes. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification;
 the [example](../examples/observability/README.md) provides explicit live
 pipelines (an ordinary HTTP source, a native query and a log reaction, plus a
-PostgreSQL CDC variant) alongside its unchanged Off/empty default.
+PostgreSQL CDC variant) alongside its `start`/`validate` configuration, which
+uses Server's default (basic, no destinations, settings route only).
 Recorded evidence and deferred gates are in the baseline
 ([OBS-05](observability-baseline.md#obs-05-delivery-status),
 [OBS-06](observability-baseline.md#obs-06-delivery-status)).
@@ -29,7 +30,7 @@ Recorded evidence and deferred gates are in the baseline
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Every telemetry capability
 is available in this build, so it reports `No unavailable telemetry capabilities
-requested`. It prints this Telemetry section for configurations that omit
+requested`. It prints its `Telemetry:` output for configurations that omit
 `telemetry` too, because they resolve to the default policy; legacy
 root-`metrics` configurations are the exception. Listener requirements, such as
 explicitly enabled inspection needing the management API, are checked at
@@ -82,7 +83,7 @@ The only default surface is the read-only settings route
 defaulted `inspection.enabled` into the file. Console log lines are unchanged:
 Basic adds no span prefixes ([console logging](#obs-03-ownership-apis)).
 
-Programmatic Servers follow the same default:
+Programmatic Servers:
 
 - `DrasiServerBuilder` without `with_telemetry` or `with_telemetry_bindings`
   still borrows Core's default logging service, but applies the default policy
@@ -144,8 +145,8 @@ This is Core's telemetry scope rule, checked early:
 
 - `drasi-server validate` and startup check every configured instance before
   loading plugins or constructing components. The error names the instance,
-  quoted with control characters escaped, and suggests renaming it or setting
-  `telemetry.profile: off`.
+  quoted with control characters escaped, and suggests renaming it or disabling
+  telemetry (for example `telemetry.profile: off`).
 - `POST /api/v1/instances` rejects such an ID with 400 `INVALID_REQUEST`; the
   ID is in `details.component_id`.
 - `DrasiServerBuilder` relies on Core's build error, which fires under the same
@@ -157,8 +158,8 @@ This is Core's telemetry scope rule, checked early:
   Core's build error as `INSTANCE_CREATE_FAILED`, with the ID and guidance in
   its technical details.
 
-The default (no destinations), `profile: off` and legacy root `metrics` do not
-check IDs, so existing configurations keep starting until a destination is
+Server's default (no destinations), `profile: off` and legacy root `metrics` do
+not check IDs, so existing configurations keep starting until a destination is
 added.
 
 ## Metric data and bounds
@@ -546,10 +547,13 @@ The default applies wherever Server owns telemetry: an omitted section,
 `telemetry: {}`, any section that leaves `inspection.enabled` unset, and
 `DrasiServerBuilder` without `with_telemetry_bindings`. It is skipped quietly
 where no management listener exists: when the management API is disabled, with
-the owned-handles builder result, or with `build_core`. Explicit `true` instead
-fails startup when the management API is disabled or with the owned-handles
-result: `telemetry.inspection.enabled requires the management API listener;
-enable the API and use build() and run(), or disable inspection`.
+the owned-handles builder result (`prepare_with_owned_handles`/
+`build_with_owned_handles`), with `build_with_handles`, or with `build_core`.
+Explicit `true` instead fails startup when the management API is disabled or
+with the owned-handles result: `telemetry.inspection.enabled requires the
+management API listener; enable the API and use build() and run(), or disable
+inspection`. `build_with_handles` and `build_core` reject any configured
+telemetry before that check.
 Borrowed `TelemetryBindings`, the legacy root-`metrics` case and
 `DrasiServer::from_core`/`from_cores` mount nothing; Server cannot accurately
 report settings it does not own.

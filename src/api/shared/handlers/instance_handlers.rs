@@ -181,7 +181,7 @@ async fn create_instance_body(
         .map_err(|error| {
             ErrorResponse::new(
                 error_codes::INVALID_REQUEST,
-                "Instance ID is not valid while telemetry is enabled; choose an ID without whitespace or control characters, or set telemetry.profile: off",
+                "Instance ID is not valid while telemetry is enabled; choose an ID without whitespace or control characters, or disable telemetry (for example telemetry.profile: off)",
             )
             .with_details(ErrorDetail {
                 component_type: Some("instance".to_string()),
