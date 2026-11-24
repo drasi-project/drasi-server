@@ -158,6 +158,12 @@ fn inspection_routes_follow_backend_and_disabled_state() -> Result<()> {
 }
 
 #[test]
+fn default_inspection_serves_settings_only() -> Result<()> {
+    child("inspection-default-separate")?;
+    child("inspection-default-owned")
+}
+
+#[test]
 #[ignore = "isolated global-installation subprocess entry point"]
 fn metrics_child() -> Result<()> {
     let mut runtime = match std::env::var(FLAVOR)?.as_str() {
@@ -1212,6 +1218,32 @@ async fn inspection_scenario(case: &str) -> Result<()> {
         assert_eq!(cleanup.status().pending_workers, 0);
         return Ok(());
     }
+    if case == "inspection-default-owned" {
+        // The owned result serves its separate scrape listener before returning.
+        drop(scrape_reservation);
+        let config = prometheus_config("basic", "prometheus", Some(scrape_port))?;
+        let preparation = prometheus_builder(observed.clone())?
+            .with_host_port("127.0.0.1", management_port)
+            .with_telemetry(config)
+            .prepare_with_owned_handles();
+        let cleanup = preparation.cleanup_handle();
+        let built = preparation
+            .finish()
+            .await
+            .context("owned result rejected defaulted inspection")?;
+        assert_eq!(built.servers.len(), 2);
+        timeout(WAIT, async {
+            while observed.lock().unwrap().len() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        cleanup.wait_until(Instant::now() + WAIT).await?;
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        assert_closed(scrape_port).await?;
+        return Ok(());
+    }
 
     let collector = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1236,6 +1268,10 @@ async fn inspection_scenario(case: &str) -> Result<()> {
         ),
         "inspection-disabled" => (
             without_inspection(prometheus_config("basic", "prometheus", None)?),
+            prometheus_builder(observed.clone())?,
+        ),
+        "inspection-default-separate" => (
+            prometheus_config("basic", "prometheus", Some(scrape_port))?,
             prometheus_builder(observed.clone())?,
         ),
         "inspection-otlp" => (
@@ -1349,6 +1385,25 @@ async fn inspection_scenario(case: &str) -> Result<()> {
                     "disabled inspection exposed {path}"
                 );
             }
+        }
+        "inspection-default-separate" => {
+            let settings = client.get(management(SETTINGS_PATH)).send().await?;
+            assert_eq!(settings.status(), reqwest::StatusCode::OK);
+            let settings: serde_json::Value = settings.json().await?;
+            assert_eq!(settings["metrics"]["backend"], "prometheus");
+            assert_eq!(
+                settings["metrics"].get("path"),
+                Some(&serde_json::Value::Null)
+            );
+            assert_eq!(
+                client.get(management(METRICS_PATH)).send().await?.status(),
+                reqwest::StatusCode::NOT_FOUND,
+                "default inspection exposed {METRICS_PATH}"
+            );
+            assert_eq!(
+                ready(&client, scrape_port, SCRAPE_PATH).await?.status(),
+                reqwest::StatusCode::OK
+            );
         }
         "inspection-otlp" => {
             for _ in 0..10 {

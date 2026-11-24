@@ -433,6 +433,20 @@ impl TelemetryConfig {
     }
 }
 
+/// Resolve the policy an omitted `telemetry` section selects.
+pub(crate) fn default_effective_telemetry(
+    management_port: u16,
+    enable_ui: bool,
+) -> Result<EffectiveTelemetry> {
+    TelemetryConfig::default().resolve(&DtoMapper::new(), management_port, enable_ui)
+}
+
+/// Collection settings of the omitted-section default.
+pub(crate) fn default_telemetry_settings() -> Result<TelemetrySettings> {
+    // Port and UI affect only Prometheus route checks, which are inactive by default.
+    Ok(default_effective_telemetry(8080, false)?.settings().clone())
+}
+
 fn resolve<T>(mapper: &DtoMapper, value: &ConfigValue<T>, field: &str) -> Result<T>
 where
     T: FromStr + Clone + Serialize + DeserializeOwned,

@@ -13,14 +13,15 @@
 
 use anyhow::Result;
 use drasi_lib::observability::{
-    ComponentLogRuntime, LogPolicy, LoggingError, MetricRegistrationContext, TelemetryProfile,
-    TelemetrySettings,
+    ComponentLogRuntime, LogPolicy, LoggingError, MetricRegistrationContext,
 };
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     api::v1::telemetry_handlers::TelemetryInspection,
-    config::telemetry::{EffectiveTelemetry, InspectionMode, MetricsBackend},
+    config::telemetry::{
+        default_telemetry_settings, EffectiveTelemetry, InspectionMode, MetricsBackend,
+    },
     instance_registry::InstanceRegistry,
     server::{ServerCleanupHandle, ServerPreparation},
     TelemetryBindings,
@@ -163,7 +164,8 @@ pub struct StandaloneTelemetry {
 }
 
 impl StandaloneTelemetry {
-    /// Prepare logs-only ownership with collection Off on either Tokio flavor.
+    /// Prepare logs-only ownership with the default collection policy and no
+    /// exporters, on either Tokio flavor.
     ///
     /// Call inside a live Tokio runtime. `RUST_LOG` takes precedence; when
     /// absent, use `<log_level>,oci_client=error`. Invalid directives and
@@ -261,10 +263,10 @@ impl StandaloneTelemetry {
             .map_err(|error| LoggingError::Configuration(error.to_string()))?;
         let logging = constructor(policy.clone())?;
         owner.retain_logging(logging.clone())?;
-        let settings = effective
-            .as_ref()
-            .map(|effective| effective.settings().clone())
-            .unwrap_or_else(|| TelemetrySettings::new(TelemetryProfile::Off));
+        let settings = match &effective {
+            Some(effective) => effective.settings().clone(),
+            None => default_telemetry_settings()?,
+        };
         let mut bindings = TelemetryBindings::new(settings, logging.clone());
         if let Some(effective) = effective {
             bindings = bindings.with_shutdown_timeout_seconds(effective.shutdown_timeout.as_secs());
