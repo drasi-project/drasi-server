@@ -20,7 +20,7 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     api::v1::telemetry_handlers::TelemetryInspection,
-    config::telemetry::{EffectiveTelemetry, MetricsBackend},
+    config::telemetry::{EffectiveTelemetry, InspectionMode, MetricsBackend},
     instance_registry::InstanceRegistry,
     server::{ServerCleanupHandle, ServerPreparation},
     TelemetryBindings,
@@ -106,7 +106,7 @@ pub(crate) async fn prepare_collection(
     effective.ensure_runtime_available()?;
     let resource = super::recorders::telemetry_resource(&effective.service_name);
     let metrics = prepare_metrics(owner, &effective, registry, &resource).await?;
-    let inspection = effective.inspection_enabled.then(|| {
+    let inspection = (effective.inspection != InspectionMode::Disabled).then(|| {
         TelemetryInspection::new(
             &effective,
             metrics

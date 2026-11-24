@@ -62,10 +62,10 @@ fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<Te
         profile: ConfigValue::Static(profile.clone()),
         ..Default::default()
     };
-    config.inspection.enabled = ConfigValue::Static(prompts.confirm(
+    config.inspection.enabled = Some(ConfigValue::Static(prompts.confirm(
         "Enable inspection API (requires trusted proxy/restricted network)?",
         false,
-    )?);
+    )?));
     if profile != "off" {
         let endpoint = prompts.text(
             "OTLP HTTP/protobuf tracing URL (${VAR} allowed; blank to skip):",
@@ -180,7 +180,10 @@ mod tests {
             .unwrap()
             .unwrap();
         let policy = config.resolve(&DtoMapper::new(), 8080, true).unwrap();
-        assert!(policy.inspection_enabled);
+        assert_eq!(
+            policy.inspection,
+            drasi_server::config::telemetry::InspectionMode::Enabled
+        );
         assert!(!policy.policy().enabled());
     }
 

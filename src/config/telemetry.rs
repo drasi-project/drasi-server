@@ -21,7 +21,7 @@ pub struct TelemetryConfig {
     #[serde(default = "default_profile")]
     #[schema(schema_with = string_schema)]
     pub profile: ConfigValue<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "InspectionConfig::is_unset")]
     pub inspection: InspectionConfig,
     #[serde(default)]
     pub filters: TelemetryFilters,
@@ -47,20 +47,27 @@ impl Default for TelemetryConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InspectionConfig {
-    #[serde(default = "default_false")]
+    /// Omitted is defaulted, which is distinct from an explicit `false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(schema_with = bool_schema)]
-    pub enabled: ConfigValue<bool>,
+    pub enabled: Option<ConfigValue<bool>>,
 }
 
-impl Default for InspectionConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_false(),
-        }
+impl InspectionConfig {
+    fn is_unset(&self) -> bool {
+        self.enabled.is_none()
     }
+}
+
+/// Resolved inspection intent. Only an explicit `enabled: true` requires a listener.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InspectionMode {
+    Disabled,
+    Default,
+    Enabled,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
@@ -213,7 +220,7 @@ pub struct EffectivePrometheus {
 pub struct EffectiveTelemetry {
     settings: TelemetrySettings,
     policy: ResolvedTelemetry,
-    pub inspection_enabled: bool,
+    pub inspection: InspectionMode,
     pub service_name: String,
     pub tracing: Option<OtlpDestination>,
     pub metrics_backend: MetricsBackend,
@@ -260,7 +267,7 @@ impl EffectiveTelemetry {
             );
         }
         ensure!(
-            !self.inspection_enabled || (enable_api && !handles_only),
+            self.inspection != InspectionMode::Enabled || (enable_api && !handles_only),
             "telemetry.inspection.enabled requires the management API listener; enable the API and use build() and run(), or disable inspection"
         );
         Ok(())
@@ -285,11 +292,16 @@ impl TelemetryConfig {
             "otlp" => MetricsBackend::Otlp,
             _ => bail!("telemetry.metrics.backend must be none, prometheus or otlp"),
         };
-        let inspection_enabled = resolve(
-            mapper,
-            &self.inspection.enabled,
-            "telemetry.inspection.enabled",
-        )?;
+        let inspection = match &self.inspection.enabled {
+            None => InspectionMode::Default,
+            Some(value) => {
+                if resolve(mapper, value, "telemetry.inspection.enabled")? {
+                    InspectionMode::Enabled
+                } else {
+                    InspectionMode::Disabled
+                }
+            }
+        };
         let process_metrics = resolve(
             mapper,
             &self.metrics.process_metrics,
@@ -402,7 +414,7 @@ impl TelemetryConfig {
         Ok(EffectiveTelemetry {
             settings,
             policy,
-            inspection_enabled,
+            inspection,
             service_name,
             tracing: tracing.filter(|_| active),
             metrics_backend: if active {

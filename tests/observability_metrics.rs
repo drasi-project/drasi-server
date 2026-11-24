@@ -853,7 +853,12 @@ fn with_process_metrics(mut config: TelemetryConfig) -> TelemetryConfig {
 }
 
 fn with_inspection(mut config: TelemetryConfig) -> TelemetryConfig {
-    config.inspection.enabled = ConfigValue::Static(true);
+    config.inspection.enabled = Some(ConfigValue::Static(true));
+    config
+}
+
+fn without_inspection(mut config: TelemetryConfig) -> TelemetryConfig {
+    config.inspection.enabled = Some(ConfigValue::Static(false));
     config
 }
 
@@ -1230,7 +1235,7 @@ async fn inspection_scenario(case: &str) -> Result<()> {
                 .disable_ui(),
         ),
         "inspection-disabled" => (
-            prometheus_config("basic", "prometheus", None)?,
+            without_inspection(prometheus_config("basic", "prometheus", None)?),
             prometheus_builder(observed.clone())?,
         ),
         "inspection-otlp" => (

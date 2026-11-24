@@ -572,6 +572,9 @@ impl DrasiServerConfig {
         self.validate_with_overrides(None, None)
     }
 
+    /// Resolves the startup telemetry policy. An omitted `telemetry` section
+    /// resolves exactly like `telemetry: {}`. `None` means the legacy root
+    /// `metrics` configuration, which keeps its own collection path.
     pub fn resolved_telemetry(
         &self,
         mapper: &DtoMapper,
@@ -582,10 +585,14 @@ impl DrasiServerConfig {
             self.metrics.is_none() || self.telemetry.is_none(),
             "Root metrics and telemetry cannot be configured together, including off or inspection-only telemetry. Keep legacy metrics alone, or remove it and migrate to telemetry; legacy HTTP/JSON millisecond settings are not new HTTP/protobuf second-valued settings."
         );
-        self.telemetry
-            .as_ref()
-            .map(|config| config.resolve(mapper, port, enable_ui))
-            .transpose()
+        if self.metrics.is_some() {
+            return Ok(None);
+        }
+        match &self.telemetry {
+            Some(config) => config.resolve(mapper, port, enable_ui),
+            None => super::telemetry::TelemetryConfig::default().resolve(mapper, port, enable_ui),
+        }
+        .map(Some)
     }
 
     pub fn validate_with_overrides(
