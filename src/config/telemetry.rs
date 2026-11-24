@@ -447,6 +447,16 @@ pub(crate) fn default_telemetry_settings() -> Result<TelemetrySettings> {
     Ok(default_effective_telemetry(8080, false)?.settings().clone())
 }
 
+/// Core's telemetry scope rule for instance IDs, checked before construction.
+/// Debug formatting escapes control characters so an ID cannot forge log lines.
+pub(crate) fn validate_telemetry_instance_id(id: &str) -> Result<()> {
+    ensure!(
+        !id.is_empty() && !id.chars().any(|c| c.is_whitespace() || c.is_control()),
+        "Instance {id:?}: telemetry requires a valid instance ID, but it is empty or contains whitespace or control characters; rename the instance or set telemetry.profile: off"
+    );
+    Ok(())
+}
+
 fn resolve<T>(mapper: &DtoMapper, value: &ConfigValue<T>, field: &str) -> Result<T>
 where
     T: FromStr + Clone + Serialize + DeserializeOwned,

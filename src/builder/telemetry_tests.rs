@@ -13,7 +13,7 @@ use drasi_lib::observability::{
     default_log_level, init_default_subscriber, ComponentLogRuntime, LogPolicy, RootSampling,
     SamplingRatio, TelemetryProfile, TelemetrySettings,
 };
-use drasi_lib::{ComponentId, ComponentName};
+use drasi_lib::{ComponentId, ComponentName, DrasiLib};
 use drasi_source_application::{ApplicationSource, ApplicationSourceConfig};
 use std::{
     process::Command,
@@ -366,17 +366,34 @@ async fn builder_case(case: &str) -> Result<()> {
                 &built.server.log_registry(),
                 &logging.registry()
             ));
+            assert_eq!(
+                built.server.telemetry().policy().profile(),
+                TelemetryProfile::Basic
+            );
+            assert!(!built.server.telemetry().policy().enabled());
             built.shutdown().await?;
             assert!(!logging.is_closed());
             let server = DrasiServerBuilder::new()
                 .with_id("legacy-progress-still-supported")
                 .build()
-                .await?
-                .with_metrics(MetricsConfig {
-                    endpoint: ConfigValue::Static("http://127.0.0.1:4318/v1/metrics".into()),
-                    export_interval_ms: 100,
-                    export_timeout_ms: 100,
-                })?;
+                .await?;
+            // API-created instances receive the same default policy.
+            let api_created = server
+                .instance_registry()
+                .bind_builder(DrasiLib::builder().with_id("api-created"))?
+                .build()
+                .await?;
+            assert_eq!(
+                api_created.telemetry().policy().profile(),
+                TelemetryProfile::Basic
+            );
+            assert!(!api_created.telemetry().policy().enabled());
+            api_created.shutdown().await?;
+            let server = server.with_metrics(MetricsConfig {
+                endpoint: ConfigValue::Static("http://127.0.0.1:4318/v1/metrics".into()),
+                export_interval_ms: 100,
+                export_timeout_ms: 100,
+            })?;
             server
                 .cleanup_handle()
                 .wait_until(Instant::now() + WAIT)

@@ -664,6 +664,7 @@ async fn early_constructor(fallback: &str) -> Result<()> {
         .iter()
         .any(|entry| entry.message.contains("early constructor diagnostic")));
     assert!(!core.telemetry().policy().enabled());
+    assert_eq!(core.telemetry().policy().profile(), TelemetryProfile::Basic);
     log::warn!(target: "oci_client", "suppressed OCI warning");
     log::error!(target: "oci_client", "visible OCI error");
     assert_eq!(

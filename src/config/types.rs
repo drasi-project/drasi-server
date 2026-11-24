@@ -603,7 +603,13 @@ impl DrasiServerConfig {
         self.validate_host_and_instances()?;
         let mapper = DtoMapper::new();
         let port = port.unwrap_or(mapper.resolve_typed(&self.port)?);
-        self.resolved_telemetry(&mapper, port, enable_ui.unwrap_or(self.enable_ui))?;
+        let enable_ui = enable_ui.unwrap_or(self.enable_ui);
+        let telemetry = self.resolved_telemetry(&mapper, port, enable_ui)?;
+        if telemetry.is_some_and(|effective| effective.policy().enabled()) {
+            for instance in self.resolved_instances(&mapper)? {
+                super::telemetry::validate_telemetry_instance_id(&instance.id)?;
+            }
+        }
         Ok(())
     }
 

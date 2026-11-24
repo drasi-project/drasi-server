@@ -13,7 +13,7 @@
 
 use anyhow::Result;
 use drasi_lib::observability::{
-    ComponentLogRuntime, LogPolicy, LoggingError, MetricRegistrationContext,
+    ComponentLogRuntime, LogPolicy, LoggingError, MetricRegistrationContext, TELEMETRY_TARGET,
 };
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -132,6 +132,24 @@ pub(crate) async fn prepare_collection(
         prometheus: metrics.prometheus,
         inspection,
     })
+}
+
+/// The console filter: the log directives, minus Drasi's operation spans, so
+/// telemetry never adds span prefixes to console log lines. Events inside
+/// those spans still print.
+pub(crate) fn console_filter<S>(
+    directives: &str,
+) -> Result<impl tracing_subscriber::layer::Filter<S> + Send + Sync + 'static>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    use tracing_subscriber::filter::FilterExt;
+    let env_filter = EnvFilter::try_new(directives)
+        .map_err(|error| LoggingError::Configuration(error.to_string()))?;
+    let not_telemetry_span = tracing_subscriber::filter::filter_fn(|metadata| {
+        !(metadata.is_span() && metadata.target() == TELEMETRY_TARGET)
+    });
+    Ok(not_telemetry_span.and(env_filter))
 }
 
 /// Owns standalone component-log capture and its retained cleanup operation.
@@ -259,8 +277,7 @@ impl StandaloneTelemetry {
             Err(error) => return Err(LoggingError::Configuration(error.to_string()).into()),
         };
         let policy = LogPolicy::new(&directives)?;
-        let console_filter = EnvFilter::try_new(&directives)
-            .map_err(|error| LoggingError::Configuration(error.to_string()))?;
+        let console = console_filter(&directives)?;
         let logging = constructor(policy.clone())?;
         owner.retain_logging(logging.clone())?;
         let settings = match &effective {
@@ -281,7 +298,7 @@ impl StandaloneTelemetry {
         let subscriber = tracing_subscriber::registry()
             .with(trace_slot.layer())
             .with(logging.layer())
-            .with(tracing_subscriber::fmt::layer().with_filter(console_filter));
+            .with(tracing_subscriber::fmt::layer().with_filter(console));
         tracing::subscriber::set_global_default(subscriber)
             .map_err(|_| LoggingError::SubscriberConflict)?;
         Ok(bindings)
@@ -394,6 +411,43 @@ mod tests {
     #[test]
     fn expired_logging_initialization_retains_actual_capture() -> Result<()> {
         child("expired")
+    }
+
+    // Break caught: Server's own console layer prefixes log lines with Drasi
+    // operation spans such as `query.process{...}:`, or drops their events.
+    #[test]
+    fn server_console_hides_only_telemetry_spans() -> Result<()> {
+        #[derive(Clone, Default)]
+        struct Captured(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Captured {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0
+                    .lock()
+                    .expect("capture lock")
+                    .extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let console = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .with_filter(console_filter("info")?);
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(console), || {
+            tracing::info_span!(target: TELEMETRY_TARGET, "query.process")
+                .in_scope(|| tracing::info!("INSIDE_TELEMETRY"));
+            tracing::info_span!("computation_component")
+                .in_scope(|| tracing::info!("INSIDE_COMPONENT"));
+        });
+        let output = String::from_utf8(captured.0.lock().expect("capture lock").clone())?;
+        assert!(output.contains("INSIDE_TELEMETRY"), "{output}");
+        assert!(!output.contains("query.process"), "{output}");
+        assert!(output.contains("computation_component: "), "{output}");
+        Ok(())
     }
 
     #[test]

@@ -116,11 +116,11 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
     yaml.push_str("# - Use environment variables: ${VAR_NAME:-default}\n");
     yaml.push_str("# - Update 'my-query' with your actual GQL query\n");
     yaml.push_str("# - Connect reactions to your queries by updating the 'queries' field\n");
+    yaml.push_str(
+        "# - Protect inspection/scrape listeners with a trusted proxy or restricted network.\n",
+    );
     if config.telemetry.is_some() {
         yaml.push_str("# - Telemetry changes require restart; valid configuration does not imply runtime support.\n");
-        yaml.push_str(
-            "# - Protect inspection/scrape listeners with a trusted proxy or restricted network.\n",
-        );
         yaml.push_str("# - OTLP headers accept environment references without plaintext defaults; credentials require HTTPS.\n");
     }
 
@@ -362,6 +362,8 @@ mod tests {
         assert!(yaml.contains("# Tips:"));
         assert!(yaml.contains("# - Use environment variables: ${VAR_NAME:-default}"));
         assert!(yaml.contains("# - Update 'my-query' with your actual GQL query"));
+        assert!(config.telemetry.is_none());
+        assert!(yaml.contains("Protect inspection/scrape listeners"));
     }
 
     #[test]

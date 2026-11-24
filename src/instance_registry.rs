@@ -138,6 +138,21 @@ impl InstanceRegistry {
         }
     }
 
+    /// Reject an ID the bound telemetry policy cannot scope, before construction.
+    pub(crate) fn validate_new_instance_id(&self, id: &str) -> anyhow::Result<()> {
+        let Some(bindings) = self
+            .runtime
+            .as_ref()
+            .and_then(|context| context.bindings.as_ref())
+        else {
+            return Ok(());
+        };
+        if bindings.settings().resolve()?.enabled() {
+            crate::config::telemetry::validate_telemetry_instance_id(id)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn cleanup_handle(&self) -> Option<ServerCleanupHandle> {
         self.runtime.as_ref().map(|context| context.cleanup.clone())
     }
@@ -311,6 +326,28 @@ mod tests {
         assert_eq!(instances[0].0, "metrics-reader");
         assert!(Arc::ptr_eq(&instances[0].1, &core));
         core.shutdown().await?;
+        logging.shutdown(std::time::Duration::from_secs(5)).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn new_instance_ids_follow_the_bound_telemetry_policy() -> anyhow::Result<()> {
+        let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
+        let bound = |settings: TelemetrySettings| {
+            InstanceRegistry::new().with_runtime_context(
+                TelemetryBindings::new(settings, logging.clone()),
+                ServerCleanupHandle::bootstrap(),
+            )
+        };
+        let tracing_only = TelemetrySettings::new(TelemetryProfile::Basic).with_metrics(false);
+        let tracing = bound(tracing_only);
+        assert!(tracing.validate_new_instance_id("my server").is_err());
+        assert!(tracing.validate_new_instance_id("").is_err());
+        assert!(tracing.validate_new_instance_id("analytics").is_ok());
+        let defaulted = bound(crate::config::telemetry::default_telemetry_settings()?);
+        assert!(defaulted.validate_new_instance_id("my server").is_ok());
+        let unbound = InstanceRegistry::new();
+        assert!(unbound.validate_new_instance_id("my server").is_ok());
         logging.shutdown(std::time::Duration::from_secs(5)).await?;
         Ok(())
     }

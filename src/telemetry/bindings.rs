@@ -127,6 +127,10 @@ impl TelemetryBindings {
         self.logging.clone()
     }
 
+    pub(crate) fn settings(&self) -> &TelemetrySettings {
+        &self.settings
+    }
+
     pub(crate) fn with_settings(mut self, settings: TelemetrySettings) -> Self {
         self.settings = settings;
         self

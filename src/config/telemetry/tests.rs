@@ -602,3 +602,49 @@ telemetry:
         assert!(serde_json::from_value::<DrasiServerConfig>(value).is_err());
     }
 }
+
+fn with_instance(
+    id: &str,
+    telemetry: Option<serde_json::Value>,
+    metrics: Option<serde_json::Value>,
+) -> DrasiServerConfig {
+    let mut value = json!({"instances": [{"id": id}]});
+    if let Some(telemetry) = telemetry {
+        value["telemetry"] = telemetry;
+    }
+    if let Some(metrics) = metrics {
+        value["metrics"] = metrics;
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn telemetry_instance_ids_are_checked_only_when_collection_is_enabled() {
+    let endpoint = "http://localhost:4318/v1/traces";
+    let tracing = json!({"tracing": {"endpoint": endpoint, "protocol": "http/protobuf"}});
+    with_instance("my server", None, None).validate().unwrap();
+    // A configured endpoint does not enable collection while the profile is off.
+    let off = json!({"profile": "off", "tracing": tracing["tracing"]});
+    with_instance("my server", Some(off), None)
+        .validate()
+        .unwrap();
+    let legacy = json!({"endpoint": "http://localhost:4318/v1/metrics"});
+    with_instance("my server", None, Some(legacy))
+        .validate()
+        .unwrap();
+    with_instance("analytics", Some(tracing.clone()), None)
+        .validate()
+        .unwrap();
+    let error = with_instance("my server", Some(tracing.clone()), None)
+        .validate()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("\"my server\""), "{error}");
+    assert!(error.contains("telemetry.profile: off"), "{error}");
+    let error = with_instance("a\nb", Some(tracing), None)
+        .validate()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("\"a\\nb\""), "{error}");
+    assert!(!error.contains('\n'), "{error}");
+}

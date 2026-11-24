@@ -164,6 +164,11 @@ fn default_inspection_serves_settings_only() -> Result<()> {
 }
 
 #[test]
+fn builder_fallback_is_basic_with_settings_route_and_no_recorder_use() -> Result<()> {
+    child("inspection-builder-fallback")
+}
+
+#[test]
 #[ignore = "isolated global-installation subprocess entry point"]
 fn metrics_child() -> Result<()> {
     let mut runtime = match std::env::var(FLAVOR)?.as_str() {
@@ -1242,6 +1247,63 @@ async fn inspection_scenario(case: &str) -> Result<()> {
         assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
         assert_eq!(cleanup.status().pending_workers, 0);
         assert_closed(scrape_port).await?;
+        return Ok(());
+    }
+    if case == "inspection-builder-fallback" {
+        // No telemetry input: the fallback default must not reach the global recorder.
+        let server = DrasiServerBuilder::new()
+            .with_id("fallback")
+            .with_query_factory(query_plugin::factory())
+            .with_simple_query("probe", "MATCH (n) RETURN n", vec![])?
+            .disable_ui()
+            .with_host_port("127.0.0.1", management_port)
+            .build()
+            .await?;
+        let cleanup = server.cleanup_handle();
+        drop(management_reservation);
+        drop(scrape_reservation);
+        let running = tokio::spawn(server.run());
+        assert_eq!(
+            ready(&client, management_port, "/health").await?.status(),
+            reqwest::StatusCode::OK
+        );
+        let management = |path: &str| format!("http://127.0.0.1:{management_port}{path}");
+        timeout(WAIT, async {
+            loop {
+                let response = client
+                    .get(management("/api/v1/instances/fallback/queries"))
+                    .send()
+                    .await?;
+                if response.status() == reqwest::StatusCode::OK {
+                    let body: serde_json::Value = response.json().await?;
+                    if body["data"].as_array().is_some_and(|data| !data.is_empty()) {
+                        return Ok::<_, anyhow::Error>(());
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await??;
+        let settings = client.get(management(SETTINGS_PATH)).send().await?;
+        assert_eq!(settings.status(), reqwest::StatusCode::OK);
+        let settings: serde_json::Value = settings.json().await?;
+        assert_eq!(settings["profile"], "basic");
+        assert_eq!(settings["metrics"]["backend"], "none");
+        assert_eq!(
+            settings["metrics"].get("path"),
+            Some(&serde_json::Value::Null)
+        );
+        assert_eq!(settings["tracing"]["exportEnabled"], false);
+        assert_eq!(
+            client.get(management(METRICS_PATH)).send().await?.status(),
+            reqwest::StatusCode::NOT_FOUND,
+            "fallback inspection exposed {METRICS_PATH}"
+        );
+        cleanup.wait_until(Instant::now() + WAIT).await?;
+        timeout(WAIT, running).await???;
+        assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
+        assert_eq!(cleanup.status().pending_workers, 0);
+        assert_closed(management_port).await?;
         return Ok(());
     }
 
