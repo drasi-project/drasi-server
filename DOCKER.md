@@ -2,6 +2,17 @@
 
 This guide covers running Drasi Server using Docker and Docker Compose.
 
+Release images are staged in a separate test package and promoted by digest only
+after the seven-platform binary suite, both native container smoke tests and
+release asset validation pass. See
+[release rehearsal and publication gates](docs/main-runtime-integration.md#release-rehearsal-and-publication-gates)
+for candidate identity, daily/manual rehearsals and publication controls.
+
+The shipped default configuration installs its version-pinned plugins on first
+startup with signature verification enabled, so registry/Sigstore access is
+required. The image runs as `drasi`, with writable configuration, data and plugin
+directories; runtime tests do not override that user or install extra libraries.
+
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) (20.10+)

@@ -6,3 +6,6 @@
 # `Unable to locate package <name>\r` when scripts are checked out as CRLF
 # on Windows hosts.
 *.sh text eol=lf
+
+# Candidate lockfile hashes must match across Linux, macOS and Windows checkouts.
+Cargo.lock text eol=lf

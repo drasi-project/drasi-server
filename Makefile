@@ -76,7 +76,7 @@ help:
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
 	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
 	@echo "  make download-test-plugins      - Download signed registry test plugins"
-	@echo "  make test-tooling               - Test plugin dependency-origin and setup policy"
+	@echo "  make test-tooling               - Test build, plugin and release automation policy"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make clippy             - Run linter"

@@ -1,0 +1,13 @@
+# Temporary risk acceptance, not remediation. Remove via:
+# https://github.com/drasi-project/drasi-server/issues/231
+# Review by 2026-11-03; cargo-audit does not automatically expire ignores.
+#
+# utoipa-swagger-ui 6.0.0 uses zip 0.6.6 only during its build to unpack the
+# bundled Swagger UI assets, not user-supplied archives. Reassess if this
+# dependency or its inputs change: advisory ignores are not version-scoped.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0367", # ZIP extraction preserves SUID/SGID permissions.
+    "RUSTSEC-2026-0368", # ZIP extraction permits out-of-directory symlink targets.
+    "RUSTSEC-2026-0369", # ZIP extraction applies permissions through symlinks.
+]

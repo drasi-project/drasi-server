@@ -145,74 +145,19 @@ jobs:
 
           echo "current_version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump drasi-* dependencies to latest
-        run: |
-          set -euo pipefail
-
-          # Derive the list of drasi-* dependencies directly from the manifest
-          # (via cargo metadata) so it stays authoritative — adding a new
-          # drasi-* dependency to Cargo.toml requires no change here. Covers
-          # normal, dev, and build dependencies across all workspace members.
-          mapfile -t DRASI_PACKAGES < <(
-            cargo metadata --no-deps --format-version 1 \
-              | jq -r '.packages[].dependencies[].name' \
-              | grep '^drasi-' \
-              | sort -u
-          )
-
-          if [ "${#DRASI_PACKAGES[@]}" -eq 0 ]; then
-            echo "::error::No drasi-* dependencies found in Cargo.toml."
-            exit 1
-          fi
-
-          echo "drasi-* dependencies to upgrade: ${DRASI_PACKAGES[*]}"
-
-          # cargo upgrade updates every occurrence in Cargo.toml. --incompatible
-          # allows pre-1.0 minor bumps (e.g. 0.8.x -> 0.9.0).
-          UPGRADE_ARGS=()
-          for pkg in "${DRASI_PACKAGES[@]}"; do
-            UPGRADE_ARGS+=(--package "$pkg")
-          done
-
-          echo "Upgrading drasi-* dependency requirements..."
-          cargo upgrade --incompatible "${UPGRADE_ARGS[@]}"
-
-          echo "Refreshing Cargo.lock for upgraded packages..."
-          UPDATE_ARGS=()
-          for pkg in "${DRASI_PACKAGES[@]}"; do
-            UPDATE_ARGS+=(--package "$pkg")
-          done
-          cargo update "${UPDATE_ARGS[@]}"
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
           echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
-      - name: Set package version
+      - name: Update dependencies and set package version
         id: setversion
         env:
           MODE: ${{ steps.version.outputs.mode }}
           OVERRIDE: ${{ steps.version.outputs.override }}
           BUMP: ${{ steps.version.outputs.bump }}
-        run: |
-          set -euo pipefail
-
-          if [ "$MODE" = "override" ]; then
-            cargo set-version --package drasi-server "$OVERRIDE"
-          else
-            cargo set-version --package drasi-server --bump "$BUMP"
-          fi
-
-          # Reconcile cargo-edit's lockfile changes with the pinned Cargo resolver
-          # while retaining unrelated dependency versions.
-          cargo update --workspace
-
-          NEW_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          [ -n "$NEW_VERSION" ] || { echo "::error::Could not read new version from Cargo.toml"; exit 1; }
-          echo "New drasi-server version: ${NEW_VERSION}"
-          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+        run: bash scripts/update-release-dependencies.sh
 
       - name: Validate final version and dependencies
         # Validate after every manifest/lockfile mutation, on the pinned toolchain.
