@@ -150,7 +150,7 @@ pub(crate) fn contains_yaml_anchor_or_alias(text: &str) -> bool {
 
 fn parse_error(format: &str, e: impl std::fmt::Display) -> (StatusCode, axum::Json<ErrorResponse>) {
     let diagnostic = e.to_string();
-    if let Some(message) = crate::config::loader::removed_execution_mode_error(&diagnostic) {
+    if let Some(message) = crate::config::loader::removed_field_error(&diagnostic) {
         return ErrorResponse::new(error_codes::INVALID_REQUEST, message).with_status();
     }
     ErrorResponse::new(

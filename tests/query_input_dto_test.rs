@@ -28,6 +28,7 @@ queryLanguage: Cypher
 inputs:
   - room-comfort
   - component: facilities
+    enableBootstrap: false
     port: out
     nodes: [Floor]
     relations: [PART_OF_FLOOR]
@@ -55,6 +56,7 @@ fn shorthand_and_expanded_inputs_round_trip_through_yaml_and_json() {
         dto.inputs[1],
         QueryInputConfigDto::Expanded(QueryInputObjectDto {
             component: ComponentReference::by_name(ComponentName::try_new("facilities").unwrap(),),
+            enable_bootstrap: Some(false),
             port: Some(PortId::try_new("out").unwrap()),
             nodes: vec!["Floor".into()],
             relations: vec!["PART_OF_FLOOR".into()],
@@ -89,6 +91,7 @@ fn mapping_preserves_ports_label_selectors_pipelines_and_result_label() {
         config.inputs[1],
         QueryInputConfig {
             component: ComponentReference::by_name(ComponentName::try_new("facilities").unwrap(),),
+            enable_bootstrap: Some(false),
             port: Some(PortId::try_new("out").unwrap()),
             nodes: vec!["Floor".into()],
             relations: vec!["PART_OF_FLOOR".into()],

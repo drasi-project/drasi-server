@@ -23,7 +23,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Check compilation: `cargo check`
 
 ### Plugin Loading
-Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Source/Reaction/Bootstrap SDK ABI 0.19.0 and independent native ComputationGraph ABI 0.1.0 coexist in the same host. Rebuild plugins against the selected local SDK; do not infer compatibility from an older crate version. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
+Plugins are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Source/Reaction/Bootstrap SDK ABI 0.19.0 and independent native ComputationGraph ABI 0.2.0 coexist in the same host. Rebuild plugins against the selected local SDK; do not infer compatibility from an older crate version. Shared family discovery must verify candidates before opening any library; an invalid native declaration never falls back to the legacy ABI. Plugin building is managed by drasi-core, not this repository.
 
 **Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. `scripts/plugin_origin.py` checks the locked Cargo graph: this branch's sibling SDK, host and FFI path dependencies select local mode, so use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 

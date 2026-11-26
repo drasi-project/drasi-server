@@ -1161,6 +1161,7 @@ fn test_query_generates_valid_yaml() {
                     component: ComponentReference::by_name(
                         ComponentName::try_new("test-source").unwrap(),
                     ),
+                    enable_bootstrap: None,
                     port: None,
                     nodes: vec!["Node".to_string()],
                     relations: vec!["REL".to_string()],

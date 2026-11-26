@@ -64,6 +64,8 @@ mod managed_qos;
 mod native_services;
 #[path = "native_computation_test/shared_storage.rs"]
 mod shared_storage;
+#[path = "native_computation_test/stateful_processing.rs"]
+mod stateful_processing;
 
 fn expected_legacy_abi() -> String {
     std::env::var_os("DRASI_SERVER_TEST_EXPECTED_LEGACY_ABI")
@@ -110,14 +112,14 @@ fn component_plugin(kind: &str) -> Arc<NativePlugin> {
         .get_or_init(|| {
             let plugin = drasi_host_sdk::computation::load(artifact(artifact_name))
                 .expect("load real native ABI");
-            assert_eq!(plugin.factories().len(), 1);
-            assert_eq!(
-                plugin.factories()[0]
+            assert!(
+                plugin.factories().iter().any(|factory| factory
                     .metadata()
                     .implementation
                     .name
-                    .as_ref(),
-                kind
+                    .as_ref()
+                    == kind),
+                "{artifact_name} provides {kind}"
             );
             assert_eq!(
                 plugin.metadata().plugin.id.as_ref(),
@@ -577,7 +579,8 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     assert_eq!(stats.source_descriptors, 1);
     assert_eq!(stats.reaction_descriptors, 1);
     assert_eq!(stats.bootstrap_descriptors, 1);
-    assert_eq!(stats.computation_factories, 4);
+    // The middleware library provides the stateless and stateful middleware.
+    assert_eq!(stats.computation_factories, 5);
     assert!(registry.get_source("mock").is_some());
     assert!(registry.get_reaction("log").is_some());
     assert!(registry.get_bootstrapper("scriptfile").is_some());
@@ -616,13 +619,18 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     assert_eq!(status, StatusCode::OK);
     let plugins = metadata["plugins"].as_array().unwrap();
     assert_eq!(plugins.len(), 4);
-    assert!(plugins
-        .iter()
-        .all(|plugin| plugin["factories"].as_array().unwrap().len() == 1));
+    // The middleware library provides the stateless and stateful middleware.
+    assert_eq!(
+        plugins
+            .iter()
+            .map(|plugin| plugin["factories"].as_array().unwrap().len())
+            .sum::<usize>(),
+        5
+    );
     let configurations = metadata["configurationSchemas"]
         .as_array()
         .context("configuration schemas")?;
-    assert_eq!(configurations.len(), 4);
+    assert_eq!(configurations.len(), 5);
     assert!(configurations
         .iter()
         .all(|value| value["detailsAvailable"] == true));
@@ -645,7 +653,7 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
     assert_eq!(schema["detailsAvailable"], true);
     let (status, kinds) = request(&app, "GET", "/kinds", "", "application/json").await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(kinds["computation"].as_array().unwrap().len(), 4);
+    assert_eq!(kinds["computation"].as_array().unwrap().len(), 5);
     Ok(())
 }
 
@@ -1480,7 +1488,8 @@ async fn openapi_refreshes_native_factory_schemas_after_runtime_registration() -
             .keys()
             .filter(|key| key.starts_with("NativeComputationConfig_"))
             .count(),
-        4
+        // The middleware library provides the stateless and stateful middleware.
+        5
     );
     let counter_schema = schemas
         .schemas

@@ -133,13 +133,6 @@ pub struct GraphComponentConfig {
     pub streams: BTreeMap<PortId, StreamId>,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
-    /// Whether the component bootstraps. When enabled (the default), each
-    /// data connection whose producer has a bootstrap output generates a
-    /// bootstrap connection to this component's bootstrap input, unless the
-    /// component declares a local `bootstrapProvider` or explicit bootstrap
-    /// connections.
-    #[serde(default = "default_enable_bootstrap")]
-    pub enable_bootstrap: bool,
     /// The component's bootstrap provider: the ID of a provider component in
     /// this graph, or an inline provider declaration that generates one. On a
     /// source it serves the source's consumers; on a transformer or query it
@@ -443,7 +436,6 @@ impl GraphComponentConfig {
             resources: provider.resources.clone(),
             streams: BTreeMap::new(),
             auto_start: self.auto_start,
-            enable_bootstrap: true,
             bootstrap_provider: None,
         }))
     }
@@ -520,11 +512,6 @@ impl ComputationGraphConfig {
             let Some(provider) = component.provider_id()? else {
                 continue;
             };
-            anyhow::ensure!(
-                component.enable_bootstrap,
-                "component '{}' declares a bootstrapProvider but disables bootstrap",
-                component.id
-            );
             anyhow::ensure!(
                 provider != component.id,
                 "component '{}' cannot be its own bootstrapProvider",
@@ -712,13 +699,7 @@ impl ComputationGraphConfig {
             );
             local_providers.insert(component.id.clone(), provider);
         }
-        let enabled: BTreeMap<_, _> = expanded
-            .iter()
-            .map(|component| (component.id.clone(), component.enable_bootstrap))
-            .collect();
         let mut bootstrap_edges = BTreeSet::new();
-        let mut explicit_bootstrap = BTreeSet::new();
-        let mut data_inputs = Vec::new();
         for connection in &self.connections {
             let kind = connection.resolve_kind(&descriptors)?;
             let edge = EdgeDefinition::new(
@@ -732,7 +713,6 @@ impl ComputationGraphConfig {
             let capacity = connection.capacity.unwrap_or(self.default_pipe_capacity);
             match kind {
                 GraphConnectionKind::Data => {
-                    data_inputs.push((edge.from.component.clone(), edge.to.component.clone()));
                     definition.relationships.push(DesiredRelationship {
                         definition: edge,
                         policy: RelationshipPolicy::default(),
@@ -741,17 +721,12 @@ impl ComputationGraphConfig {
                 }
                 GraphConnectionKind::Bootstrap => {
                     let (from, to) = (&edge.from.component, &edge.to.component);
-                    anyhow::ensure!(
-                        enabled[to],
-                        "component '{to}' disables bootstrap but has a bootstrap connection from '{from}'"
-                    );
                     if let Some(provider) = local_providers.get(to) {
                         anyhow::ensure!(
                             provider == from,
                             "component '{to}' has the exclusive local bootstrapProvider '{provider}'; remove its bootstrap connection from '{from}'"
                         );
                     }
-                    explicit_bootstrap.insert(to.clone());
                     bootstrap_edges.insert(edge.clone());
                     definition
                         .relationships
@@ -775,24 +750,6 @@ impl ComputationGraphConfig {
                 ),
             ));
         }
-        for (from, to) in data_inputs {
-            if !enabled[&to]
-                || local_providers.contains_key(&to)
-                || explicit_bootstrap.contains(&to)
-            {
-                continue;
-            }
-            let (Some(output), Some(input)) = (
-                bootstrap_port(&descriptors[&from], PortDirection::Output)?,
-                bootstrap_port(&descriptors[&to], PortDirection::Input)?,
-            ) else {
-                continue;
-            };
-            generated.push(EdgeDefinition::new(
-                Endpoint::new(from, output),
-                Endpoint::new(to, input),
-            ));
-        }
         for edge in generated {
             if bootstrap_edges.insert(edge.clone()) {
                 definition
@@ -811,10 +768,6 @@ fn default_capacity() -> usize {
 }
 
 fn default_auto_start() -> bool {
-    true
-}
-
-fn default_enable_bootstrap() -> bool {
     true
 }
 

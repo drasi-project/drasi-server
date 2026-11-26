@@ -120,6 +120,16 @@ matching names. Native sources must independently negotiate recovery-v1.
 This recipe does not turn a volatile source into a replayable source, and it
 does not provide a database bootstrap implementation.
 
+A loaded stateful transformer keeps its state in a `processing` dependency.
+The `nativeProcessing` recipe,
+`{"kind":"nativeProcessing","indexes":"transformer-indexes"}`, has the
+`StateStore` role and only one resource dependency: the `IndexBackend` resource
+named by `indexes`, whose provider holds the state and whose durability it
+declares. Bind it under the transformer's `processing` dependency. Over a
+volatile index resource the transformer must configure `volatile: true`;
+otherwise it is refused, because its output would claim durability its state
+does not have.
+
 Native bootstrap-v1 factories are graph components, not resources. Each loaded
 bootstrap factory is also registered as a `BootstrapProvider` component kind
 (for example `drasi.postgres/shared-row-bootstrap`) with one bootstrap output
@@ -130,9 +140,9 @@ Bootstrap edges use `RequiresRunning` activation because sessions are addressed
 to their requester.
 
 - **Source provider**: connect the provider to a native source's `bootstrap`
-  input. The source coordinates bootstrap: downstream components connect the
-  source's `snapshot` output to their `bootstrap` input, and the source relays
-  each session to its provider using its own progress coordinator
+  input. The source coordinates bootstrap: downstream components receive the
+  initial state over their data connections, and the source relays each
+  session to its provider using its own progress coordinator
   (`source_progress` or `consumer_progress`).
 - **Local provider**: connect the provider directly to a query or transformer's
   `bootstrap` input. That component then never asks its inputs for bootstrap

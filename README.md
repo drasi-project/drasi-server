@@ -562,11 +562,13 @@ literal factory settings, not resolved environment/secret references.
 component whose `kind` is a bootstrap provider factory (for example
 `drasi.postgres/shared-row-bootstrap`); it has one bootstrap output, `snapshot`.
 Native sources and bootstrap-capable transformers (including queries) have a
-`bootstrap` input and a `snapshot` output. Bootstrap data travels over bootstrap
-connections, which are pipes like data connections. A connection's `kind` is
-`data` or `bootstrap`; when omitted it follows explicit ports, and a connection
-from a component with only bootstrap outputs (a provider) is a bootstrap
-connection:
+`bootstrap` input and a `snapshot` output. A provider is attached to the
+component it seeds by a bootstrap connection to that component's `bootstrap`
+input. Every other connection is a data connection; when a downstream component
+starts, DrasiLib decides whether its data connection also carries the
+producer's current state. A connection's `kind` is `data` or `bootstrap`; when
+omitted it follows explicit ports, and a connection from a component with only
+bootstrap outputs (a provider) is a bootstrap connection:
 
 ```yaml
 components:
@@ -581,13 +583,13 @@ components:
     config: {...}
 connections:
   - {from: orders-bootstrap, to: orders}          # provider -> source
-  - {from: orders, to: open-orders}               # data
-  - {from: orders, to: open-orders, kind: bootstrap}  # optional; see below
+  - {from: orders, to: open-orders}               # data, carrying initial state
 ```
 
 The source coordinates bootstrap: when a downstream component bootstraps, the
-source relays the session to its provider. Shorthands generate the same nodes
-and connections, which are stored and shown like any other:
+source relays the session to its provider. The server adds no connections of
+its own. The `bootstrapProvider` shorthand declares the same provider node and
+connection, which are stored and shown like any other:
 
 - `bootstrapProvider` on a component is either the ID of a provider component
   or an inline provider `{kind, version?, config, resources, id?, name?}`. An
@@ -596,12 +598,6 @@ and connections, which are stored and shown like any other:
   input. On a query or transformer it is an exclusive local provider: that
   component never asks its inputs for bootstrap data, and other bootstrap
   connections to it are rejected.
-- `enableBootstrap` (default `true`): unless the component has a local
-  provider or explicit bootstrap connections, each data connection from a
-  producer with a bootstrap output also generates a bootstrap connection from
-  the producer's `snapshot` output to the consumer's `bootstrap` input.
-  `false` generates none and rejects `bootstrapProvider` and bootstrap
-  connections.
 
 **`computation.definition`** is the expanded Core version-1 `DesiredTopology`
 format, used for saved snapshots
@@ -655,7 +651,11 @@ Host resources are explicit entries in `definition.resources`, paired by resourc
 ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
 values are `memoryIndexes`, `rocksdbIndexes` (requires `path` and graph ownership),
 `queryCatalog`, `middleware`, `queryMiddleware`, `transactionalTransformers`, `configuration`,
-and `qos`.
+`nativeProcessing` and `qos`. A `nativeProcessing` resource gives loaded stateful
+transformers (the stateful middleware, view and geometry) storage in the index
+resource it names, which must be its only resource dependency, and declares
+that resource's durability. Over `memoryIndexes` the transformer must set
+`volatile: true`.
 Native transaction participants are included in `transactionalTransformers`; durable
 transactions require persistent atomic indexes, not `memoryIndexes`. Configuration
 references use `env:NAME`, `env-json:NAME`, `secret:NAME`, or `secret-json:NAME`;

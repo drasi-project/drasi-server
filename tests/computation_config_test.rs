@@ -521,7 +521,7 @@ fn edges(config: &ComputationConfig) -> Vec<(ComponentId, String, ComponentId, S
 }
 
 #[test]
-fn source_bootstrap_providers_and_query_bootstrap_edges_are_graph_nodes_and_edges() -> Result<()> {
+fn source_bootstrap_providers_are_graph_nodes_and_edges() -> Result<()> {
     let factories = bootstrap_factories()?;
     let config = resolve(bootstrap_input(), &factories)?;
     let provider_id = ComponentId::derive_owned(&component_id(10), "bootstrap-provider")?;
@@ -542,7 +542,6 @@ fn source_bootstrap_providers_and_query_bootstrap_edges_are_graph_nodes_and_edge
             component_id(10),
             "bootstrap",
         ),
-        (component_id(10), "snapshot", component_id(1), "bootstrap"),
         (component_id(10), "out", component_id(1), "in"),
     ] {
         let expected = (
@@ -553,6 +552,14 @@ fn source_bootstrap_providers_and_query_bootstrap_edges_are_graph_nodes_and_edge
         );
         assert!(found.contains(&expected), "{expected:?} in {found:?}");
     }
+    // DrasiLib, not the server, decides whether the query's data connection
+    // carries its initial state.
+    assert!(
+        !found
+            .iter()
+            .any(|edge| edge.2 == component_id(1) && edge.3 == "bootstrap"),
+        "{found:?}"
+    );
     config.definition.build(TopologyBindings {
         factories: factories.clone(),
         ..Default::default()
@@ -563,13 +570,31 @@ fn source_bootstrap_providers_and_query_bootstrap_edges_are_graph_nodes_and_edge
     let restored: ComputationConfigInput = serde_yaml::from_str(&yaml)?;
     assert_eq!(restored.resolve(&factories)?.definition, config.definition);
 
-    // Disabling bootstrap removes the inferred query edge.
-    let mut disabled = bootstrap_input();
-    disabled["graph"]["components"][0]["enableBootstrap"] = json!(false);
-    let config = resolve(disabled, &factories)?;
-    assert!(!edges(&config)
-        .iter()
-        .any(|edge| edge.2 == component_id(1) && edge.3 == "bootstrap"));
+    // The removed per-component switch is refused with guidance.
+    let mut removed = bootstrap_input();
+    removed["graph"]["components"][0]["enableBootstrap"] = json!(false);
+    let error = resolve(removed.clone(), &factories)
+        .err()
+        .context("enableBootstrap is no longer a component field")?;
+    assert!(
+        format!("{error:#}").contains("unknown field `enableBootstrap`"),
+        "{error:#}"
+    );
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("server.yaml");
+    std::fs::write(
+        &path,
+        serde_yaml::to_string(&json!({"instances": [{"id": "removed", "computation": removed}]}))?,
+    )?;
+    let error = drasi_server::load_config_file(&path)
+        .err()
+        .context("enableBootstrap in a configuration file")?;
+    assert!(
+        error
+            .to_string()
+            .contains("enableBootstrap has been removed"),
+        "{error}"
+    );
     Ok(())
 }
 
@@ -661,16 +686,6 @@ fn local_query_bootstrap_provider_is_exclusive() -> Result<()> {
 #[test]
 fn invalid_bootstrap_authoring_has_clear_errors() -> Result<()> {
     let factories = bootstrap_factories()?;
-    let mut disabled = bootstrap_input();
-    disabled["graph"]["components"][2]["enableBootstrap"] = json!(false);
-    let error = resolve(disabled, &factories)
-        .err()
-        .context("provider with bootstrap disabled")?;
-    assert!(
-        format!("{error:#}").contains("disables bootstrap"),
-        "{error:#}"
-    );
-
     let mut no_input = bootstrap_input();
     no_input["graph"]["components"][1]["bootstrapProvider"] =
         json!({"kind": "test/provider", "version": "1"});

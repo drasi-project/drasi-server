@@ -87,6 +87,14 @@ pub enum QueryInputConfigDto {
 pub struct QueryInputObjectDto {
     /// Upstream component ID (a source, query or transformer).
     pub component: ComponentReference,
+    /// Set `false` to follow only this input's live changes when the query
+    /// bootstraps its other inputs. It cannot enable a query-wide disable.
+    #[serde(
+        default,
+        rename = "enableBootstrap",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub enable_bootstrap: Option<bool>,
     /// Output port on the component. Omit to use its primary (or only) output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<PortId>,
@@ -100,7 +108,8 @@ pub struct QueryInputObjectDto {
 
 impl From<QueryInputConfig> for QueryInputConfigDto {
     fn from(input: QueryInputConfig) -> Self {
-        if input.port.is_none()
+        if input.enable_bootstrap.is_none()
+            && input.port.is_none()
             && input.nodes.is_empty()
             && input.relations.is_empty()
             && input.pipeline.is_empty()
@@ -109,6 +118,7 @@ impl From<QueryInputConfig> for QueryInputConfigDto {
         }
         Self::Expanded(QueryInputObjectDto {
             component: input.component,
+            enable_bootstrap: input.enable_bootstrap,
             port: input.port,
             nodes: input.nodes,
             relations: input.relations,
@@ -123,6 +133,7 @@ impl From<&QueryInputConfigDto> for QueryInputConfig {
             QueryInputConfigDto::Component(component) => QueryInputConfig::new(component.clone()),
             QueryInputConfigDto::Expanded(object) => QueryInputConfig {
                 component: object.component.clone(),
+                enable_bootstrap: object.enable_bootstrap,
                 port: object.port.clone(),
                 nodes: object.nodes.clone(),
                 relations: object.relations.clone(),

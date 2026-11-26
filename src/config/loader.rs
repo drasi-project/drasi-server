@@ -24,10 +24,20 @@ use std::path::Path;
 pub(crate) const REMOVED_EXECUTION_MODE_MESSAGE: &str =
     "executionMode has been removed. ComputationGraph is the only runtime; remove executionMode from the server and instance configuration.";
 
-pub(crate) fn removed_execution_mode_error(error: &str) -> Option<&'static str> {
-    (error.contains("unknown field `executionMode`")
-        || error.contains("unknown field `execution_mode`"))
-    .then_some(REMOVED_EXECUTION_MODE_MESSAGE)
+pub(crate) const REMOVED_ENABLE_BOOTSTRAP_MESSAGE: &str =
+    "enableBootstrap has been removed from computation graph components. DrasiLib decides whether a connection carries a component's initial state; remove enableBootstrap, and attach a bootstrap provider to seed a component from one.";
+
+/// The removal guidance for an obsolete configuration field a parse error names.
+pub(crate) fn removed_field_error(error: &str) -> Option<&'static str> {
+    if error.contains("unknown field `executionMode`")
+        || error.contains("unknown field `execution_mode`")
+    {
+        Some(REMOVED_EXECUTION_MODE_MESSAGE)
+    } else if error.contains("unknown field `enableBootstrap`") {
+        Some(REMOVED_ENABLE_BOOTSTRAP_MESSAGE)
+    } else {
+        None
+    }
 }
 
 /// Unified error type for configuration operations.
@@ -42,8 +52,8 @@ pub enum ConfigError {
     #[error("Failed to parse JSON: {0}")]
     JsonError(#[source] serde_json::Error),
 
-    #[error("{REMOVED_EXECUTION_MODE_MESSAGE}")]
-    RemovedExecutionMode,
+    #[error("{0}")]
+    RemovedField(&'static str),
 
     #[error(
         "Failed to parse config file '{path}': YAML error: {yaml_err}, JSON error: {json_err}"
@@ -63,20 +73,18 @@ pub enum ConfigError {
 
 impl From<serde_yaml::Error> for ConfigError {
     fn from(error: serde_yaml::Error) -> Self {
-        if removed_execution_mode_error(&error.to_string()).is_some() {
-            Self::RemovedExecutionMode
-        } else {
-            Self::YamlError(error)
+        match removed_field_error(&error.to_string()) {
+            Some(message) => Self::RemovedField(message),
+            None => Self::YamlError(error),
         }
     }
 }
 
 impl From<serde_json::Error> for ConfigError {
     fn from(error: serde_json::Error) -> Self {
-        if removed_execution_mode_error(&error.to_string()).is_some() {
-            Self::RemovedExecutionMode
-        } else {
-            Self::JsonError(error)
+        match removed_field_error(&error.to_string()) {
+            Some(message) => Self::RemovedField(message),
+            None => Self::JsonError(error),
         }
     }
 }
@@ -168,8 +176,8 @@ pub fn load_config_file_with_overrides<P: AsRef<Path>>(
     let config = match serde_yaml::from_str::<DrasiServerConfig>(&content) {
         Ok(config) => config,
         Err(yaml_err) => {
-            if removed_execution_mode_error(&yaml_err.to_string()).is_some() {
-                return Err(ConfigError::RemovedExecutionMode);
+            if let Some(message) = removed_field_error(&yaml_err.to_string()) {
+                return Err(ConfigError::RemovedField(message));
             }
             // If YAML fails, try JSON
             match serde_json::from_str::<DrasiServerConfig>(&content) {

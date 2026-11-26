@@ -17,6 +17,10 @@ instances:
         resources:
           wall-memory-indexes:
             kind: memoryIndexes
+          # The geometry transformer's state, kept in the memory indexes.
+          wall-geometry-processing:
+            kind: nativeProcessing
+            indexes: wall-memory-indexes
           wall-query-catalog:
             kind: queryCatalog
           wall-output-snapshots:
@@ -31,6 +35,9 @@ instances:
             timeoutMs: 5000
             maxReaders: 16
 
+        resourceDependencies:
+          wall-geometry-processing: [wall-memory-indexes]
+
         components:
           - id: 00000000-0000-4000-8000-000000000001
             name: scene
@@ -43,9 +50,13 @@ instances:
             name: geometry
             kind: drasi.standard/geometry
             version: "1"
+            resources:
+              processing: wall-geometry-processing
             config:
               # The host binds each output port to the stream `<component id>/<port>`.
               stream: 00000000-0000-4000-8000-000000000002/out
+              # Its state is in the memory indexes.
+              volatile: true
               sets:
                 - name: journeys
                   label: JourneyFootprint

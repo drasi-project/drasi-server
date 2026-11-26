@@ -374,8 +374,8 @@ impl ComponentFactory for FirstFactory {
     ) -> Result<ComponentUpdatePlan> {
         self.inner.plan_update(current, proposed)
     }
-    fn supports_query_reconstruction(&self) -> bool {
-        self.inner.supports_query_reconstruction()
+    fn supports_state_reconstruction(&self) -> bool {
+        self.inner.supports_state_reconstruction()
     }
     fn validate_update_plan(
         &self,

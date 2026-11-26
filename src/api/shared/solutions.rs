@@ -673,9 +673,7 @@ pub async fn deploy_solution(
     let template: SolutionTemplateFile = match serde_yaml::from_str(&resolved_yaml) {
         Ok(t) => t,
         Err(e) => {
-            if let Some(message) =
-                crate::config::loader::removed_execution_mode_error(&e.to_string())
-            {
+            if let Some(message) = crate::config::loader::removed_field_error(&e.to_string()) {
                 return Err(ErrorResponse::new(error_codes::INVALID_REQUEST, message));
             }
             return Err(ErrorResponse::new(

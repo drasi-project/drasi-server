@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use drasi_core::computation::ComputationIndexProvider;
 use drasi_host_sdk::{
-    computation::NativeIdentityProviders,
+    computation::{NativeIdentityProviders, NativeProcessingResource},
     management::{
         ConsumerProgressConfig, HostConfigurationResolver, NativeConsumerConfig,
         NativeIdentityConfig, NativeOutputSnapshotsConfig, QosRecoveryConfig, SharedQosConfig,
@@ -102,6 +102,12 @@ pub enum ComputationResourceConfig {
         #[schema(value_type = String)]
         indexes: ResourceId,
     },
+    /// Processing storage for loaded stateful transformers, kept in an index
+    /// resource, whose durability it declares.
+    NativeProcessing {
+        #[schema(value_type = String)]
+        indexes: ResourceId,
+    },
     RocksdbIndexes {
         path: PathBuf,
     },
@@ -168,7 +174,9 @@ impl ComputationResourceConfig {
             | Self::ChildSupervisor { .. } => ResourceRole::Component,
             Self::BridgeTls { .. } | Self::NativeIdentity(_) => ResourceRole::Identity,
             Self::Configuration {} => ResourceRole::SecretStore,
-            Self::Qos { .. } | Self::SharedQos(_) => ResourceRole::StateStore,
+            Self::Qos { .. } | Self::SharedQos(_) | Self::NativeProcessing { .. } => {
+                ResourceRole::StateStore
+            }
         }
     }
 }
@@ -255,6 +263,8 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             config.validate(resource, &dependencies)?;
         } else if let ComputationResourceConfig::SourceProgress { indexes, .. } = &recipe {
             validate_source_progress(indexes, &dependencies)?;
+        } else if let ComputationResourceConfig::NativeProcessing { indexes } = &recipe {
+            validate_native_processing(indexes, &dependencies)?;
         } else {
             anyhow::ensure!(
                 dependencies.is_empty(),
@@ -391,6 +401,19 @@ fn validate_source_progress(
     anyhow::ensure!(
         dependencies.len() == 1 && dependencies.get(indexes) == Some(&ResourceRole::IndexBackend),
         "source progress must declare exactly its query's IndexBackend resource `{indexes}` as its dependency"
+    );
+    Ok(())
+}
+
+/// A `nativeProcessing` recipe depends only on the index resource it keeps
+/// its transformers' state in.
+fn validate_native_processing(
+    indexes: &ResourceId,
+    dependencies: &BTreeMap<ResourceId, ResourceRole>,
+) -> Result<()> {
+    anyhow::ensure!(
+        dependencies.len() == 1 && dependencies.get(indexes) == Some(&ResourceRole::IndexBackend),
+        "native processing must declare exactly its IndexBackend resource `{indexes}` as its dependency"
     );
     Ok(())
 }
@@ -775,6 +798,24 @@ impl ManagementResourceResolver for ServerManagementResources {
             )
             .with_capabilities(capabilities));
         }
+        if let ComputationResourceConfig::NativeProcessing { indexes } = recipe {
+            validate_native_processing(
+                &indexes,
+                &dependencies
+                    .iter()
+                    .map(|(id, handle)| (id.clone(), handle.role()))
+                    .collect(),
+            )?;
+            let index = dependencies
+                .get(&indexes)
+                .context("native processing index dependency is unavailable")?;
+            let provider = index.get::<QueryIndexProviderResource>()?.0.clone();
+            return Ok(ResourceHandle::new(
+                ResourceRole::StateStore,
+                Arc::new(NativeProcessingResource::new(provider)),
+            )
+            .with_capabilities(index.capabilities()));
+        }
         if let ComputationResourceConfig::ConsumerProgress(config) = recipe {
             return config.resolve(graph, resource, dependencies);
         }
@@ -839,6 +880,9 @@ impl ManagementResourceResolver for ServerManagementResources {
             }
             ComputationResourceConfig::SourceProgress { .. } => {
                 unreachable!("source progress resolved with dependencies")
+            }
+            ComputationResourceConfig::NativeProcessing { .. } => {
+                unreachable!("native processing resolved with dependencies")
             }
             ComputationResourceConfig::ConsumerProgress(_) => {
                 unreachable!("consumer progress resolved with dependencies")

@@ -346,7 +346,7 @@ fn test_openapi_spec_includes_graph_bootstrap_schemas() {
         .as_object()
         .unwrap();
     assert!(component.contains_key("bootstrapProvider"));
-    assert!(component.contains_key("enableBootstrap"));
+    assert!(!component.contains_key("enableBootstrap"));
 }
 
 #[test]
