@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-12T18:28:13-07:00",
+  "repository": "drasi-project/drasi-server",
+  "baseline": {
+    "version": "0.2.3",
+    "commit": "0d369a7d9739306b5e45376d65049ef1075a6df7",
+    "url": "https://github.com/drasi-project/drasi-server/commit/0d369a7d9739306b5e45376d65049ef1075a6df7"
+  },
+  "publicationSource": {
+    "sha256": "683a7406e1edd6778f892bd3e849d2440ac8da3fa023aac79c6ac93b37eebbda",
+    "rowCount": 132,
+    "narrativeCount": 7,
+    "rowIdFormat": "report-L<sourceLine>",
+    "sourceRowLines": [
+      42, 43, 44, 45, 46, 47, 48, 64, 65, 66, 67, 68, 69, 77, 78, 79, 80, 81,
+      91, 92, 93, 94, 95, 96, 104, 105, 115, 116, 117, 118, 119, 120, 121,
+      122, 123, 135, 136, 137, 138, 139, 147, 148, 149, 150, 151, 152, 153,
+      154, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193,
+      194, 208, 209, 210, 211, 235, 236, 237, 238, 239, 240, 267, 268, 269,
+      270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283,
+      284, 285, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306,
+      307, 317, 318, 319, 320, 321, 322, 323, 324, 334, 335, 336, 337, 338,
+      339, 340, 341, 342, 343, 344, 345, 346, 347, 353, 354, 355, 356, 357,
+      358
+    ],
+    "narrativeIds": [
+      "broad-aggregate-identity",
+      "parked-replay-patch",
+      "legacy-recovery-provenance",
+      "redb-shutdown-owner",
+      "excess-slot-retirement",
+      "withdrawn-diagnoses",
+      "derived-slot-fixture-collision"
+    ],
+    "defaultDisposition": {
+      "owner": "drasi-project/drasi-core or historical WorkGraph component",
+      "action": "Not duplicated as a drasi-server bug. Core publication is coordinated separately; historical application-only findings remain historical, and withdrawn diagnoses remain withdrawn.",
+      "serverIssue": null
+    },
+    "overrides": {
+      "report-L151": {
+        "owner": "cross-repository",
+        "action": "The raw-config builder repair is Core-owned. Related Server persistence and local resolver boundaries are preserved in #180 and #188.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-core/commit/957961c0e4a6137d3d89cbdc0fb38055024e17ea",
+          "https://github.com/drasi-project/drasi-server/issues/180",
+          "https://github.com/drasi-project/drasi-server/issues/188"
+        ]
+      },
+      "report-L268": {
+        "owner": "historical Core middleware with Server integration evidence",
+        "action": "No current Server bug established. Preserve the remotely available runtime regression and its generic reconciliation invariant.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-server/commit/8cd501c360e04c1cdb45ff3ae3215af3a8b50f37"
+        ]
+      },
+      "report-L272": {
+        "owner": "historical plugin descriptors and Server-facing documentation",
+        "action": "Component-specific config examples were corrected in their historical owners. Current Server validation completeness is tracked separately in #195; setup documentation remains remotely preserved.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-server/issues/195",
+          "https://github.com/drasi-project/drasi-server/commit/831e1378d2f7c69c313910d565b6b594696fa813"
+        ]
+      },
+      "report-L282": {
+        "owner": "historical Core plugin ABI",
+        "action": "Do not refile the old metadata-absence repair as a Server bug. Current Server loader policy parity is tracked in #190.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-server/issues/190"
+        ]
+      },
+      "report-L337": {
+        "owner": "historical Core Source/bootstrap runtime",
+        "action": "No surviving Server defect was established. The Server-side secret-store bootstrap phase is independently tracked in #196.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-server/issues/196"
+        ]
+      },
+      "report-L358": {
+        "owner": "historical packaging and setup",
+        "action": "No new Server bug asserted. Remotely preserved setup documentation records the historical compatibility boundary.",
+        "remoteUrls": [
+          "https://github.com/drasi-project/drasi-server/commit/831e1378d2f7c69c313910d565b6b594696fa813"
+        ]
+      }
+    }
+  },
+  "additionalServerEvidence": [
+    {
+      "id": "bootstrap-child-700ebede-t7-t23",
+      "issue": 194,
+      "status": "historically-reproduced-current-code-retains-root-cause"
+    },
+    {
+      "id": "server-child-b1bee1a9-t11-t17",
+      "issue": 195,
+      "status": "historically-observed-current-code-confirms-policy"
+    },
+    {
+      "id": "server-recovery-6648739",
+      "issue": 196,
+      "status": "current-code-confirmed-historical-bounded-patch"
+    }
+  ],
+  "standaloneCaseDetails": [
+    {
+      "issue": 194,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/194",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#194-same-kind-inline-bootstrap-inheritance",
+      "includes": ["affected-version", "code", "reproduction", "expected-actual", "impact", "root-cause", "possible-fix", "acceptance-criteria"]
+    },
+    {
+      "issue": 195,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/195",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#195-incomplete-plugin-aware-validation-exits-successfully",
+      "includes": ["affected-version", "code", "current-reproduction", "expected-actual", "impact", "root-cause", "possible-fix", "acceptance-criteria"]
+    },
+    {
+      "issue": 196,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/196",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#196-secret-store-bootstrap-environment-resolution",
+      "includes": ["affected-version", "code", "reproduction", "expected-actual", "impact", "root-cause", "historical-patch", "possible-fix", "acceptance-criteria"]
+    }
+  ],
+  "cohorts": [
+    {
+      "id": "computationgraph-server-audit",
+      "issues": [179, 180, 181, 182, 183, 184, 185, 187, 188, 189, 190, 191, 192],
+      "disposition": "pre-existing cohort retained without rewriting its discovery provenance"
+    },
+    {
+      "id": "workgraph-recovery-server-additions",
+      "issues": [194, 195, 196],
+      "disposition": "additional findings recovered from later WorkGraph and recovery histories"
+    }
+  ],
+  "umbrella": {
+    "number": 193,
+    "url": "https://github.com/drasi-project/drasi-server/issues/193",
+    "assignees": ["agentofreality"]
+  },
+  "preservationPullRequest": {
+    "number": 197,
+    "url": "https://github.com/drasi-project/drasi-server/pull/197",
+    "state": "open",
+    "draft": true,
+    "assignees": ["agentofreality"],
+    "scope": "documentation-and-evidence-only"
+  },
+  "findings": [
+    {"issue": 179, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "serialize-config-saves"},
+    {"issue": 180, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "provider-reference-retention"},
+    {"issue": 181, "state": "open", "assignees": ["agentofreality"], "evidence": "reproduced", "scope": "sse-cli-lockfile", "fixPr": 186},
+    {"issue": 182, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "instance-id-reservation"},
+    {"issue": 183, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "instance-cleanup"},
+    {"issue": 184, "state": "open", "assignees": ["agentofreality"], "evidence": "existing-test-confirmed", "scope": "schema-build-failure"},
+    {"issue": 185, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "live-openapi"},
+    {"issue": 187, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "api-task-ownership"},
+    {"issue": 188, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "typed-secret-boundary"},
+    {"issue": 189, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "persistence-fidelity"},
+    {"issue": 190, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "plugin-load-policy"},
+    {"issue": 191, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "effective-instance-selection"},
+    {"issue": 192, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "plugin-support-matrix"},
+    {"issue": 194, "state": "open", "assignees": ["agentofreality"], "evidence": "historically-reproduced", "scope": "inline-bootstrap-inheritance"},
+    {"issue": 195, "state": "open", "assignees": ["agentofreality"], "evidence": "current-baseline-reproduced", "scope": "validation-completeness"},
+    {"issue": 196, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "secret-store-environment-bootstrap"}
+  ],
+  "sourceFixInventory": [
+    {
+      "commit": "8cd501c360e04c1cdb45ff3ae3215af3a8b50f37",
+      "remoteBranch": "github-integration-prototype",
+      "classification": "integration-regression-evidence",
+      "action": "retain remotely; do not copy application protocol code"
+    },
+    {
+      "commit": "66487399e523da873175ccab4cd250aeb2a560e8",
+      "remoteBranch": "workgraph-generic-recovery",
+      "classification": "mixed-recovery-commit",
+      "action": "preserve only the #196 candidate hunk; do not cherry-pick path dependencies"
+    },
+    {
+      "commit": "831e1378d2f7c69c313910d565b6b594696fa813",
+      "remoteBranch": "workgraph-generic-recovery",
+      "classification": "documentation",
+      "action": "review separately; do not treat as a defect fix"
+    },
+    {
+      "commit": "0347dee15dc0ab0e66ffcca08d83599509aae6f1",
+      "remoteBranch": "agentofreality-parallel-computation-graph",
+      "classification": "mixed-feature-commit",
+      "action": "SSE lockfile already extracted independently in draft PR #186"
+    }
+  ],
+  "publicationCounts": {
+    "existingIssuesRetained": 13,
+    "newIssues": 3,
+    "umbrellaIssues": 1,
+    "existingFixPullRequests": 1,
+    "preservationPullRequests": 1
+  }
+}
