@@ -62,5 +62,9 @@ echo "Press Ctrl+C to stop the server"
 echo "=============================================="
 echo
 
+# Set default for POSTGRES_PASSWORD if not already set (used by server-config.yaml)
+: "${POSTGRES_PASSWORD:=drasi_password}"
+export POSTGRES_PASSWORD
+
 # Run the server
 exec ./target/release/drasi-server --config "$CONFIG_FILE"
