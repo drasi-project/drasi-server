@@ -176,6 +176,19 @@ async fn create_instance_body(
     }
 
     let instance_id = request.id.clone();
+    registry
+        .validate_new_instance_id(&instance_id)
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Instance ID is not valid while telemetry is enabled; choose an ID without whitespace or control characters, or disable telemetry (for example telemetry.profile: off)",
+            )
+            .with_details(ErrorDetail {
+                component_type: Some("instance".to_string()),
+                component_id: Some(instance_id.clone()),
+                technical_details: Some(error.to_string()),
+            })
+        })?;
     let persist_index = request.persist_index.unwrap_or(false);
     let enable_archive = request.enable_archive.unwrap_or(false);
     let memory_budget_mib = request.memory_budget_mib;
@@ -959,4 +972,47 @@ fn snapshot_definitions(
         definitions.push(reaction_definition(&config)?);
     }
     Ok(definitions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use drasi_lib::observability::{
+        ComponentLogRuntime, LogPolicy, TelemetryProfile, TelemetrySettings,
+    };
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn create_rejects_invalid_ids_while_telemetry_is_enabled() -> anyhow::Result<()> {
+        let logging = ComponentLogRuntime::new(LogPolicy::new("info")?)?;
+        let registry = InstanceRegistry::new().with_runtime_context(
+            crate::TelemetryBindings::new(
+                TelemetrySettings::new(TelemetryProfile::Basic).with_metrics(false),
+                logging.clone(),
+            ),
+            crate::ServerCleanupHandle::bootstrap(),
+        );
+        let error = create_instance_body(
+            registry,
+            Arc::new(false),
+            None,
+            Arc::new(RwLock::new(PluginRegistry::new())),
+            serde_json::from_value(json!({"id": "my server"}))?,
+        )
+        .await
+        .err()
+        .expect("a telemetry-invalid instance ID must be rejected");
+        assert_eq!(error.code, error_codes::INVALID_REQUEST);
+        let details = error.details.as_ref().expect("error details");
+        assert_eq!(details.component_id.as_deref(), Some("my server"));
+        assert!(details
+            .technical_details
+            .as_deref()
+            .is_some_and(|technical| technical.contains("telemetry.profile: off")));
+        assert!(!error.message.contains("my server"));
+        assert_eq!(error.with_status().0, StatusCode::BAD_REQUEST);
+        logging.shutdown(std::time::Duration::from_secs(5)).await?;
+        Ok(())
+    }
 }

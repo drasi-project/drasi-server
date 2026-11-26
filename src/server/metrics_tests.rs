@@ -94,6 +94,14 @@ fn prepared_registry_and_shared_configuration_database_survive_run() -> Result<(
     children("continuity")
 }
 
+// Break caught: an omitted section stays Off, or the CLI's transferred
+// standalone owner applies its default policy despite legacy root `metrics`.
+#[test]
+fn omitted_file_telemetry_is_basic_and_legacy_root_metrics_stays_off() -> Result<()> {
+    children("file-default")?;
+    children("file-legacy-metrics")
+}
+
 #[test]
 #[ignore = "isolated global-installation subprocess entry point"]
 fn file_metrics_child() -> Result<()> {
@@ -110,6 +118,7 @@ fn file_metrics_child() -> Result<()> {
     let result = runtime.block_on(async {
         match std::env::var(CASE)?.as_str() {
             "continuity" => registry_continuity().await,
+            case @ ("file-default" | "file-legacy-metrics") => file_default_policies(case).await,
             case => configured_metrics(case).await,
         }
     });
@@ -477,6 +486,56 @@ async fn configured_metrics(case: &str) -> Result<()> {
     assert!(global_metrics
         .render()
         .contains("task4_file_global_sentinel"));
+    Ok(())
+}
+
+// The CLI passes `prepare_new_with_runtime` a standalone owner whose bindings
+// carry the default policy; legacy root `metrics` must still keep Cores Off.
+async fn file_default_policies(case: &str) -> Result<()> {
+    let directory = tempfile::Builder::new()
+        .prefix("task3-file-default-")
+        .tempdir_in(".")?;
+    let id = format!("task3-{}-{case}", uuid::Uuid::new_v4());
+    let _wal = WalDirectories::for_ids(std::slice::from_ref(&id));
+    let legacy = case == "file-legacy-metrics";
+    let mut file = json!({
+        "host": "127.0.0.1", "persistConfig": false, "verifyPlugins": false,
+        "instances": [{"id": id}]
+    });
+    if legacy {
+        file["metrics"] = json!({"endpoint": "http://127.0.0.1:4318/v1/metrics"});
+    }
+    let path = directory.path().join("server.yaml");
+    std::fs::write(&path, serde_yaml::to_string(&file)?)?;
+    let plugins = directory.path().join("plugins");
+    std::fs::create_dir(&plugins)?;
+    let api_port = port()?;
+    let preparation = if legacy {
+        let runtime = StandaloneTelemetry::prepare("info".into()).finish().await?;
+        DrasiServer::prepare_new_with_runtime(path, api_port, plugins, false, false, runtime)
+    } else {
+        DrasiServer::prepare_new(path, api_port, plugins, false, false)
+    };
+    let cleanup = preparation.cleanup_handle();
+    let server = preparation.finish().await?;
+    let core = server
+        .instance_registry
+        .get(&id)
+        .await
+        .context("prepared Core unpublished")?;
+    assert_eq!(
+        core.telemetry().policy().profile(),
+        if legacy {
+            TelemetryProfile::Off
+        } else {
+            TelemetryProfile::Basic
+        }
+    );
+    assert!(!core.telemetry().policy().enabled());
+    drop(core);
+    drop(server);
+    cleanup.wait_until(Instant::now() + WAIT).await?;
+    assert_eq!(cleanup.status().phase, CleanupPhase::Complete);
     Ok(())
 }
 

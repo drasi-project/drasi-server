@@ -1,8 +1,9 @@
 // Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Read-only telemetry inspection, mounted only when
-//! `telemetry.inspection.enabled` is true.
+//! Read-only telemetry inspection. The settings route is mounted unless
+//! `telemetry.inspection.enabled` is false; the metrics route requires it to be
+//! true.
 //!
 //! Settings are projected once at startup and never include destinations,
 //! headers or credentials. The metrics route delegates to the shared
@@ -20,7 +21,7 @@ use drasi_lib::observability::{RootSampling, TelemetryProfile};
 use serde::Serialize;
 
 use crate::api::shared::error::{error_codes, ErrorResponse};
-use crate::config::telemetry::{EffectiveTelemetry, MetricsBackend};
+use crate::config::telemetry::{EffectiveTelemetry, InspectionMode, MetricsBackend};
 use crate::telemetry::prometheus::PrometheusRuntime;
 
 const TELEMETRY_PATH: &str = "/api/v1/telemetry";
@@ -97,7 +98,8 @@ pub struct MetricsInspection {
     pub backend: InspectionMetricsBackend,
     /// Effective process metrics; per-OS availability is documented, not returned.
     pub process_metrics: bool,
-    /// Local metrics route when the Prometheus backend is active, otherwise `null`.
+    /// Local metrics route when `telemetry.inspection.enabled` is true and the
+    /// Prometheus backend is active, otherwise `null`.
     #[schema(required = true)]
     pub path: Option<String>,
 }
@@ -132,6 +134,7 @@ impl TelemetryInspectionResponse {
                 path: effective
                     .prometheus
                     .as_ref()
+                    .filter(|_| effective.inspection == InspectionMode::Enabled)
                     .map(|_| TELEMETRY_METRICS_PATH.to_string()),
             },
             logs: LogsInspection {
@@ -142,9 +145,10 @@ impl TelemetryInspectionResponse {
     }
 }
 
-/// Immutable inspection state shared by both routes.
+/// Immutable inspection state shared by the mounted routes.
 pub(crate) struct TelemetryInspection {
     settings: TelemetryInspectionResponse,
+    metrics_route: bool,
     prometheus: Option<Arc<PrometheusRuntime>>,
 }
 
@@ -153,25 +157,30 @@ impl TelemetryInspection {
         effective: &EffectiveTelemetry,
         prometheus: Option<Arc<PrometheusRuntime>>,
     ) -> Arc<Self> {
+        let metrics_route = effective.inspection == InspectionMode::Enabled;
         Arc::new(Self {
             settings: TelemetryInspectionResponse::from_effective(effective),
-            prometheus,
+            metrics_route,
+            prometheus: prometheus.filter(|_| metrics_route),
         })
     }
 }
 
-/// GET-only inspection routes; other methods receive axum's 405.
+/// GET-only inspection routes; other methods receive axum's 405. The metrics
+/// route is mounted only when inspection is explicitly enabled.
 pub(crate) fn telemetry_router(inspection: Arc<TelemetryInspection>) -> Router {
-    Router::new()
-        .route(TELEMETRY_PATH, get(get_telemetry))
-        .route(TELEMETRY_METRICS_PATH, get(get_telemetry_metrics))
-        .with_state(inspection)
+    let mut router: Router<Arc<TelemetryInspection>> =
+        Router::new().route(TELEMETRY_PATH, get(get_telemetry));
+    if inspection.metrics_route {
+        router = router.route(TELEMETRY_METRICS_PATH, get(get_telemetry_metrics));
+    }
+    router.with_state(inspection)
 }
 
 /// Read the effective telemetry settings.
 ///
-/// This route exists only when `telemetry.inspection.enabled` is true. It
-/// returns a startup projection without destinations or credentials.
+/// The settings route is mounted unless `telemetry.inspection.enabled` is
+/// false. It returns a startup projection without destinations or credentials.
 #[utoipa::path(
     get,
     path = "/api/v1/telemetry",
@@ -188,7 +197,7 @@ pub async fn get_telemetry(
 
 /// Read local Prometheus metrics.
 ///
-/// This route exists only when `telemetry.inspection.enabled` is true. It
+/// The metrics route requires `telemetry.inspection.enabled` to be true. It
 /// shares the `/metrics` scrape admission, wait and render job.
 #[utoipa::path(
     get,
@@ -422,5 +431,42 @@ mod tests {
                 "message": "Local metrics are not available for this telemetry configuration"
             })
         );
+    }
+
+    #[tokio::test]
+    async fn default_inspection_mounts_only_the_settings_route() {
+        let router = telemetry_router(TelemetryInspection::new(
+            &effective(json!({"metrics": {"backend": "prometheus"}})),
+            None,
+        ));
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(TELEMETRY_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let settings: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            settings["metrics"].get("path"),
+            Some(&serde_json::Value::Null)
+        );
+        assert_eq!(settings["metrics"]["backend"], "prometheus");
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(TELEMETRY_METRICS_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

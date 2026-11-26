@@ -21,7 +21,8 @@ routes. Native-plugin
 wire parity and the end-to-end observability demo require separate qualification;
 the [example](../examples/observability/README.md) provides explicit live
 pipelines (an ordinary HTTP source, a native query and a log reaction, plus a
-PostgreSQL CDC variant) alongside its unchanged Off/empty default.
+PostgreSQL CDC variant) alongside its `start`/`validate` configuration, which
+uses Server's default (basic, no destinations, settings route only).
 Recorded evidence and deferred gates are in the baseline
 ([OBS-05](observability-baseline.md#obs-05-delivery-status),
 [OBS-06](observability-baseline.md#obs-06-delivery-status)).
@@ -29,15 +30,20 @@ Recorded evidence and deferred gates are in the baseline
 `drasi-server validate --config ...` checks the intended configuration and
 reports unavailable runtime capabilities separately. Every telemetry capability
 is available in this build, so it reports `No unavailable telemetry capabilities
-requested`. Listener requirements, such as inspection needing the management
-API, are checked at startup. The wizard validates its output the same way.
+requested`. It prints its `Telemetry:` output for configurations that omit
+`telemetry` too, because they resolve to the default policy; legacy
+root-`metrics` configurations are the exception. Listener requirements, such as
+explicitly enabled inspection needing the management API, are checked at
+startup. The wizard validates its output the same way.
 
 Normal startup checks telemetry before loading plugins or constructing
-components: an invalid policy or unmet listener requirement fails explicitly.
+components: an invalid policy, an unmet listener requirement or an
+[instance ID](#instance-ids) that active telemetry cannot scope fails explicitly.
 Omitted telemetry, an empty section with no destinations, or Off can start.
 Off suppresses new tracing and metrics even if their destinations are retained.
-Inspection remains independent: Off plus inspection starts, reports profile
-`off`, backend `none` and `path: null`, and its metrics route returns 503.
+Inspection remains independent: Off with default inspection serves the settings
+route, which reports profile `off`, backend `none` and `path: null`; with
+explicit `inspection.enabled: true` its metrics route returns 503.
 Retained inactive destination settings are still validated; configuring them
 never starts an additional backend.
 
@@ -63,24 +69,46 @@ deferred query-observation blocker are recorded separately in the baseline.
 
 | Configuration | Behavior |
 |---|---|
-| Neither section | Existing logging, graph/log/SSE APIs and inspection behavior remain; no new exporters or listeners |
-| Root `metrics` only | Existing query-progress OTLP/HTTP JSON export remains unchanged |
+| Neither section | Same as `telemetry: {}`: profile Basic, no trace export, metrics backend `none`, and the read-only settings route `GET /api/v1/telemetry` on the management listener; no exporters or new listeners |
+| Root `metrics` only | Legacy behavior, unchanged: Server telemetry Off, the existing query-progress OTLP/HTTP JSON export and no inspection; startup logs one info line suggesting migration to `telemetry` |
 | `telemetry` only | Resolve the new policy below; check runtime readiness at startup |
 | Both root `metrics` and any `telemetry` section | Reject with migration guidance, including `{}`, Off, tracing-only and inspection-only telemetry |
 
-Omission and an empty section differ: omission preserves legacy defaults;
-`telemetry: {}` selects Basic, but enables no trace export, metric collection
-or inspection because it has no destinations and metrics defaults to None.
+Omitting the section means exactly what `telemetry: {}` means. Both select
+Basic, but send nothing anywhere: there is no trace endpoint and metrics
+defaults to `none`, so no trace export or metric collection runs. Sending data
+is opt-in through a destination, and `profile: off` is the explicit opt-out.
+The only default surface is the read-only settings route
+([inspection](#read-only-inspection)). Saving never writes `telemetry: {}` or a
+defaulted `inspection.enabled` into the file. Console log lines are unchanged:
+Basic adds no span prefixes ([console logging](#obs-03-ownership-apis)).
+
+Programmatic Servers:
+
+- `DrasiServerBuilder` without `with_telemetry` or `with_telemetry_bindings`
+  still borrows Core's default logging service, but applies the default policy
+  (Basic, no destinations) to every Core it builds and to instances created
+  through the API. This replaces telemetry options set on a `DrasiLibBuilder`
+  passed to `add_instance_builder`; use `with_telemetry_bindings` for custom
+  telemetry. With the API enabled, `build()` and `prepare()` mount the
+  settings route.
+- `DrasiServer::from_core` and `from_cores` own none of their cores'
+  telemetry. Instances created through the API follow DrasiLib's own default
+  (Basic, with metrics forwarded to the current `metrics` recorder), and no
+  inspection route is mounted.
 
 The legacy `metrics` contract remains HTTP/JSON with a full metrics URL,
 10,000 ms default interval (100..=3,600,000) and 5,000 ms default timeout
 (100..=30,000). `DrasiServer::with_metrics` and the
-`drasi.query.progress.sequence` gauge are unchanged.
+`drasi.query.progress.sequence` gauge are unchanged. `with_metrics` is allowed
+when telemetry was omitted and rejected with explicit telemetry or borrowed
+bindings. Cores already built with the default keep it; their metrics are off,
+so nothing is exported twice.
 
 | New setting | Default | Validation |
 |---|---|---|
 | `profile` | `basic` | `off`, `basic`, `debug`, `persistence` |
-| `inspection.enabled` | `false` | Independent of collection/profile; requires the management API listener and `build()`/`run()` ([inspection](#read-only-inspection)) |
+| `inspection.enabled` | unset: settings route only | Independent of collection/profile. `true` adds the metrics route and requires the management API listener and `build()`/`run()`; `false` mounts neither route ([inspection](#read-only-inspection)) |
 | `tracing.endpoint` | absent | Empty resolved string also disables trace export |
 | `tracing.protocol` | absent | Explicit `http/protobuf` required for a nonempty endpoint |
 | `tracing.serviceName` | `drasi-server` | Nonempty, no control characters; shared OTLP resource identity, including metrics-only policy |
@@ -107,6 +135,32 @@ Persistence adds supported storage/recovery details to Basic, not all Debug
 details or every engine statistic. No profile enables handled-branch latency.
 Exclusions only suppress metrics: `drasi.plugin.` is a substring; `*` is
 literal, not a wildcard. An empty substring excludes every metric.
+
+### Instance IDs
+
+While trace export or a metrics backend is active (a trace endpoint or a
+`prometheus`/`otlp` backend is configured and the profile is not `off`), every
+instance ID must be nonempty and contain no whitespace or control characters.
+This is Core's telemetry scope rule, checked early:
+
+- `drasi-server validate` and startup check every configured instance before
+  loading plugins or constructing components. The error names the instance,
+  quoted with control characters escaped, and suggests renaming it or disabling
+  telemetry (for example `telemetry.profile: off`).
+- `POST /api/v1/instances` rejects such an ID with 400 `INVALID_REQUEST`; the
+  ID is in `details.component_id`.
+- `DrasiServerBuilder` relies on Core's build error, which fires under the same
+  condition. Opt out with `with_telemetry_profile(TelemetryProfile::Off)`, or,
+  for `build_core` and `build_with_handles`, with `with_telemetry_bindings`
+  carrying Off settings.
+- In a `DrasiServer::from_core`/`from_cores` Server, instances created through
+  the API use DrasiLib's default, which enables metrics, so an invalid ID gets
+  Core's build error as `INSTANCE_CREATE_FAILED`, with the ID and guidance in
+  its technical details.
+
+Server's default (no destinations), `profile: off` and legacy root `metrics` do
+not check IDs, so existing configurations keep starting until a destination is
+added.
 
 ## Metric data and bounds
 
@@ -331,7 +385,9 @@ against a changed environment or change its startup policy.
 
 Inspection and Prometheus scraping add no authentication system. Their
 supported deployment boundary is a trusted management proxy or restricted
-network; CORS is **not** authentication. Inspection defaults disabled. A
+network; CORS is **not** authentication. The inspection settings route is on
+by default and returns no destinations or credentials; the inspection metrics
+route requires explicit `inspection.enabled: true`. A
 separate scrape port is explicit opt-in, inherits the Server bind address and
 must be protected separately: a proxy protecting the management port does not
 protect another listener automatically.
@@ -349,8 +405,8 @@ Only the configured literal path is registered (default `/metrics`); a custom
 path does not also register `/metrics`. Omitted `port` merges that single route
 into the management router. An explicit port serves **only** the scrape router:
 no health, management API, UI or authentication routes are copied to it.
-With inspection enabled, the management listener also serves the same render
-at `/api/v1/telemetry/metrics` ([inspection](#read-only-inspection)).
+With `inspection.enabled: true`, the management listener also serves the same
+render at `/api/v1/telemetry/metrics` ([inspection](#read-only-inspection)).
 Off/None creates no scrape route, separate listener or upkeep worker.
 
 A successful GET returns `200` with
@@ -476,18 +532,36 @@ installed`. Borrowed `TelemetryBindings` have no process metrics.
 
 ## Read-only inspection
 
-`inspection.enabled: true` mounts `GET /api/v1/telemetry` and
-`GET /api/v1/telemetry/metrics` on the management listener only, never on a
-separate Prometheus listener. Inspection is independent of the profile and
-backend. Startup rejects it when the management API is disabled, or with the
-owned-handles builder result: `telemetry.inspection.enabled requires the
+Inspection serves read-only routes on the management listener only, never on
+a separate Prometheus listener. It is independent of the profile and backend,
+so `profile: off` still serves the settings route, which reports `off`.
+
+| `inspection.enabled` | Routes |
+|---|---|
+| unset (default) | `GET /api/v1/telemetry` only; it reports `metrics.path: null` |
+| `true` | `GET /api/v1/telemetry` and `GET /api/v1/telemetry/metrics` |
+| `false` | none |
+
+An environment reference such as `"${VAR:-false}"` counts as an explicit value.
+The default applies wherever Server owns telemetry: an omitted section,
+`telemetry: {}`, any section that leaves `inspection.enabled` unset, and
+`DrasiServerBuilder` without `with_telemetry_bindings`. It is skipped quietly
+where no management listener exists: when the management API is disabled, with
+the owned-handles builder result (`prepare_with_owned_handles`/
+`build_with_owned_handles`), with `build_with_handles`, or with `build_core`.
+Explicit `true` instead fails startup when the management API is disabled or
+with the owned-handles result: `telemetry.inspection.enabled requires the
 management API listener; enable the API and use build() and run(), or disable
-inspection`. Borrowed `TelemetryBindings` have no inspection setting and mount
-nothing.
+inspection`. `build_with_handles` and `build_core` reject any configured
+telemetry before that check.
+Borrowed `TelemetryBindings`, the legacy root-`metrics` case and
+`DrasiServer::from_core`/`from_cores` mount nothing; Server cannot accurately
+report settings it does not own.
 
 The settings route returns a bare camelCase object, not the `ApiResponse`
 wrapper. It is computed once at startup, because telemetry settings are
-startup-only. For example:
+startup-only. For example, with `inspection.enabled: true` and the Prometheus
+backend:
 
 ```json
 {
@@ -509,7 +583,7 @@ startup-only. For example:
 | `tracing.localInspection` | Always `false`; no trace history is stored |
 | `metrics.backend` | Effective `none`, `prometheus` or `otlp` (`none` under `off`) |
 | `metrics.processMetrics` | Effective setting; per-OS availability is documented above, not returned |
-| `metrics.path` | `"/api/v1/telemetry/metrics"` when the Prometheus backend is active, otherwise `null` |
+| `metrics.path` | `"/api/v1/telemetry/metrics"` when `inspection.enabled` is `true` and the Prometheus backend is active, otherwise `null` |
 | `logs.pathTemplate`, `logs.streamPathTemplate` | Constant templates for the existing log routes; `{collection}` is `sources`, `queries` or `reactions` |
 
 All fields are required; only `metrics.path` is nullable. Endpoint URLs, hosts,
@@ -523,13 +597,18 @@ separate port. It never installs a backend to manufacture data.
 
 | Situation | `/api/v1/telemetry` | `/api/v1/telemetry/metrics` |
 |---|---|---|
-| Inspection disabled, or no `telemetry` section | 404 | 404 |
-| Prometheus backend active | 200 | 200, Prometheus text |
-| OTLP, `none` or `off` | 200, `path: null` | 503 `TELEMETRY_METRICS_UNAVAILABLE` |
+| `inspection.enabled: false`, legacy root `metrics`, or borrowed `TelemetryBindings` | 404 | 404 |
+| `inspection.enabled` unset (default) | 200, `path: null` | 404 |
+| `inspection.enabled: true`, Prometheus backend active | 200 | 200, Prometheus text |
+| `inspection.enabled: true`, OTLP, `none` or `off` | 200, `path: null` | 503 `TELEMETRY_METRICS_UNAVAILABLE` |
 | Four renders in flight or five-second wait elapsed | 200 | 503 `TELEMETRY_METRICS_UNAVAILABLE` |
 | Render failure | 200 | 500 `TELEMETRY_INSPECTION_FAILED` |
 | Server shutting down | 503 `SERVER_SHUTTING_DOWN` | 503 `SERVER_SHUTTING_DOWN` |
 | POST, PUT, PATCH or DELETE | 405 | 405 |
+
+Under the default the metrics route is not mounted, so a request to it gets the
+router's ordinary 404, as when inspection is disabled; the remaining rows apply
+only to mounted routes.
 
 A metrics read admitted just before shutdown may find the scrape runtime
 already closing; it then receives 503 `TELEMETRY_METRICS_UNAVAILABLE` rather
@@ -539,21 +618,27 @@ The 503 and 500 responses use the standard `ErrorResponse` body; 404 and 405
 have empty bodies, and 405 includes an `Allow` header. Access equals
 reachability of the management listener (the OBS-02 decision): there is no
 authentication and the API's CORS policy applies. Restrict it with a trusted
-proxy or restricted network. **Enabling inspection exposes Prometheus metrics
-on the management port even when `/metrics` uses a separate
+proxy or restricted network. **Setting `inspection.enabled: true` exposes
+Prometheus metrics on the management port even when `/metrics` uses a separate
 `prometheus.port`**; deployments requiring strict metrics-port isolation must
-leave inspection disabled.
+not set it. The default settings route exposes no metrics.
 Inspection stores no trace history, queries no external metrics or trace
 backend, and never changes policy or YAML.
 
 ## Init
 
 The existing wizard offers telemetry after Server settings. Skipping omits
-the section. Off offers inspection but no exporter/process questions. Other
-profiles offer optional tracing and one metrics backend, then only meaningful
-path/port, OTLP interval and process questions. Sampling and shutdown keep the
-documented defaults. Generated YAML passes the same policy validator as
-startup; invalid selections or values fail rather than silently defaulting.
+the section, which selects the default: Basic, no destinations and the settings
+route. A chosen profile is followed by a three-way inspection choice: settings
+only (the default, which leaves `inspection.enabled` unset), settings and
+metrics (`true`) or none (`false`). Off asks no exporter/process questions.
+Other profiles offer optional tracing and one metrics backend, then only
+meaningful path/port, OTLP interval and process questions. Sampling and
+shutdown keep the documented defaults. Generated YAML passes the same policy
+validator as startup; invalid selections or values fail rather than silently
+defaulting. Because the settings route is on by default, generated YAML always
+includes the tip to protect inspection and scrape listeners with a trusted
+proxy or restricted network.
 
 For a runnable, collector-free walkthrough, see the
 [observability example](../examples/observability/README.md).
@@ -566,7 +651,10 @@ it, the fallback is `<logLevel>,oci_client=error`. Off is a collection policy,
 not a log filter. Invalid filters and unrelated installed logger/subscriber
 globals fail explicitly; Server never adopts an unknown global integration.
 Global installation cannot be undone, so retry that installation in a fresh
-process. No new global provider or metrics recorder is installed.
+process. No new global provider or metrics recorder is installed. The console
+layer, like Core's default one, hides Drasi telemetry spans (target
+`drasi::telemetry`), so telemetry adds no span prefixes to log lines; log
+events inside those spans still print.
 
 Embedding applications compose their own subscriber, logger, recorder/context
 and optional native-span collector. Pass `TelemetryBindings` with
@@ -610,8 +698,11 @@ Opaque recorder/exporter compatibility remains the preconfiguring caller's
 obligation. Configured YAML policy and borrowed policy are mutually exclusive.
 
 `StandaloneTelemetry::prepare` provides a logs-only owner and
-`cleanup_handle` before initialization. `DrasiServer::prepare_new_with_runtime`
+`cleanup_handle` before initialization. Its bindings carry the default policy
+(Basic, no exporters), not Off. `DrasiServer::prepare_new_with_runtime`
 transfers that actual owner, not just a clone of its bindings, into Server.
+With legacy root `metrics` and no `telemetry` section, Server sets that owner's
+policy to Off before constructing any Core.
 
 ### One cleanup attempt, bounded waiting
 

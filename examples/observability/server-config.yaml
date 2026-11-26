@@ -8,10 +8,14 @@ verifyPlugins: true
 autoInstallPlugins: false
 instances: []
 
+# Omitting this whole section also gives the basic profile, no destinations
+# and only GET /api/v1/telemetry. It is here so the DRASI_DEMO_* variables can
+# override each setting.
 telemetry:
-  profile: "${DRASI_DEMO_PROFILE:-off}"
-  inspection:
-    enabled: "${DRASI_DEMO_INSPECTION:-false}"
+  # off, basic, debug or persistence; off is the explicit opt-out.
+  profile: "${DRASI_DEMO_PROFILE:-basic}"
+  # Omitting inspection.enabled serves only GET /api/v1/telemetry; true adds
+  # /api/v1/telemetry/metrics; false serves neither.
   tracing:
     endpoint: "${DRASI_DEMO_TRACE_ENDPOINT:-}"
     protocol: http/protobuf

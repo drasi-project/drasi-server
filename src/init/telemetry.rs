@@ -51,7 +51,10 @@ where
 }
 
 fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<TelemetryConfig>> {
-    if !prompts.confirm("Configure telemetry?", false)? {
+    if !prompts.confirm(
+        "Configure telemetry? (No keeps the default: basic profile, no destinations, settings route on)",
+        false,
+    )? {
         return Ok(None);
     }
     let profile = prompts.select(
@@ -62,10 +65,16 @@ fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<Te
         profile: ConfigValue::Static(profile.clone()),
         ..Default::default()
     };
-    config.inspection.enabled = ConfigValue::Static(prompts.confirm(
-        "Enable inspection API (requires trusted proxy/restricted network)?",
-        false,
-    )?);
+    let inspection = prompts.select(
+        "Telemetry inspection routes:",
+        &["settings only (default)", "settings and metrics", "none"],
+    )?;
+    config.inspection.enabled = match inspection.as_str() {
+        "settings only (default)" => None,
+        "settings and metrics" => Some(ConfigValue::Static(true)),
+        "none" => Some(ConfigValue::Static(false)),
+        _ => anyhow::bail!("Invalid telemetry inspection selection"),
+    };
     if profile != "off" {
         let endpoint = prompts.text(
             "OTLP HTTP/protobuf tracing URL (${VAR} allowed; blank to skip):",
@@ -128,6 +137,7 @@ fn collect(prompts: &mut impl Prompts, management_port: u16) -> Result<Option<Te
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drasi_server::config::telemetry::InspectionMode;
     use std::collections::VecDeque;
 
     enum Answer {
@@ -176,12 +186,18 @@ mod tests {
         assert!(!super::super::builder::generate_yaml(&skipped)
             .unwrap()
             .contains("telemetry:"));
-        let config = run(vec![Confirm(true), Select("off"), Confirm(true)])
-            .unwrap()
-            .unwrap();
-        let policy = config.resolve(&DtoMapper::new(), 8080, true).unwrap();
-        assert!(policy.inspection_enabled);
-        assert!(!policy.policy().enabled());
+        for (inspection, expected) in [
+            ("settings only (default)", InspectionMode::Default),
+            ("settings and metrics", InspectionMode::Enabled),
+            ("none", InspectionMode::Disabled),
+        ] {
+            let config = run(vec![Confirm(true), Select("off"), Select(inspection)])
+                .unwrap()
+                .unwrap();
+            let policy = config.resolve(&DtoMapper::new(), 8080, true).unwrap();
+            assert_eq!(policy.inspection, expected);
+            assert!(!policy.policy().enabled());
+        }
     }
 
     #[test]
@@ -191,7 +207,7 @@ mod tests {
             vec![
                 Confirm(true),
                 Select("basic"),
-                Confirm(false),
+                Select("settings only (default)"),
                 Text(""),
                 Text("drasi-server"),
                 Select("prometheus"),
@@ -202,7 +218,7 @@ mod tests {
             vec![
                 Confirm(true),
                 Select("debug"),
-                Confirm(true),
+                Select("settings only (default)"),
                 Text("https://collector/v1/traces"),
                 Text("demo"),
                 Select("prometheus"),
@@ -214,7 +230,7 @@ mod tests {
             vec![
                 Confirm(true),
                 Select("persistence"),
-                Confirm(false),
+                Select("settings only (default)"),
                 Text(""),
                 Text("metrics-only"),
                 Select("otlp"),
@@ -250,10 +266,11 @@ mod tests {
     fn invalid_selections_intervals_and_listener_conflicts_fail() {
         use Answer::*;
         for answers in [
+            vec![Confirm(true), Select("basic"), Select("invalid")],
             vec![
                 Confirm(true),
                 Select("basic"),
-                Confirm(false),
+                Select("settings only (default)"),
                 Text(""),
                 Text("demo"),
                 Select("invalid"),
@@ -261,7 +278,7 @@ mod tests {
             vec![
                 Confirm(true),
                 Select("basic"),
-                Confirm(false),
+                Select("settings only (default)"),
                 Text(""),
                 Text("demo"),
                 Select("otlp"),
@@ -273,7 +290,7 @@ mod tests {
             vec![
                 Confirm(true),
                 Select("basic"),
-                Confirm(false),
+                Select("settings only (default)"),
                 Text(""),
                 Text("demo"),
                 Select("prometheus"),

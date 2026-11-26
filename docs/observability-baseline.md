@@ -630,6 +630,50 @@ traces; it opens them by ID.
 Linux/Windows (including podman host reachability), CI, full-suite, release and
 overhead qualification are not claimed.
 
+## Basic telemetry by default delivery status (2026-11-24)
+
+This change (sibling Core branch `basic-telemetry-default`, counterpart
+[drasi-project/drasi-core#1036](https://github.com/drasi-project/drasi-core/issues/1036))
+resolves [#251](https://github.com/drasi-project/drasi-server/issues/251):
+an omitted `telemetry` section now selects Basic, matching DrasiLib's default.
+This updates the "Neither section" row of the
+[approved legacy metrics decision](#approved-legacy-metrics-decision) and the
+OBS-06 inspection default; those records are left as delivered. The current
+contract is in
+[telemetry configuration](telemetry-configuration.md#defaults-and-compatibility).
+
+- **Omitted equals `telemetry: {}`.** Profile Basic, no trace export, metrics
+  backend `none`, and `GET /api/v1/telemetry` on the management listener. No
+  default destination is added; `profile: off` is the explicit opt-out. Saved
+  configuration never gains `telemetry: {}` or a defaulted
+  `inspection.enabled`.
+- **Inspection default.** `inspection.enabled` is optional. Unset serves the
+  settings route only (`metrics.path: null`) and is skipped quietly without a
+  management listener. Explicit `true` keeps both routes and the startup error;
+  `false` serves neither. Borrowed bindings, legacy root `metrics` and
+  `from_core`/`from_cores` get no default inspection.
+- **Legacy root `metrics`** without `telemetry` keeps its behavior (Server
+  telemetry Off, legacy OTLP/HTTP JSON progress export) with no error, plus one
+  info line suggesting migration. Explicit `telemetry` plus root `metrics` is
+  still rejected.
+- **Programmatic paths.** The `DrasiServerBuilder` fallback and
+  `StandaloneTelemetry::prepare` carry the default policy instead of Off. The
+  builder fallback replaces telemetry set on `add_instance_builder` builders;
+  `with_telemetry_bindings` remains the way to supply custom telemetry.
+  `from_core`/`from_cores` follow DrasiLib's own default.
+- **Instance IDs** are checked only while trace export or a metrics backend is
+  active: they must be nonempty, with no whitespace or control characters.
+  `validate` and startup fail early; `POST /api/v1/instances` returns 400
+  `INVALID_REQUEST`.
+- **Console output** is unchanged: Server's console layer hides
+  `drasi::telemetry` spans.
+- **CLI and wizard.** `validate` prints the Telemetry section for omitted
+  configurations. The wizard's inspection prompt is a three-way choice, and
+  generated YAML always includes the listener-protection tip.
+
+Focused unit and integration tests were added for these cases. Test results,
+and live, cross-platform, CI and release qualification, are not recorded here.
+
 ## Running the checks
 
 ```bash

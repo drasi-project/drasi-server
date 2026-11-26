@@ -20,12 +20,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{ensure, Context};
-use drasi_lib::observability::{init_default_subscriber, TelemetryProfile, TelemetrySettings};
+use drasi_lib::observability::{init_default_subscriber, TelemetryProfile};
 
 use crate::{
-    api::{mappings::DtoMapper, models::ConfigValue},
+    api::{mappings::DtoMapper, models::ConfigValue, v1::telemetry_handlers::TelemetryInspection},
     builder_result::{DrasiServerWithHandles, DrasiServerWithOwnedHandles},
-    config::telemetry::{MetricsBackend, TelemetryConfig},
+    config::telemetry::{default_effective_telemetry, MetricsBackend, TelemetryConfig},
     instance_registry::InstanceRegistry,
     server::{DrasiServer, ServerCleanupHandle, ServerPreparation},
     telemetry::{runtime::PreparedCollection, StandaloneTelemetry},
@@ -251,6 +251,10 @@ impl DrasiServerBuilder {
     }
 
     /// Add an additional DrasiLibBuilder to run as a separate DrasiLib instance
+    ///
+    /// Without `with_telemetry` or `with_telemetry_bindings`, the builder applies
+    /// Server's default telemetry to this builder, replacing telemetry options set
+    /// on it; use `with_telemetry_bindings` to supply custom telemetry.
     pub fn add_instance_builder(mut self, builder: DrasiLibBuilder) -> Self {
         self.core_builders.push(builder);
         self
@@ -437,29 +441,34 @@ impl DrasiServerBuilder {
         owner.retain_registry(registry.clone())?;
         let port = self.port.unwrap_or(8080);
         let host = self.host.unwrap_or_else(|| "127.0.0.1".into());
-        let (bindings, legacy_logging, prometheus, inspection) =
-            if let Some(config) = self.telemetry_config {
-                let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
-                effective.ensure_runtime_available()?;
-                effective.ensure_listener_compatible(self.enable_api, start)?;
-                let PreparedCollection {
-                    bindings,
-                    prometheus,
-                    inspection,
-                } = StandaloneTelemetry::initialize_configured(owner, effective, &registry)?;
-                (Some(bindings), None, prometheus, inspection)
-            } else if let Some(bindings) = self.telemetry_bindings {
-                owner.retain_bindings(bindings.clone())?;
-                (Some(bindings), None, None, None)
-            } else {
-                let logging = init_default_subscriber()
-                    .context("Cannot initialize or borrow Core's known default logging service")?;
-                owner.retain_bindings(TelemetryBindings::new(
-                    TelemetrySettings::new(TelemetryProfile::Off),
-                    logging.clone(),
-                ))?;
-                (None, Some(logging), None, None)
-            };
+        let (bindings, prometheus, inspection) = if let Some(config) = self.telemetry_config {
+            let effective = config.resolve(&DtoMapper::new(), port, self.enable_ui)?;
+            effective.ensure_runtime_available()?;
+            effective.ensure_listener_compatible(self.enable_api, start)?;
+            let PreparedCollection {
+                bindings,
+                prometheus,
+                inspection,
+            } = StandaloneTelemetry::initialize_configured(owner, effective, &registry)?;
+            (Some(bindings), prometheus, inspection)
+        } else if let Some(bindings) = self.telemetry_bindings {
+            owner.retain_bindings(bindings.clone())?;
+            (Some(bindings), None, None)
+        } else {
+            let logging = init_default_subscriber()
+                .context("Cannot initialize or borrow Core's known default logging service")?;
+            let effective = default_effective_telemetry(port, self.enable_ui)?;
+            let bindings = TelemetryBindings::new(effective.settings().clone(), logging)
+                .with_shutdown_timeout_seconds(effective.shutdown_timeout.as_secs());
+            owner.retain_bindings(bindings.clone())?;
+            (
+                Some(bindings),
+                None,
+                Some(TelemetryInspection::new(&effective, None)),
+            )
+        };
+        // Defaulted inspection is dropped where no management listener serves it.
+        let inspection = inspection.filter(|_| self.enable_api && !start);
         let registry = match owner.bindings() {
             Some(bindings) => registry.with_runtime_context(bindings, owner.clone()),
             None => registry.with_cleanup_context(owner.clone()),
@@ -473,8 +482,6 @@ impl DrasiServerBuilder {
             .map(|builder| {
                 if let Some(bindings) = &bindings {
                     bindings.apply_to(builder)
-                } else if let Some(logging) = &legacy_logging {
-                    Ok(builder.with_component_logging(logging.clone()))
                 } else {
                     anyhow::bail!("Missing prepared component logging")
                 }

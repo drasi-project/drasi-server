@@ -143,7 +143,9 @@ mod tests {
         http::{Request, StatusCode},
         Router,
     };
-    use drasi_lib::observability::{ComponentLogRuntime, LogPolicy};
+    use drasi_lib::observability::{
+        ComponentLogRuntime, LogPolicy, TelemetryOptions, TelemetryProfile,
+    };
     use drasi_source_application::{ApplicationSource, ApplicationSourceConfig};
     use serde_json::json;
     use std::{sync::Arc, time::Duration};
@@ -423,9 +425,11 @@ mod tests {
         String,
     )> {
         let logging = ComponentLogRuntime::new(LogPolicy::new("off")?)?;
+        // These cases check header forwarding with collection disabled.
         let core = Arc::new(
             drasi_lib::DrasiLib::builder()
                 .with_id("proxy")
+                .with_telemetry(TelemetryOptions::new(TelemetryProfile::Off))
                 .with_component_logging(logging.clone())
                 .with_source_factory(
                     drasi_lib::ComponentName::try_new("input")?,

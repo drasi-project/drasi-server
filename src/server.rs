@@ -43,6 +43,7 @@ use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
 use crate::{telemetry::StandaloneTelemetry, TelemetryBindings};
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
+use drasi_lib::observability::{TelemetryProfile, TelemetrySettings};
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::BootstrapPluginDescriptor;
@@ -272,6 +273,13 @@ impl DrasiServer {
                     inspection = collection.inspection;
                     collection.bindings
                 } else {
+                    // Legacy root `metrics` keeps owned instances Off, replacing
+                    // the default policy on the same owner before any Core.
+                    let bindings =
+                        bindings.with_settings(TelemetrySettings::new(TelemetryProfile::Off));
+                    cleanup.configure_logging_bindings(bindings.clone())?;
+                    // Logged after owned logging is installed so standalone startup emits it.
+                    info!("Root `metrics` keeps the legacy query-progress export and Server telemetry stays off; replace it with a `telemetry` section to migrate");
                     bindings
                 }
             }
@@ -868,6 +876,10 @@ impl DrasiServer {
     }
 
     /// Create a DrasiServer from a pre-built core (for use with builder)
+    ///
+    /// Server owns no telemetry for this core. API-created instances follow
+    /// DrasiLib's default (Basic, with metrics forwarded to the current
+    /// `metrics` recorder), and no telemetry inspection route is mounted.
     pub fn from_core(
         core: DrasiLib,
         enable_api: bool,
@@ -887,6 +899,10 @@ impl DrasiServer {
     }
 
     /// Create a DrasiServer from multiple pre-built cores (for builder multi-instance usage)
+    ///
+    /// Server owns no telemetry for these cores. API-created instances follow
+    /// DrasiLib's default (Basic, with metrics forwarded to the current
+    /// `metrics` recorder), and no telemetry inspection route is mounted.
     pub fn from_cores(
         cores: Vec<(DrasiLib, Option<String>)>,
         enable_api: bool,
@@ -1020,6 +1036,11 @@ impl DrasiServer {
     /// Address retained instance cleanup independently of Server serving.
     pub fn cleanup_handle(&self) -> ServerCleanupHandle {
         self.cleanup.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn instance_registry(&self) -> &InstanceRegistry {
+        &self.instance_registry
     }
 
     /// Check an already-configured Core without injecting or replacing handles.
@@ -1483,8 +1504,9 @@ impl DrasiServer {
             }
         }
         if let Some(inspection) = &self.inspection {
-            // route_layer applies management admission to both routes, including
-            // their 405 responses, without wrapping the listener-wide 404 fallback.
+            // route_layer applies management admission to the mounted inspection
+            // routes, including their 405 responses, without wrapping the
+            // listener-wide 404 fallback.
             app = app.merge(
                 api::v1::telemetry_handlers::telemetry_router(inspection.clone()).route_layer(
                     axum::middleware::from_fn_with_state(

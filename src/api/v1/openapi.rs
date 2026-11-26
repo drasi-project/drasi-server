@@ -113,7 +113,7 @@ use utoipa::openapi::RefOr;
         super::plugin_handlers::list_kinds,
         super::plugin_handlers::computation_plugin_metadata,
         super::plugin_handlers::get_kind_schema,
-        // Telemetry inspection (mounted only when enabled)
+        // Telemetry inspection (settings by default; metrics when enabled)
         super::telemetry_handlers::get_telemetry,
         super::telemetry_handlers::get_telemetry_metrics,
         // Missing instance handlers
@@ -226,7 +226,7 @@ use utoipa::openapi::RefOr;
         (name = "Solutions", description = "Deploy solution templates to instances"),
         (name = "Catalog", description = "Browse solution templates and other reusable configurations"),
         (name = "Plugins", description = "Plugin management — load, install, and inspect plugins"),
-        (name = "Telemetry", description = "Read-only telemetry inspection; routes exist only when telemetry.inspection.enabled is true"),
+        (name = "Telemetry", description = "Read-only telemetry inspection; the settings route is on by default, the metrics route requires telemetry.inspection.enabled: true"),
     ),
     info(
         title = "Drasi Server API",

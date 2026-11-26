@@ -43,7 +43,14 @@ fn profile_backend_signal_matrix_preserves_independence() {
                         policy.policy().metrics_enabled(),
                         profile != "off" && backend != "none"
                     );
-                    assert_eq!(policy.inspection_enabled, inspection);
+                    assert_eq!(
+                        policy.inspection,
+                        if inspection {
+                            InspectionMode::Enabled
+                        } else {
+                            InspectionMode::Disabled
+                        }
+                    );
                     assert_eq!(policy.tracing.is_some(), profile != "off" && tracing);
                     assert_eq!(
                         policy.prometheus.is_some(),
@@ -61,18 +68,21 @@ fn profile_backend_signal_matrix_preserves_independence() {
 }
 
 #[test]
-fn omission_empty_section_and_legacy_migration_are_distinct() {
+fn omitted_section_resolves_like_empty_and_legacy_metrics_steps_aside() {
     let omitted = DrasiServerConfig::default();
-    assert!(omitted
-        .resolved_telemetry(&DtoMapper::new(), 8080, true)
-        .unwrap()
-        .is_none());
+    let policy = effective(&omitted).unwrap();
+    assert_eq!(policy.policy().profile(), TelemetryProfile::Basic);
+    assert!(!policy.policy().enabled());
+    assert_eq!(policy.metrics_backend, MetricsBackend::None);
+    assert!(policy.tracing.is_none());
+    assert_eq!(policy.inspection, InspectionMode::Default);
     assert!(!serde_yaml::to_string(&omitted)
         .unwrap()
         .contains("telemetry:"));
     let empty = effective(&config(json!({}))).unwrap();
-    assert_eq!(empty.policy().profile(), TelemetryProfile::Basic);
-    assert!(!empty.policy().enabled());
+    assert_eq!(empty.policy().profile(), policy.policy().profile());
+    assert_eq!(empty.policy().enabled(), policy.policy().enabled());
+    assert_eq!(empty.inspection, InspectionMode::Default);
     assert_eq!(empty.export_interval, Duration::from_secs(30));
     assert_eq!(empty.shutdown_timeout, Duration::from_secs(5));
     assert_eq!(empty.service_name, "drasi-server");
@@ -85,6 +95,14 @@ fn omission_empty_section_and_legacy_migration_are_distinct() {
     let mut legacy_only = omitted;
     legacy_only.metrics = Some(legacy.clone());
     legacy_only.validate().unwrap();
+    assert!(legacy_only
+        .resolved_telemetry(&DtoMapper::new(), 8080, true)
+        .unwrap()
+        .is_none());
+    let reloaded: DrasiServerConfig =
+        serde_yaml::from_str(&serde_yaml::to_string(&legacy_only).unwrap()).unwrap();
+    assert!(reloaded.telemetry.is_none());
+    reloaded.validate().unwrap();
     for telemetry in [
         json!({}),
         json!({"profile":"off"}),
@@ -99,6 +117,61 @@ fn omission_empty_section_and_legacy_migration_are_distinct() {
             .to_string()
             .contains("cannot be configured together"));
     }
+}
+
+#[test]
+fn inspection_is_tristate_explicit_values_win_and_profile_is_independent() {
+    std::env::remove_var("OBS_DEFAULT_INSPECTION_UNSET");
+    for profile in ["off", "basic"] {
+        for (inspection, expected) in [
+            (None, InspectionMode::Default),
+            (Some(json!(true)), InspectionMode::Enabled),
+            (Some(json!(false)), InspectionMode::Disabled),
+            (
+                Some(json!("${OBS_DEFAULT_INSPECTION_UNSET:-false}")),
+                InspectionMode::Disabled,
+            ),
+        ] {
+            let mut section = json!({"profile": profile});
+            if let Some(value) = inspection {
+                section["inspection"] = json!({"enabled": value});
+            }
+            assert_eq!(effective(&config(section)).unwrap().inspection, expected);
+        }
+    }
+}
+
+#[test]
+fn defaulted_inspection_never_requires_a_listener() {
+    let default = effective(&config(json!({}))).unwrap();
+    assert!(default.ensure_listener_compatible(false, false).is_ok());
+    assert!(default.ensure_listener_compatible(true, true).is_ok());
+    let explicit = effective(&config(json!({"inspection": {"enabled": true}}))).unwrap();
+    assert!(explicit
+        .ensure_listener_compatible(false, false)
+        .unwrap_err()
+        .to_string()
+        .contains("requires the management API listener"));
+}
+
+#[test]
+fn explicit_section_without_inspection_saves_without_it() {
+    let section = |value| config(value).telemetry.unwrap();
+    let yaml = serde_yaml::to_string(&section(json!({"profile": "off"}))).unwrap();
+    assert!(
+        !yaml.contains("inspection") && !yaml.contains("enabled"),
+        "{yaml}"
+    );
+    let reloaded: TelemetryConfig = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(
+        reloaded
+            .resolve(&DtoMapper::new(), 8080, true)
+            .unwrap()
+            .inspection,
+        InspectionMode::Default
+    );
+    let yaml = serde_yaml::to_string(&section(json!({"inspection": {"enabled": false}}))).unwrap();
+    assert!(yaml.contains("enabled: false"), "{yaml}");
 }
 
 #[test]
@@ -528,4 +601,50 @@ telemetry:
     ] {
         assert!(serde_json::from_value::<DrasiServerConfig>(value).is_err());
     }
+}
+
+fn with_instance(
+    id: &str,
+    telemetry: Option<serde_json::Value>,
+    metrics: Option<serde_json::Value>,
+) -> DrasiServerConfig {
+    let mut value = json!({"instances": [{"id": id}]});
+    if let Some(telemetry) = telemetry {
+        value["telemetry"] = telemetry;
+    }
+    if let Some(metrics) = metrics {
+        value["metrics"] = metrics;
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn telemetry_instance_ids_are_checked_only_when_collection_is_enabled() {
+    let endpoint = "http://localhost:4318/v1/traces";
+    let tracing = json!({"tracing": {"endpoint": endpoint, "protocol": "http/protobuf"}});
+    with_instance("my server", None, None).validate().unwrap();
+    // A configured endpoint does not enable collection while the profile is off.
+    let off = json!({"profile": "off", "tracing": tracing["tracing"]});
+    with_instance("my server", Some(off), None)
+        .validate()
+        .unwrap();
+    let legacy = json!({"endpoint": "http://localhost:4318/v1/metrics"});
+    with_instance("my server", None, Some(legacy))
+        .validate()
+        .unwrap();
+    with_instance("analytics", Some(tracing.clone()), None)
+        .validate()
+        .unwrap();
+    let error = with_instance("my server", Some(tracing.clone()), None)
+        .validate()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("\"my server\""), "{error}");
+    assert!(error.contains("telemetry.profile: off"), "{error}");
+    let error = with_instance("a\nb", Some(tracing), None)
+        .validate()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("\"a\\nb\""), "{error}");
+    assert!(!error.contains('\n'), "{error}");
 }
