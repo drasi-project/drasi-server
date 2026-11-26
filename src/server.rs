@@ -25,7 +25,6 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
@@ -961,7 +960,7 @@ impl DrasiServer {
             // Nest plugin management API under /api/v1/plugins
             .nest("/api/v1/plugins", plugin_router)
             // Swagger UI and OpenAPI spec for v1
-            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
+            .merge(swagger_routes(openapi_v1));
 
         // Serve the Drasi Server Admin UI if enabled
         let ui_dir = std::path::Path::new("ui/dist");
@@ -1040,6 +1039,154 @@ impl DrasiServer {
             }
             result
         }))
+    }
+}
+
+fn swagger_routes(openapi: utoipa::openapi::OpenApi) -> Router {
+    use axum::{
+        extract::Path,
+        http::{header, StatusCode},
+        response::{IntoResponse, Redirect},
+        Json,
+    };
+
+    let config = Arc::new(utoipa_swagger_ui::Config::new(["/api/v1/openapi.json"]));
+    let openapi = Arc::new(openapi);
+    let serve = move |path: Option<Path<String>>| {
+        let config = config.clone();
+        async move {
+            let path = path.map(|Path(path)| path).unwrap_or_default();
+            match utoipa_swagger_ui::serve(&path, config) {
+                Ok(Some(file)) => {
+                    let mut response =
+                        ([(header::CONTENT_TYPE, file.content_type)], file.bytes).into_response();
+                    if file.gzpipped {
+                        response.headers_mut().insert(
+                            header::CONTENT_ENCODING,
+                            axum::http::HeaderValue::from_static("gzip"),
+                        );
+                    }
+                    response
+                }
+                Ok(None) => StatusCode::NOT_FOUND.into_response(),
+                Err(error) => {
+                    error!("Failed to serve Swagger UI asset: {error}");
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+    };
+
+    Router::new()
+        .route(
+            "/api/v1/docs",
+            get(|| async { Redirect::to("/api/v1/docs/") }),
+        )
+        .route("/api/v1/docs/", get(serve.clone()))
+        .route("/api/v1/docs/*path", get(serve))
+        .route(
+            "/api/v1/openapi.json",
+            get(move || {
+                let openapi = openapi.clone();
+                async move { Json(&*openapi).into_response() }
+            }),
+        )
+}
+
+#[cfg(test)]
+mod swagger_tests {
+    use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{header, Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn swagger_routes_serve_assets_and_openapi() {
+        let mut openapi = api::ApiDocV1::openapi();
+        let mut registry = PluginRegistry::new();
+        register_core_plugins(&mut registry);
+        api::inject_plugin_schemas(&mut openapi, &registry);
+        let expected = serde_json::to_value(&openapi).unwrap();
+        let app = swagger_routes(openapi);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/docs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.headers()[header::LOCATION], "/api/v1/docs/");
+
+        for (path, content_type, marker) in [
+            ("/api/v1/docs/", "text/html", "swagger-initializer.js"),
+            (
+                "/api/v1/docs/index.html",
+                "text/html",
+                "swagger-initializer.js",
+            ),
+            ("/api/v1/docs/swagger-ui.css", "text/css", ".swagger-ui"),
+            (
+                "/api/v1/docs/swagger-ui-bundle.js",
+                "text/javascript",
+                "SwaggerUIBundle",
+            ),
+            (
+                "/api/v1/docs/swagger-initializer.js",
+                "text/javascript",
+                "/api/v1/openapi.json",
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert!(
+                response.headers()[header::CONTENT_TYPE]
+                    .to_str()
+                    .unwrap()
+                    .starts_with(content_type),
+                "{path}"
+            );
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert!(String::from_utf8_lossy(&body).contains(marker), "{path}");
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/openapi.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            expected
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/docs/missing.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
 
